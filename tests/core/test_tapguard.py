@@ -1,0 +1,234 @@
+import hashlib
+from pathlib import Path
+
+import pytest
+
+from autocam_core.tapguard import GuardSpec, check_program, parse_code, rejected_path
+
+REPO = Path(__file__).resolve().parents[2]
+SAMPLE = (REPO / "tests/fixtures/taps/sheet_mist.tap").read_bytes()
+AIR_TEST = (REPO / "fusion/tests/pause_air_test.tap").read_bytes()
+
+THICKNESS = 0.125
+SPEC = GuardSpec(
+    clamp_zones_in=((0.0, 0.0, 48.0, 1.25), (0.0, 22.75, 48.0, 24.0)),
+    clamp_clear_z_in=THICKNESS + 1.5 + 0.25,
+    tool_radius_in=0.0787,
+    reach_x_in=40.0,
+    mist=True,
+)
+
+
+def edit(old: str, new: str, data: bytes = SAMPLE, count: int = 1) -> bytes:
+    text = data.decode("ascii")
+    assert old in text, old
+    return text.replace(old, new, count).encode("ascii")
+
+
+def check(data: bytes, spec: GuardSpec = SPEC):
+    return check_program(data, spec)
+
+
+def test_sample_program_passes():
+    report = check(SAMPLE)
+    assert report.passed, report.summary()
+    assert report.min_z_in == 0.0
+    assert report.m0_count == 0
+    assert report.sha256 == hashlib.sha256(SAMPLE).hexdigest()
+    assert report.summary() == "passed; lowest Z 0.0000 in"
+
+
+def test_pause_air_test_passes():
+    report = check(AIR_TEST, GuardSpec(mist=False))
+    assert report.passed, report.summary()
+    assert report.min_z_in == 3.0
+    assert report.m0_count == 2
+
+
+# ---- the Z floor
+
+@pytest.mark.parametrize("new", ["G1 Z-0.0001 F20.", "G1 Z-.5 F20.", "G1 Z-0. F20.X"])
+def test_below_floor_or_unreadable_fails(new):
+    report = check(edit("G1 Z0. F20.", new))
+    assert not report.passed
+
+
+def test_smallest_negative_z_is_an_offender():
+    report = check(edit("G1 Z0. F20.", "G1 Z-0.0001 F20."))
+    assert report.offenders == ("line 19: G1 Z-0.0001 F20.",)
+    assert report.min_z_in == pytest.approx(-0.0001)
+    assert "goes below Z0.0000" in report.summary()
+
+
+def test_negative_zero_and_plus_sign_pass():
+    assert check(edit("G1 Z0. F20.", "G1 Z-0. F20.")).passed
+    assert check(edit("G0 Z0.325", "G0 Z+0.325")).passed
+
+
+def test_z_inside_a_comment_is_ignored():
+    assert check(edit("[drill]", "[drill Z-5 is only a comment]")).passed
+
+
+def test_unclosed_comment_fails():
+    report = check(edit("[outer p01-1]", "[outer p01-1"))
+    assert any("unclosed '['" in p for p in report.problems)
+
+
+def test_floor_above_zero_is_respected():
+    report = check(SAMPLE, GuardSpec(**{**SPEC.__dict__, "z_floor_in": 0.01}))
+    assert not report.passed and report.offenders
+
+
+def test_negative_floor_is_refused():
+    with pytest.raises(ValueError):
+        GuardSpec(z_floor_in=-0.01)
+
+
+# ---- G53 and canned cycles
+
+def test_only_the_two_g53_forms_are_allowed():
+    report = check(edit("G53 Z\r\nM5", "G53 X5.\r\nG53 Z\r\nM5"))
+    assert any("only 'G53 Z'" in p for p in report.problems)
+
+
+@pytest.mark.parametrize("cycle", ["G81 X5. Y5. Z-0.01 R0.325 F20.", "G81 X5. Y5. Z0. R-0.1 F20."])
+def test_drilling_cycle_z_and_r_are_checked(cycle):
+    report = check(edit("G81 X5. Y5. Z0. R0.325 F20.", cycle))
+    assert report.offenders and not report.passed
+
+
+def test_peck_cycles_are_rejected_by_default():
+    report = check(edit("G81 X5. Y5. Z0. R0.325 F20.", "G83 X5. Y5. Z0. R0.325 Q0.05 F20."))
+    assert any("G83 is not allowed" in p for p in report.problems)
+
+
+def test_drilling_cycle_needs_z_and_r():
+    report = check(edit("G81 X5. Y5. Z0. R0.325 F20.", "G81 X5. Y5. Z0. F20."))
+    assert any("without Z and R" in p for p in report.problems)
+
+
+# ---- forbidden codes and units
+
+@pytest.mark.parametrize("line, why", [
+    ("G91", "G91 is not allowed"),
+    ("G41 O0.0787", "unexpected word O"),
+    ("G41", "G41 is not allowed"),
+    ("G92 X0. Y0.", "G92 is not allowed"),
+    ("G28", "G28 is not allowed"),
+    ("G17", "G17 is not allowed"),
+    ("T1", "unexpected word T"),
+    ("M8", "M8 is not allowed"),
+    ("g0 x1.", "can't read"),
+])
+def test_unexpected_codes_fail(line, why):
+    report = check(edit("[outer p01-1]", f"[outer p01-1]\r\n{line}"))
+    assert any(why in p for p in report.problems), report.problems
+
+
+def test_missing_g20_fails():
+    report = check(edit("G20\r\n", ""))
+    assert "expected exactly one G20, found 0" in report.problems
+    assert any("motion before G20" in p for p in report.problems)
+
+
+def test_metric_fails():
+    report = check(edit("G20", "G22"))
+    assert any("G22 is not allowed" in p for p in report.problems)
+
+
+def test_non_ascii_fails():
+    report = check(SAMPLE.replace(b"[drill]", "[drill °]".encode("utf-8")))
+    assert "program contains non-ASCII bytes" in report.problems
+
+
+# ---- clamp zones and heights
+
+def test_rapid_across_clamp_zone_at_low_z_fails():
+    report = check(edit("G1 X8. F60.", "G1 X4. Y0.5 F60.\r\nG1 X8. Y4."))
+    assert report.clamp_violations and not report.passed
+
+
+def test_same_rapid_after_g53_z_passes():
+    report = check(edit("G0 Z0.325\r\nG1 Z0. F20.\r\nG1 X8.",
+                        "G53 Z\r\nG0 X4. Y0.5\r\nG0 X4. Y4.\r\nG0 Z0.325\r\nG1 Z0. F20.\r\nG1 X8."))
+    assert report.passed, report.summary()
+
+
+def test_rapid_over_zone_at_clearance_height_passes():
+    assert check(edit("G0 X4. Y4.", "G0 X4. Y0.5\r\nG0 X4. Y4.")).passed
+
+
+def test_arc_over_clamp_zone_fails():
+    report = check(edit("G1 X8. F60.", "G2 X4. Y4. I0. J-2. F60.\r\nG1 X8. F60."))
+    assert report.clamp_violations
+
+
+def test_descending_at_unknown_position_fails():
+    report = check(edit("[outer p01-1]", "G53 Z\r\nG53 P10\r\nG0 Z0.5\r\n[outer p01-1]"))
+    assert any("descends at an unknown position" in v for v in report.clamp_violations)
+
+
+def test_xy_move_before_retract_fails():
+    report = check(edit("G53 Z\r\n[drill]", "[drill]"))
+    assert any("XY move before the height is known" in p for p in report.problems)
+
+
+def test_park_without_retract_fails():
+    report = check(edit("[outer p01-1]", "G0 Z0.325\r\nG53 P10\r\n[outer p01-1]"))
+    assert any("park without a G53 Z" in p for p in report.problems)
+
+
+def test_x_beyond_reach_fails():
+    report = check(edit("G1 X16. F60.", "G1 X41. F60."))
+    assert any("beyond the 40.0 in reach" in p for p in report.problems)
+
+
+# ---- spindle, mist and the program ending
+
+def test_m0_with_spindle_running_fails():
+    report = check(edit("G4 X4.\r\n", "G4 X4.\r\nM0\r\n"))
+    assert any("M0 stop with the spindle running" in p for p in report.problems)
+
+
+def test_cutting_with_spindle_stopped_fails():
+    report = check(edit("[outer p01-1]", "M5\r\n[outer p01-1]"))
+    assert any("spindle stopped" in p for p in report.problems)
+
+
+def test_mist_codes_when_mist_is_off_fail():
+    report = check(SAMPLE, GuardSpec(**{**SPEC.__dict__, "mist": False}))
+    assert "mist codes present but mist is off for this material" in report.problems
+
+
+def test_missing_mist_on_fails():
+    report = check(edit("M11 C8\r\n", ""))
+    assert any("M11 C8 is missing" in p for p in report.problems)
+
+
+def test_missing_park_at_end_fails():
+    report = check(edit("G53 P10\r\n", ""))
+    assert "program doesn't end with 'G53 P10'" in report.problems
+
+
+def test_missing_final_retract_fails():
+    report = check(edit("M12 C8\r\nG53 Z\r\nM5", "M12 C8\r\nM5"))
+    assert "no G53 Z retract after the last move" in report.problems
+
+
+def test_repeated_axis_word_fails():
+    report = check(edit("G1 X8. F60.", "G1 X8. X9. F60."))
+    assert any("repeated X word" in p for p in report.problems)
+
+
+# ---- helpers
+
+def test_parse_code_reads_post_words():
+    assert parse_code("G53 Z") == [("G", 53.0), ("Z", None)]
+    assert parse_code("N10 G4 X4. [dwell]") == [("G", 4.0), ("X", 4.0)]
+    assert parse_code("G0X-.5Y+1") == [("G", 0.0), ("X", -0.5), ("Y", 1.0)]
+    with pytest.raises(ValueError):
+        parse_code("G0 X1 % junk")
+
+
+def test_rejected_path():
+    assert rejected_path(Path("out/6061_0p125_r017_S1.tap")).name == "6061_0p125_r017_S1.REJECTED.tap"
