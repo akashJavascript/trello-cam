@@ -22,6 +22,10 @@ class ExportError(Exception):
     """A problem with this part (goes back to its card), not with the whole run."""
 
 
+class TryAgainLater(ExportError):
+    """Not the part's fault (not cached while offline, or Onshape's export still running): leave the card queued."""
+
+
 @dataclass(frozen=True)
 class ExportedPart:
     part_id: str
@@ -56,7 +60,7 @@ class Exporter:
 
     def _need_client(self, what: str) -> OnshapeClient:
         if self.client is None:
-            raise ExportError(f"{what} isn't cached and Onshape calls are off for this run")
+            raise TryAgainLater(f"{what} isn't cached and Onshape calls are off for this run")
         return self.client
 
     def parts_list(self, link: OnshapeLink) -> List[Dict[str, Any]]:
@@ -129,4 +133,4 @@ class Exporter:
             if state == "FAILED":
                 self.cache.forget_translation(link, pid)
                 raise ExportError(f"Onshape couldn't export '{name}': {status.get('failureReason', 'no reason given')}")
-        raise ExportError(f"Onshape's STEP export of '{name}' didn't finish yet; the next run picks it up")
+        raise TryAgainLater(f"Onshape's STEP export of '{name}' didn't finish yet; the next run picks it up")

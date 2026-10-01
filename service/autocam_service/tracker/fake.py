@@ -43,11 +43,11 @@ class FakeTracker(Tracker):
         self.cards[card_id] = replace(self.cards[card_id], list_key=list_key)
         self.log.append(("move", card_id, list_key))
 
-    def _create_card(self, list_key: str, title: str, desc: str) -> str:
+    def _create_card(self, list_key: str, title: str, desc: str) -> Card:
         cid = self._id("card")
         self.cards[cid] = Card(cid, title, desc, list_key, f"https://trello.example/c/{cid}")
         self.log.append(("create", cid, list_key, title))
-        return cid
+        return self.cards[cid]
 
     def _comment(self, card_id: str, text: str) -> None:
         self.comments.append((card_id, text))

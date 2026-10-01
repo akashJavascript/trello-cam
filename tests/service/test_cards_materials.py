@@ -162,6 +162,6 @@ def test_dry_run_records_writes_and_sends_none():
     dry.comment("c1", "hello")
     dry.move("c1", "nested")
     new = dry.create_card("sheet_review", "S1", "")
-    assert new.startswith("dryrun-")
+    assert new.id.startswith("dryrun-") and new.list_key == "sheet_review"
     assert inner.comments == [] and inner.get_card("c1").list_key == "ready_for_cam"
     assert [i[0] for i in dry.intended] == ["comment", "move", "create_card"]

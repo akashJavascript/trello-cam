@@ -9,39 +9,16 @@ import pytest
 from autocam_service.onshape.budget import PROCEED, REFUSE, WARN, decide, estimate_calls
 from autocam_service.onshape.cache import OnshapeCache
 from autocam_service.onshape.client import (
-    BudgetExceeded, HttpResponse, OnshapeClient, OnshapeError, QuotaExhausted, RateLimited, sign,
+    BudgetExceeded, OnshapeClient, OnshapeError, QuotaExhausted, RateLimited, sign,
 )
 from autocam_service.onshape.export import Exporter, ExportError, PollSchedule
 from autocam_service.onshape.ledger import Ledger, budget_year_start
 from autocam_service.onshape.urls import parse_link
+from fakeonshape import FakeTransport, resp
 
 D, V, E = "a" * 24, "b" * 24, "c" * 24
 LINK = parse_link(f"https://cad.onshape.com/documents/{D}/v/{V}/e/{E}")
 NOW = datetime(2026, 10, 1, 22, 0, tzinfo=timezone.utc)
-
-
-def resp(status=200, body=b"{}", **headers):
-    if not isinstance(body, bytes):
-        body = json.dumps(body).encode()
-    return HttpResponse(status, {k.lower().replace("_", "-"): v for k, v in headers.items()}, body)
-
-
-class FakeTransport:
-    """Scripted Onshape: routes are (method, url fragment, [responses...]) consumed in order."""
-
-    def __init__(self, routes):
-        self.routes = [(m, frag, list(rs)) for m, frag, rs in routes]
-        self.sent = []
-
-    def send(self, method, url, headers, body):
-        self.sent.append((method, url, dict(headers), body))
-        for m, frag, rs in self.routes:
-            if m == method and frag in url and rs:
-                r = rs.pop(0)
-                if isinstance(r, Exception):
-                    raise r
-                return r
-        raise AssertionError(f"unexpected request {method} {url}")
 
 
 @pytest.fixture

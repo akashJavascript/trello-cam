@@ -33,7 +33,8 @@ class DryRunTracker(Tracker):
 
     def _create_card(self, list_key, title, desc):
         self.intended.append(("create_card", list_key, title))
-        return self._fake_id("card")
+        cid = self._fake_id("card")
+        return Card(cid, title, desc, list_key, f"https://trello.com/c/{cid}")
 
     def _comment(self, card_id, text):
         self.intended.append(("comment", card_id, text))

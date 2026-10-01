@@ -77,7 +77,7 @@ class Tracker(abc.ABC):
         self._refuse_ready_to_cut(list_key)
         self._move(card_id, list_key)
 
-    def create_card(self, list_key: str, title: str, desc: str) -> str:
+    def create_card(self, list_key: str, title: str, desc: str) -> Card:
         self._refuse_ready_to_cut(list_key)
         return self._create_card(list_key, title, desc)
 
@@ -120,7 +120,7 @@ class Tracker(abc.ABC):
     def _move(self, card_id: str, list_key: str) -> None: ...
 
     @abc.abstractmethod
-    def _create_card(self, list_key: str, title: str, desc: str) -> str: ...
+    def _create_card(self, list_key: str, title: str, desc: str) -> Card: ...
 
     @abc.abstractmethod
     def _comment(self, card_id: str, text: str) -> None: ...
