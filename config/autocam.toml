@@ -28,7 +28,9 @@ schema = 1
 "onshape.yearly_cap_calls" = "plan: this service's share of the enterprise's 10,000 calls/year"
 "onshape.monthly_soft_calls" = "plan: warn above this many calls in a month"
 "onshape.budget_year_start" = "plan: when the enterprise's call year resets (MM-DD)"
-"fusion.params" = "brief: undocumented Fusion parameter names; confirm with dump_params"
+"fusion.params.setup.wcs_origin_boxPoint" = "the team's manual value; check it lands bottom front-left in the nest preview (M1.3)"
+"fusion.params.setup.stock_mode_value" = "fallback only; confirm the 'from solid' value if Setup.stockSolids fails"
+"fusion.params.selections.pocket" = "pending: dump_params on a job with a 2D Adaptive op"
 
 [machine]
 reach_x_in = 40.0          # ShopSabre 23 cut length; the rest of the 48 in sheet hangs off the bed
@@ -254,20 +256,36 @@ useCoolant = false
 useXYZFeeds = "standard"
 safePositionMethod = "G53"
 
+# Fusion CAM parameter names. Confirmed 2026-10-01 by dump_params on a manual job (Fusion 2705.1.15)
+# unless [assumed] says otherwise.
 [fusion.params.setup]
+wcs_origin_mode = "'stockPoint'"        # "Stock box point"
 wcs_origin_boxPoint = "'bottom 1'"
+stock_mode = "job_stockMode"            # fallback if Setup.stockSolids doesn't work
+stock_mode_value = "'solid'"
+stock_solid = "job_stockSolid"
 
 [fusion.params.drill]
 hole_mode = "holeMode"
 hole_mode_value = "'selection-faces'"
 faces = "holeFaces"
 
-[fusion.params.selections]
-bore_faces_candidates = ["circularFaces", "holeFaces"]
-pocket = "pockets"
-contour = "contours"
+[fusion.params.bore]
+hole_mode = "holeMode"
+hole_mode_value = "'selection-faces'"
+faces = "circularFaces"
 
-[fusion.params.tabs]            # M6: At-points tab parameter names, from dump_params
+[fusion.params.selections]
+contour = "contours"
+pocket = "pockets"
+
+[fusion.params.tabs]                    # M6
+enabled = "group_tabs"
+positioning = "tabPositioning"
+manual_positions = "tabPositions"
+width = "tabWidth"
+height = "tabHeight"
+distance = "tabDistance"
 
 [tapguard]
 allowed_g = [0, 1, 2, 3, 4, 20, 53, 80, 81, 90]

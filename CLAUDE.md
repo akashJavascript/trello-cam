@@ -22,7 +22,7 @@ Full context and decisions: `docs/BRIEF.md`. Read it before planning or changing
 ## Layout (see `docs/PLAN.md` for the module list)
 
 - `core/autocam_core/` pure logic, **standard library only**: imported by the Fusion add-in and the service.
-  Keep it Python 3.9-compatible until Fusion's Python version is confirmed.
+  Fusion 2705 bundles Python 3.14 (confirmed by api_probe); CI runs the core tests on 3.14.
 - `service/autocam_service/` plain-Python Windows service: Trello + Onshape + hot folder.
 - `fusion/autocam_nest/` Phase 1 Fusion script, written from Autodesk API docs, not yet run in Fusion (reference only).
 - `fusion/posts/` the shop's WinCNC post (reference copy; do not edit; sha256-pinned by a test).

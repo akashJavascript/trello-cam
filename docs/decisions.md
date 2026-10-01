@@ -80,3 +80,25 @@ Decisions made after `docs/BRIEF.md`, newest last. Answers to the brief's open q
     noted, so it can't keep a run active forever.
   - **Zero-job runs:** such a run is only marked done after its control-card comment and move land.
 - **Templates use full retraction.** The worker reports nominal stock thickness in `result.json`.
+
+## 2026-10-01: what the team's manual CAM actually does (from `dump_params`)
+
+These are inputs for the templates in M1.2-M1.5, not decisions yet. One aluminum job (3/16 in plate, 4 mm alu tool):
+- **Work origin:** Stock box point, `'bottom 1'`, with the WCS Z and X axes picked explicitly.
+- **Stock:** the part bounding box plus 0.04 in on the sides and top, 0 on the bottom. The automation will use
+  the full sheet as stock instead.
+- **Heights:**
+  - Retract and feed are 0.2 in above the stock top.
+  - Clearance is 0.4 in above retract, about 0.6 in above the stock top. The brief assumed 2.0 in
+    (`clamps.min_clear_above_stock_in`, still ASSUMED). The guard only rejects moves that cross a clamp strip,
+    so the lower value may be fine; decide when the clamp numbers are confirmed.
+- **Bottoms:**
+  - Drill and bore: "from hole bottom", offset 0, no drill-tip-through, no break-through.
+  - Contours: "from contour", offset 0.
+
+  These already match the never-below-Z0 rule.
+- **Linking:** "keep tool down" off, high feedrate mode disabled, single depth with a 2° profile ramp.
+- **Tabs are on** in this job (2.5 in spacing; one contour uses manual tabs). The brief assumes tape and no
+  tabs, so the no-tab trial (open question 10) matters.
+- **Pockets** are cut with 2D Adaptive Clearing, not the Pocket strategy. The `[pocket]` op in the templates
+  should be a 2D Adaptive op.
