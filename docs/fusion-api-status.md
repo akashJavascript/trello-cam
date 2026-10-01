@@ -14,8 +14,9 @@ Results so far (2026-10-01, Fusion 2705.1.15, Python 3.14.0, fresh install):
   Its overflow and two-sheet tests didn't run (every part was "pinned"), and its bottom-height and Manual NC
   steps had a probe bug (choice values already carry their quotes).
 - `pipeline_probe2` second run: settled bottom height, Manual NC and op reordering, and showed that "pinned"
-  is `isGroundToParent`, not `isGrounded`. Version 3 (not run yet) clears it and re-tests overflow, a second
-  sheet, the STEP import path and which way up pocketed parts land.
+  is `isGroundToParent`, not `isGrounded`.
+- `pipeline_probe2` version 3: settled Arrange (clearing ground-to-parent, STEP import, overflow, a second sheet,
+  which way up). Every call the through-cut pipeline needs has now been seen working.
 - The three programs it posted are test fixtures now (`tests/fixtures/taps/fusion_*.tap`): the guard, the depth
   check and pause insertion all pass on real post output.
 
@@ -29,14 +30,16 @@ Results so far (2026-10-01, Fusion 2705.1.15, Python 3.14.0, fresh install):
 | Arrange | `ArrangeComponent.quantity`, `envelope.quantity`, `envelope.envelopeSpacing` | — | **fails**: `RuntimeError: 3 : Cannot set ... for non-extension environment` (needs the Manufacturing Extension) | one occurrence per copy; one Arrange per sheet |
 | Arrange | quantity by extra occurrences (`occurrences.addExistingComponent`) | fx_arrange | **works**: 2 occurrences of one component were both placed, no overlap | none |
 | Arrange | `isCreateCopies = True`, then `deleteMe` the originals | fx_arrange (fallback) | **works**: new occurrences (`plate_a:2`) are placed, the originals stay put; deleting the originals leaves the copies in place and the feature healthy | none |
-| Arrange | `isCreateCopies = False` (move the occurrences) | fx_arrange | **works** for most occurrences, but every occurrence of the **first component created** fails: `RuntimeError: 3 : Pinned component cannot be arranged`. Those occurrences have `isGroundToParent = True` (`isGrounded` is False). Clearing it: `pipeline_probe2` v3 A16 | copies + delete originals |
+| Arrange | `isCreateCopies = False` (move the occurrences) | fx_arrange | **works once `isGroundToParent` is cleared**. The first component in a document (created, or the first STEP imported) and every occurrence of it come with `isGroundToParent = True` (`isGrounded` stays False), and Arrange refuses them: `Pinned component cannot be arranged`. Setting `occurrence.isGroundToParent = False` fixes it | copies + delete originals |
+| Import | one STEP file per part, `importToTarget(root)` | fx_import | **works**: each file makes exactly one occurrence (`step_a:1`), at its modeled position | none |
 | Arrange | envelope `originXOffset`, `originYOffset`, `objectSpacing` | fx_arrange | **works**: parts packed from the envelope corner (10, 2) with 0.25 in gaps | none |
-| Arrange | which way up parts land | fx_arrange | **parts get turned upside down** (local Z ends up pointing down) even with `isGlobalDirectionFaceUp = True`, moved or copied. Harmless for through-cut plates; wrong for pocketed ones. `ArrangeComponent.upDirection` and `zeroDirection` are `Vector3D`s; `isDirectionFlipped` defaults False. `pipeline_probe2` v3 A15 tries face-up off, flipped, and `upDirection` ±Z | re-check the pocket side after Arrange (plan) |
+| Arrange | which way up parts land | fx_arrange | Arrange turns the part so its `ArrangeComponent.upDirection` points up. For plates modeled flat that's **(0, 0, -1)**, so they land upside down whatever `isGlobalDirectionFaceUp` says. `upDirection` is read-only (`no setter`). **`isDirectionFlipped = True` keeps the modeled top up** (pocket still opens up); face-up False changes nothing | re-check the pocket side after Arrange (plan) |
 | Arrange | side effects | fx_arrange | Arrange adds two empty components, `Arrange1` and `Envelope1(Qty: 1)`. The worker must keep its own list of part occurrences | none |
 | Arrange | `ArrangeResultEnvelope.occurrences` → `ArrangeOccurrenceResult.occurrence` | fx_arrange | **works**: names what landed in the envelope | position check (`layout`) |
 | Arrange | `ArrangeFeature.arrangeStatistics` | fx_arrange | **works**: a JSON string with "Components Arranged", "Components Unarranged", "Envelopes Used", areas | none |
-| Arrange | `ArrangeFeature.unusedComponents` | — | **fails** after `add`: `RuntimeError: 3 : Didn't roll editing feature back` (v3 A13 tries rolling the timeline back) | our list minus `resultEnvelopes` occurrences |
-| Arrange | parts that don't fit: `isPartialArrangeAllowed` (on the **envelope** input, default False) | fx_arrange | settable; what it does untested (v3 A13/A14) | one envelope per Arrange, leftovers carried forward |
+| Arrange | `ArrangeFeature.unusedComponents` | — | **fails** after `add`: `Didn't roll editing feature back`; after `timelineObject.rollTo(True)`: `Cannot set envelope direction for non-extension environment` | our list minus `resultEnvelopes` occurrences (works) |
+| Arrange | parts that don't fit: envelope `isPartialArrangeAllowed` | fx_arrange | **default False: the whole Arrange fails** (`ARRANGE_ERROR_NO_ROOM`) and nothing moves. **True: places what fits** (2 of 6), leaves the rest where they were; statistics say "Components Unarranged: 4" | none |
+| Arrange | a second Arrange for the leftovers (sheet 2, envelope further along X) | fx_arrange | **works**: places them; sheet 1's parts don't move; each Arrange adds its own empty `ArrangeN` / `Envelope1(Qty: 1) (n)` components | none |
 | Arrange | `resultEnvelopes` / `.boundingBox` | — | **not used**: reported `[0, 0, 20, 12]` in although the parts landed at x 10-12 (the offset isn't in it) | sheet origins come from our own envelope offsets |
 | Arrange | other options seen (`ArrangeComponent.priority`, `rotation`, `upDirection`, `isFiller`; definition `grainDirection`) | — | exist, unused | none |
 | Arrange | `frameWidth` | — | not used | envelope = exact nest region |
@@ -72,16 +75,16 @@ Results so far (2026-10-01, Fusion 2705.1.15, Python 3.14.0, fresh install):
 
 ## What this changes in the pipeline (M1.2)
 
-- **Arrange by occurrence, one copy per occurrence.** Quantity isn't available, so the worker adds
-  `qty - 1` occurrences of each part's component and arranges all of them (confirmed).
-- **Unground before arranging** (if A11 confirms grounding is what "pinned" means), and keep our own list of
-  part occurrences: Arrange adds empty components of its own.
-- **Arrange turns parts upside down.** Fine for through-cut plates; pocketed parts need the pocket side
-  re-checked after Arrange (and a fix from A15).
-- **One Arrange per sheet.** Multiple envelopes aren't available either. Each sheet is its own Arrange with its
-  envelope offset along X, and the parts that don't fit go to the next sheet's Arrange (depends on A9/A10).
-- **Sheet origins come from our own offsets**, not from `resultEnvelopes`.
-- **Per-part outline ops** come from `createFromOperations` copies, renamed to `[outer] <instance>`.
+- **Import:** one STEP per part (one occurrence each), then `qty - 1` more occurrences of its component with
+  `addExistingComponent`. Keep our own list of part occurrences: Arrange adds empty components of its own.
+- **Before arranging:** clear `isGroundToParent` (and `isGrounded`) on every part occurrence.
+- **One Arrange per sheet**, moving (not copying), envelope = the sheet's nest region at our own offset,
+  `isPartialArrangeAllowed = True`. What landed = the result envelope's occurrences; the rest go to the next
+  sheet's Arrange. Sheet origins come from our offsets, not `resultEnvelopes`.
+- **Which way up:** for each part, compare `upDirection` with the side that must face up (the open side of any
+  pocket) and set `isDirectionFlipped` when they're opposite. Through-cut plates land either way. Afterwards,
+  check the pocket side really faces +Z (plan).
+- **Per-part outline ops** are `createFromOperations` copies renamed `[outer] <instance>`, in cut order.
 - **The worker sets the bottom height of `[outer]` and `[inner]` ops** to stock bottom, offset 0, because its
   own top-face selection needs it; the sheet check still rejects any `[outer]` op whose lowest Z isn't the floor.
 - **Pauses stay text-inserted.** A Manual NC Stop is a bare M0 with the spindle running.

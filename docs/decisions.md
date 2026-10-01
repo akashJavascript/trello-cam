@@ -144,3 +144,13 @@ These are inputs for the templates in M1.2-M1.5, not decisions yet. One aluminum
   `[pocket]`) keep the template's heights. The sheet check stays as the backstop.
 - **Pauses stay as text inserted into the `.tap`.** A Manual NC Stop posts only `M0` (no retract, spindle stop,
   mist off or park), and the guard rejects it.
+
+## 2026-10-01: how the worker drives Arrange (from `pipeline_probe2` version 3)
+
+Quantity and multiple envelopes need the Manufacturing Extension, so the worker builds what it needs from the
+parts that work without it (details in `docs/fusion-api-status.md`):
+- one occurrence per physical copy (`addExistingComponent`), with `isGroundToParent` cleared;
+- one Arrange per sheet, moving the occurrences, partial arrange on; whatever didn't land goes to the next
+  sheet's Arrange, up to `max_sheets_per_group`;
+- `isDirectionFlipped` set per part so a pocket's open side faces up (Arrange otherwise lands plates upside
+  down).

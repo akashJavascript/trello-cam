@@ -7,9 +7,9 @@ _Last updated 2026-10-01 (branch `m1-offline`)._
 | Milestone | State |
 |---|---|
 | M0 scaffolding, config, `.env` | Done, on `main` |
-| M1.0 dump_params / api_probe / smoke test / probes | api_probe, dump_params, the smoke test (stopped at Arrange) and `pipeline_probe` have run; `pipeline_probe2` is next. Results: `docs/fusion-api-status.md` |
+| M1.0 dump_params / api_probe / smoke test / probes | Done: api_probe, dump_params, the smoke test (stopped at Arrange), `pipeline_probe` and three `pipeline_probe2` runs. Every call the through-cut pipeline needs has been seen working. Results: `docs/fusion-api-status.md` |
 | M1.1 pure core | Done and unit-tested |
-| M1.2-M1.7 Fusion adapters + pipeline | Not started; nearly every call it needs is now confirmed. Waits for `pipeline_probe2` (Arrange details) and the real templates |
+| M1.2-M1.7 Fusion adapters + pipeline | Next. Can be written now; running it for real needs the exported templates and a few test STEP plates |
 | M2 add-in hot-folder worker | Hot-folder logic done and tested (`autocam_core.hotfolder`); the add-in itself waits for M1.2 |
 | M3 service: Trello read + Onshape export + jobs | Done offline with fakes; **never run against real Trello or Onshape** |
 | M4 service: results back to Trello | Done offline with fakes and a fake Fusion worker |
@@ -41,7 +41,7 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
 ## What only you can do next
 
 1. ~~Enable CI~~: done. GitHub Actions runs pytest on Linux and Windows (Python 3.12) and the core on 3.14 (Fusion's Python).
-2. **Run `pipeline_probe2`** (`docs/manual-tests.md` → M1.0 step 5) and paste its output.
+2. ~~Run `pipeline_probe2`~~: done (three runs).
 3. **Export the four CAM templates** into `fusion/templates/` (rules in `fusion/templates/README.md`). Every
    bottom height must be **stock bottom, offset 0**: the team's usual "From contour" stops at the plate top when
    the automation selects the top face, and the sheet check now rejects that program. Jobs can't be built until
@@ -50,8 +50,7 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
 
 ## Not verified yet (don't rely on these until they are)
 
-- **Fusion scripts:** `fusion/tools/pipeline_probe2` hasn't run yet. The other probes have run; what they
-  confirmed is in `docs/fusion-api-status.md`.
+- **Fusion scripts:** all the probes have run; what they confirmed is in `docs/fusion-api-status.md`.
 - **Onshape:** HMAC signing, `/api/v10` paths and response field names.
 - **Trello adapter:** request shapes follow the REST docs. It has only been tested against a fake HTTP layer.
 - **Windows:** CI passes the whole offline suite on `windows-latest`. Fusion, the real Trello and Onshape calls, and the shop PC itself are still untested.

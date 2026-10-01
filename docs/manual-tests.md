@@ -93,9 +93,8 @@ top): the template's outline used bottom height "From contour", so it followed t
 
 First run (2026-10-01): answered move vs copy, quantity by extra occurrences, op renaming and op order.
 Second run: answered the bottom height, Manual NC and op reordering, and found that "pinned" means
-`isGroundToParent`. Version 3 (after `git pull`) is Arrange only: clearing ground-to-parent, the STEP import
-path, parts that don't fit, a second sheet, and which way up pocketed parts land. It doesn't ask for a
-template. It's the same script folder, so there's nothing new to add in Fusion.
+`isGroundToParent`. Version 3 (2026-10-01, `out\20261001-155657`): answered the rest of Arrange (clearing
+ground-to-parent, the STEP import path, parts that don't fit, a second sheet, which way up). Done.
 
 1. `git pull` on the Fusion PC (branch `m1-offline`).
 2. Add `C:\dev\frc-autocam\fusion\tools\pipeline_probe2` and run it. Pick the same smoke template when asked.
