@@ -40,8 +40,7 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
 
 ## What only you can do next
 
-1. **Enable CI.** The workflow is parked in `ci/` because the GitHub token can't push workflow files. See
-   `ci/README.md`; it takes two commands.
+1. ~~Enable CI~~: done. GitHub Actions runs pytest on Linux and Windows (Python 3.12) and the core on 3.9.
 2. **Fusion session for M1.0.** Follow `docs/manual-tests.md` → "M1.0". Running `api_probe` and
    `dump_params` writes their JSON into the repo, so there's nothing to send. Then run the Phase 1 smoke test
    and fill in its table.
