@@ -73,6 +73,22 @@ Results so far (2026-10-01, Fusion 2705.1.15, Python 3.14.0, fresh install):
 | Preview | `Viewport.saveAsImageFile` per sheet (top view, fit) | fx_preview | **works** | one image for all sheets |
 | Add-in | custom event fired from a background thread | autocam_addin | untested | none |
 
+## New in the M1.2 pipeline (`fusion/autocam_addin/autocam_worker/fx_*.py`), not seen working yet
+
+Each run lists the ones it used in `result.json` (`worker.untested_steps`) and the `autocam_run` message box.
+
+| Area | Call | Used by | Fallback |
+|---|---|---|---|
+| Design | `Design.findEntityByToken(occurrence.entityToken)` | fx_adapter | keep the object references |
+| Design | `addExistingComponent(component, occ.transform2)` for copies | fx_design | identity transform (probes used it) |
+| Arrange | `isDirectionFlipped` chosen from `upDirection` vs the face that must face up (probes showed each half) | fx_design | none |
+| Setup | `Setup.name = program name`; several part bodies as `models` | fx_cam | default names |
+| Selections | drill: `holeMode` + `holeFaces` (`CadObjectParameterValue.value = [faces]`) | fx_cam | none yet |
+| Selections | bore/bearing: `holeMode` + `circularFaces` | fx_cam | Drill op, bore-milling cycle |
+| Selections | inner: several faces in one contour selection; single loops via `createNewChainSelection` | fx_cam | whole faces only |
+| Post | `PostProcessInput.postProperties` (`NamedValues` of every property, `useMist` from the material) | fx_cam | NC program + `postParameters` (probe: works) |
+| Preview | `Viewport.camera` framed on one sheet (target, eye, `viewExtents`) | fx_design | fit view |
+
 ## What this changes in the pipeline (M1.2)
 
 - **Import:** one STEP per part (one occurrence each), then `qty - 1` more occurrences of its component with

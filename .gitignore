@@ -9,3 +9,4 @@ logs/
 .pytest_cache/
 *.egg-info/
 build/
+fusion/autocam_run/out/

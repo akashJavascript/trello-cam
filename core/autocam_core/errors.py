@@ -31,6 +31,7 @@ FEATURE_TOO_SMALL = "FEATURE_TOO_SMALL"
 NEEDS_MANUAL_CAM = "NEEDS_MANUAL_CAM"
 INSIDE_RADIUS_TOO_SMALL = "INSIDE_RADIUS_TOO_SMALL"
 SHORT_QTY = "SHORT_QTY"
+ARRANGE_FAILED = "ARRANGE_FAILED"          # Arrange put it somewhere it can't be cut (edge, upside down)
 
 # Part warnings (cut, but a reviewer should look)
 HOLE_CONTOURED = "HOLE_CONTOURED"
@@ -44,10 +45,15 @@ PAUSES_WRONG = "PAUSES_WRONG"
 TOOL_GUID_MISMATCH = "TOOL_GUID_MISMATCH"
 OP_ERROR = "OP_ERROR"
 POST_FAILED = "POST_FAILED"
+TEMPLATE_PROBLEM = "TEMPLATE_PROBLEM"
+
+# Sheet warnings
+OP_WARNING = "OP_WARNING"
 
 # Job problems
 CORE_VERSION_MISMATCH = "CORE_VERSION_MISMATCH"
 NOTHING_TO_NEST = "NOTHING_TO_NEST"
+JOB_INVALID = "JOB_INVALID"
 
 # Decision 13: the exact comment for a poly part that needs the (not yet configured) poly 1/8 in tool.
 POLY_EIGHTH_MISSING_MSG = "needs manual CAM: no poly feeds for the 1/8 in endmill"

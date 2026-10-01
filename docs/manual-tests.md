@@ -111,7 +111,45 @@ ground-to-parent, the STEP import path, parts that don't fit, a second sheet, wh
 
 ## M1.2 to M1.7: restructured pipeline in Fusion
 
-_Added per sub-milestone._ Already known checks:
+### First run of `autocam_run` (about 20 minutes)
+
+The whole Fusion side in one script: import, plate checks, nesting, CAM, posting, pauses and the checks the
+service repeats. Every Fusion call it makes that hasn't been seen working yet is listed at the end of its
+message box and in `result.json` (`worker.untested_steps`).
+
+**Prepare:**
+1. `git pull` on the Fusion PC.
+2. **The `alu_4mm` template**, saved as `C:\dev\frc-autocam\fusion\templates\alu_4mm.f3dhsm-template`:
+   - Start from the team's usual ops for 4 mm aluminum: a Drill op, a Bore op, a 2D Contour for cutouts and
+     a 2D Contour for the outline.
+   - Name them `[drill] ...`, `[bore] ...`, `[inner] ...` and `[outer] ...`.
+   - Every op uses `4mm 0 flute Aluminum` from the pinned library (`fusion/tools/5940_Tool_Library.tools`).
+   - Clearance height at least 2 in above the stock top; full retraction; the rest of
+     `fusion/templates/README.md`.
+   - Export the template to that file name.
+3. **2-3 test plates** in 1/8 in aluminum: plain through-cut plates with a few holes, no pockets. Export each
+   from Onshape's UI as STEP (not an API call), anywhere on the PC.
+
+**Run:**
+1. Add `C:\dev\frc-autocam\fusion\autocam_run` (Scripts and Add-Ins → "+") and run it.
+2. Answer **Yes** (pick STEP files), select the plates, enter `al6061`, then a quantity for each (e.g. `2,1,1`).
+3. Wait for the message box. The document stays open.
+
+**Check and record:**
+
+| # | Check | Result |
+|---|---|---|
+| 1 | The message box status and one line per sheet (copy its text) | |
+| 2 | In the design: each part sits inside its sheet's stock outline, none overlapping, none upside down | |
+| 3 | In Manufacture: one setup per sheet; ops `[drill]`/`[bore]`/`[inner]` and one `[outer] pNN-n` per part copy | |
+| 4 | Simulate one setup: stock is the full 24 x 48 sheet, origin at its bottom front-left corner, every part cut free | |
+| 5 | Open the `.tap` in `fusion\autocam_run\out\<job>-<time>\`: a pause block before each `[outer ...]` but the first | |
+| 6 | Any sheet "NOT OFFERED": its reason (also in `result.json` under `sheets[].errors`) | |
+
+**Send back:** the message box text (or a screenshot) and, if anything failed, the end of `worker.log` from
+the same folder.
+
+### Already known checks
 - [ ] A pocketed part posts without "rapid sideways below the stock top". If it doesn't, the template's linking
       isn't full retraction; see `fusion/templates/README.md`.
 - [ ] `result.json` reports each sheet's **nominal** stock thickness (e.g. 0.125), not the measured one. The

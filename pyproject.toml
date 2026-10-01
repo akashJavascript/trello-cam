@@ -25,5 +25,5 @@ where = ["core", "service"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["core", "service"]
+pythonpath = ["core", "service", "fusion/autocam_addin"]
 addopts = "-ra"

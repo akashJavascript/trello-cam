@@ -1,0 +1,10 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "script",
+	"author": "",
+	"description": {
+		"": "Run one auto-CAM job by hand: pick STEP files or a job.json; nests, CAMs, posts and checks every sheet. Leaves the document open."
+	},
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}

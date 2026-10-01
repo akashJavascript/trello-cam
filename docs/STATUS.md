@@ -9,7 +9,7 @@ _Last updated 2026-10-01 (branch `m1-offline`)._
 | M0 scaffolding, config, `.env` | Done, on `main` |
 | M1.0 dump_params / api_probe / smoke test / probes | Done: api_probe, dump_params, the smoke test (stopped at Arrange), `pipeline_probe` and three `pipeline_probe2` runs. Every call the through-cut pipeline needs has been seen working. Results: `docs/fusion-api-status.md` |
 | M1.1 pure core | Done and unit-tested |
-| M1.2-M1.7 Fusion adapters + pipeline | Next. Can be written now; running it for real needs the exported templates and a few test STEP plates |
+| M1.2-M1.7 Fusion adapters + pipeline | Written. The job flow is tested offline (fake Fusion; output checked by the service's own checks); the Fusion adapter is **untested in Fusion**. First run: `docs/manual-tests.md` → "First run of autocam_run". Fusion Team save (M1.7) not done |
 | M2 add-in hot-folder worker | Hot-folder logic done and tested (`autocam_core.hotfolder`); the add-in itself waits for M1.2 |
 | M3 service: Trello read + Onshape export + jobs | Done offline with fakes; **never run against real Trello or Onshape** |
 | M4 service: results back to Trello | Done offline with fakes and a fake Fusion worker |

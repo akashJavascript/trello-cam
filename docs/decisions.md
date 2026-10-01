@@ -154,3 +154,25 @@ parts that work without it (details in `docs/fusion-api-status.md`):
   sheet's Arrange, up to `max_sheets_per_group`;
 - `isDirectionFlipped` set per part so a pocket's open side faces up (Arrange otherwise lands plates upside
   down).
+
+## 2026-10-01: M1.2 pipeline structure
+
+- **Pure flow, thin Fusion adapter.** `fusion/autocam_addin/autocam_worker/pipeline.py` is the whole job flow
+  in standard-library Python. It talks to Fusion only through `adapter.py`, so it runs offline against a fake
+  (`tests/fusion/fakeadapter.py`), and its output passes through the service's own ingest checks in the tests.
+  The `fx_*.py` modules are the real adapter (untested in Fusion). The package is `autocam_worker` rather than the
+  plan's `worker`, because every add-in shares one Python process and `worker` could collide.
+- **The pipeline does M1.2-M1.6 in one pass**, because the core already had the logic:
+  - per-part tool need and one tool per sheet;
+  - feature plans (drill, bore, bearing, inner);
+  - per-part outline ops in cut order;
+  - text-inserted pauses;
+  - the sheet check.
+  Fusion Team saving (M1.7) isn't done; the `.f3d` is exported locally.
+- **Arrange envelope = nest region shrunk by `part_spacing_in`.** Arrange packs parts against the envelope
+  edge; the outline's tool path (tool radius + lead-in, about 0.2 in) would otherwise reach into the clamp
+  strips, and the guard rejects the sheet. The tests catch it if the inset is removed.
+- **Job-level problems raise, part problems are reported.** A bad job (core version, pause mode, post sha256,
+  missing template) raises `JobFailed` before Fusion is touched. Everything else ends in a `result.json`.
+- **`autocam_run` can build a job from STEP files** with the service's job builder (standard library only).
+  That is the one place Fusion-side code imports `autocam_service`, and only for manual runs.

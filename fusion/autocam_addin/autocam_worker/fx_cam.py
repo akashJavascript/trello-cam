@@ -1,0 +1,172 @@
+"""UNTESTED IN FUSION. Manufacture-side calls: setup, template, selections, outline copies, toolpaths, post.
+
+What pipeline_probe / pipeline_probe2 confirmed is used as confirmed; the rest is listed in UNCONFIRMED and
+reported in result.json (worker.untested_steps) whenever a run uses it.
+"""
+
+import json
+import os
+
+import adsk.cam
+import adsk.core
+
+from .adapter import AdapterError, OpState, TemplateOp
+from .fx_util import call, collection, items, param, set_expr, to_cm, wait_for
+
+STOCK_BOTTOM = "'from stock bottom'"
+
+UNCONFIRMED = {
+    "setup_name": "Setup.name = program name",
+    "multi_model_setup": "setup with several part bodies as models",
+    "drill_faces": "drill op: holeMode + holeFaces selection",
+    "bore_faces": "bore op: holeMode + circularFaces selection",
+    "inner_chains": "inner contour: chain selection of single loops",
+    "post_properties": "PostProcessInput.postProperties",
+    "preview_camera": "Viewport camera framed on one sheet",
+    "arrange_flip": "ArrangeComponent.isDirectionFlipped chosen from upDirection",
+}
+
+
+def cam_product(app, doc):
+    app.userInterface.workspaces.itemById("CAMEnvironment").activate()
+    cam = adsk.cam.CAM.cast(doc.products.itemByProductType("CAMProductType"))
+    if cam is None:
+        raise AdapterError("no CAM product in the document")
+    return cam
+
+
+def make_setup(cam, name: str, models, stock_body, setup_params) -> object:
+    si = cam.setups.createInput(adsk.cam.OperationTypes.MillingOperation)
+    si.models = list(models)
+    setup = call("setups.add", cam.setups.add, si)
+    setup.name = name
+    setup.stockMode = adsk.cam.SetupStockModes.SolidStock
+    call("Setup.stockSolids", setattr, setup, "stockSolids", collection([stock_body]))
+    set_expr(setup, "wcs_origin_mode", setup_params["wcs_origin_mode"])
+    set_expr(setup, "wcs_origin_boxPoint", setup_params["wcs_origin_boxPoint"])
+    return setup
+
+
+def ops(setup):
+    return items(setup.allOperations)
+
+
+def op_by_name(setup, name: str):
+    found = [o for o in ops(setup) if o.name == name]
+    if len(found) != 1:
+        raise AdapterError(f"{setup.name}: {len(found)} ops named {name!r}")
+    return found[0]
+
+
+def tool_guid(op):
+    try:
+        return json.loads(op.tool.toJson()).get("guid")
+    except Exception:  # noqa: BLE001 - reported as a GUID mismatch
+        return None
+
+
+def apply_template(setup, path: str):
+    template = call("CAMTemplate.createFromFile", adsk.cam.CAMTemplate.createFromFile, path)
+    t_in = adsk.cam.CreateFromCAMTemplateInput.create()
+    t_in.camTemplate = template
+    call("createFromCAMTemplate2", setup.createFromCAMTemplate2, t_in)
+    return [TemplateOp(o.name, tool_guid(o)) for o in ops(setup)]
+
+
+def cut_to_stock_bottom(op) -> None:
+    set_expr(op, "bottomHeight_mode", STOCK_BOTTOM)
+    set_expr(op, "bottomHeight_offset", "0 in")
+
+
+def _contours(op, name: str):
+    return adsk.cam.CadContours2dParameterValue.cast(param(op, name).value)
+
+
+def select_face_loops(op, faces, loop_type, contour_param: str) -> None:
+    value = _contours(op, contour_param)
+    sels = value.getCurveSelections()
+    sels.clear()
+    for face in faces:
+        fc = sels.createNewFaceContourSelection()
+        fc.loopType = loop_type
+        fc.isSelectingSamePlaneFaces = False
+        fc.inputGeometry = [face]
+    value.applyCurveSelections(sels)
+
+
+def select_loops(op, whole_faces, single_loops, contour_param: str) -> None:
+    """whole_faces: faces whose inner loops are all cut; single_loops: BRepLoops cut on their own."""
+    value = _contours(op, contour_param)
+    sels = value.getCurveSelections()
+    sels.clear()
+    for face in whole_faces:
+        fc = sels.createNewFaceContourSelection()
+        fc.loopType = adsk.cam.LoopTypes.OnlyInsideLoops
+        fc.isSelectingSamePlaneFaces = False
+        fc.inputGeometry = [face]
+    for loop in single_loops:
+        chain = sels.createNewChainSelection()
+        chain.inputGeometry = [loop.edges.item(0)]
+    value.applyCurveSelections(sels)
+
+
+def select_hole_faces(op, faces, names) -> None:
+    set_expr(op, names["hole_mode"], names["hole_mode_value"])
+    value = adsk.cam.CadObjectParameterValue.cast(param(op, names["faces"]).value)
+    call(f"{op.name}: {names['faces']}", setattr, value, "value", list(faces))
+
+
+def outline_copies(setup, template_op, outlines, contour_param: str) -> None:
+    """outlines: [(op name, top face)] in cut order. Copies of template_op, appended in that order."""
+    cut_to_stock_bottom(template_op)
+    tpl = call("CAMTemplate.createFromOperations", adsk.cam.CAMTemplate.createFromOperations, [template_op])
+    for name, face in outlines:
+        t_in = adsk.cam.CreateFromCAMTemplateInput.create()
+        t_in.camTemplate = tpl
+        call("createFromCAMTemplate2 (outline copy)", setup.createFromCAMTemplate2, t_in)
+        op = ops(setup)[-1]
+        op.name = name
+        if op.name != name:
+            raise AdapterError(f"renaming the outline copy to {name!r} didn't stick")
+        select_face_loops(op, [face], adsk.cam.LoopTypes.OnlyOutsideLoops, contour_param)
+    template_op.deleteMe()
+
+
+def generate(cam, setups, timeout_s: float):
+    future = call("generateAllToolpaths", cam.generateAllToolpaths, False)
+    wait_for(lambda: future.isGenerationCompleted, timeout_s, "toolpath generation")
+    out = {}
+    for name, setup in setups.items():
+        out[name] = [OpState(o.name, bool(o.hasToolpath), (o.error or "error") if o.hasError else None,
+                             (o.warning or "warning") if o.hasWarning else None) for o in ops(setup)]
+    return out
+
+
+def _value_input(v):
+    if isinstance(v, bool):
+        return adsk.core.ValueInput.createByBoolean(v)
+    if isinstance(v, (int, float)):
+        return adsk.core.ValueInput.createByReal(float(v))
+    return adsk.core.ValueInput.createByString(str(v))
+
+
+def post(cam, setup, program_name: str, folder: str, post_path: str, properties) -> str:
+    if os.listdir(folder):
+        raise AdapterError(f"post folder {folder} isn't empty")
+    ppi = adsk.cam.PostProcessInput.create(program_name, post_path, folder, adsk.cam.PostOutputUnitOptions.InchesOutput)
+    ppi.isOpenInEditor = False
+    named = adsk.core.NamedValues.create()
+    for key, value in properties.items():
+        named.add(key, _value_input(value))
+    call("PostProcessInput.postProperties", setattr, ppi, "postProperties", named)
+    if not call("CAM.postProcess", cam.postProcess, setup, ppi):
+        raise AdapterError("postProcess returned False")
+    wait_for(lambda: bool(os.listdir(folder)), 60, "the posted program")
+    files = os.listdir(folder)
+    if len(files) != 1:
+        raise AdapterError(f"post wrote {len(files)} files: {files}")
+    return os.path.join(folder, files[0])
+
+
+def machining_time(cam, setup, rapid_in_per_min: float = 400.0) -> float:
+    return call("getMachiningTime", cam.getMachiningTime, setup, 100, to_cm(rapid_in_per_min), 0).machiningTime
