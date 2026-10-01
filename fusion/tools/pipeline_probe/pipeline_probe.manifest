@@ -1,0 +1,10 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "script",
+	"author": "",
+	"description": {
+		"": "Try each Fusion API call the auto-CAM pipeline needs on scratch documents and record what works. Saves nothing."
+	},
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}

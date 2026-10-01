@@ -8,12 +8,14 @@ from the API is still untested).
 First results (2026-10-01, Fusion 2705.1.15, Python 3.14.0, fresh install):
 - `api_probe` found 35 of 37 classes. Which 2 are missing is still to be read from its JSON.
 - `dump_params` ran on a manual job: 1 setup, 4 ops (Drill, Bore, two 2D Contours).
+- Phase 1 smoke test: STEP import and plate checks worked; it stopped at Arrange (below), so nothing after it ran.
+  `fusion/tools/pipeline_probe` tests the remaining calls one step at a time.
 
 | Area | Call / parameter | Used by | Status | Fallback |
 |---|---|---|---|---|
-| Import | `importManager.createSTEPImportOptions` + `importToTarget` | fx_import | untested | none |
-| Geometry | `measureManager.getOrientedBoundingBox`, `BRepBody.pointContainment` | fx_geometry | untested | none |
-| Arrange | `arrangeFeatures.createInput(Arrange2DTrueShapeSolverType)`, `setPlaneEnvelope` | fx_arrange | untested | none |
+| Import | `importManager.createSTEPImportOptions` + `importToTarget` | fx_import | **works** (Phase 1 smoke test) | none |
+| Geometry | `measureManager.getOrientedBoundingBox`, `BRepBody.pointContainment` | fx_geometry | **works** (Phase 1 plate checks passed) | none |
+| Arrange | `arrangeFeatures.createInput(Arrange2DTrueShapeSolverType)`, `setPlaneEnvelope` | fx_arrange | **fails as Phase 1 calls it:** `arrangeComponents.add(face)` raised `RuntimeError: 2 : InternalValidationError : arrange2DDefinition` (after setting definition options, before the envelope). `pipeline_probe` tries variants | add occurrences instead of faces; envelope first; no definition options |
 | Arrange | `ArrangeComponent.quantity`, `isCreateCopies`, `isPartialArrangeAllowed` | fx_arrange | untested | one envelope per Arrange |
 | Arrange | `frameWidth` | — | not used | envelope = exact nest region |
 | Arrange | `resultEnvelopes` / `ArrangePlaneResultEnvelope.boundingBox` | fx_arrange | untested | one envelope per Arrange |
