@@ -12,7 +12,12 @@ Results so far (2026-10-01, Fusion 2705.1.15, Python 3.14.0, fresh install):
 - `pipeline_probe` ran every remaining call on scratch documents (results below).
 - `pipeline_probe2` first run: answered move vs copy, quantity by extra occurrences, op renaming and op order.
   Its overflow and two-sheet tests didn't run (every part was "pinned"), and its bottom-height and Manual NC
-  steps had a probe bug (choice values already carry their quotes). The second version re-tests those.
+  steps had a probe bug (choice values already carry their quotes).
+- `pipeline_probe2` second run: settled bottom height, Manual NC and op reordering, and showed that "pinned"
+  is `isGroundToParent`, not `isGrounded`. Version 3 (not run yet) clears it and re-tests overflow, a second
+  sheet, the STEP import path and which way up pocketed parts land.
+- The three programs it posted are test fixtures now (`tests/fixtures/taps/fusion_*.tap`): the guard, the depth
+  check and pause insertion all pass on real post output.
 
 | Area | Call / parameter | Used by | Status | Fallback |
 |---|---|---|---|---|
@@ -23,12 +28,15 @@ Results so far (2026-10-01, Fusion 2705.1.15, Python 3.14.0, fresh install):
 | Arrange | `definition.globalRotation`, `isGlobalDirectionFaceUp`, `isPartInPartAllowed`, `isCreateCopies` | fx_arrange | **works** (all settable) | none |
 | Arrange | `ArrangeComponent.quantity`, `envelope.quantity`, `envelope.envelopeSpacing` | — | **fails**: `RuntimeError: 3 : Cannot set ... for non-extension environment` (needs the Manufacturing Extension) | one occurrence per copy; one Arrange per sheet |
 | Arrange | quantity by extra occurrences (`occurrences.addExistingComponent`) | fx_arrange | **works**: 2 occurrences of one component were both placed, no overlap | none |
-| Arrange | `isCreateCopies = True` | — | **works but not used**: places new occurrences (`plate_a:2`) and leaves the originals where they were | delete the originals (`pipeline_probe2` A12) |
-| Arrange | `isCreateCopies = False` (move the occurrences) | fx_arrange | **works** for most occurrences, but every occurrence of the **first component created** fails: `RuntimeError: 3 : Pinned component cannot be arranged`. Probably grounded; `pipeline_probe2` A11 tries `isGrounded = False` | copies + delete originals |
+| Arrange | `isCreateCopies = True`, then `deleteMe` the originals | fx_arrange (fallback) | **works**: new occurrences (`plate_a:2`) are placed, the originals stay put; deleting the originals leaves the copies in place and the feature healthy | none |
+| Arrange | `isCreateCopies = False` (move the occurrences) | fx_arrange | **works** for most occurrences, but every occurrence of the **first component created** fails: `RuntimeError: 3 : Pinned component cannot be arranged`. Those occurrences have `isGroundToParent = True` (`isGrounded` is False). Clearing it: `pipeline_probe2` v3 A16 | copies + delete originals |
 | Arrange | envelope `originXOffset`, `originYOffset`, `objectSpacing` | fx_arrange | **works**: parts packed from the envelope corner (10, 2) with 0.25 in gaps | none |
-| Arrange | which way up parts land | fx_arrange | **parts get turned upside down** (a 180° turn about a horizontal axis) even with `isGlobalDirectionFaceUp = True`. Harmless for through-cut plates; wrong for pocketed ones. `pipeline_probe2` A15 tests face-up off and `ArrangeComponent.isDirectionFlipped` | re-check the pocket side after Arrange (plan) |
+| Arrange | which way up parts land | fx_arrange | **parts get turned upside down** (local Z ends up pointing down) even with `isGlobalDirectionFaceUp = True`, moved or copied. Harmless for through-cut plates; wrong for pocketed ones. `ArrangeComponent.upDirection` and `zeroDirection` are `Vector3D`s; `isDirectionFlipped` defaults False. `pipeline_probe2` v3 A15 tries face-up off, flipped, and `upDirection` ±Z | re-check the pocket side after Arrange (plan) |
 | Arrange | side effects | fx_arrange | Arrange adds two empty components, `Arrange1` and `Envelope1(Qty: 1)`. The worker must keep its own list of part occurrences | none |
-| Arrange | parts that don't fit: `isPartialArrangeAllowed` (on the **envelope** input), `ArrangeFeature.unusedComponents`, `ArrangeResultEnvelope.occurrences` | fx_arrange | untested (all exist; `pipeline_probe2` A13/A14) | one envelope per Arrange, leftovers carried forward |
+| Arrange | `ArrangeResultEnvelope.occurrences` → `ArrangeOccurrenceResult.occurrence` | fx_arrange | **works**: names what landed in the envelope | position check (`layout`) |
+| Arrange | `ArrangeFeature.arrangeStatistics` | fx_arrange | **works**: a JSON string with "Components Arranged", "Components Unarranged", "Envelopes Used", areas | none |
+| Arrange | `ArrangeFeature.unusedComponents` | — | **fails** after `add`: `RuntimeError: 3 : Didn't roll editing feature back` (v3 A13 tries rolling the timeline back) | our list minus `resultEnvelopes` occurrences |
+| Arrange | parts that don't fit: `isPartialArrangeAllowed` (on the **envelope** input, default False) | fx_arrange | settable; what it does untested (v3 A13/A14) | one envelope per Arrange, leftovers carried forward |
 | Arrange | `resultEnvelopes` / `.boundingBox` | — | **not used**: reported `[0, 0, 20, 12]` in although the parts landed at x 10-12 (the offset isn't in it) | sheet origins come from our own envelope offsets |
 | Arrange | other options seen (`ArrangeComponent.priority`, `rotation`, `upDirection`, `isFiller`; definition `grainDirection`) | — | exist, unused | none |
 | Arrange | `frameWidth` | — | not used | envelope = exact nest region |
@@ -39,18 +47,18 @@ Results so far (2026-10-01, Fusion 2705.1.15, Python 3.14.0, fresh install):
 | Template | `CAMTemplate.createFromFile`, `CreateFromCAMTemplateInput` + `setup.createFromCAMTemplate2` | fx_template | **works** | none |
 | Template | `CAMTemplate.createFromOperations([op])` then apply (per-part `[outer]` copies) | fx_template | **works**: adds one op at the end of the setup | re-apply template, delete extras |
 | Ops | `Operation.name = '[outer] p01-1'` | fx_template | **works**: posts as `[outer p01-1]`, exactly `names.outer_comment_line` | none |
-| Ops | order | fx_template | new ops (template copies, Manual NC) are **appended** in creation order. `moveBefore` / `moveAfter` / `duplicate` exist (`moveBefore` is `pipeline_probe2` B6) | create in cut order |
+| Ops | order | fx_template | new ops (template copies, Manual NC) are **appended** in creation order; `Operation.moveBefore(op)` **works** | create in cut order |
 | Template | `Tool.toJson` → `guid` | fx_template | **works** (`e5dd75b2-…`, the 4 mm alu tool in config, from the smoke template) | not needed |
 | Ops | `hasToolpath` / `hasError` / `hasWarning` / `isSuppressed` | pipeline | **works** (all readable; `isSuppressed` settable) | none |
 | Ops | `Operation.deleteMe` | fx_template | **works** | `isSuppressed` |
-| Ops | `bottomHeight_mode`, `bottomHeight_offset` | fx_template | name and values confirmed: the choice for stock bottom is `'from stock bottom'` (`getChoices` returns values already quoted). The team's manual contours use `'from contour'`, which follows the selected edges: with the automation's top-face selection the cut stops at the plate top (probe program min Z 0.125). Setting it from the API is `pipeline_probe2` B5 | templates use stock bottom (README); `sheetcheck` rejects any outline that doesn't reach Z0 |
+| Ops | `bottomHeight_mode = 'from stock bottom'`, `bottomHeight_offset = '0 in'` | fx_template | **works** from the API: the outline then cuts to Z0. (`getChoices` returns values already quoted.) The team's manual contours use `'from contour'`, which follows the selected edges: with the automation's top-face selection the cut stops at the plate top (Z 0.125) | `sheetcheck` rejects any outline that doesn't reach Z0 |
 | Ops | heights in the smoke template | — | clearance = retract + 0.4 in = Z0.725 on a 0.125 in plate (0.6 in above the stock). The README asks for 2.0 in above the stock top (clamps); the guard's clamp check rejects low rapids over the clamp zones | none |
 | Selections | `adsk.cam.LoopTypes.OnlyInsideLoops` / `OnlyOutsideLoops` | fx_selections | **works** | none |
 | Selections | 2D Contour `contours` → `CadContours2dParameterValue`, `createNewFaceContourSelection`, `inputGeometry = [face]`, `applyCurveSelections` | fx_selections | **works** (toolpaths generated) | none |
 | Selections | drill `holeMode = 'selection-faces'`, `holeFaces` | fx_selections | name confirmed | none |
 | Selections | bore `holeMode = 'selection-faces'`, `circularFaces` | fx_selections | name confirmed | Drill op, bore-milling cycle |
 | Selections | pocket floor selection (the team uses 2D Adaptive) | fx_selections | pending: dump of a 2D Adaptive job | names from dump |
-| Pauses | Manual NC: `setup.operations.createInput('manual')` + `add` | fx_manualnc | **works** (creates "Manual NC1"; `'manual_nc'` and `'manualnc'` are unknown strategies). Parameter `manualType`, values `'comment'`, `'stop'`, `'optional-stop'`, `'dwell'`, ... plus `comment`, `action`, `message`, `dwell`. A Manual NC left as an empty comment posts nothing. Making it a Stop and a pass-through: `pipeline_probe2` B6 | `.tap` text insertion (default) |
+| Pauses | Manual NC: `setup.operations.createInput('manual')` + `add` | fx_manualnc | **works** (creates "Manual NC1"; `'manual_nc'` and `'manualnc'` are unknown strategies). Parameter `manualType`, values `'comment'`, `'stop'`, `'optional-stop'`, `'dwell'`, ... plus `comment`, `action`, `message`, `dwell`. A Manual NC left as an empty comment posts nothing. **Stop** (`'stop'`) posts a bare `M0` after the outline's last move, then the post restarts the spindle (`S18000`, `M3`, `G4 X4.`) at the next op: no retract, spindle stop, mist off or park first, and the guard rejects it ("M0 stop with the spindle running"). **Pass-through** (`'pass-through'`) writes its `message` parameter verbatim as its own line (moved to the front, it landed before the first `G53 Z`) | `.tap` text insertion (default, confirmed as the right choice) |
 | Toolpaths | `generateAllToolpaths(False)`, `GenerateToolpathFuture.isGenerationCompleted` | pipeline | **works** (0.8 s for the probe plate) | none |
 | Post | `PostProcessInput.create(name, <pinned .cps>, folder, InchesOutput)` + `CAM.postProcess(setup, input)` | fx_post | **works** (the preferred method: the pinned file, no library lookup) | library post + sha256 check |
 | Post | post library lookup by description | fx_post | **works** in the local library (`user://shopsabre_automatic_mist.cps`); the cloud location raises `RuntimeError: 3 : Given URL does not point to an existing folder` on this install | not needed with post by path |
@@ -74,8 +82,9 @@ Results so far (2026-10-01, Fusion 2705.1.15, Python 3.14.0, fresh install):
   envelope offset along X, and the parts that don't fit go to the next sheet's Arrange (depends on A9/A10).
 - **Sheet origins come from our own offsets**, not from `resultEnvelopes`.
 - **Per-part outline ops** come from `createFromOperations` copies, renamed to `[outer] <instance>`.
-- **Through cuts are checked twice.** The template rule says stock bottom, offset 0, and the sheet check now
-  rejects any `[outer]` op whose lowest Z isn't the floor.
+- **The worker sets the bottom height of `[outer]` and `[inner]` ops** to stock bottom, offset 0, because its
+  own top-face selection needs it; the sheet check still rejects any `[outer]` op whose lowest Z isn't the floor.
+- **Pauses stay text-inserted.** A Manual NC Stop is a bare M0 with the spindle running.
 
 ## Tabs (M6), names confirmed
 

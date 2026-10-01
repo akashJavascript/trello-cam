@@ -3,7 +3,7 @@
 	"type": "script",
 	"author": "",
 	"description": {
-		"": "Follow-up probe: Arrange grounding, overflow, second sheet, flipping; bottom height and Manual NC from the API. Scratch documents only; saves nothing."
+		"": "Follow-up probe: Arrange ground-to-parent, STEP import path, overflow, second sheet, pocket side up. Scratch documents only; saves nothing."
 	},
 	"supportedOS": "windows|mac",
 	"editEnabled": true

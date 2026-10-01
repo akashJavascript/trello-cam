@@ -135,3 +135,12 @@ These are inputs for the templates in M1.2-M1.5, not decisions yet. One aluminum
 - **Arrange: occurrences, one Arrange per sheet, our own offsets.** Faces can't be added; quantity and
   multiple envelopes need the Manufacturing Extension; `resultEnvelopes` doesn't include the offset. Details and
   the open questions are in `docs/fusion-api-status.md`.
+
+## 2026-10-01: from the second `pipeline_probe2` run
+
+- **The worker sets the bottom height of `[outer]` and `[inner]` ops to stock bottom, offset 0** (default; say if
+  wrong). The automation selects each part's top face, and with the team's usual "From contour" that cuts
+  nothing (Z 0.125 on a 0.125 in plate). Setting it from the API works. Other ops (`[drill]`, `[bore]`,
+  `[pocket]`) keep the template's heights. The sheet check stays as the backstop.
+- **Pauses stay as text inserted into the `.tap`.** A Manual NC Stop posts only `M0` (no retract, spindle stop,
+  mist off or park), and the guard rejects it.
