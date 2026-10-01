@@ -167,3 +167,63 @@ def test_cards_the_service_did_not_make_are_left_alone(tmp_path):
     h.tracker.cards["manual"] = h.tracker.cards["ctl"].__class__("manual", "hand-made job", "", "ready_to_cut", "u")
     h.runner.tick()
     assert h.list_of("manual") == "ready_to_cut"
+
+
+# ---- second review pass
+
+def test_wiped_state_never_reuses_a_queued_run_id(tmp_path):
+    import shutil
+    h = Harness(tmp_path)
+    h.runner.tick()
+    run_fake_worker(h.queue)
+    h.runner.tick()
+    shutil.rmtree(h.cfg.paths.state / "runs")
+    shutil.rmtree(h.cfg.paths.state / "jobs")
+    h.tracker.move("ca", "ready_for_cam")
+    h.tracker.move("ctl", "run_nest")
+    before = len(h.sheet_cards())
+    h.runner.tick()
+    assert h.store.run_ids() == ["r002"]
+    assert h.queue.pending() == ["r002-al6061"]
+    h.runner.tick()
+    assert len(h.sheet_cards()) == before        # r001's old output was not re-published
+
+
+class DeletedControlCard(FakeTracker):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.deleted = False
+
+    def _comment(self, card_id, text):
+        if card_id == "ctl" and self.deleted:
+            raise ConnectionError("404 card not found")
+        super()._comment(card_id, text)
+
+
+def test_a_broken_control_card_cannot_keep_a_run_active_forever(tmp_path):
+    h = Harness(tmp_path)
+    use_tracker(h, DeletedControlCard(cards()))
+    h.runner.tick()
+    h.tracker.deleted = True
+    run_fake_worker(h.queue)
+    for _ in range(3):
+        try:
+            h.runner.tick()
+        except ConnectionError:
+            pass
+    assert h.store.active() is None                # gave up on the summary comment after 3 tries
+    assert len(h.sheet_cards()) == 3 and h.list_of("ca") == "nested"
+    assert any("gave up on summary" in n for n in h.store.load("r001").notes)
+
+
+def test_zero_job_run_retries_its_control_card_comment(tmp_path):
+    only_bad = [c for c in cards() if c.id in ("ctl", "cc")]
+    h = Harness(tmp_path, card_list=only_bad)
+    use_tracker(h, FailingOnce(only_bad))
+    with pytest.raises(ConnectionError):
+        h.runner.tick()
+    h.runner.tick()
+    assert h.store.run_ids() == ["r001"] and h.store.active() is None
+    assert h.list_of("ctl") == "control" and h.list_of("cc") == "needs_fixing"
+    assert [t for t in h.tracker.comments_on("ctl") if t.startswith("Run r001 started")]
+    assert not any("Nothing in Ready for CAM" in t for t in h.tracker.comments_on("ctl"))

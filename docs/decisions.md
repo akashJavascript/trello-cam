@@ -50,3 +50,33 @@ Decisions made after `docs/BRIEF.md`, newest last. Answers to the brief's open q
 - **Onshape API version and auth.** Requests use `/api/v10` and HMAC request signing. The response field
   names (`partId`, `bodyType`, `material.displayName`, `requestState`, `resultExternalDataIds`) follow the
   docs and still need confirming on the first supervised run (M3).
+
+## 2026-10-01: rules added after the independent safety review
+
+- **Bytes.** A program must be printable ASCII with one consistent line ending (CRLF or LF). A lone CR, tab or
+  other control byte fails, because the controller might split lines differently from the guard.
+- **Fixed G/M sets.** The guard only accepts G0-4, G20, G53, G73, G80-83, G90 and M0, M3, M5, M11, M12, whatever
+  config says. Config can narrow this, never widen it.
+- **No sideways rapid below the stock top.** A `G0` that moves in X/Y below the stock top fails, and so does
+  drilling travel between holes below it. Vertical rapids below the top (e.g. re-entering a pocket) are
+  allowed. **Watch for this in M1.2:** if Fusion's real output trips it on a good template, we'll look at the
+  actual pattern before loosening it.
+- **The service re-derives the cut plan.**
+  - The sheet thickness must be one of the job material's stock thicknesses.
+  - The tool must be one of the job's tools.
+  - The program's `[outer ...]` ops must be exactly the planned order, covering every placed copy.
+  - Card pause counts come from the service's own check.
+- **A run is saved before it does anything.** A crash or Trello failure mid-start resumes the same run; it
+  never starts a new one and never re-exports.
+- **Dry runs are separate.** They keep their own state folder (`state/dryrun/`) and `d001`-style run ids.
+- **What can sit in Ready to cut.**
+  - Rejected sheet cards are always moved out.
+  - A sheet card the service made must have its full review checklist ticked.
+  - Cards the service didn't make are left alone.
+- **Second review pass** (verifying the fixes) found and fixed three more:
+  - **Run ids:** a new run never reuses a run id the hot folder already holds, even if `state/` was wiped.
+    A fresh run's job ids must be new, or the submit fails loudly.
+  - **Stuck writes:** a Trello write that keeps failing (e.g. a deleted card) is given up after 3 ticks and
+    noted, so it can't keep a run active forever.
+  - **Zero-job runs:** such a run is only marked done after its control-card comment and move land.
+- **Templates use full retraction.** The worker reports nominal stock thickness in `result.json`.

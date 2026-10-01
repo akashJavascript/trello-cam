@@ -40,12 +40,15 @@ from .onshape.client import BudgetExceeded, QuotaExhausted, RateLimited
 from .onshape.export import Exporter, ExportError, TryAgainLater
 from .onshape.ledger import Ledger, utc_now
 from .results import IngestedJob, ingest
-from .run_state import COLLECTING, FAILED, PUBLISHED, QUEUED, STARTING, JobState, RunState, RunStore, once
+from .run_state import (
+    COLLECTING, FAILED, GAVE_UP, PUBLISHED, QUEUED, STARTING, JobState, RunState, RunStore, once,
+)
 from .tracker.base import Card, Tracker
 from .tracker.dryrun import DryRunTracker
 
 log = logging.getLogger("autocam.runner")
 STOPPING = (BudgetExceeded, QuotaExhausted, RateLimited)
+WRITE_ATTEMPTS = 3   # a Trello write that fails on this many ticks is given up (logged), so no run is stuck forever
 
 
 def _iso(dt: datetime) -> str:
@@ -138,7 +141,7 @@ class Runner:
             self.t.comment(trigger.id, "Nothing in Ready for CAM; no run started.")
             self.t.move(trigger.id, self.targets["control_return"])
             return None
-        state = RunState(run_id=store.next_run_id(), started_utc=_iso(self.s.clock()), trigger_card=trigger.id,
+        state = RunState(run_id=self._new_run_id(), started_utc=_iso(self.s.clock()), trigger_card=trigger.id,
                          dry_run=self.dry_run, phase=STARTING)
         store.save(state)   # reserve the run before any Onshape call or Trello write
         run_id = state.run_id
@@ -169,7 +172,8 @@ class Runner:
             return None
         if decision.action == WARN:
             once(store, state, "start:warn", lambda: self.t.comment(
-                cfg.trello.cards.get("system") or trigger.id, f"Onshape budget warning: {decision.reason}."))
+                cfg.trello.cards.get("system") or trigger.id, f"Onshape budget warning: {decision.reason}."),
+                WRITE_ATTEMPTS)
 
         ready: List[ReadyPart] = []
         for req in requests:
@@ -209,21 +213,32 @@ class Runner:
             for _, p in batch.parts:
                 state.cards[p.request.card.id] = {"name": p.request.name, "url": p.request.card.url}
             store.save(state)                                     # recorded before it's submitted
-            self.s.queue.submit(job.job_id, job_text, resume=True)
+            self.s.queue.submit(job.job_id, job_text)             # a fresh run never reuses a queued job id
             summary["queued"][job.job_id] = len(batch.parts)
 
         self._end_start(state, summary)
         log.info("run %s started: %s", run_id, summary["queued"])
         return state if state.jobs else None
 
+    def _new_run_id(self) -> str:
+        """Next run id that neither the run store nor the hot folder has seen (state/ may have been wiped)."""
+        store = self.s.store
+        used = {job_id.split("-", 1)[0] for job_id in self.s.queue.job_ids()}
+        n = int(store.next_run_id()[len(store.prefix):])
+        while f"{store.prefix}{n:03d}" in used:
+            n += 1
+        return f"{store.prefix}{n:03d}"
+
     def _end_start(self, state: RunState, summary: Dict, refused: bool = False) -> None:
         if not refused:
             state.notes.insert(0, text.run_started_comment(state.run_id, summary["queued"], summary["rejected"],
                                                            summary["untouched"], summary["stop_reason"]))
         state.phase = COLLECTING
-        state.done = not state.jobs
         self.s.store.save(state)
-        self.finish_start(state)
+        self.finish_start(state)          # if this fails, the next tick retries it (the run is still active)
+        if not state.jobs:
+            state.done = True
+            self.s.store.save(state)
 
     def resume_start(self, state: RunState) -> None:
         """The service died while starting this run: keep the jobs it had recorded, start nothing new."""
@@ -234,14 +249,15 @@ class Runner:
         state.notes.insert(0, f"Run {state.run_id} was interrupted while starting; continuing with the "
                               f"{len(state.jobs)} job(s) it had queued. Cards it hadn't reached stay in Ready for CAM.")
         state.phase = COLLECTING
-        state.done = not state.jobs
         self.s.store.save(state)
 
     def finish_start(self, state: RunState) -> None:
         """Comment on and return the control card (each at most once per run)."""
         store = self.s.store
-        once(store, state, "start:comment", lambda: self.t.comment(state.trigger_card, "\n".join(state.notes)))
-        once(store, state, "start:move", lambda: self.t.move(state.trigger_card, self.targets["control_return"]))
+        once(store, state, "start:comment", lambda: self.t.comment(state.trigger_card, "\n".join(state.notes)),
+             WRITE_ATTEMPTS)
+        once(store, state, "start:move", lambda: self.t.move(state.trigger_card, self.targets["control_return"]),
+             WRITE_ATTEMPTS)
 
     def _prepare(self, req: PartRequest, exporter: Exporter):
         """ReadyPart, or a problem string for the card."""
@@ -269,8 +285,8 @@ class Runner:
 
     def _reject(self, state: RunState, card_id: str, comment: str) -> None:
         store = self.s.store
-        once(store, state, f"reject:{card_id}:comment", lambda: self.t.comment(card_id, comment))
-        once(store, state, f"reject:{card_id}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]))
+        once(store, state, f"reject:{card_id}:comment", lambda: self.t.comment(card_id, comment), WRITE_ATTEMPTS)
+        once(store, state, f"reject:{card_id}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]), WRITE_ATTEMPTS)
 
     # ------------------------------------------------------------ collect
     def _job(self, job_id: str):
@@ -297,16 +313,17 @@ class Runner:
             if js.queued_utc and not js.timeout_reported:
                 queued = datetime.strptime(js.queued_utc, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=now.tzinfo)
                 if (now - queued).total_seconds() > self.cfg.trello.job_timeout_s:
-                    self.t.comment(state.trigger_card,
-                                   f"Fusion hasn't finished {job_id} after {self.cfg.trello.job_timeout_s // 60} min. "
-                                   "Check that Fusion and the auto-CAM add-in are running on the shop PC.")
+                    minutes = self.cfg.trello.job_timeout_s // 60
+                    once(store, state, f"{job_id}:timeout", lambda: self.t.comment(
+                        state.trigger_card, f"Fusion hasn't finished {job_id} after {minutes} min. Check that "
+                                            "Fusion and the auto-CAM add-in are running on the shop PC."), WRITE_ATTEMPTS)
                     js.timeout_reported = True
                     store.save(state)
         if all(js.status != QUEUED for js in state.jobs.values()):
             ingested = [ingest(self.s.queue, job_id, self._job(job_id)) for job_id in state.jobs]
             if state.jobs:
                 once(store, state, "summary", lambda: self.t.comment(
-                    state.trigger_card, text.run_summary_comment(state.run_id, ingested)))
+                    state.trigger_card, text.run_summary_comment(state.run_id, ingested)), WRITE_ATTEMPTS)
             state.done = True
             store.save(state)
             log.info("run %s finished", state.run_id)
@@ -317,10 +334,12 @@ class Runner:
         run_id, job_id = state.run_id, ing.job_id
         if ing.failure or ing.result is None:
             once(store, state, f"{job_id}:failed", lambda: self.t.comment(
-                state.trigger_card, text.job_failed_comment(job_id, ing.failure or "no result", len(js.parts))))
+                state.trigger_card, text.job_failed_comment(job_id, ing.failure or "no result", len(js.parts))),
+                WRITE_ATTEMPTS)
             for key, card_id in js.parts.items():
                 once(store, state, f"{job_id}:{key}:failed", lambda c=card_id: self.t.comment(
-                    c, f"The CAM job for this part ({job_id}) failed: {ing.failure}. The card stays in Ready for CAM."))
+                    c, f"The CAM job for this part ({job_id}) failed: {ing.failure}. The card stays in Ready for CAM."),
+                    WRITE_ATTEMPTS)
             return
 
         part_cards = {key: (state.cards.get(cid, {}).get("name", key), state.cards.get(cid, {}).get("url", ""))
@@ -332,23 +351,27 @@ class Runner:
             key = f"{job_id}:S{vs.sheet.index}"
             desc = text.sheet_description(ing.job, ing, vs, resume_key=cfg.pauses.resume_key, part_cards=part_cards)
             card_ref = once(store, state, f"{key}:card", lambda: self._new_card(
-                self.targets["sheet_created"], text.sheet_title(ing.job, vs), desc))
+                self.targets["sheet_created"], text.sheet_title(ing.job, vs), desc), WRITE_ATTEMPTS)
+            if card_ref == GAVE_UP:
+                log.error("%s: gave up creating the sheet card; its program was not offered", key)
+                cuttable[vs.sheet.index] = False
+                continue
             card_id, url = card_ref.split(" ", 1)
             store.register_sheet(card_id, run_id, vs.cuttable)
             sheet_urls[vs.sheet.index] = url
             cuttable[vs.sheet.index] = vs.cuttable
             if vs.cuttable:
                 once(store, state, f"{key}:tap", lambda: self.t.attach_program(
-                    card_id, vs.sheet.tap, vs.tap_bytes, vs.check.guard))
+                    card_id, vs.sheet.tap, vs.tap_bytes, vs.check.guard), WRITE_ATTEMPTS)
                 once(store, state, f"{key}:checklist", lambda: self.t.add_checklist(
-                    card_id, cfg.trello.checklist_name, cfg.trello.checklist))
+                    card_id, cfg.trello.checklist_name, cfg.trello.checklist), WRITE_ATTEMPTS)
             png = ing.file(vs.sheet.preview_png)
             if png is not None:
                 once(store, state, f"{key}:png", lambda: self.t.attach_file(
-                    card_id, png.name, png.read_bytes(), "image/png"))
+                    card_id, png.name, png.read_bytes(), "image/png"), WRITE_ATTEMPTS)
             if f3d is not None and f3d.stat().st_size <= self.t.attachment_limit_bytes:
                 once(store, state, f"{key}:f3d", lambda: self.t.attach_file(
-                    card_id, f3d.name, f3d.read_bytes(), "application/octet-stream"))
+                    card_id, f3d.name, f3d.read_bytes(), "application/octet-stream"), WRITE_ATTEMPTS)
 
         for part_key, card_id in js.parts.items():
             part = next((p for p in ing.result.parts if p.part_key == part_key), None)
@@ -358,28 +381,28 @@ class Runner:
                 reasons = list(inconsistent or ("Fusion reported nothing for this part",))
                 once(store, state, f"{key}:comment", lambda: self.t.comment(card_id, text.part_problem_comment(
                     run_id, [f"the CAM result for this part doesn't add up ({'; '.join(reasons)}); "
-                             "a mentor should check this run"])))
-                once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]))
+                             "a mentor should check this run"])), WRITE_ATTEMPTS)
+                once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]), WRITE_ATTEMPTS)
                 continue
             links = [(i, sheet_urls[i]) for i in part.sheets if i in sheet_urls]
             if part.errors:
                 once(store, state, f"{key}:comment", lambda: self.t.comment(
-                    card_id, text.part_problem_comment(run_id, [e.msg for e in part.errors])))
-                once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]))
+                    card_id, text.part_problem_comment(run_id, [e.msg for e in part.errors])), WRITE_ATTEMPTS)
+                once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]), WRITE_ATTEMPTS)
             elif part.deferred:
                 once(store, state, f"{key}:comment", lambda: self.t.comment(
-                    card_id, text.part_deferred_comment(run_id, part)))
+                    card_id, text.part_deferred_comment(run_id, part)), WRITE_ATTEMPTS)
             else:
                 for i, url in links:
-                    once(store, state, f"{key}:link:S{i}", lambda: self.t.attach_link(card_id, url, f"Sheet S{i} ({run_id})"))
+                    once(store, state, f"{key}:link:S{i}", lambda: self.t.attach_link(card_id, url, f"Sheet S{i} ({run_id})"), WRITE_ATTEMPTS)
                 if part.sheets and all(cuttable.get(i, False) for i in part.sheets):
                     once(store, state, f"{key}:comment", lambda: self.t.comment(
-                        card_id, text.part_nested_comment(run_id, part, links)))
-                    once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_nested"]))
+                        card_id, text.part_nested_comment(run_id, part, links)), WRITE_ATTEMPTS)
+                    once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_nested"]), WRITE_ATTEMPTS)
                 else:
                     once(store, state, f"{key}:comment", lambda: self.t.comment(
-                        card_id, text.part_bad_sheet_comment(run_id, links)))
-                    once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]))
+                        card_id, text.part_bad_sheet_comment(run_id, links)), WRITE_ATTEMPTS)
+                    once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]), WRITE_ATTEMPTS)
 
     def _new_card(self, list_key: str, title: str, desc: str) -> str:
         card = self.t.create_card(list_key, title, desc)

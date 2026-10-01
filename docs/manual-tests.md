@@ -81,7 +81,11 @@ It writes `out\` next to the job file, containing `<job>.f3d`, `<job>_S<n>.tap`,
 
 ## M1.2 to M1.7: restructured pipeline in Fusion
 
-_Added per sub-milestone._
+_Added per sub-milestone._ Already known checks:
+- [ ] A pocketed part posts without "rapid sideways below the stock top". If it doesn't, the template's linking
+      isn't full retraction; see `fusion/templates/README.md`.
+- [ ] `result.json` reports each sheet's **nominal** stock thickness (e.g. 0.125), not the measured one. The
+      service rejects any other value.
 
 ## M1.6: pause air tests (decision 19). Required before any real cut.
 

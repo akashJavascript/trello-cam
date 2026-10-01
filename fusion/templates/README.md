@@ -25,4 +25,7 @@ There is no poly 1/8" template until that tool is in the library (open question 
   - Clearance height must be at least **2.0 in above stock top**. The post does not retract with `G53`
     between ops, so clearance height is the travel height over the clamps.
 - **Drilling:** use plain drilling (`G81`). Peck cycles (`G73`/`G83`) are rejected until proven on WinCNC.
+  Keep the drill retract height above the stock top.
+- **Linking:** use full retraction, not minimum retraction or "stay down". The guard rejects any rapid that moves
+  sideways below the stock top. Vertical rapids back into a pocket are fine.
 - **Compensation:** keep it "in computer". The post's in-control compensation (`G41`/`G42`) is rejected.

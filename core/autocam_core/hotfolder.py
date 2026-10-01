@@ -89,6 +89,15 @@ class Queue:
                 return d.name
         return None
 
+    def job_ids(self) -> List[str]:
+        """Every job the queue holds or has finished, in any folder."""
+        ids = set()
+        for d in (self.incoming, self.processing):
+            ids |= {p.stem for p in d.glob("*.json") if not p.name.startswith(".")}
+        for d in (self.done, self.failed):
+            ids |= {p.name for p in d.iterdir() if p.is_dir()} if d.exists() else set()
+        return sorted(ids)
+
     def submit(self, job_id: str, job_text: str, resume: bool = False) -> Path:
         """resume=True: a job that's already in the queue (a restarted run) is left alone."""
         found = self.where(job_id)
@@ -158,14 +167,18 @@ class Queue:
         target.mkdir(parents=True, exist_ok=True)
         if (target / "error.txt").exists():
             _retry(os.replace, target / "error.txt", target / f"error.{int(time.time())}.txt")
+        write_atomic(target / "error.txt", (error.rstrip() + "\n").encode("utf-8"))   # first: the job is now failed
         notes = []
         for src in (self.processing / f"{job_id}.json", self.incoming / f"{job_id}.json"):
             if src.exists():
                 try:
                     _retry(os.replace, src, target / "job.json")
                 except OSError as e:
-                    shutil.copyfile(src, target / "job.json")
-                    notes.append(f"(job.json was copied, not moved: {e})")
+                    try:
+                        shutil.copyfile(src, target / "job.json")
+                        notes.append(f"(job.json was copied, not moved: {e})")
+                    except OSError as e2:
+                        notes.append(f"(job.json is still in {src.parent.name}/: {e2})")
                 break
         out = self.processing / f"{job_id}.out"
         if out.exists() and any(out.iterdir()):
@@ -173,7 +186,11 @@ class Queue:
                 _retry(os.replace, out, target / "partial")
             except OSError as e:
                 notes.append(f"(partial outputs left in processing/{out.name}: {e})")
-        write_atomic(target / "error.txt", ("\n".join([error.rstrip()] + notes) + "\n").encode("utf-8"))
+        if notes:
+            try:
+                write_atomic(target / "error.txt", ("\n".join([error.rstrip()] + notes) + "\n").encode("utf-8"))
+            except OSError:
+                pass
         try:
             self._forget(job_id)
         except OSError:

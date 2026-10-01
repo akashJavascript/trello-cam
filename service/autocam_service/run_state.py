@@ -111,11 +111,31 @@ class RunStore:
         return None
 
 
-def once(store: RunStore, state: RunState, key: str, action) -> str:
-    """Do a Trello write at most once per run: record its result under `key` right after it succeeds."""
+GAVE_UP = "gave-up"
+
+
+def once(store: RunStore, state: RunState, key: str, action, max_attempts: Optional[int] = None) -> str:
+    """Do a Trello write at most once per run: record its result under `key` right after it succeeds.
+
+    With max_attempts, a write that keeps failing (e.g. the card was deleted) is given up after that
+    many ticks and recorded as GAVE_UP, so one broken card can't keep a run active forever.
+    """
     if key in state.writes:
         return state.writes[key]
-    result = action()
+    try:
+        result = action()
+    except Exception:
+        if max_attempts is None:
+            raise
+        tries = int(state.writes.get(f"{key}#attempts", "0")) + 1
+        state.writes[f"{key}#attempts"] = str(tries)
+        if tries >= max_attempts:
+            state.writes[key] = GAVE_UP
+            state.notes.append(f"gave up on {key} after {tries} attempts")
+            store.save(state)
+            return GAVE_UP
+        store.save(state)
+        raise
     state.writes[key] = "" if result is None else str(result)
     store.save(state)
     return state.writes[key]

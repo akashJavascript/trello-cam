@@ -237,3 +237,27 @@ def test_heartbeat(tmp_path):
     q.write_heartbeat({"ts": "now", "job": None})
     assert q.read_heartbeat() == {"ts": "now", "job": None}
     assert not [p for p in os.listdir(tmp_path) if p.endswith(".tmp")]
+
+
+def test_fail_writes_error_first_even_if_job_json_is_locked(tmp_path, monkeypatch):
+    import autocam_core.hotfolder as hf
+    q = Queue(tmp_path).ensure()
+    q.submit("r006-x", "{}")
+    q.claim("r006-x")
+    real_replace = os.replace
+
+    def locked(src, dst):
+        if str(src).endswith("r006-x.json"):
+            raise PermissionError("exclusively locked")
+        return real_replace(src, dst)
+
+    def no_copy(*a, **kw):
+        raise PermissionError("exclusively locked")
+
+    monkeypatch.setattr(hf.os, "replace", locked)
+    monkeypatch.setattr(hf.shutil, "copyfile", no_copy)
+    monkeypatch.setattr(hf.time, "sleep", lambda s: None)
+    q.fail("r006-x", "boom")
+    text = (q.failed / "r006-x" / "error.txt").read_text()
+    assert text.startswith("boom") and "still in processing/" in text
+    assert "r006-x" in q.finished()
