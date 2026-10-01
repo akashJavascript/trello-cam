@@ -67,7 +67,7 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str) -> Job:
         parts.append(PartSpec(
             part_key=key, card_id=req.card.id, card_url=req.card.url, name=req.name, qty=req.qty,
             step=fusion_path(ready.step_path), step_sha256=ready.step_sha256,
-            source="onshape" if link else "trello_attachment",
+            source="onshape" if link else ("local" if req.card.id.startswith("local-") else "trello_attachment"),
             onshape=OnshapeRef(link.did, link.vid, link.eid, ready.onshape_part_id or "", link.url) if link else None,
             force_small_tool=req.force_small_tool))
 

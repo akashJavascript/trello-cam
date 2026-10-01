@@ -17,7 +17,7 @@ from .schema import dumps, from_dict
 JOB_SCHEMA = "autocam.job/1"
 FAMILIES = ("aluminum", "polycarbonate")
 PAUSE_MODES = ("tap_text", "manual_nc")
-SOURCES = ("onshape", "trello_attachment")
+SOURCES = ("onshape", "trello_attachment", "local")
 
 Rect = Tuple[float, float, float, float]
 

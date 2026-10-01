@@ -1,27 +1,69 @@
-"""Command line: `python -m autocam_service <command>`."""
+"""Command line: `python -m autocam_service <command>`.
 
-from __future__ import annotations
+    config-check      validate config/autocam.toml; list ASSUMED values and empty placeholders
+    tick              one service pass (poll Trello, collect finished jobs, start a run if triggered)
+    run               the service loop (tick every trello.poll_interval_s)
+    dry-run           one pass that reads the real board but writes nothing to Trello (prints the writes)
+    make-job          build a job.json from local STEP files (no Trello, no Onshape) for manual Fusion runs
+    ledger            Onshape call counts; `ledger reset-latch` after a 402 has been dealt with
+    trello-discover   print the board's list and card IDs as a ready-to-paste [trello.lists] block
+"""
 
 import argparse
+import json
+import re
+import sys
 from pathlib import Path
 from typing import List, Optional
 
 from autocam_core import CORE_VERSION
 
-from .config import DEFAULT_CONFIG, ConfigError, load_config
-from .credentials import ALL_KEYS, load_credentials
+from .config import DEFAULT_CONFIG, TRELLO_LISTS, ConfigError, load_config
+from .credentials import ALL_KEYS, CredentialsError, load_credentials
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="autocam", description="FRC auto-CAM service")
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--env-file", type=Path, default=None, help="default: .env in the repo root")
     sub = parser.add_subparsers(dest="command", required=True)
-    check = sub.add_parser("config-check", help="validate config/autocam.toml and list what is still assumed")
-    check.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    check.add_argument("--env-file", type=Path, default=None, help="default: .env next to config/")
+    sub.add_parser("config-check", help="validate the config and list what is still assumed")
+    for name, help_text in (("tick", "one service pass"), ("run", "the service loop"),
+                            ("dry-run", "one pass, no Trello writes")):
+        p = sub.add_parser(name, help=help_text)
+        p.add_argument("--offline", action="store_true", help="no Onshape calls (cache and .step attachments only)")
+        p.add_argument("--verbose", action="store_true")
+    mj = sub.add_parser("make-job", help="job.json from local STEP files (for manual Fusion runs)")
+    mj.add_argument("--material", required=True, help="material key from config, e.g. al6061")
+    mj.add_argument("--part", action="append", required=True, metavar="NAME=PATH[:QTY]")
+    mj.add_argument("--run-id", default="local001")
+    mj.add_argument("--submit", action="store_true", help="put it in queue/incoming/ instead of printing it")
+    lg = sub.add_parser("ledger", help="Onshape call counts")
+    lg.add_argument("action", nargs="?", default="report", choices=("report", "reset-latch"))
+    td = sub.add_parser("trello-discover", help="print list and card IDs for config")
+    td.add_argument("--board", help="board ID or short link (default: trello.board_id)")
     args = parser.parse_args(argv)
 
     if args.command == "config-check":
         return config_check(args.config, args.env_file)
+    try:
+        cfg = load_config(args.config)
+    except ConfigError as e:
+        print(f"Config INVALID: {args.config}\n" + "\n".join(f"  - {x}" for x in e.errors))
+        return 1
+    env_file = args.env_file or cfg.root / ".env"
+    try:
+        if args.command in ("tick", "run", "dry-run"):
+            return service(cfg, env_file, args.command, args.offline, args.verbose)
+        if args.command == "make-job":
+            return make_job(cfg, args.material, args.part, args.run_id, args.submit)
+        if args.command == "ledger":
+            return ledger(cfg, args.action)
+        if args.command == "trello-discover":
+            return trello_discover(cfg, env_file, args.board)
+    except CredentialsError as e:
+        print(f"Credentials: {e}")
+        return 1
     return 2
 
 
@@ -38,21 +80,124 @@ def config_check(path: Path, env_file: Optional[Path]) -> int:
     available = [t.key for t in cfg.tools.values() if t.available]
     print(f"  stock types: {len(cfg.stock_types())}   tools: {', '.join(available)}   "
           f"templates: {', '.join(cfg.templates)}")
-
     print(f"\nASSUMED values ({len(cfg.assumed)}), confirm and then delete from [assumed]:")
     for key, why in cfg.assumed.items():
         print(f"  - {key}: {why}")
-
     print(f"\nPlaceholders still empty ({len(cfg.placeholders)}):")
     for key in cfg.placeholders:
         print(f"  - {key}")
-
     print(f"\nWarnings ({len(cfg.warnings)}):")
     for w in cfg.warnings:
         print(f"  - {w}")
-
     creds = load_credentials(env_file if env_file is not None else cfg.root / ".env")
     print("\nCredentials (values never shown):")
     for key in ALL_KEYS:
         print(f"  - {key}: {'set' if creds.has(key) else 'missing'}")
+    return 0
+
+
+def service(cfg, env_file: Path, command: str, offline: bool, verbose: bool) -> int:
+    from .app import build_services, run_forever, setup_logging
+    from .runner import Runner
+    setup_logging(cfg, verbose)
+    services = build_services(cfg, env_file=env_file, dry_run=command == "dry-run", offline=offline)
+    runner = Runner(services)
+    if command == "run":
+        try:
+            run_forever(runner, cfg.trello.poll_interval_s)
+        except KeyboardInterrupt:
+            print("stopped")
+        return 0
+    runner.tick()
+    if command == "dry-run":
+        print("Trello writes that a real run would have made:")
+        for write in services.tracker.intended:
+            print("  " + " | ".join(str(x)[:120].replace("\n", " / ") for x in write))
+    return 0
+
+
+def make_job(cfg, material: str, parts: List[str], run_id: str, submit: bool) -> int:
+    from autocam_core.hotfolder import Queue
+    from autocam_core.schema_job import job_json
+    from .batching import Batch, ReadyPart
+    from .cards import PartRequest
+    from .jobs import JobBuildError, build_job
+    from .onshape.cache import sha256_file
+    from .onshape.ledger import utc_now
+    from .tracker.base import Card
+
+    if material not in cfg.materials:
+        print(f"unknown material {material!r}; one of: {', '.join(cfg.materials)}")
+        return 1
+    ready = []
+    for i, spec in enumerate(parts, 1):
+        m = re.match(r"^(?P<name>[^=]+)=(?P<path>.+?)(?::(?P<qty>\d+))?$", spec)
+        if not m:
+            print(f"--part {spec!r}: expected NAME=PATH[:QTY]")
+            return 1
+        path = Path(m["path"]).expanduser().resolve()
+        if not path.is_file():
+            print(f"--part {spec!r}: {path} not found")
+            return 1
+        card = Card(f"local-{i}", m["name"], "", None, "")
+        req = PartRequest(card, m["name"], int(m["qty"] or 1), None, None, material, False, False)
+        ready.append(ReadyPart(req, material, path, sha256_file(path)))
+    batch = Batch(material, tuple((f"p{i:02d}", r) for i, r in enumerate(ready, 1)))
+    try:
+        job = build_job(cfg, batch, run_id, utc_now().strftime("%Y-%m-%dT%H:%M:%SZ"))
+    except JobBuildError as e:
+        print(f"can't build the job: {e}")
+        return 1
+    text = job_json(job)
+    if submit:
+        path = Queue(cfg.paths.queue).ensure().submit(job.job_id, text)
+        print(f"queued {path}")
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+def ledger(cfg, action: str) -> int:
+    from .app import ledger_for
+    led = ledger_for(cfg)
+    if action == "reset-latch":
+        print("latch cleared" if led.reset_latch() else "no latch was set")
+        return 0
+    latch = led.latched()
+    print(f"Onshape calls this month: {led.month_count()} (soft limit {cfg.onshape.monthly_soft_calls})")
+    print(f"Onshape calls this budget year: {led.year_count(cfg.onshape.budget_year_start)} "
+          f"(cap {cfg.onshape.yearly_cap_calls})")
+    print(f"402 latch: {latch['reason'] if latch else 'not set'}")
+    return 0
+
+
+_EXPECTED_LIST_NAMES = {key: key.replace("_", "") for key in TRELLO_LISTS}
+
+
+def _norm(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def trello_discover(cfg, env_file: Path, board: Optional[str]) -> int:
+    from .app import trello_tracker
+    board = board or cfg.trello.board_id
+    if not board:
+        print("pass --board <id or short link> (from the board URL https://trello.com/b/<short link>/...)")
+        return 1
+    tracker = trello_tracker(cfg, env_file)
+    lists = tracker.board_lists(board)
+    by_norm = {_norm(name): (lid, name) for lid, name in lists}
+    print("[trello.lists]")
+    for key, want in _EXPECTED_LIST_NAMES.items():
+        hit = by_norm.get(want)
+        print(f'{key} = "{hit[0]}"   # {hit[1]}' if hit else f'{key} = ""   # no list named like "{key}" found')
+    print("\n# all lists on the board:")
+    for lid, name in lists:
+        print(f"#   {lid}  {name}")
+    cards = tracker.board_cards(board)
+    control = [c for c in cards if _norm(c[1]) == "runnest"]
+    system = [c for c in cards if _norm(c[1]) == "system"]
+    print("\n[trello.cards]")
+    print(f'run_nest_control = "{control[0][0] if control else ""}"')
+    print(f'system = "{system[0][0] if system else ""}"')
     return 0
