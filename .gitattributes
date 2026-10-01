@@ -1,0 +1,11 @@
+# Default: normalize text files to LF in the repo. This line must come FIRST: when several lines
+# match a path, the later line wins, so the machine-file rules below must follow it.
+*       text=auto
+# Machine files must keep their exact bytes/line endings (WinCNC programs and the Fusion post use CRLF).
+*.cps   -text
+*.tap   -text
+*.tools binary
+*.f3d   binary
+*.f3dhsm-template binary
+*.step  binary
+*.stp   binary

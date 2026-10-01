@@ -1,0 +1,285 @@
+# FRC auto-CAM configuration (committed; NO secrets here: see .env.example).
+#
+# - All lengths are inches. Fusion's API is cm internally; conversion happens at the edge.
+# - Values that are guesses are listed in [assumed]. Delete a line there once the value is confirmed.
+# - Empty strings ("") are placeholders that a later milestone fills in.
+# - `python -m autocam_service config-check` validates this file and lists both.
+# - The Fusion add-in never reads this file. The service copies what a job needs into job.json.
+
+schema = 1
+
+[assumed]
+"clamps.edges" = "decision 20: clamps on the front and back long edges only"
+"clamps.reach_in" = "decision 20: clamp reach onto the plate"
+"clamps.clearance_in" = "decision 20: clearance added to the clamp reach"
+"clamps.height_in" = "decision 20: clamp height above the plate"
+"clamps.min_clear_above_stock_in" = "decision 20: template clearance height above stock top"
+"machine.units" = "decision 20: programs post in inches"
+"machine.z_touchoff" = "decision 22: Z touched off on the spoilboard next to the sheet"
+"nest.reach_margin_in" = "plan: margin kept short of the 40 in reach"
+"holes.drill_sizes_in.t12_eighth_alu" = "decision 7: drill sizes for the 1/8 in endmill"
+"holes.drill_sizes_in.eighth_poly" = "decision 7: copied from the aluminum 1/8 in until the poly tool exists"
+"materials.al6061.use_mist" = "decision 20: mist on for aluminum"
+"materials.al5052.use_mist" = "decision 20: mist on for aluminum"
+"materials.pc_clear.use_mist" = "decision 20: mist off for polycarbonate"
+"materials.pc_smoked.use_mist" = "decision 20: mist off for polycarbonate"
+"onshape.base_url" = "enterprise accounts may use https://<company>.onshape.com"
+"onshape.material_map" = "open question 8: the exact Onshape material names students use"
+"onshape.yearly_cap_calls" = "plan: this service's share of the enterprise's 10,000 calls/year"
+"onshape.monthly_soft_calls" = "plan: warn above this many calls in a month"
+"onshape.budget_year_start" = "plan: when the enterprise's call year resets (MM-DD)"
+"fusion.params" = "brief: undocumented Fusion parameter names; confirm with dump_params"
+
+[machine]
+reach_x_in = 40.0          # ShopSabre 23 cut length; the rest of the 48 in sheet hangs off the bed
+z_floor_in = 0.0           # no motion below this Z. Z0 = stock bottom. Must be >= 0.
+units = "in"               # programs post in inches (G20)
+spindle_rpm = 18000
+spin_up_dwell_s = 4.0      # the post's G4 X4 after M3
+park = "G53 P10"           # park position, same as the post's program end
+z_touchoff = "spoilboard"
+
+[sheet]
+length_in = 48.0
+width_in = 24.0
+
+[nest]
+edge_margin_in = 0.5       # margin on unclamped edges, including the zero-corner end
+reach_margin_in = 0.5      # stay this far short of reach_x_in
+part_spacing_in = 0.25     # must exceed the largest tool diameter
+max_sheets_per_group = 4   # per material + thickness group in one job
+rotation = "all"           # "all" | "none"
+part_in_part = false
+envelope_spacing_in = 6.0  # gap between envelopes while nesting (layout only)
+short_qty = "defer_card"   # a card whose full qty doesn't fit is not cut this run
+
+[clamps]
+edges = ["front", "back"]  # any of "front", "back", "zero_end"; the far end overhangs the bed
+reach_in = 1.0
+clearance_in = 0.25
+height_in = 1.5
+min_clear_above_stock_in = 2.0
+
+[pauses]
+enabled = true
+after_last_part = false    # the program end already retracts, stops the spindle and parks
+mode = "tap_text"          # "tap_text" | "manual_nc" (only once the API is proven to create Manual NC)
+resume_key = ""            # open question 9: WinCNC key that resumes after M0
+
+[plate]
+thickness_tol_in = 0.005
+strict_inside_radius = true
+
+[materials.al6061]
+name = "6061"
+family = "aluminum"
+thicknesses_in = [0.0625, 0.125, 0.1875, 0.25]
+use_mist = true
+program_prefix = "6061"
+
+[materials.al5052]
+name = "5052"
+family = "aluminum"
+thicknesses_in = [0.0625, 0.125]
+use_mist = true
+program_prefix = "5052"
+
+[materials.pc_clear]
+name = "PC"
+family = "polycarbonate"
+color = "clear"
+thicknesses_in = [0.0625, 0.125, 0.1875, 0.25]
+use_mist = false
+program_prefix = "PCclear"
+
+[materials.pc_smoked]
+name = "PC"
+family = "polycarbonate"
+color = "smoked"
+thicknesses_in = [0.0625, 0.125, 0.1875, 0.25]
+use_mist = false
+program_prefix = "PCsmoked"
+
+# Tools are identified by GUID only. number/diameter/flute are checked against the pinned
+# library, never used to pick a tool. cutter_label is what the sheet card tells the operator to load.
+[tools.t1_4mm_alu]
+guid = "7b77ef53-1ace-4e3b-ac2d-380b01a638bd"
+number = 1
+diameter_in = 0.15748
+flute_in = 0.4724
+min_inside_radius_in = 0.0787
+family = "aluminum"
+cutter_label = "4 mm O-flute ALU"
+
+[tools.t1_4mm_poly]
+guid = "ec14e4ef-aa38-4a96-af26-8885accae4a3"
+number = 1
+diameter_in = 0.15748
+flute_in = 0.7087
+min_inside_radius_in = 0.0787
+family = "polycarbonate"
+cutter_label = "4 mm O-flute POLY"
+
+[tools.t12_eighth_alu]
+guid = "7e0681ca-7664-4d53-ae3a-7457a77fd00a"
+number = 12
+diameter_in = 0.125
+flute_in = 0.4724
+min_inside_radius_in = 0.0625
+family = "aluminum"
+cutter_label = "1/8 in ALU"
+
+[tools.eighth_poly]
+guid = ""                  # open question 11: not in the library yet; number and flute_in come with it
+diameter_in = 0.125
+min_inside_radius_in = 0.0625
+family = "polycarbonate"
+cutter_label = "1/8 in POLY"
+
+[tooling.aluminum]
+default = "t1_4mm_alu"
+small_features = "t12_eighth_alu"
+
+[tooling.polycarbonate]
+default = "t1_4mm_poly"
+small_features = "eighth_poly"
+
+[holes]
+drill_tol_in = 0.002       # drill sizes are an exact list, +/- this
+bore_min_in = 0.197        # 5 mm
+bore_min_tol_in = 0.002
+bore_max_in = 1.5          # inclusive; larger round holes go to [inner]
+bearing_sizes_in = [1.125, 0.875]
+bearing_tol_in = 0.010
+
+[holes.drill_sizes_in]
+t1_4mm_alu = [0.156, 0.159]
+t1_4mm_poly = [0.156, 0.159]
+t12_eighth_alu = [0.125, 0.136]
+eighth_poly = [0.125, 0.136]
+
+[cam]
+op_tags = ["drill", "bore", "bearing", "pocket", "inner", "outer"]   # template op order
+
+# One template per material family and tool. Files are exported from Fusion's template library.
+[templates.alu_4mm]
+family = "aluminum"
+tool = "t1_4mm_alu"
+file = "fusion/templates/alu_4mm.f3dhsm-template"
+
+[templates.alu_eighth]
+family = "aluminum"
+tool = "t12_eighth_alu"
+file = "fusion/templates/alu_eighth.f3dhsm-template"
+
+[templates.poly_4mm]
+family = "polycarbonate"
+tool = "t1_4mm_poly"
+file = "fusion/templates/poly_4mm.f3dhsm-template"
+
+# [templates.poly_eighth] is added once the 1/8 in poly tool is in the library (open question 11).
+
+[labels]
+smoked = "Smoked"
+tool_eighth = "Tool 1/8"
+
+[onshape]
+base_url = "https://cad.onshape.com"
+calls_per_part_estimate = 5
+per_run_max_calls = 60
+monthly_soft_calls = 150
+yearly_cap_calls = 1500
+budget_year_start = "01-01"
+poll_first_s = 4.0
+poll_factor = 2.0
+poll_max_s = 30.0
+poll_max_count = 6
+retry_after_max_wait_s = 60.0   # a longer Retry-After stops the run instead of sleeping
+
+[onshape.material_map]
+"Aluminum - 6061" = "al6061"
+"Aluminum - 5052" = "al5052"
+"Polycarbonate" = "pc_clear"    # the Smoked label turns this into pc_smoked
+
+[trello]
+board_id = ""
+poll_interval_s = 60
+attachment_limit_mb = 10        # Trello Free plan limit
+job_timeout_s = 3600            # service gives up waiting for a Fusion job after this
+checklist_name = "Review"
+checklist = ["Simulated in Fusion", "Correct stock loaded", "Correct cutter loaded", "Clamps placed as shown"]
+
+[trello.lists]                  # list IDs; `autocam trello-discover` will print them (M3)
+inbox = ""
+ready_for_cam = ""
+needs_fixing = ""
+nested = ""
+sheet_review = ""
+ready_to_cut = ""
+cut = ""
+control = ""
+run_nest = ""
+
+[trello.targets]                # where automation moves cards; "ready_to_cut" is never allowed
+part_nested = "nested"
+part_rejected = "needs_fixing"
+part_deferred = "ready_for_cam"
+sheet_created = "sheet_review"
+checklist_return = "sheet_review"
+control_return = "control"
+
+[trello.cards]
+run_nest_control = ""
+system = ""
+
+[fusion]
+post_description = "ShopSabre with automatic mist"
+post_file = "fusion/posts/shopsabre_automatic_mist.cps"
+post_sha256 = "9bfcc6beb01b5123fc86495ce1907b7de72cccd5167638ca568591129de9741f"
+tool_library = "fusion/tools/5940_Tool_Library.tools"
+job_timeout_s = 1800
+max_attempts = 2
+
+[fusion.post_properties]        # every post property, set explicitly on every post; useMist comes from the material
+showSequenceNumbers = "false"
+sequenceNumberStart = 10
+sequenceNumberIncrement = 1
+separateWordsWithSpace = true
+writeMachine = false
+writeTools = false
+useToolCall = false
+useTappingCycle = false
+rotaryTableAxis = "none"
+useCoolant = false
+useXYZFeeds = "standard"
+safePositionMethod = "G53"
+
+[fusion.params.setup]
+wcs_origin_boxPoint = "'bottom 1'"
+
+[fusion.params.drill]
+hole_mode = "holeMode"
+hole_mode_value = "'selection-faces'"
+faces = "holeFaces"
+
+[fusion.params.selections]
+bore_faces_candidates = ["circularFaces", "holeFaces"]
+pocket = "pockets"
+contour = "contours"
+
+[fusion.params.tabs]            # M6: At-points tab parameter names, from dump_params
+
+[tapguard]
+allowed_g = [0, 1, 2, 3, 4, 20, 53, 80, 81, 90]
+allowed_m = [0, 3, 5, 11, 12]
+clamp_margin_in = 0.25
+
+[fusion_team]
+project = ""                    # open question 7
+folder = ""
+
+[paths]                         # relative to the repo root
+queue = "queue"
+cache = "cache"
+state = "state"
+logs = "logs"

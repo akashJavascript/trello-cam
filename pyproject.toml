@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "frc-autocam"
+version = "0.1.0"
+description = "Trello cards with Onshape parts -> nested, CAM'd Fusion sheets -> WinCNC .tap files back on Trello"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31",
+    "python-dotenv>=1.0",
+    "tomli>=2.0; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+autocam = "autocam_service.cli:main"
+
+# Two import roots: core/ (stdlib only, also loaded by the Fusion add-in) and service/.
+[tool.setuptools.packages.find]
+where = ["core", "service"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["core", "service"]
+addopts = "-ra"

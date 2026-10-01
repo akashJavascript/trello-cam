@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m pytest
+      - run: python -m autocam_service config-check
+
+  # autocam_core is imported inside Fusion's bundled Python. Keep it 3.9-compatible until
+  # dump_params reports Fusion's actual version.
+  core-py39:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - run: python -m pip install pytest
+      - run: python -m pytest tests/core tests/test_pinned_files.py tests/test_network_block.py

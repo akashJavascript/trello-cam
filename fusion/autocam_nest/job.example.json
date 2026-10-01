@@ -1,0 +1,34 @@
+{
+  "_comment": "Paths can be relative to this file. All lengths are inches. sheet = reachable nest area of a 24x48 sheet hanging off the bed (placeholder until measured).",
+  "job_name": "al125_2026-10-01",
+  "output_dir": "out",
+
+  "thickness_in": 0.125,
+  "thickness_tol_in": 0.005,
+  "tool_diameter_in": 0.15748,
+  "strict_inside_radius": true,
+
+  "sheet": { "length_in": 39.5, "width_in": 24, "margin_in": 0.5 },
+  "max_sheets": 3,
+  "part_spacing_in": 0.25,
+  "part_in_part": false,
+
+  "cam_template": "templates/al_0125.f3dhsm-template",
+
+  "_post_comment": "Matched against the post description (or file name) in your local/cloud post library.",
+  "post": "ShopSabre with automatic mist",
+  "allow_fusion_library_post": false,
+  "post_with_errors": false,
+  "_z_floor_comment": "Spoilboard guard: no motion below this Z (Z0 = stock bottom).",
+  "z_floor_in": 0.0,
+
+  "_setup_params_comment": "Copy names/expressions from your manual setup (CAM_API_Utilities > Export Parameters).",
+  "setup_params": { "wcs_origin_boxPoint": "'bottom 1'" },
+  "post_params": {},
+
+  "parts": [
+    { "card_id": "TRELLO_CARD_ID", "name": "shooter_side_plate_L", "step": "parts/shooter_side_plate_L.step", "qty": 1 },
+    { "card_id": "TRELLO_CARD_ID", "name": "shooter_side_plate_R", "step": "parts/shooter_side_plate_R.step", "qty": 1 },
+    { "card_id": "TRELLO_CARD_ID", "name": "hood_gusset", "step": "parts/hood_gusset.step", "qty": 4 }
+  ]
+}

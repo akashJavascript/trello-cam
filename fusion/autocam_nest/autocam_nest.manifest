@@ -1,0 +1,10 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "script",
+	"author": "",
+	"description": {
+		"": "Nest FRC plates from STEP files, apply a CAM template, and post one WinCNC .tap per sheet."
+	},
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}
