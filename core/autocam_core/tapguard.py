@@ -54,6 +54,7 @@ class GuardSpec:
     reach_x_in: Optional[float] = None           # no X beyond the machine's reach
     mist: Optional[bool] = None                  # expected useMist; None = don't check
     stock_top_in: Optional[float] = None         # no sideways rapid below this; None = don't check
+    sheet_in: Optional[Tuple[float, float]] = None   # (length, width): below the stock top the tool stays on it
 
     def __post_init__(self):
         if self.z_floor_in < 0:
@@ -245,6 +246,16 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
         if value < spec.z_floor_in - Z_TOL:
             offenders.append(where(n, raw))
 
+    def off_sheet(box: Rect) -> bool:
+        """The tool (center grown by its radius) leaves the sheet somewhere in box."""
+        length, width = spec.sheet_in
+        r = spec.tool_radius_in
+        return (box[0] < r - 1e-6 or box[1] < r - 1e-6 or box[2] > length - r + 1e-6
+                or box[3] > width - r + 1e-6)
+
+    def low_enough(height: float) -> bool:
+        return spec.sheet_in is not None and spec.stock_top_in is not None and height < spec.stock_top_in - 1e-6
+
     def over_zone(xa, ya, xb, yb, arc_box: Optional[Rect] = None) -> bool:
         for zone in zones:
             if arc_box is not None:
@@ -396,6 +407,8 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
             if nx is None or ny is None:
                 problems.append(f"{where(n, raw)} (drilling cycle at an unknown position)")
             else:
+                if low_enough(cycle_z) and off_sheet((nx, ny, nx, ny)):
+                    problems.append(f"{where(n, raw)} (drills off the sheet)")
                 travel_z = cycle_r if z is None else min(z, cycle_r)
                 moves_xy = x is not None and y is not None and (nx, ny) != (x, y)
                 if spec.stock_top_in is not None and moves_xy and travel_z < spec.stock_top_in - 1e-6:
@@ -449,6 +462,17 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
                 clamp.append(where(n, raw) + " (descends at an unknown position)")
             elif over_zone(x, y, x, y):
                 clamp.append(where(n, raw))
+        if low_enough(low):
+            if arc_box is not None:
+                path = arc_box
+            elif x is not None and y is not None and nx is not None and ny is not None:
+                path = (min(x, nx), min(y, ny), max(x, nx), max(y, ny))
+            elif nx is not None and ny is not None:
+                path = (nx, ny, nx, ny)
+            else:
+                path = None
+            if path is not None and off_sheet(path):
+                problems.append(f"{where(n, raw)} (cuts off the sheet)")
 
         x, y, z = nx, ny, nz
         moved = True

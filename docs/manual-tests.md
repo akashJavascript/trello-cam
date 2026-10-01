@@ -145,6 +145,10 @@ message box and in `result.json` (`worker.untested_steps`).
 | 4 | Simulate one setup: stock is the full 24 x 48 sheet, origin at its bottom front-left corner, every part cut free | |
 | 5 | Open the `.tap` in `fusion\autocam_run\out\<job>-<time>\`: a pause block before each `[outer ...]` but the first | |
 | 6 | Any sheet "NOT OFFERED": its reason (also in `result.json` under `sheets[].errors`) | |
+| 7 | A plate with drilled/bored holes **and** a cutout on the same face: simulate it; the cutout is cut on the inside (not one tool diameter too big) | |
+| 8 | Run again with one part's quantity too high to fit: it's reported as deferred, and the other parts didn't move (check 2 again) | |
+| 9 | A plate modeled standing up in Onshape (not flat on the top plane): nested flat, or rejected with "can't lay it flat" | |
+| 10 | A part with rounded corners: not rejected for "crosses the edge" | |
 
 **Send back:** the message box text (or a screenshot) and, if anything failed, the end of `worker.log` from
 the same folder.

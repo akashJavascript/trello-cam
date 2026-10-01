@@ -176,3 +176,24 @@ parts that work without it (details in `docs/fusion-api-status.md`):
   missing template) raises `JobFailed` before Fusion is touched. Everything else ends in a `result.json`.
 - **`autocam_run` can build a job from STEP files** with the service's job builder (standard library only).
   That is the one place Fusion-side code imports `autocam_service`, and only for manual runs.
+
+## 2026-10-01: rules added after reviewing the M1.2 pipeline
+
+An independent review of the new Fusion-side code found these; each is fixed and tested offline.
+- **Stay on the sheet.** The guard now rejects any move below the stock top that takes the tool off the
+  sheet (`GuardSpec.sheet_in`; both sides run it through `sheetcheck`). Before, a part that moved after
+  nesting would have been cut wherever it ended up, and every check still passed.
+- **Positions are re-read before CAM.** A copy more than 0.001 in from where Arrange put it stops its sheet.
+- **Copies taken out of the job are hidden, not deleted.** Deleting an occurrence that an Arrange moved could
+  make Fusion solve that Arrange again.
+- **One part's trouble stays with that part:**
+  - A part Arrange can't lay flat is refused on its own.
+  - An Arrange that fails rejects the parts it held, with an error rather than a silent deferral.
+  - A part that doesn't fit even alone on an empty sheet is an error, not deferred run after run.
+  - Any Fusion exception in the adapter becomes an error for that part or sheet, not a crashed job.
+- **Arrange results are matched by occurrence name**, not entity-token strings (tokens of one entity can
+  differ between reads).
+- **The envelope-edge tolerance is 0.01 in**: body boxes can be a little loose, and the envelope is already
+  0.25 in inside the nest region.
+- **A part whose top is split into several faces needs manual CAM**, because there's no single outline.
+- **Single inner loops are chained from every edge of the loop**; the cutting side is a manual check.

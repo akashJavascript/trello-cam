@@ -131,7 +131,7 @@ def test_each_stock_thickness_gets_its_own_sheets_and_bad_parts_are_reported(tmp
     assert origins[1] - origins[0] == pytest.approx(job.sheet.length_in + job.nest.envelope_spacing_in)
     odd = result.parts[2]
     assert odd.errors[0].code == E.THICKNESS_NOT_STOCK and odd.placed == 0 and odd.sheets == ()
-    assert "delete p03.1" in rig.fake.calls
+    assert "discard p03.1" in rig.fake.calls
     assert result.status == "needs_review"
     assert rig.service_view(job, result).part_problems == {}
 
@@ -145,7 +145,7 @@ def test_parts_that_dont_all_fit_are_deferred_whole(tmp_path):
     assert big.deferred and big.placed == 0 and not big.errors
     assert small.placed == 1 and small.sheets == (1,)
     assert [p.part_key for p in result.sheets[0].parts] == ["p02"]
-    assert {f"delete p01.{n}" for n in range(1, 6)} <= set(rig.fake.calls)
+    assert {f"discard p01.{n}" for n in range(1, 6)} <= set(rig.fake.calls)
     assert rig.service_view(job, result).part_problems == {}
 
 
@@ -295,3 +295,107 @@ def test_missing_template_fails_the_job(tmp_path):
     Path(job.tooling.tools[job.tooling.default].template_path).unlink()
     with pytest.raises(JobFailed, match="TEMPLATE_PROBLEM"):
         rig.run(job)
+
+
+# ---- failures the review asked for (one part or one sheet fails; the rest of the job carries on)
+
+def test_part_arrange_refuses_is_rejected_and_the_rest_nest(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.refuse.add("p01")
+    job = rig.job([("standing", 2, plate(), (4.0, 4.0)), ("spacer", 1, plate(), (3.0, 3.0))])
+    result = rig.run(job)
+    standing, spacer = result.parts
+    assert standing.errors[0].code == E.ARRANGE_FAILED and "lay it flat" in standing.errors[0].msg
+    assert not standing.deferred and spacer.placed == 1 and result.sheets[0].tap
+    assert rig.service_view(job, result).part_problems == {}
+
+
+def test_arrange_failing_is_an_error_not_a_deferral(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.arrange_error = "arrangeFeatures.add: RuntimeError: 3 : Compute Failed"
+    job = rig.job([("gusset", 1, plate(), (4.0, 4.0))])
+    result = rig.run(job)
+    part = result.parts[0]
+    assert not part.deferred and part.errors[0].code == E.ARRANGE_FAILED and "Compute Failed" in part.errors[0].msg
+
+
+def test_part_too_big_for_the_sheet_is_an_error_not_a_deferral(tmp_path):
+    rig = Rig(tmp_path)
+    job = rig.job([("long", 1, plate(), (45.0, 10.0)), ("spacer", 1, plate(), (3.0, 3.0))])
+    result = rig.run(job)
+    long_part = result.parts[0]
+    assert not long_part.deferred and "even alone on a sheet" in long_part.errors[0].msg
+    assert result.parts[1].placed == 1
+
+
+def test_part_that_fits_alone_but_ran_out_of_sheets_is_deferred(tmp_path):
+    rig = Rig(tmp_path, max_sheets_per_group=1)
+    job = rig.job([("big", 5, plate(), (18.0, 10.0))])
+    part = rig.run(job).parts[0]
+    assert part.deferred and not part.errors
+
+
+def test_one_copy_left_off_the_sheet_plane_rejects_its_part(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.bad_z.add("p01.2")
+    job = rig.job([("gusset", 2, plate(), (4.0, 4.0)), ("spacer", 1, plate(), (3.0, 3.0))])
+    result = rig.run(job)
+    assert "not on the sheet" in result.parts[0].errors[0].msg and result.parts[1].placed == 1
+    assert rig.service_view(job, result).part_problems == {}
+
+
+def test_parts_moved_after_nesting_stop_the_sheet(tmp_path):
+    # e.g. Fusion re-solving an Arrange when one of its inputs is taken out
+    rig = Rig(tmp_path, max_sheets_per_group=1)
+    rig.fake.move_on_discard["p02.1"] = (-12.0, 0.0)
+    job = rig.job([("big", 5, plate(), (18.0, 10.0)), ("small", 1, plate(), (2.0, 2.0))])
+    result = rig.run(job)
+    (sheet,) = result.sheets
+    assert sheet.tap is None and "moved after nesting" in sheet.errors[0].msg
+    assert [vs.cuttable for vs in rig.service_view(job, result).sheets] == [False]
+
+
+def test_cutting_off_the_sheet_is_caught_by_the_guard(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.move_on_generate["p01.1"] = (-30.0, 0.0)
+    job = rig.job([("gusset", 1, plate(), (4.0, 4.0))])
+    result = rig.run(job)
+    (sheet,) = result.sheets
+    assert sheet.tap is None and any("off the sheet" in e.msg for e in sheet.errors)
+
+
+def test_op_errors_warnings_and_missing_toolpaths(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.op_states["[inner] cutouts"] = (False, "no feasible toolpath", None)
+    job = rig.job([("gusset", 1, plate(holes=(2.0,)), (4.0, 4.0))])
+    sheet = rig.run(job).sheets[0]
+    assert sheet.tap is None and sheet.errors[0].msg == "[inner] cutouts: no feasible toolpath"
+
+    (tmp_path / "w").mkdir()
+    rig = Rig(tmp_path / "w")
+    rig.fake.op_states["[outer] p01-1"] = (True, None, "lead-in shortened")
+    job = rig.job([("gusset", 1, plate(), (4.0, 4.0))])
+    sheet = rig.run(job).sheets[0]
+    assert sheet.tap and sheet.warnings[0].msg == "[outer] p01-1: lead-in shortened"
+
+
+def test_one_sheet_failing_to_build_or_post_leaves_the_others(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.fail_make_sheet.add("6061_0p125_r001_S1")
+    rig.fake.fail_post.add("6061_0p25_r001_S3")      # sheets are numbered in thickness order
+    job = rig.job([("thin", 1, plate(t=0.125), (4.0, 4.0)), ("thick", 1, plate(t=0.25), (4.0, 4.0)),
+                   ("thicker", 1, plate(t=0.1875), (4.0, 4.0))])
+    result = rig.run(job)
+    by_name = {s.name: s for s in result.sheets}
+    assert by_name["6061_0p125_r001_S1"].errors[0].code == E.OP_ERROR
+    assert by_name["6061_0p25_r001_S3"].errors[0].code == E.POST_FAILED
+    assert by_name["6061_0p1875_r001_S2"].tap is not None
+    assert rig.service_view(job, result).part_problems == {}
+
+
+def test_split_top_face_needs_manual_cam(tmp_path):
+    rig = Rig(tmp_path)
+    b = PlateBuilder("split")
+    b._face(kind="plane", z0=0.125, z1=0.125, normal_dot=1.0, area=10.0)
+    job = rig.job([("split", 1, b.build(), (4.0, 4.0))])
+    assert "top is split into 2 faces" in rig.run(job).parts[0].errors[0].msg

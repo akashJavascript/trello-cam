@@ -60,6 +60,7 @@ def guard_spec(job: Job, thickness_in: float, tool_key: str) -> GuardSpec:
         reach_x_in=job.sheet.reach_x_in,
         mist=job.material.use_mist,
         stock_top_in=thickness_in,
+        sheet_in=(job.sheet.length_in, job.sheet.width_in),
     )
 
 

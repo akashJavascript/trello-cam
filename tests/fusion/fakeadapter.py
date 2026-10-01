@@ -18,7 +18,7 @@ from autocam_core.geometry import PartGeometry
 from autocam_core.names import comment_line
 
 from autocam_worker.adapter import (
-    BEARING, BORE, DRILL, INNER, OUTER, TAGS, Adapter, AdapterError, Box, OpFill, OpState, TemplateOp,
+    BEARING, BORE, DRILL, INNER, OUTER, TAGS, Adapter, AdapterError, Arranged, Box, OpFill, OpState, TemplateOp,
 )
 
 OUTLINE_OFFSET_IN = 0.0787 + 0.05     # 4 mm tool radius + lead-in
@@ -41,6 +41,14 @@ class FakeAdapter(Adapter):
         self.upside_down: Set[str] = set()             # part keys Arrange turns over
         self.below_floor: Set[str] = set()             # sheet names whose program dips below Z0
         self.fail_import: Set[str] = set()             # STEP paths that won't import
+        self.refuse: Set[str] = set()                  # part keys Arrange won't lay flat
+        self.arrange_error: Optional[str] = None       # every Arrange raises this
+        self.bad_z: Set[str] = set()                   # copy ids Arrange leaves floating
+        self.move_on_discard: Dict[str, Tuple[float, float]] = {}    # copy id -> shift when anything is discarded
+        self.move_on_generate: Dict[str, Tuple[float, float]] = {}   # copy id -> shift during toolpath generation
+        self.fail_make_sheet: Set[str] = set()         # sheet names
+        self.op_states: Dict[str, Tuple[bool, Optional[str], Optional[str]]] = {}  # op name -> state
+        self.fail_post: Set[str] = set()               # sheet names
         self.arrange_envelopes: List[Tuple[float, float, float, float]] = []
         self.finished: Optional[bool] = None
 
@@ -73,20 +81,26 @@ class FakeAdapter(Adapter):
 
     def arrange(self, copy_ids, envelope, spacing_in, up_faces):
         self.arrange_envelopes.append(envelope)
+        if self.arrange_error:
+            raise AdapterError(self.arrange_error)
         x0, y0, x1, y1 = envelope
         x, y, row = x0, y0, 0.0
-        placed = []
+        placed, refused = [], {}
         for cid in copy_ids:
+            if cid.rsplit(".", 1)[0] in self.refuse:
+                refused[cid] = "upDirection (0, 1, 0) is across the top face"
+                continue
             geometry, (w, h) = self.parts[self.copies[cid]]
             px, py, prow = x, y, row
             if px + w > x1 + 1e-9:
                 px, py, prow = x0, y + row + spacing_in, 0.0
             if px + w > x1 + 1e-9 or py + h > y1 + 1e-9:
                 continue                      # doesn't fit; the next one might
-            self.boxes[cid] = Box(px, py, 0.0, px + w, py + h, geometry.thickness_in)
+            z0 = 0.5 if cid in self.bad_z else 0.0
+            self.boxes[cid] = Box(px, py, z0, px + w, py + h, z0 + geometry.thickness_in)
             placed.append(cid)
             x, y, row = px + w + spacing_in, py, max(prow, h)
-        return placed
+        return Arranged(tuple(placed), refused)
 
     def box(self, copy_id):
         return self.boxes[copy_id]
@@ -94,12 +108,21 @@ class FakeAdapter(Adapter):
     def faces_up(self, copy_id, face_id):
         return copy_id.rsplit(".", 1)[0] not in self.upside_down
 
-    def delete(self, copy_id):
-        self.calls.append(f"delete {copy_id}")
+    def _shift(self, moves):
+        for cid, (dx, dy) in moves.items():
+            b = self.boxes[cid]
+            self.boxes[cid] = Box(b.x0 + dx, b.y0 + dy, b.z0, b.x1 + dx, b.y1 + dy, b.z1)
+        moves.clear()
+
+    def discard(self, copy_id):
+        self.calls.append(f"discard {copy_id}")
+        self._shift(self.move_on_discard)
         self.copies.pop(copy_id, None)
         self.boxes.pop(copy_id, None)
 
     def make_sheet(self, sheet, origin, length_in, width_in, thickness_in, copy_ids):
+        if sheet in self.fail_make_sheet:
+            raise AdapterError("setups.add: RuntimeError: 3 : something broke")
         self.sheets[sheet] = {"origin": origin, "size": (length_in, width_in), "t": thickness_in,
                               "copies": list(copy_ids), "ops": [], "fills": {}, "outer": [], "deleted": []}
 
@@ -123,13 +146,17 @@ class FakeAdapter(Adapter):
         s["deleted"].append(op_name)
 
     def generate(self, sheets):
-        return {name: [OpState(op, True, None, None) for op in self.sheets[name]["ops"]] for name in sheets}
+        self._shift(self.move_on_generate)
+        return {name: [OpState(op, *self.op_states.get(op, (True, None, None))) for op in self.sheets[name]["ops"]]
+                for name in sheets}
 
     def _center(self, s: dict, cid: str) -> Tuple[float, float]:
         b = self.boxes[cid]
         return (b.x0 + b.x1) / 2 - s["origin"][0], (b.y0 + b.y1) / 2 - s["origin"][1]
 
     def post(self, sheet, program_name, folder, post_path, properties):
+        if sheet in self.fail_post:
+            raise AdapterError("CAM.postProcess: RuntimeError: 3 : post failed")
         s = self.sheets[sheet]
         t = s["t"]
         clear, retract = t + 2.0, t + 0.2

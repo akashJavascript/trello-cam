@@ -49,6 +49,8 @@ from .adapter import BEARING, BORE, DRILL, INNER, OUTER, POCKET, TAGS, Adapter, 
 RESULT = "result.json"
 LOG = "worker.log"
 Z_TOL_IN = 0.001
+EDGE_TOL_IN = 0.01      # body boxes can be a little loose; the envelope is already 0.25 in inside the nest region
+MOVE_TOL_IN = 0.001     # a copy that moved more than this after nesting stops its sheet
 
 
 class JobFailed(Exception):
@@ -166,6 +168,11 @@ def _load_part(adapter: Adapter, job: Job, part: _Part) -> None:
     if analysis.up_face_id is None:
         part.errors.append(Issue(E.NOT_A_PLATE, "no top face to lay face up"))
         return
+    if len(analysis.top_face_ids) > 1:
+        part.errors.append(Issue(E.NEEDS_MANUAL_CAM, f"needs manual CAM: the top is split into "
+                                                     f"{len(analysis.top_face_ids)} faces, so there's no single "
+                                                     "outline to cut"))
+        return
     tools = job.tooling.tools
     small = tools.get(job.tooling.small_features) if job.tooling.small_features else None
     need = part_tool(analysis, family=job.material.family, default=profile(tools[job.tooling.default]),
@@ -176,13 +183,23 @@ def _load_part(adapter: Adapter, job: Job, part: _Part) -> None:
     part.warnings += need.warnings
 
 
-def _drop(adapter: Adapter, part: _Part, log: Callable[[str], None]) -> None:
-    for cid in part.copies:
+def _discard(adapter: Adapter, cids: Sequence[str], log: Callable[[str], None]) -> None:
+    for cid in cids:
         try:
-            adapter.delete(cid)
+            adapter.discard(cid)
         except AdapterError as e:
-            log(f"couldn't delete {cid}: {e}")
+            log(f"couldn't take {cid} out: {e}")
+
+
+def _drop(adapter: Adapter, part: _Part, log: Callable[[str], None]) -> None:
+    _discard(adapter, part.copies, log)
     part.copies = []
+
+
+def _envelope(job: Job, origin: Tuple[float, float]) -> Rect:
+    region, inset = job.fixture.nest_region_in, job.nest.part_spacing_in
+    return (origin[0] + region[0] + inset, origin[1] + region[1] + inset,
+            origin[0] + region[2] - inset, origin[1] + region[3] - inset)
 
 
 # ------------------------------------------------------------------ 3. nesting
@@ -190,9 +207,17 @@ def _drop(adapter: Adapter, part: _Part, log: Callable[[str], None]) -> None:
 def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part], x_start: float, slot: int,
                 log: Callable[[str], None], notes: List[str]) -> Tuple[List[_Sheet], int]:
     """Arrange one stock thickness onto as many sheets as it takes (up to the job's limit)."""
-    region = job.fixture.nest_region_in
-    inset = job.nest.part_spacing_in
     pitch = job.sheet.length_in + job.nest.envelope_spacing_in
+    by_key = {p.key: p for p in parts}
+
+    def key_of(cid: str) -> str:
+        return cid.rsplit(".", 1)[0]
+
+    def reject(keys, msg: str) -> None:
+        for key in sorted(set(keys)):
+            if by_key[key].ok:
+                by_key[key].errors.append(Issue(E.ARRANGE_FAILED, msg))
+
     up = {cid: p.analysis.up_face_id for p in parts for cid in p.copies}
     remaining = [cid for p in parts for cid in p.copies]
     envelopes: List[Tuple[Tuple[float, float], Rect]] = []
@@ -200,23 +225,39 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
         if not remaining:
             break
         origin = (x_start + slot * pitch, 0.0)
-        envelope = (origin[0] + region[0] + inset, origin[1] + region[1] + inset,
-                    origin[0] + region[2] - inset, origin[1] + region[3] - inset)
+        envelope = _envelope(job, origin)
         try:
-            placed = set(adapter.arrange(remaining, envelope, job.nest.part_spacing_in,
-                                         {c: up[c] for c in remaining}))
+            got = adapter.arrange(remaining, envelope, job.nest.part_spacing_in, {c: up[c] for c in remaining})
         except AdapterError as e:
-            notes.append(f"Arrange failed for a {thickness:g} in sheet ({e}); parts left over are deferred")
-            log(notes[-1])
+            reject([key_of(c) for c in remaining], f"Arrange failed: {e}")
+            log(f"Arrange failed for a {thickness:g} in sheet: {e}")
             break
+        for cid, why in got.refused.items():
+            reject([key_of(cid)], f"Arrange can't lay it flat: {why}")
+        placed = set(got.placed)
+        slot += 1
+        if placed:
+            envelopes.append((origin, envelope))
+        remaining = [c for c in remaining if c not in placed and by_key[key_of(c)].ok]
+        log(f"{thickness:g} in sheet at x={origin[0]:g}: placed {len(placed)}, {len(remaining)} left")
         if not placed:
             break
-        slot += 1
-        envelopes.append((origin, envelope))
-        remaining = [c for c in remaining if c not in placed]
-        log(f"{thickness:g} in sheet at x={origin[0]:g}: placed {len(placed)}, {len(remaining)} left")
 
-    by_key = {p.key: p for p in parts}
+    # Copies still left over: if a part doesn't fit even alone on an empty sheet, say so instead of
+    # deferring it run after run.
+    for key in dict.fromkeys(key_of(c) for c in remaining):
+        if not by_key[key].ok:
+            continue
+        cid = next(c for c in remaining if key_of(c) == key)
+        envelope = _envelope(job, (x_start + slot * pitch, 0.0))
+        slot += 1
+        try:
+            alone = adapter.arrange([cid], envelope, job.nest.part_spacing_in, {cid: up[cid]}).placed
+        except AdapterError:
+            alone = ()
+        if not alone:
+            w, h = envelope[2] - envelope[0], envelope[3] - envelope[1]
+            reject([key], f"doesn't fit the nest area ({w:.1f} x {h:.1f} in) even alone on a sheet")
     tol = job.material.thickness_tol_in + Z_TOL_IN
     left = set(remaining)
     for cid in [c for c in up if c not in left]:
@@ -245,7 +286,8 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
                     p.errors.append(Issue(E.ARRANGE_FAILED, f"couldn't read where it is: {e}"))
         good = [p for p in parts if p.ok]
         bodies = [b for b in bodies if by_key[b.part_key].ok]
-        layout = plan_layout(bodies, [env for _, env in envelopes], {p.key: p.spec.qty for p in good})
+        layout = plan_layout(bodies, [env for _, env in envelopes], {p.key: p.spec.qty for p in good},
+                             edge_tol_in=EDGE_TOL_IN)
         bad = {msg.split(":", 1)[0] for msg in layout.problems}
         if not bad:
             break
@@ -261,11 +303,7 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
             _drop(adapter, p, log)
         elif p.key in layout.deferred:
             p.deferred = True
-    for cid in layout.removed_bodies + layout.unplaced_bodies:
-        try:
-            adapter.delete(cid)
-        except AdapterError as e:
-            log(f"couldn't delete {cid}: {e}")
+    _discard(adapter, layout.removed_bodies + layout.unplaced_bodies, log)
     for p in parts:
         if p.deferred:
             p.copies = []
@@ -337,6 +375,15 @@ def _op_tag(name: str) -> Optional[str]:
 def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> None:
     tool = job.tooling.tools[sheet.tool_key]
     copy_ids = [p.body_id for _, p in sheet.instances]
+    moved = []
+    for inst, placed in sheet.instances:
+        now = adapter.box(placed.body_id).xy
+        if max(abs(a - b) for a, b in zip(now, placed.bbox_in)) > MOVE_TOL_IN:
+            moved.append(f"{inst} ({now[0]:.3f}, {now[1]:.3f} instead of {placed.bbox_in[0]:.3f}, "
+                         f"{placed.bbox_in[1]:.3f})")
+    if moved:
+        sheet.errors.append(Issue(E.ARRANGE_FAILED, f"parts moved after nesting: {'; '.join(moved)}"))
+        return
     adapter.make_sheet(sheet.name, sheet.origin, job.sheet.length_in, job.sheet.width_in, sheet.thickness_in, copy_ids)
     ops = adapter.apply_template(sheet.name, tool.template_path)
 

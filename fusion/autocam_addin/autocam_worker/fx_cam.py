@@ -24,6 +24,8 @@ UNCONFIRMED = {
     "post_properties": "PostProcessInput.postProperties",
     "preview_camera": "Viewport camera framed on one sheet",
     "arrange_flip": "ArrangeComponent.isDirectionFlipped chosen from upDirection",
+    "arrange_refuse": "ArrangeComponent.deleteMe for a part that would lie on its side",
+    "discard_hide": "Occurrence.isLightBulbOn = False for copies taken out of the job",
 }
 
 
@@ -106,7 +108,7 @@ def select_loops(op, whole_faces, single_loops, contour_param: str) -> None:
         fc.inputGeometry = [face]
     for loop in single_loops:
         chain = sels.createNewChainSelection()
-        chain.inputGeometry = [loop.edges.item(0)]
+        chain.inputGeometry = [co.edge for co in items(loop.coEdges)]   # the whole loop, in order
     value.applyCurveSelections(sels)
 
 

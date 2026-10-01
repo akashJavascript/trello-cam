@@ -43,6 +43,12 @@ class Box:
 
 
 @dataclass(frozen=True)
+class Arranged:
+    placed: Tuple[str, ...]          # copies Arrange put in the envelope
+    refused: Dict[str, str]          # copies left out on purpose, and why (e.g. it would lie on its side)
+
+
+@dataclass(frozen=True)
 class TemplateOp:
     name: str
     tool_guid: Optional[str]          # None if the tool couldn't be read
@@ -96,10 +102,11 @@ class Adapter:
         raise NotImplementedError
 
     def arrange(self, copy_ids: Sequence[str], envelope: Rect, spacing_in: float,
-                up_faces: Mapping[str, int]) -> List[str]:
-        """Nest what fits into one envelope; returns the copies placed. The rest stay where they were.
+                up_faces: Mapping[str, int]) -> Arranged:
+        """Nest what fits into one envelope. The rest stay where they were.
 
-        up_faces: for each copy, the face that must end up facing +Z (a pocket's open side)."""
+        up_faces: for each copy, the face that must end up facing +Z (a pocket's open side). A copy that
+        can't be laid that way is refused, not arranged."""
         raise NotImplementedError
 
     def box(self, copy_id: str) -> Box:
@@ -109,7 +116,9 @@ class Adapter:
         """After arranging: does that face point +Z?"""
         raise NotImplementedError
 
-    def delete(self, copy_id: str) -> None:
+    def discard(self, copy_id: str) -> None:
+        """Take a copy out of the job. Hidden, not deleted: deleting an occurrence that an Arrange moved
+        could make Fusion solve that Arrange again and move the parts already nested."""
         raise NotImplementedError
 
     # -- CAM

@@ -85,7 +85,9 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
 | Setup | `Setup.name = program name`; several part bodies as `models` | fx_cam | default names |
 | Selections | drill: `holeMode` + `holeFaces` (`CadObjectParameterValue.value = [faces]`) | fx_cam | none yet |
 | Selections | bore/bearing: `holeMode` + `circularFaces` | fx_cam | Drill op, bore-milling cycle |
-| Selections | inner: several faces in one contour selection; single loops via `createNewChainSelection` | fx_cam | whole faces only |
+| Selections | inner: several faces in one contour selection; single loops via `createNewChainSelection` with every edge of the loop (`loop.coEdges`), in order. Which side it cuts is checked by simulating (manual test 7) | fx_cam | whole faces only |
+| Arrange | `ArrangeComponent.deleteMe()` to leave out a part that would lie on its side; matching placed parts by occurrence name | fx_design | reject the part |
+| Design | `Occurrence.isLightBulbOn = False` for copies taken out of the job (not deleted: deleting an Arrange input could make Fusion solve it again) | fx_adapter | none |
 | Post | `PostProcessInput.postProperties` (`NamedValues` of every property, `useMist` from the material) | fx_cam | NC program + `postParameters` (probe: works) |
 | Preview | `Viewport.camera` framed on one sheet (target, eye, `viewExtents`) | fx_design | fit view |
 

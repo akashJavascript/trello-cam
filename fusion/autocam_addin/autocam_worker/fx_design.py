@@ -8,7 +8,7 @@ isDirectionFlipped where a part's upDirection points away from the face that mus
 import adsk.core
 import adsk.fusion
 
-from .adapter import AdapterError
+from .adapter import AdapterError, Arranged
 from .fx_util import call, items, normal, to_cm, to_in, vec, vi
 
 
@@ -22,10 +22,11 @@ def new_design(app):
 
 def import_step(app, design, path: str, name: str):
     root = design.rootComponent
-    before = {o.entityToken for o in items(root.occurrences)}
+    # Names, not entity tokens: tokens of one entity can differ between reads.
+    before = {o.name for o in items(root.occurrences)}
     opts = call("createSTEPImportOptions", app.importManager.createSTEPImportOptions, path)
     call("importToTarget", app.importManager.importToTarget, opts, root)
-    new = [o for o in items(root.occurrences) if o.entityToken not in before]
+    new = [o for o in items(root.occurrences) if o.name not in before]
     if len(new) != 1:
         for o in new:
             o.deleteMe()
@@ -64,9 +65,17 @@ def box_in(occ):
                                     bb.maxPoint.x, bb.maxPoint.y, bb.maxPoint.z))
 
 
-def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, part_in_part: bool):
-    """occs: [(copy id, occurrence)]; up_faces: copy id -> face id that must face +Z.
-    Returns the copy ids placed in the envelope."""
+def orientation(up, want):
+    """Arrange turns a part so its upDirection points +Z. True: flip it (isDirectionFlipped) so `want` points
+    up instead; False: leave it; None: upDirection is across `want`, so it would lie on its side."""
+    dot = up.dotProduct(want)
+    if abs(dot) < 0.99:
+        return None
+    return dot < 0
+
+
+def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, part_in_part: bool) -> Arranged:
+    """occs: [(copy id, occurrence)]; up_faces: copy id -> face id that must face +Z."""
     root = design.rootComponent
     for _, occ in occs:
         for attr in ("isGroundToParent", "isGrounded"):
@@ -81,17 +90,20 @@ def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, 
     d.isGlobalDirectionFaceUp = True
     d.isPartInPartAllowed = bool(part_in_part)
     d.isCreateCopies = False
-    tokens = {}
+    names, refused = {}, {}
     for cid, occ in occs:
         comp = call(f"arrangeComponents.add({cid})", arr_in.arrangeComponents.add, occ)
         want = normal(face_by_id(occ, up_faces[cid]))
-        up = comp.upDirection
-        dot = up.dotProduct(want)
-        if abs(dot) < 0.99:
-            raise AdapterError(f"{cid}: Arrange would lay it on its side (up {vec(up)}, top face {vec(want)})")
-        if dot < 0:
+        flip = orientation(comp.upDirection, want)
+        if flip is None:
+            refused[cid] = f"upDirection {vec(comp.upDirection)} is across the top face {vec(want)}"
+            call(f"take {cid} out of the Arrange", comp.deleteMe)
+            continue
+        if flip:
             comp.isDirectionFlipped = True
-        tokens[occ.entityToken] = cid
+        names[occ.name] = cid
+    if not names:
+        return Arranged((), refused)
     x0, y0, x1, y1 = envelope
     env = call("setPlaneEnvelope", arr_in.setPlaneEnvelope, root.xYConstructionPlane, vi(x1 - x0), vi(y1 - y0))
     env.originXOffset = vi(x0)
@@ -102,10 +114,10 @@ def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, 
     placed = []
     for result_env in items(feature.resultEnvelopes):
         for r in items(result_env.occurrences):
-            cid = tokens.get(r.occurrence.entityToken)
+            cid = names.get(r.occurrence.name)
             if cid is not None:
                 placed.append(cid)
-    return placed
+    return Arranged(tuple(placed), refused)
 
 
 def faces_up(occ, face_id: int) -> bool:

@@ -272,3 +272,33 @@ def test_vertical_rapid_below_stock_top_is_allowed():
 def test_drilling_travel_below_stock_top_fails():
     report = check(edit("G81 X5. Y5. Z0. R0.325 F20.", "G81 X5. Y5. Z0. R0.05 F20."))
     assert any("drilling travel below the stock top" in p for p in report.problems)
+
+
+# ---- staying on the sheet
+
+ON_SHEET = GuardSpec(**{**SPEC.__dict__, "sheet_in": (48.0, 24.0)})
+
+
+def test_sample_program_stays_on_the_sheet():
+    assert check(SAMPLE, ON_SHEET).passed
+
+
+@pytest.mark.parametrize("old, new", [
+    ("G1 X8. F60.", "G1 X-1. F60."),             # cutting past the zero end
+    ("G1 Y8.", "G1 Y23.99"),                     # into the far edge (tool radius counts)
+    ("G81 X5. Y5. Z0. R0.325 F20.", "G81 X5. Y-0.5 Z0. R0.325 F20."),   # drilling off the front edge
+])
+def test_cutting_off_the_sheet_fails(old, new):
+    report = check(edit(old, new), ON_SHEET)
+    assert not report.passed
+    assert any("off the sheet" in p for p in report.problems)
+
+
+def test_travel_above_the_stock_may_leave_the_sheet():
+    # A rapid at clearance height off the sheet is travel, not cutting (the clamp check still applies).
+    data = edit("G0 X12. Y4.\r\n", "G0 X-2. Y12.\r\nG0 X12. Y4.\r\n")
+    assert not any("off the sheet" in p for p in check(data, ON_SHEET).problems)
+
+
+def test_without_a_sheet_size_nothing_is_checked():
+    assert not any("off the sheet" in p for p in check(edit("G1 X8. F60.", "G1 X-1. F60.")).problems)

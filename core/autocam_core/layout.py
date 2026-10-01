@@ -44,7 +44,8 @@ class Layout:
     problems: Tuple[str, ...]
 
 
-def plan_layout(bodies: Sequence[Placed], envelopes: Sequence[Rect], qty: Mapping[str, int]) -> Layout:
+def plan_layout(bodies: Sequence[Placed], envelopes: Sequence[Rect], qty: Mapping[str, int],
+                edge_tol_in: float = 1e-4) -> Layout:
     per_env: List[List[Placed]] = [[] for _ in envelopes]
     unplaced: List[str] = []
     problems: List[str] = []
@@ -52,7 +53,7 @@ def plan_layout(bodies: Sequence[Placed], envelopes: Sequence[Rect], qty: Mappin
         cx, cy = body.center
         for i, env in enumerate(envelopes):
             if env[0] <= cx <= env[2] and env[1] <= cy <= env[3]:
-                if not contains(env, body.bbox_in, tol=1e-4):
+                if not contains(env, body.bbox_in, tol=edge_tol_in):
                     problems.append(f"{body.part_key}: body {body.body_id} crosses the edge of nest envelope {i + 1}")
                 per_env[i].append(body)
                 break

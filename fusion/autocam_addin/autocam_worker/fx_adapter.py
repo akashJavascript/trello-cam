@@ -4,6 +4,7 @@ Keeps the Fusion objects behind the pipeline's names (copy ids, sheet names). Oc
 entity token, so a reference that went stale after a timeline change is found again.
 """
 
+import functools
 import sys
 from pathlib import Path
 from typing import Dict, List
@@ -64,8 +65,11 @@ class FusionAdapter(Adapter):
     def arrange(self, copy_ids, envelope, spacing_in, up_faces):
         self._used("arrange_flip")
         nest = self.job.nest
-        return fx_design.arrange(self.design, [(c, self._occ(c)) for c in copy_ids], envelope, spacing_in,
-                                 up_faces, nest.rotation, nest.part_in_part)
+        result = fx_design.arrange(self.design, [(c, self._occ(c)) for c in copy_ids], envelope, spacing_in,
+                                   up_faces, nest.rotation, nest.part_in_part)
+        if result.refused:
+            self._used("arrange_refuse")
+        return result
 
     def box(self, copy_id):
         return Box(*call("bounding box", fx_design.box_in, self._occ(copy_id)))
@@ -73,9 +77,9 @@ class FusionAdapter(Adapter):
     def faces_up(self, copy_id, face_id):
         return call("face normal", fx_design.faces_up, self._occ(copy_id), face_id)
 
-    def delete(self, copy_id):
-        call(f"delete {copy_id}", self._occ(copy_id).deleteMe)
-        self.tokens.pop(copy_id, None)
+    def discard(self, copy_id):
+        self._used("discard_hide")
+        self._occ(copy_id).isLightBulbOn = False
 
     # -- CAM
     def _setup(self, sheet):
@@ -158,3 +162,22 @@ class FusionAdapter(Adapter):
     def finish(self, keep_open):
         if self.doc is not None and not keep_open:
             call("close document", self.doc.close, False)
+
+
+def _as_adapter_error(name, method):
+    """Any Fusion exception becomes an AdapterError naming the step, so one part or one sheet fails, not the job."""
+    @functools.wraps(method)
+    def wrapper(*args, **kwargs):
+        try:
+            return method(*args, **kwargs)
+        except AdapterError:
+            raise
+        except Exception as e:  # noqa: BLE001 - Fusion raises RuntimeError and friends
+            raise AdapterError(f"{name}: {type(e).__name__}: {e}") from None
+    return wrapper
+
+
+for _name in ("begin", "import_step", "extract", "add_copy", "arrange", "box", "faces_up", "discard", "make_sheet",
+              "apply_template", "fill", "make_outer_ops", "delete_op", "generate", "post", "machining_time",
+              "preview", "export_f3d", "finish"):
+    setattr(FusionAdapter, _name, _as_adapter_error(_name, getattr(FusionAdapter, _name)))
