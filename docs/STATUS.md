@@ -54,4 +54,4 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
   against a fake `adsk` module.
 - **Onshape:** HMAC signing, `/api/v10` paths and response field names.
 - **Trello adapter:** request shapes follow the REST docs. It has only been tested against a fake HTTP layer.
-- **Windows:** nothing has run on Windows yet. CI will cover the pure code once it's enabled.
+- **Windows:** CI passes the whole offline suite on `windows-latest`. Fusion, the real Trello and Onshape calls, and the shop PC itself are still untested.
