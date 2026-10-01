@@ -48,7 +48,7 @@ def test_make_job_submit_and_errors(tmp_path, capsys):
     assert cli.make_job(cfg, "pc_clear", [f"window={step}"], "local002", submit=True) == 0
     assert (cfg.paths.queue / "incoming" / "local002-pc_clear.json").exists()
     job = load_job(json.loads((cfg.paths.queue / "incoming" / "local002-pc_clear.json").read_text()))
-    assert job.tooling.small_features is None          # no poly 1/8 tool yet
+    assert job.tooling.small_features is None          # poly 1/8 template not exported in this test
     assert job.post.properties["useMist"] is False
     assert cli.make_job(cfg, "steel", [f"x={step}"], "l", False) == 1
     assert cli.make_job(cfg, "al6061", ["no-equals-sign"], "l", False) == 1

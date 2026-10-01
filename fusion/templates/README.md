@@ -6,10 +6,13 @@ expects:
 | File | Material family | Tool (by GUID, see config) |
 |---|---|---|
 | `alu_4mm.f3dhsm-template` | aluminum (6061, 5052) | `4mm 0 flute Aluminum` |
-| `alu_eighth.f3dhsm-template` | aluminum | `1/8` (T12) |
+| `alu_eighth.f3dhsm-template` | aluminum | `1/8 aluminum` (T12) |
 | `poly_4mm.f3dhsm-template` | polycarbonate | `4mm 0 flute Poly` |
+| `poly_eighth.f3dhsm-template` | polycarbonate | `1/8 polycarbonate` (T12) |
 
-There is no poly 1/8" template until that tool is in the library (open question 11).
+Build every template from the pinned library (`fusion/tools/5940_Tool_Library.tools`). Tool GUIDs change when a
+library is re-saved or copied, and the automation rejects any op whose tool GUID isn't the one in config. After
+building the templates, run `dump_params` on a part with each template applied and check that the GUIDs match.
 
 ## Rules for every template (decisions 7, 12, 22)
 

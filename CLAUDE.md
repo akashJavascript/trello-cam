@@ -16,7 +16,8 @@ Full context and decisions: `docs/BRIEF.md`. Read it before planning or changing
   happen only on Fusion's main thread (background threads hand work over via custom events).
 - **Units:** Fusion's API is centimeters internally. Config files and job files are inches. Convert at the edge.
 - **Versioned Onshape links only.** Workspace links get rejected back to the card with a comment.
-- **Tools are identified by GUID only** (see the tool table in the brief). Never select by diameter or tool number.
+- **Tools are identified by GUID only.** The GUIDs live in `config/autocam.toml` and must match
+  `fusion/tools/5940_Tool_Library.tools` (the brief's tool table has older GUIDs). Never select by diameter or tool number.
 - **Never edit `fusion/posts/*.cps`.** It's the shop's machine-proven post. Configure it through post properties only.
 
 ## Layout (see `docs/PLAN.md` for the module list)

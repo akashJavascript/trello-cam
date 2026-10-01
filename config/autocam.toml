@@ -18,7 +18,7 @@ schema = 1
 "machine.z_touchoff" = "decision 22: Z touched off on the spoilboard next to the sheet"
 "nest.reach_margin_in" = "plan: margin kept short of the 40 in reach"
 "holes.drill_sizes_in.t12_eighth_alu" = "decision 7: drill sizes for the 1/8 in endmill"
-"holes.drill_sizes_in.eighth_poly" = "decision 7: copied from the aluminum 1/8 in until the poly tool exists"
+"holes.drill_sizes_in.eighth_poly" = "decision 7: assumed the same as the aluminum 1/8 in"
 "materials.al6061.use_mist" = "decision 20: mist on for aluminum"
 "materials.al5052.use_mist" = "decision 20: mist on for aluminum"
 "materials.pc_clear.use_mist" = "decision 20: mist off for polycarbonate"
@@ -104,8 +104,10 @@ program_prefix = "PCsmoked"
 
 # Tools are identified by GUID only. number/diameter/flute are checked against the pinned
 # library, never used to pick a tool. cutter_label is what the sheet card tells the operator to load.
+# GUIDs change when a library is re-saved or copied, so config, the pinned library file and the
+# templates must all come from the same library (switched to the team's March 2026 library on 2026-10-01).
 [tools.t1_4mm_alu]
-guid = "7b77ef53-1ace-4e3b-ac2d-380b01a638bd"
+guid = "e5dd75b2-ea23-4767-b10b-756a9444cc2e"
 number = 1
 diameter_in = 0.15748
 flute_in = 0.4724
@@ -114,7 +116,7 @@ family = "aluminum"
 cutter_label = "4 mm O-flute ALU"
 
 [tools.t1_4mm_poly]
-guid = "ec14e4ef-aa38-4a96-af26-8885accae4a3"
+guid = "b4521723-7c35-4121-b376-50f3db7bc3a0"
 number = 1
 diameter_in = 0.15748
 flute_in = 0.7087
@@ -123,7 +125,7 @@ family = "polycarbonate"
 cutter_label = "4 mm O-flute POLY"
 
 [tools.t12_eighth_alu]
-guid = "7e0681ca-7664-4d53-ae3a-7457a77fd00a"
+guid = "dc1f12bd-dbcc-4d53-9ad2-9a65b2ed6fb5"
 number = 12
 diameter_in = 0.125
 flute_in = 0.4724
@@ -132,8 +134,10 @@ family = "aluminum"
 cutter_label = "1/8 in ALU"
 
 [tools.eighth_poly]
-guid = ""                  # open question 11: not in the library yet; number and flute_in come with it
+guid = "7a26b9db-1b3f-4695-8c8e-3439cc04258a"   # "1/8 polycarbonate" (also T12: the post can't tell it from the alu 1/8)
+number = 12
 diameter_in = 0.125
+flute_in = 0.4724
 min_inside_radius_in = 0.0625
 family = "polycarbonate"
 cutter_label = "1/8 in POLY"
@@ -179,7 +183,10 @@ family = "polycarbonate"
 tool = "t1_4mm_poly"
 file = "fusion/templates/poly_4mm.f3dhsm-template"
 
-# [templates.poly_eighth] is added once the 1/8 in poly tool is in the library (open question 11).
+[templates.poly_eighth]
+family = "polycarbonate"
+tool = "eighth_poly"
+file = "fusion/templates/poly_eighth.f3dhsm-template"
 
 [labels]
 smoked = "Smoked"

@@ -13,8 +13,8 @@ from autocam_service.config import (
 )
 
 RAW = tomllib.loads(DEFAULT_CONFIG.read_text(encoding="utf-8"))
-ONSRUD_4MM = "423977fe-8784-4556-8207-c2279ed05597"
-POLY_4MM = "ec14e4ef-aa38-4a96-af26-8885accae4a3"
+ALU_6MM_T2 = "4147915e-c136-481d-bcaa-213e9c8e6623"   # "6mm 3 flute Alu", in the library but not ours
+POLY_4MM = "b4521723-7c35-4121-b376-50f3db7bc3a0"
 
 
 def errors_for(mutate):
@@ -28,18 +28,17 @@ def errors_for(mutate):
 def test_real_config_loads():
     cfg = load_config()
     assert len(cfg.stock_types()) == 14
-    assert [t.key for t in cfg.tools.values() if t.available] == ["t1_4mm_alu", "t1_4mm_poly", "t12_eighth_alu"]
-    assert not cfg.tools["eighth_poly"].available
+    assert [t.key for t in cfg.tools.values() if t.available] == [
+        "t1_4mm_alu", "t1_4mm_poly", "t12_eighth_alu", "eighth_poly"]
     assert cfg.machine.z_floor_in == 0.0
     assert "ready_to_cut" not in cfg.trello.targets.values()
 
 
 def test_placeholders_and_warnings_are_reported():
     cfg = load_config()
-    assert {"pauses.resume_key", "tools.eighth_poly.guid", "trello.lists.ready_to_cut",
-            "fusion_team.project"} <= set(cfg.placeholders)
+    assert {"pauses.resume_key", "trello.lists.ready_to_cut", "fusion_team.project"} <= set(cfg.placeholders)
     assert not any(p.endswith(".color") for p in cfg.placeholders)
-    assert any("eighth_poly" in w for w in cfg.warnings)
+    assert any("poly_eighth.f3dhsm-template not exported yet" in w for w in cfg.warnings)
 
 
 def test_post_property_names_match_the_post():
@@ -120,7 +119,7 @@ BAD_VARIANTS = [
     # tools by GUID only
     ("guid_not_in_library", _set("tools", "t1_4mm_alu", "guid", "00000000-0000-0000-0000-000000000000"),
      "is not in 5940_Tool_Library.tools"),
-    ("onsrud_instead_of_alu_4mm", _set("tools", "t1_4mm_alu", "guid", ONSRUD_4MM), "library says T2"),
+    ("another_library_tool_as_alu_4mm", _set("tools", "t1_4mm_alu", "guid", ALU_6MM_T2), "library says T2"),
     ("poly_cutter_as_alu_cutter", _set("tools", "t1_4mm_alu", "guid", POLY_4MM), "two tools share a GUID"),
     ("wrong_number", _set("tools", "t12_eighth_alu", "number", 1), "library says T12"),
     ("wrong_diameter", _set("tools", "t1_4mm_alu", "diameter_in", 0.125), "library says 0.15748"),

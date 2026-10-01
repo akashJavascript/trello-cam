@@ -102,3 +102,22 @@ These are inputs for the templates in M1.2-M1.5, not decisions yet. One aluminum
   tabs, so the no-tab trial (open question 10) matters.
 - **Pockets** are cut with 2D Adaptive Clearing, not the Pocket strategy. The `[pocket]` op in the templates
   should be a 2D Adaptive op.
+
+## 2026-10-01: tool library switched to the team's current one
+
+- **Which library.** The pinned `fusion/tools/5940_Tool_Library.tools` is now the team's library as saved in
+  March 2026. It replaces the older copy that came with the brief.
+- **What changed.** The same tools have **new GUIDs**:
+  - 4 mm alu `e5dd75b2-…`
+  - 4 mm poly `b4521723-…`
+  - 1/8 alu `dc1f12bd-…`
+
+  It adds **1/8 polycarbonate** (`7a26b9db-…`, T12, 96 ipm / 10 ipm plunge, mist), which closes open
+  question 11. It also adds a 3 mm poly (T1) and a 6 mm chamfer (T16). The Onsrud and wood spiral bits are gone.
+- **Duplicate tool numbers.** T1 is now shared by three tools and T12 by two. The `.tap` can't say which cutter
+  to load, so the card's `LOAD:` line and the GUID check matter more.
+- **Lesson.** GUIDs are stable within one library but change when a library is re-saved or copied. Config, the
+  pinned file and the templates must come from the same library. `config-check` catches config vs pinned file;
+  the worker's GUID check catches templates. After importing on a new machine, confirm with `dump_params`.
+- **Poly 1/8 template.** `poly_eighth` is configured. Until its template file is exported, poly parts that need
+  it still go to Needs fixing with the decision-13 comment.
