@@ -103,7 +103,9 @@ template. It's the same script folder, so there's nothing new to add in Fusion.
 3. Paste the output of:
    ```powershell
    $f = Get-ChildItem C:\dev\frc-autocam\fusion\tools\pipeline_probe2\out\*\probe2.json | Sort-Object LastWriteTime | Select-Object -Last 1
-   (Get-Content $f.FullName -Raw | ConvertFrom-Json).steps | ForEach-Object {
+   $j = Get-Content $f.FullName -Raw | ConvertFrom-Json
+   "$($f.FullName)  version $($j.version)"
+   $j.steps | ForEach-Object {
      "{0,-5} {1}  {2}{3}  {4}" -f $_.ok, $_.step, $_.error, $_.note, ($_.result | ConvertTo-Json -Compress -Depth 8)
    }
    ```

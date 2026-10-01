@@ -434,7 +434,7 @@ def run(context):
             json.dump(data, f, indent=2)
         ok = sum(1 for s in rec.steps if s.get("ok") is True)
         failed = sum(1 for s in rec.steps if s.get("ok") is False)
-        ui.messageBox(f"{ok} steps worked, {failed} failed.\nWrote:\n{os.path.join(out_dir, 'probe2.json')}",
-                      "pipeline_probe2")
+        ui.messageBox(f"Version 3: {ok} steps worked, {failed} failed.\nWrote:\n{os.path.join(out_dir, 'probe2.json')}",
+                      "pipeline_probe2 v3")
     except Exception:  # noqa: BLE001
-        ui.messageBox("pipeline_probe2 failed:\n" + traceback.format_exc(), "pipeline_probe2")
+        ui.messageBox("pipeline_probe2 v3 failed:\n" + traceback.format_exc(), "pipeline_probe2 v3")
