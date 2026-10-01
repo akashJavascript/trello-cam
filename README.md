@@ -5,6 +5,7 @@ for the team's ShopSabre 23. A human reviews every sheet before it is cut.
 
 - `docs/BRIEF.md`: the settled decisions.
 - `docs/PLAN.md`: architecture and milestones.
+- `docs/STATUS.md`: where things stand and what's still untested.
 - `CLAUDE.md`: the hard rules.
 
 ## Development (WSL)
