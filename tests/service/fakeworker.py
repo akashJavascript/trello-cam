@@ -31,7 +31,8 @@ def make_program(name: str, instances: List[str], thickness: float, mist: bool) 
 
 
 def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optional[str] = None,
-                    defer_part: Optional[str] = None, part_error: Optional[str] = None) -> List[str]:
+                    defer_part: Optional[str] = None, part_error: Optional[str] = None,
+                    shallow_outlines: bool = False) -> List[str]:
     processed = []
     for job_id in queue.pending():
         claim = queue.claim(job_id)
@@ -50,6 +51,8 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
             program = insert(program, instances, pause_spec(job), job.pauses.after_last_part)
         if reject_sheet:
             program = program.replace("G1 Z0. F20.", "G1 Z-0.02 F20.", 1)
+        if shallow_outlines:  # template bottom height left at the selected (top) face
+            program = program.replace("G1 Z0. F20.", f"G1 Z{thickness:g} F20.")
         data = program.encode("ascii")
         check = check_sheet_program(data, job, thickness, tool, instances, {p.part_key: p.qty for p in placed})
         tap_name = f"{name}.tap" if check.passed else f"{name}.REJECTED.tap"
@@ -70,7 +73,7 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
             machining_time_s=900.0, preview_png=f"{name}.png",
             parts=tuple(SheetPart(p.part_key, p.qty) for p in placed), outer_order=tuple(instances),
             tool_forced_by=(),
-            errors=() if check.passed else (Issue("TAP_BELOW_FLOOR", check.guard.summary()),),
+            errors=tuple(Issue("TAP_REJECTED", msg) for msg in check.problems()),
             warnings=(), notes=())
         parts = []
         for p in job.parts:

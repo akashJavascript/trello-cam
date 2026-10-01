@@ -79,6 +79,33 @@ It writes `out\` next to the job file, containing `<job>.f3d`, `<job>_S<n>.tap`,
 - The smoke `out\` folder, copied to `C:\dev\frc-autocam\docs\smoke\`.
 - Nothing extra for the JSON from steps 1-2: it's already in the repo's `out\` folders.
 
+**Result (2026-10-01):** stopped at step 3, `arrangeComponents.add(face)` →
+`RuntimeError: 2 : InternalValidationError : arrange2DDefinition`. Steps 4-16 didn't run; `pipeline_probe`
+covered them instead.
+
+### 4. pipeline_probe (done 2026-10-01)
+
+Add `C:\dev\frc-autocam\fusion\tools\pipeline_probe`, run it, pick the smoke template. Results are in
+`docs/fusion-api-status.md`. The posted programs passed the guard but only went down to Z 0.125 (the plate
+top): the template's outline used bottom height "From contour", so it followed the selected top face.
+
+### 5. pipeline_probe2 (about 3 minutes)
+
+The questions `pipeline_probe` left open: does Arrange move or copy, what happens to parts that don't fit,
+quantity by extra occurrences, two Arranges in a row, setting the bottom height from the API, renaming an op
+copy, and making a Manual NC op a Stop.
+
+1. `git pull` on the Fusion PC (branch `m1-offline`).
+2. Add `C:\dev\frc-autocam\fusion\tools\pipeline_probe2` and run it. Pick the same smoke template when asked.
+   Scratch documents open and close; it saves nothing.
+3. Paste the output of:
+   ```powershell
+   $f = Get-ChildItem C:\dev\frc-autocam\fusion\tools\pipeline_probe2\out\*\probe2.json | Sort-Object LastWriteTime | Select-Object -Last 1
+   (Get-Content $f.FullName -Raw | ConvertFrom-Json).steps | ForEach-Object {
+     "{0,-5} {1}  {2}{3}  {4}" -f $_.ok, $_.step, $_.error, $_.note, ($_.result | ConvertTo-Json -Compress -Depth 8)
+   }
+   ```
+
 ## M1.2 to M1.7: restructured pipeline in Fusion
 
 _Added per sub-milestone._ Already known checks:

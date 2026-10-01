@@ -187,6 +187,17 @@ def test_rejected_program_is_never_uploaded(tmp_path):
     assert "program was rejected" in h.tracker.comments_on("ca")[-1]
 
 
+def test_outlines_that_never_reach_the_stock_bottom_are_rejected(tmp_path):
+    h = Harness(tmp_path)
+    h.runner.tick()
+    run_fake_worker(h.queue, shallow_outlines=True)
+    h.runner.tick()
+    assert all(c.name.startswith("NOT CUTTABLE") for c in h.sheet_cards())
+    assert not any(name.endswith(".tap") for _, name, _ in h.tracker.files.values())
+    alu = [c for c in h.sheet_cards() if "6061" in c.name][0]
+    assert "never reaches the stock bottom" in alu.desc
+
+
 def test_service_rechecks_the_bytes_it_uploads(tmp_path):
     h = Harness(tmp_path)
     h.runner.tick()

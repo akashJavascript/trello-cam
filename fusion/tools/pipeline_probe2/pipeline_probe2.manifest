@@ -1,0 +1,10 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "script",
+	"author": "",
+	"description": {
+		"": "Follow-up probe: Arrange copy/overflow/quantity behavior, Manual NC stop, op rename, bottom height. Scratch documents only; saves nothing."
+	},
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}

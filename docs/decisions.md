@@ -121,3 +121,17 @@ These are inputs for the templates in M1.2-M1.5, not decisions yet. One aluminum
   the worker's GUID check catches templates. After importing on a new machine, confirm with `dump_params`.
 - **Poly 1/8 template.** `poly_eighth` is configured. Until its template file is exported, poly parts that need
   it still go to Needs fixing with the decision-13 comment.
+
+## 2026-10-01: from the `pipeline_probe` results
+
+- **Every outline must reach the stock bottom.** The probe's programs passed the Z-floor check but never went
+  below Z 0.125 (the plate top), because the smoke template used the team's "From contour" bottom height and the
+  automation selects the top face. The sheet check (both in Fusion and in the service) now rejects any
+  `[outer ...]` op whose lowest Z isn't the floor (within 0.0005 in, the posting precision). The card names the
+  op and says to set the template's bottom height to stock bottom, offset 0.
+- **A rejected sheet's `result.json` carries every reason.** The worker reports each `SheetCheck.problems()`
+  line as a `TAP_REJECTED` error, not just the guard summary, so the card says why (the fake worker does this
+  too).
+- **Arrange: occurrences, one Arrange per sheet, our own offsets.** Faces can't be added; quantity and
+  multiple envelopes need the Manufacturing Extension; `resultEnvelopes` doesn't include the offset. Details and
+  the open questions are in `docs/fusion-api-status.md`.
