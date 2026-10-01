@@ -17,15 +17,10 @@ def material_label(m: MaterialSpec) -> str:
     return f"{m.name} {m.color}".strip() if m.color else m.name
 
 
-def pause_count(vs: VerifiedSheet) -> int:
-    p = vs.sheet.pauses
-    return len(p.entries) if p else 0
-
-
 def sheet_title(job: Job, vs: VerifiedSheet) -> str:
     s = vs.sheet
     title = (f"{material_label(job.material)} {s.thickness_in:g} - {s.cutter_label} - S{s.index} "
-             f"({pause_count(vs)} pauses) - {job.run_id}")
+             f"({vs.pause_count} pauses) - {job.run_id}")
     return title if vs.cuttable else f"NOT CUTTABLE - {title}"
 
 
@@ -40,7 +35,7 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
     lines.append(f"**LOAD: {s.cutter_label}** (T{tool.number}). Both 4 mm cutters are T1, so check the cutter itself.")
     if vs.cuttable and vs.check is not None:
         lines.append(f"Program: `{s.tap}`, lowest Z {vs.check.guard.min_z_in:.4f} in (Z0 = stock bottom).")
-    n = pause_count(vs)
+    n = vs.pause_count
     key = resume_key or "the start/continue key (not confirmed yet; see docs/manual-tests.md)"
     lines.append(f"Pauses: {n}. The machine stops after each part with the spindle off. Remove the part, "
                  f"then resume with {key}. **Never press Esc at a pause**: it aborts the job.")

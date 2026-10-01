@@ -40,15 +40,15 @@ class Claim:
     out_dir: Path       # empty folder for this attempt's outputs
 
 
-def _retry(fn, *args):
+def _retry(fn, *args, tries: int = 5):
     # Windows: antivirus or the indexer can briefly hold a file that was just written.
-    for i in range(5):
+    for i in range(tries):
         try:
             return fn(*args)
         except PermissionError:
-            if i == 4:
+            if i == tries - 1:
                 raise
-            time.sleep(0.2 * (i + 1))
+            time.sleep(min(0.2 * (i + 1), 2.0))
 
 
 def write_atomic(path: Path, data: bytes) -> None:
@@ -81,11 +81,21 @@ class Queue:
         return self
 
     # ---- service side
-    def submit(self, job_id: str, job_text: str) -> Path:
+    def where(self, job_id: str) -> Optional[str]:
+        """Which folder holds this job, or None if the queue has never seen it."""
         _check_id(job_id)
         for d in (self.incoming, self.processing, self.done, self.failed):
             if (d / f"{job_id}.json").exists() or (d / job_id).exists():
-                raise QueueError(f"job {job_id} already exists in {d.name}/")
+                return d.name
+        return None
+
+    def submit(self, job_id: str, job_text: str, resume: bool = False) -> Path:
+        """resume=True: a job that's already in the queue (a restarted run) is left alone."""
+        found = self.where(job_id)
+        if found is not None:
+            if resume:
+                return self.root / found
+            raise QueueError(f"job {job_id} already exists in {found}/")
         path = self.incoming / f"{job_id}.json"
         write_atomic(path, job_text.encode("utf-8"))
         return path
@@ -137,27 +147,37 @@ class Queue:
         target = self.done / claim.job_id
         if target.exists():
             raise QueueError(f"{claim.job_id}: done/{claim.job_id} already exists")
-        _retry(os.replace, claim.out_dir, target)
+        _retry(os.replace, claim.out_dir, target, tries=12)  # a folder rename waits for every file lock
         self._forget(claim.job_id)
         return target
 
     def fail(self, job_id: str, error: str) -> Path:
+        """Never leaves a job in limbo: error.txt is written first, then the rest is moved if it can be."""
         _check_id(job_id)
         target = self.failed / job_id
-        n = 2
-        while target.exists():
-            target = self.failed / f"{job_id}-{n}"
-            n += 1
-        target.mkdir(parents=True)
+        target.mkdir(parents=True, exist_ok=True)
+        if (target / "error.txt").exists():
+            _retry(os.replace, target / "error.txt", target / f"error.{int(time.time())}.txt")
+        notes = []
         for src in (self.processing / f"{job_id}.json", self.incoming / f"{job_id}.json"):
             if src.exists():
-                _retry(os.replace, src, target / "job.json")
+                try:
+                    _retry(os.replace, src, target / "job.json")
+                except OSError as e:
+                    shutil.copyfile(src, target / "job.json")
+                    notes.append(f"(job.json was copied, not moved: {e})")
                 break
         out = self.processing / f"{job_id}.out"
         if out.exists() and any(out.iterdir()):
-            _retry(os.replace, out, target / "partial")
-        write_atomic(target / "error.txt", (error.rstrip() + "\n").encode("utf-8"))
-        self._forget(job_id)
+            try:
+                _retry(os.replace, out, target / "partial")
+            except OSError as e:
+                notes.append(f"(partial outputs left in processing/{out.name}: {e})")
+        write_atomic(target / "error.txt", ("\n".join([error.rstrip()] + notes) + "\n").encode("utf-8"))
+        try:
+            self._forget(job_id)
+        except OSError:
+            pass  # a locked leftover in processing/ is harmless once failed/<job>/error.txt exists
         return target
 
     def recover(self, max_attempts: int) -> Tuple[List[str], List[str]]:
@@ -165,6 +185,8 @@ class Queue:
         requeued, failed = [], []
         for path in sorted(self.processing.glob("*.json")):
             job_id = path.stem
+            if (self.failed / job_id / "error.txt").exists():
+                continue  # already failed; only a locked leftover remains
             n = self.attempts(job_id)
             if n >= max_attempts:
                 self.fail(job_id, f"the worker started this job {n} times and never finished it "

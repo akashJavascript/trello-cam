@@ -3,28 +3,39 @@
 The Fusion worker runs it right after posting (and renames failures *.REJECTED.tap); the service
 runs it again on the downloaded bytes before anything is uploaded to Trello. Same job, same code,
 same answer.
+
+It doesn't take the worker's word for the sheet: the thickness must be one of the job's stock
+thicknesses, the tool must be one of the job's tools, and the program's `[outer <part>]` ops must
+be exactly the planned cut order and account for every placed copy (so no part loses its pause).
 """
 
-from dataclasses import dataclass
-from typing import Optional, Sequence
+import re
+from dataclasses import dataclass, replace
+from typing import List, Mapping, Optional, Sequence, Tuple
 
 from .fixture import clamp_clear_z
+from .names import instance_id
 from .pauses import PauseCheck, PauseSpec, verify
 from .schema_job import Job
 from .tapguard import GuardReport, GuardSpec, check_program
+
+_OUTER_LINE = re.compile(r"^\[outer (.*)\]$")
 
 
 @dataclass(frozen=True)
 class SheetCheck:
     guard: GuardReport
     pauses: Optional[PauseCheck]      # None when pauses are off for the job
+    plan_problems: Tuple[str, ...] = ()
 
     @property
     def passed(self) -> bool:
-        return self.guard.passed and (self.pauses is None or self.pauses.ok)
+        return self.guard.passed and (self.pauses is None or self.pauses.ok) and not self.plan_problems
 
-    def problems(self):
-        out = [] if self.guard.passed else [self.guard.summary()]
+    def problems(self) -> List[str]:
+        out = list(self.plan_problems)
+        if not self.guard.passed:
+            out.append(self.guard.summary())
         if self.pauses is not None and not self.pauses.ok:
             out += list(self.pauses.problems)
         return out
@@ -42,6 +53,7 @@ def guard_spec(job: Job, thickness_in: float, tool_key: str) -> GuardSpec:
         tool_radius_in=tool.diameter_in / 2,
         reach_x_in=job.sheet.reach_x_in,
         mist=job.material.use_mist,
+        stock_top_in=thickness_in,
     )
 
 
@@ -50,20 +62,44 @@ def pause_spec(job: Job) -> PauseSpec:
                      dwell_s=job.pauses.dwell_s)
 
 
+def plan_problems(text: str, job: Job, thickness_in: float, tool_key: str, outer_order: Sequence[str],
+                  part_counts: Mapping[str, int]) -> List[str]:
+    out: List[str] = []
+    if not any(abs(thickness_in - t) <= 1e-9 for t in job.material.thicknesses_in):
+        out.append(f"sheet thickness {thickness_in:g} in is not a {job.material.name} stock thickness")
+    allowed_tools = {job.tooling.default, job.tooling.small_features} - {None}
+    if tool_key not in allowed_tools:
+        out.append(f"sheet tool {tool_key} isn't one of this job's tools")
+    unknown = sorted(set(part_counts) - {p.part_key for p in job.parts})
+    if unknown:
+        out.append(f"sheet lists parts that aren't in the job: {', '.join(unknown)}")
+    expected = sorted(instance_id(k, n) for k, c in part_counts.items() for n in range(1, c + 1))
+    if sorted(outer_order) != expected or len(set(outer_order)) != len(outer_order):
+        out.append(f"cut order {list(outer_order)} doesn't match the parts on the sheet {expected}")
+    in_program = [m.group(1) for m in (_OUTER_LINE.match(l.strip()) for l in text.splitlines()) if m]
+    if in_program != list(outer_order):
+        out.append(f"outline ops in the program {in_program} don't match the cut order {list(outer_order)}")
+    if not part_counts:
+        out.append("no parts on the sheet")
+    return out
+
+
 def check_sheet_program(data: bytes, job: Job, thickness_in: float, tool_key: str,
-                        outer_order: Sequence[str]) -> SheetCheck:
+                        outer_order: Sequence[str], part_counts: Mapping[str, int]) -> SheetCheck:
+    text = data.decode("ascii", errors="replace")
+    problems = tuple(plan_problems(text, job, thickness_in, tool_key, outer_order, part_counts))
+    if tool_key not in job.tooling.tools:
+        return SheetCheck(_failed(check_program(data, GuardSpec()), "unknown tool"), None, problems)
     spec = guard_spec(job, thickness_in, tool_key)
     report = check_program(data, spec)
     if not job.pauses.enabled:
         if report.m0_count:
-            report = _with_problem(report, f"pauses are off for this job but the program has {report.m0_count} M0")
-        return SheetCheck(report, None)
-    text = data.decode("ascii", errors="replace")
+            report = _failed(report, f"pauses are off for this job but the program has {report.m0_count} M0")
+        return SheetCheck(report, None, problems)
     pauses = verify(text, outer_order, pause_spec(job), after_last_part=job.pauses.after_last_part,
                     safe_z_in=spec.clamp_clear_z_in)
-    return SheetCheck(report, pauses)
+    return SheetCheck(report, pauses, problems)
 
 
-def _with_problem(report: GuardReport, problem: str) -> GuardReport:
-    from dataclasses import replace
+def _failed(report: GuardReport, problem: str) -> GuardReport:
     return replace(report, passed=False, problems=report.problems + (problem,))

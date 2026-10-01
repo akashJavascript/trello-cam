@@ -20,6 +20,7 @@ if sys.version_info >= (3, 11):
 else:  # WSL dev boxes still ship Python 3.10
     import tomli as tomllib
 
+from autocam_core.tapguard import SAFE_G, SAFE_M
 from autocam_core.toollib import ToolLibrary, ToolLibraryError
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -36,9 +37,7 @@ TRELLO_TARGETS = ("part_nested", "part_rejected", "part_deferred", "sheet_create
 TRELLO_CARDS = ("run_nest_control", "system")
 NEVER_AUTOMATED = "ready_to_cut"
 TRELLO_FREE_ATTACHMENT_MB = 10
-# G-codes that would let a program move relative to something other than the stock-bottom WCS,
-# switch units, or hand radius compensation to the control. The Z-floor guard must never allow them.
-FORBIDDEN_G = frozenset({10, 21, 22, 28, 30, 41, 42, 52, 91, 92})
+# The guard only understands autocam_core.tapguard.SAFE_G / SAFE_M; allowlists must stay inside them.
 REQUIRED_G = frozenset({0, 1, 20, 53, 90})
 REQUIRED_M = frozenset({0, 3, 5})
 MIST_M = frozenset({11, 12})
@@ -866,9 +865,13 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
             e(f"fusion.post_properties.{prop}: must be {value!r}")
 
     # Z-floor guard allowlists.
-    forbidden = sorted(FORBIDDEN_G & set(cfg.tapguard.allowed_g))
-    if forbidden:
-        e(f"tapguard.allowed_g: G{', G'.join(map(str, forbidden))} can never be allowed")
+    unknown_g = sorted(set(cfg.tapguard.allowed_g) - SAFE_G)
+    if unknown_g:
+        e(f"tapguard.allowed_g: G{', G'.join(map(str, unknown_g))} can never be allowed "
+          f"(the guard only understands G{', G'.join(map(str, sorted(SAFE_G)))})")
+    unknown_m = sorted(set(cfg.tapguard.allowed_m) - SAFE_M)
+    if unknown_m:
+        e(f"tapguard.allowed_m: M{', M'.join(map(str, unknown_m))} can never be allowed")
     missing_g = sorted(REQUIRED_G - set(cfg.tapguard.allowed_g))
     if missing_g:
         e(f"tapguard.allowed_g: must include G{', G'.join(map(str, missing_g))}")

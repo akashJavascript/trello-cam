@@ -70,7 +70,9 @@ def build_services(cfg: Config, *, env_file: Optional[Path], dry_run: bool, offl
                                    retry_after_max_wait_s=cfg.onshape.retry_after_max_wait_s)
         return Exporter(client, OnshapeCache(cfg.paths.cache), polls)
 
-    return Services(cfg, tracker, Queue(cfg.paths.queue).ensure(), RunStore(cfg.paths.state), ledger, exporter_for)
+    # A dry run keeps its own run state and "d" run ids: it never touches a real run, and vice versa.
+    store = RunStore(cfg.paths.state / "dryrun", prefix="d") if dry_run else RunStore(cfg.paths.state)
+    return Services(cfg, tracker, Queue(cfg.paths.queue).ensure(), store, ledger, exporter_for)
 
 
 def run_forever(runner: Runner, interval_s: float) -> None:

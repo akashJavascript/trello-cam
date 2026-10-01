@@ -32,7 +32,12 @@ def _requests_transport(method, url, params, files, headers):
 
 
 class TrelloHttp:
-    """Key/token auth, JSON in and out, polite retries on 429 and 5xx."""
+    """Key/token auth, JSON in and out.
+
+    429 is retried for every method (Trello rejected the request without doing it). 5xx is retried only
+    for GET and PUT: a POST that timed out may have been done, and repeating it would duplicate a card,
+    comment or attachment.
+    """
 
     def __init__(self, key: str, token: str, transport: Callable = _requests_transport,
                  sleep: Callable[[float], None] = time.sleep, max_retries: int = 4):
@@ -51,7 +56,7 @@ class TrelloHttp:
         query = {**(params or {}), "key": self._key, "token": self._token}
         for attempt in range(self.max_retries + 1):
             status, headers, body = self.transport(method, API + path, query, files, {"Accept": "application/json"})
-            if status == 429 or status >= 500:
+            if status == 429 or (status >= 500 and method in ("GET", "PUT")):
                 if attempt == self.max_retries:
                     break
                 try:
@@ -108,11 +113,14 @@ class TrelloTracker(Tracker):
         return self._card(self.http.call("GET", f"/cards/{card_id}", self.CARD_PARAMS))
 
     def checklist(self, card_id: str, name: str) -> Optional[ChecklistState]:
-        for cl in self.http.call("GET", f"/cards/{card_id}/checklists", {"fields": "name", "checkItem_fields": "state"}):
-            if cl.get("name") == name:
-                items = cl.get("checkItems") or []
-                return ChecklistState(sum(1 for i in items if i.get("state") == "complete"), len(items))
-        return None
+        """All checklists with this name count together (a half-created duplicate can't be ticked instead)."""
+        lists = [cl for cl in self.http.call("GET", f"/cards/{card_id}/checklists",
+                                             {"fields": "name", "checkItem_fields": "state"})
+                 if cl.get("name") == name]
+        if not lists:
+            return None
+        items = [i for cl in lists for i in cl.get("checkItems") or []]
+        return ChecklistState(sum(1 for i in items if i.get("state") == "complete"), len(items))
 
     def download(self, attachment: Attachment) -> bytes:
         return self.http.download(attachment.url)

@@ -48,8 +48,13 @@ class Ledger:
 
     def _append(self, entry: Dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        torn = False
+        if self.path.exists() and self.path.stat().st_size:
+            with open(self.path, "rb") as f:
+                f.seek(-1, os.SEEK_END)
+                torn = f.read(1) != b"\n"   # a crash mid-write; start a fresh line so this entry parses
         with open(self.path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, sort_keys=True) + "\n")
+            f.write(("\n" if torn else "") + json.dumps(entry, sort_keys=True) + "\n")
             f.flush()
             os.fsync(f.fileno())
 
@@ -99,10 +104,16 @@ class Ledger:
 
     # ---- 402 latch
     def latched(self) -> Optional[Dict[str, Any]]:
+        """None only when there is no latch file. Any file at all, whatever it holds, means stopped."""
+        if not self.latch_path.exists():
+            return None
         try:
-            return json.loads(self.latch_path.read_text(encoding="utf-8"))
+            data = json.loads(self.latch_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return None if not self.latch_path.exists() else {"reason": "unreadable latch file"}
+            data = None
+        if isinstance(data, dict) and data:
+            return data
+        return {"reason": "latch file present"}
 
     def latch(self, reason: str) -> None:
         self.latch_path.parent.mkdir(parents=True, exist_ok=True)

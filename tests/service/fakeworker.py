@@ -51,7 +51,7 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
         if reject_sheet:
             program = program.replace("G1 Z0. F20.", "G1 Z-0.02 F20.", 1)
         data = program.encode("ascii")
-        check = check_sheet_program(data, job, thickness, tool, instances)
+        check = check_sheet_program(data, job, thickness, tool, instances, {p.part_key: p.qty for p in placed})
         tap_name = f"{name}.tap" if check.passed else f"{name}.REJECTED.tap"
         (claim.out_dir / tap_name).write_bytes(data)
         (claim.out_dir / f"{name}.png").write_bytes(b"\x89PNG fake preview")

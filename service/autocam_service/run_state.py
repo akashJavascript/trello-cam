@@ -6,6 +6,10 @@ recorded. A crash between the write and the record can repeat at most that one w
 
     state/runs/r017.json          the run
     state/jobs/r017-al6061.json   the service's own copy of each job it submitted
+    state/sheet_cards.json        every sheet card the service made, and whether its program is cuttable
+
+A run is saved before anything else happens (phase "starting"), so a crash while starting resumes
+the same run instead of starting a new one and paying for its Onshape exports again.
 """
 
 import json
@@ -16,6 +20,7 @@ from typing import Dict, List, Optional
 from autocam_core.hotfolder import write_atomic
 
 QUEUED, PUBLISHED, FAILED = "queued", "published", "failed"
+STARTING, COLLECTING = "starting", "collecting"
 
 
 @dataclass
@@ -33,6 +38,7 @@ class RunState:
     started_utc: str
     trigger_card: str
     dry_run: bool = False
+    phase: str = STARTING
     done: bool = False
     jobs: Dict[str, JobState] = field(default_factory=dict)
     cards: Dict[str, Dict[str, str]] = field(default_factory=dict)   # card_id -> {"name", "url"}
@@ -50,9 +56,13 @@ class RunState:
 
 
 class RunStore:
-    def __init__(self, state_dir: Path):
+    """prefix: "r" for real runs; dry runs use their own folder and "d" so ids never collide."""
+
+    def __init__(self, state_dir: Path, prefix: str = "r"):
         self.dir = Path(state_dir) / "runs"
         self.jobs_dir = Path(state_dir) / "jobs"
+        self.sheets_file = Path(state_dir) / "sheet_cards.json"
+        self.prefix = prefix
 
     def _path(self, run_id: str) -> Path:
         return self.dir / f"{run_id}.json"
@@ -60,11 +70,11 @@ class RunStore:
     def run_ids(self) -> List[str]:
         if not self.dir.exists():
             return []
-        return sorted(p.stem for p in self.dir.glob("r*.json"))
+        return sorted(p.stem for p in self.dir.glob(f"{self.prefix}*.json") if p.stem[1:].isdigit())
 
     def next_run_id(self) -> str:
-        numbers = [int(r[1:]) for r in self.run_ids() if r[1:].isdigit()]
-        return f"r{(max(numbers) + 1) if numbers else 1:03d}"
+        numbers = [int(r[1:]) for r in self.run_ids()]
+        return f"{self.prefix}{(max(numbers) + 1) if numbers else 1:03d}"
 
     def save(self, state: RunState) -> None:
         self.dir.mkdir(parents=True, exist_ok=True)
@@ -80,6 +90,18 @@ class RunStore:
     def job_text(self, job_id: str) -> Optional[str]:
         path = self.jobs_dir / f"{job_id}.json"
         return path.read_text(encoding="utf-8") if path.exists() else None
+
+    def register_sheet(self, card_id: str, run_id: str, cuttable: bool) -> None:
+        sheets = self.sheet_cards()
+        sheets[card_id] = {"run": run_id, "cuttable": cuttable}
+        self.sheets_file.parent.mkdir(parents=True, exist_ok=True)
+        write_atomic(self.sheets_file, (json.dumps(sheets, indent=1) + "\n").encode("utf-8"))
+
+    def sheet_cards(self) -> Dict[str, Dict]:
+        try:
+            return json.loads(self.sheets_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
 
     def active(self) -> Optional[RunState]:
         for run_id in reversed(self.run_ids()):

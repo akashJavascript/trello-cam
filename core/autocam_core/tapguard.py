@@ -10,7 +10,11 @@ What the shop's post (fusion/posts/shopsabre_automatic_mist.cps) writes, and how
 - `G4 X4.` is a dwell in seconds, not an X move.
 - `M11 C8` / `M12 C8` turn mist on/off; `C8` is an output number, not an axis.
 - Drilling cycles (`G81 X Y Z R F`, ended by `G80`): both Z and R are checked against the floor.
-- Arcs are XY-plane only; a helix's lowest point is one of its end points.
+- Arcs are XY-plane only (G17 is the only plane the guard accepts); a helix's lowest point is one of
+  its end points.
+- Bytes: printable ASCII plus one consistent line ending (CRLF or LF). A lone CR, a tab or any other
+  control byte could make the controller split lines differently from the guard, so it fails.
+- Rapids: a G0 that moves sideways below the stock top would plough through the plate, so it fails.
 """
 
 import hashlib
@@ -24,16 +28,17 @@ TOP = math.inf  # Z right after `G53 Z`: machine top, above everything
 
 Rect = Tuple[float, float, float, float]  # x0, y0, x1, y1 (inches, work coordinates)
 
-# Never acceptable, whatever the allowlist says: other work offsets, incremental moves,
-# home moves through intermediate points, control-side radius compensation, inverse-time feed.
-NEVER_G = frozenset({10, 28, 30, 41, 42, 52, 91, 92, 93})
+# The only codes the guard knows how to reason about. Config allowlists are intersected with these, so
+# adding e.g. G55 (another work offset), G18 (another arc plane) or G91 to config can never make it pass.
+SAFE_G = frozenset({0, 1, 2, 3, 4, 20, 53, 73, 80, 81, 82, 83, 90})
+SAFE_M = frozenset({0, 3, 5, 11, 12})
 UNIT_CODES = frozenset({20, 21, 22})
 MOTION_G = frozenset({0, 1, 2, 3})
 CYCLE_G = frozenset({73, 81, 82, 83})
 ALLOWED_LETTERS = frozenset("GMXYZIJRFSPCNQ")
 Z_TOL = 1e-9  # Z-0.0001 (the smallest negative the post can write) must fail
 
-_TOKEN_RE = re.compile(r"\s*([A-Z])\s*([+-]?(?:\d+\.?\d*|\.\d+))?")
+_TOKEN_RE = re.compile(r" *([A-Z]) *([+-]?(?:\d+\.?\d*|\.\d+))?")
 
 
 @dataclass(frozen=True)
@@ -48,6 +53,7 @@ class GuardSpec:
     tool_radius_in: float = 0.0                  # clamp zones are grown by this much
     reach_x_in: Optional[float] = None           # no X beyond the machine's reach
     mist: Optional[bool] = None                  # expected useMist; None = don't check
+    stock_top_in: Optional[float] = None         # no sideways rapid below this; None = don't check
 
     def __post_init__(self):
         if self.z_floor_in < 0:
@@ -112,7 +118,7 @@ def _strip_comments(line: str) -> str:
 
 
 def _tokenize(code: str) -> List[Tuple[str, Optional[float]]]:
-    words, pos, end = [], 0, len(code.rstrip())
+    words, pos, end = [], 0, len(code.rstrip(" "))
     while pos < end:
         m = _TOKEN_RE.match(code, pos)
         if not m or m.end() == pos:
@@ -179,17 +185,36 @@ def _fmt(z: float) -> str:
     return "top" if z == TOP else f"{z:.4f}"
 
 
+def _byte_problems(data: bytes) -> Tuple[List[str], bytes]:
+    """Printable ASCII plus one consistent line ending; returns (problems, the line ending)."""
+    problems: List[str] = []
+    newline = b"\r\n" if b"\r\n" in data else b"\n"
+    if newline == b"\r\n":
+        if data.replace(b"\r\n", b"").count(b"\r"):
+            problems.append("lone CR line ending (the controller may split lines differently)")
+        if data.replace(b"\r\n", b"").count(b"\n"):
+            problems.append("mixed CRLF and LF line endings")
+    elif b"\r" in data:
+        problems.append("CR line endings (the controller may split lines differently)")
+    if any(b > 0x7E for b in data):
+        problems.append("program contains non-ASCII bytes")
+    bad = sorted({b for b in data if b < 0x20 and b not in (0x0A, 0x0D)})
+    if bad:
+        problems.append("program contains control characters " + ", ".join(f"0x{b:02x}" for b in bad))
+    return problems, newline
+
+
 def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
     sha = hashlib.sha256(data).hexdigest()
-    problems: List[str] = []
     offenders: List[str] = []
     clamp: List[str] = []
-    try:
-        text = data.decode("ascii")
-    except UnicodeDecodeError:
-        text = data.decode("ascii", errors="replace")
-        problems.append("program contains non-ASCII bytes")
-    lines = text.splitlines()
+    problems, newline = _byte_problems(data)
+    text = data.decode("ascii", errors="replace")
+    lines = text.split(newline.decode("ascii"))
+    if lines and lines[-1] == "":
+        lines.pop()
+    allowed_g = spec.allowed_g & SAFE_G
+    allowed_m = spec.allowed_m & SAFE_M
     zones = tuple(_grow(r, spec.tool_radius_in) for r in spec.clamp_zones_in)
     park_words = parse_code(spec.park)
     unit_name = f"G{spec.unit_code}"
@@ -256,14 +281,14 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
         line_ok = True
         for raw_g in _code_values(words, "G"):
             g = _as_code(raw_g)
-            if g is None or g in NEVER_G or g not in spec.allowed_g or (g in UNIT_CODES and g != spec.unit_code):
+            if g is None or g not in allowed_g or (g in UNIT_CODES and g != spec.unit_code):
                 problems.append(f"{where(n, raw)} (G{raw_g:g} is not allowed)")
                 line_ok = False
             else:
                 gs.append(g)
         for raw_m in _code_values(words, "M"):
             m = _as_code(raw_m)
-            if m is None or m not in spec.allowed_m:
+            if m is None or m not in allowed_m:
                 problems.append(f"{where(n, raw)} (M{raw_m:g} is not allowed)")
                 line_ok = False
             else:
@@ -370,11 +395,14 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
                 problems.append(f"{where(n, raw)} (drilling with the spindle stopped)")
             if nx is None or ny is None:
                 problems.append(f"{where(n, raw)} (drilling cycle at an unknown position)")
-            elif zones:
+            else:
                 travel_z = cycle_r if z is None else min(z, cycle_r)
-                if x is not None and y is not None and travel_z < spec.clamp_clear_z_in and over_zone(x, y, nx, ny):
+                moves_xy = x is not None and y is not None and (nx, ny) != (x, y)
+                if spec.stock_top_in is not None and moves_xy and travel_z < spec.stock_top_in - 1e-6:
+                    problems.append(f"{where(n, raw)} (drilling travel below the stock top)")
+                if zones and moves_xy and travel_z < spec.clamp_clear_z_in and over_zone(x, y, nx, ny):
                     clamp.append(where(n, raw))
-                elif over_zone(nx, ny, nx, ny):
+                elif zones and over_zone(nx, ny, nx, ny):
                     clamp.append(where(n, raw))
             x, y = nx, ny
             z = cycle_r if z is None else min(z, cycle_r)
@@ -404,6 +432,9 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
             arc_box = (cx - r, cy - r, cx + r, cy + r)
             xy_moves = True
 
+        if xy_moves and motion == 0 and z is not None and spec.stock_top_in is not None \
+                and low < spec.stock_top_in - 1e-6:
+            problems.append(f"{where(n, raw)} (rapid sideways below the stock top)")
         if xy_moves:
             if z is None:
                 problems.append(f"{where(n, raw)} (XY move before the height is known; expected G53 Z first)")

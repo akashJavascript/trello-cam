@@ -73,11 +73,22 @@ def test_safety_rules_hold_in_the_trello_adapter():
     assert t.calls == []
 
 
-def test_checklist_state():
+def test_checklist_state_counts_every_list_with_the_name():
     tr, _ = tracker((200, [{"name": "Other", "checkItems": []},
+                           {"name": "Review", "checkItems": [{"state": "complete"}]},
                            {"name": "Review", "checkItems": [{"state": "complete"}, {"state": "incomplete"}]}]))
     state = tr.checklist("C1", "Review")
-    assert (state.done, state.total, state.complete) == (1, 2, False)
+    assert (state.done, state.total, state.complete) == (2, 3, False)
+
+
+def test_posts_are_not_retried_on_server_errors():
+    tr, t = tracker((504, b"gateway timeout"))
+    with pytest.raises(TrelloError, match="504"):
+        tr.create_card("sheet_review", "S1", "")
+    assert len(t.calls) == 1
+    tr, t = tracker((503, b""), (200, {}))
+    tr.move("C1", "needs_fixing")            # PUT is idempotent: retried
+    assert len(t.calls) == 2
 
 
 def test_retries_on_429_then_fails_loudly_on_4xx():

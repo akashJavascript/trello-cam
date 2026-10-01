@@ -16,6 +16,7 @@ SPEC = GuardSpec(
     tool_radius_in=0.0787,
     reach_x_in=40.0,
     mist=True,
+    stock_top_in=THICKNESS,
 )
 
 
@@ -232,3 +233,42 @@ def test_parse_code_reads_post_words():
 
 def test_rejected_path():
     assert rejected_path(Path("out/6061_0p125_r017_S1.tap")).name == "6061_0p125_r017_S1.REJECTED.tap"
+
+
+# ---- review fixes: line splitting, safe code sets, sideways rapids
+
+@pytest.mark.parametrize("raw, why", [
+    (b"G53 Z\x0bG0 X5. Y5.", "control characters 0x0b"),
+    (b"G53 Z\rG0 X5. Y5.", "lone CR line ending"),
+    (b"G0\tX5.", "control characters 0x09"),
+    (b"G0 X5. Y5.\nG0 Z1.", "mixed CRLF and LF"),
+])
+def test_bytes_that_could_split_differently_fail(raw, why):
+    report = check(edit("[outer p01-1]", "[outer p01-1]\r\n" + raw.decode("ascii")))
+    assert any(why in p for p in report.problems), report.problems
+
+
+def test_cr_only_file_fails_but_lf_only_passes():
+    assert any("CR line endings" in p for p in check(SAMPLE.replace(b"\r\n", b"\r")).problems)
+    assert check(SAMPLE.replace(b"\r\n", b"\n")).passed
+
+
+@pytest.mark.parametrize("code, line", [(18, "G18"), (55, "G55"), (91, "G91"), (17, "G17"), (43, "G43")])
+def test_config_cannot_widen_the_guard(code, line):
+    wide = GuardSpec(**{**SPEC.__dict__, "allowed_g": SPEC.allowed_g | {code}})
+    report = check(edit("[outer p01-1]", f"[outer p01-1]\r\n{line}"), wide)
+    assert any(f"G{code} is not allowed" in p for p in report.problems)
+
+
+def test_sideways_rapid_below_stock_top_fails():
+    report = check(edit("G1 Z0. F20.\r\nG1 X8. F60.", "G0 Z0.\r\nG0 X8."))
+    assert any("rapid sideways below the stock top" in p for p in report.problems)
+
+
+def test_vertical_rapid_below_stock_top_is_allowed():
+    assert check(edit("G1 Z0. F20.\r\nG1 X8. F60.", "G0 Z0.05\r\nG1 Z0. F20.\r\nG1 X8. F60.")).passed
+
+
+def test_drilling_travel_below_stock_top_fails():
+    report = check(edit("G81 X5. Y5. Z0. R0.325 F20.", "G81 X5. Y5. Z0. R0.05 F20."))
+    assert any("drilling travel below the stock top" in p for p in report.problems)

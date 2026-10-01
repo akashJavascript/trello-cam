@@ -222,3 +222,34 @@ def test_failed_translation(ledger, tmp_path):
 def test_offline_export_needs_the_cache(tmp_path):
     with pytest.raises(ExportError, match="Onshape calls are off"):
         Exporter(None, OnshapeCache(tmp_path), POLLS).export(LINK, "hood_gusset")
+
+
+# ---- review fixes
+
+def test_entry_after_a_torn_line_still_counts(ledger):
+    a = ledger.begin(run_id="r1", method="GET", url="u", purpose="p")
+    ledger.finish(a, 200, 1, billable=True)
+    with open(ledger.path, "a") as f:
+        f.write('{"id": "torn", "phase": "pen')          # crash mid-append, no newline
+    b = ledger.begin(run_id="r1", method="GET", url="u", purpose="p")
+    ledger.finish(b, 200, 1, billable=True)
+    assert ledger.month_count() == 2
+
+
+@pytest.mark.parametrize("content", ["{}", "null", "[]", "0", "", "garbage"])
+def test_any_latch_file_stops_calls(ledger, content):
+    ledger.latch_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger.latch_path.write_text(content)
+    assert ledger.latched()
+    t = FakeTransport([("GET", "/parts/", [resp(body=[])])])
+    with pytest.raises(BudgetExceeded):
+        client(ledger, t).get_json("/api/v10/parts/d/x", purpose="p")
+    assert t.sent == []
+
+
+@pytest.mark.parametrize("location", ["http://cad.onshape.com/api/v10/x", "https://cad.onshape.com:8443/api/v10/x"])
+def test_no_signature_over_plain_http_or_other_ports(ledger, location):
+    t = FakeTransport([("GET", "/externaldata/", [resp(307, b"", location=location)]),
+                       ("GET", "/api/v10/x", [resp(200, b"data")])])
+    client(ledger, t).get_bytes("/api/v10/documents/d/x/externaldata/f", purpose="dl")
+    assert "Authorization" not in t.sent[1][2]

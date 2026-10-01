@@ -148,13 +148,15 @@ class OnshapeClient:
             return resp
 
     def _send(self, method, url, body, purpose, part_key, accept) -> HttpResponse:
-        if self.ledger.latched():
+        if self.ledger.latched() is not None:
             self.ledger.blocked(run_id=self.run_id, method=method, url=url, purpose=purpose, reason="402 latch")
             raise BudgetExceeded("Onshape calls are stopped after a 402; a mentor must reset the latch")
         if self.calls >= self.max_calls:
             self.ledger.blocked(run_id=self.run_id, method=method, url=url, purpose=purpose, reason="per-run cap")
             raise BudgetExceeded(f"this run reached its limit of {self.max_calls} Onshape calls")
-        onshape_host = urlsplit(url).hostname == self.host
+        parts = urlsplit(url)
+        # Keys only ever go to the configured Onshape host, over HTTPS, on the default port.
+        onshape_host = parts.scheme == "https" and parts.hostname == self.host and parts.port in (None, 443)
         headers = {"Accept": accept}
         if onshape_host:
             headers.update(sign(access_key=self._access_key, secret_key=self._secret_key, method=method, url=url,

@@ -184,14 +184,51 @@ def test_interrupted_job_is_requeued_then_failed(tmp_path):
     assert list(q.processing.iterdir()) == []
 
 
-def test_fail_never_overwrites_an_earlier_failure(tmp_path):
+def test_fail_keeps_the_job_id_and_earlier_errors(tmp_path):
     q = Queue(tmp_path).ensure()
     q.submit("r003-x", "{}")
     q.claim("r003-x")
-    (q.failed / "r003-x").mkdir()          # left over from something else
+    (q.failed / "r003-x").mkdir()
+    (q.failed / "r003-x" / "error.txt").write_text("older")
     q.fail("r003-x", "boom")
-    assert sorted(p.name for p in q.failed.iterdir()) == ["r003-x", "r003-x-2"]
-    assert (q.failed / "r003-x-2" / "error.txt").read_text() == "boom\n"
+    names = sorted(p.name for p in (q.failed / "r003-x").iterdir())
+    assert "error.txt" in names and any(n.startswith("error.") and n != "error.txt" for n in names)
+    assert (q.failed / "r003-x" / "error.txt").read_text() == "boom\n"
+    assert q.finished() == ["r003-x"]
+
+
+def test_fail_with_locked_files_still_finishes(tmp_path, monkeypatch):
+    import autocam_core.hotfolder as hf
+    q = Queue(tmp_path).ensure()
+    q.submit("r004-x", "{}")
+    claim = q.claim("r004-x")
+    (claim.out_dir / "locked.tap").write_text("x")
+    real_replace = os.replace
+
+    def locked(src, dst):
+        if str(src).endswith((".out", "r004-x.json")):
+            raise PermissionError("in use")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(hf.os, "replace", locked)
+    monkeypatch.setattr(hf.time, "sleep", lambda s: None)
+    with pytest.raises(PermissionError):
+        (claim.out_dir / "result.json").write_text("{}")
+        q.complete(claim)
+    q.fail("r004-x", "could not publish outputs")
+    text = (q.failed / "r004-x" / "error.txt").read_text()
+    assert text.startswith("could not publish outputs") and "copied, not moved" in text
+    assert (q.failed / "r004-x" / "job.json").read_text() == "{}"
+    assert q.finished() == ["r004-x"]
+    monkeypatch.setattr(hf.os, "replace", real_replace)
+    assert q.recover(max_attempts=2) == ([], [])   # the locked leftover isn't re-queued
+
+
+def test_resubmit_on_resume_is_a_no_op(tmp_path):
+    q = Queue(tmp_path).ensure()
+    q.submit("r005-x", "{}")
+    q.submit("r005-x", "{}", resume=True)
+    assert q.pending() == ["r005-x"] and q.where("r005-x") == "incoming" and q.where("nope") is None
 
 
 def test_heartbeat(tmp_path):
