@@ -1,0 +1,10 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "script",
+	"author": "",
+	"description": {
+		"": "Read-only: list which Fusion API classes, attributes and enum values exist, for the auto-CAM pipeline."
+	},
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}

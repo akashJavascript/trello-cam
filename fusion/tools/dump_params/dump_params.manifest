@@ -1,0 +1,10 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "script",
+	"author": "",
+	"description": {
+		"": "Read-only: dump every CAM parameter of the open document (setups, operations, tools, NC programs) to JSON."
+	},
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}
