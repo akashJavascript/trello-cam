@@ -127,7 +127,7 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
 | Post | `PostProcessInput.postProperties` (`NamedValues` of every property, `useMist` from the material) | fx_cam | NC program + `postParameters` (probe: works) |
 | Preview | `Viewport.camera` framed on one sheet (target, eye, `viewExtents`) | fx_design | fit view |
 | Toolpaths | `GenerateToolpathFuture.isGenerationCompleted` isn't enough. Run t181442 (a 1/4 in plate, 29 cutouts) read `[outer] p01-1` as "no toolpath, no error"; it generated fine by hand. Now: wait until no op `isGenerating`, then `CAM.generateToolpath` once more for ops with neither a toolpath nor an error | fx_cam | none |
-| Add-in | `registerCustomEvent` + `fireCustomEvent` from a background thread; the handler runs the job on the main thread | autocam_addin | none |
+| Add-in | `registerCustomEvent` + `fireCustomEvent` from a background thread; the handler runs the job on the main thread | autocam_addin | **works** (2026-10-01): queued job `t204634-al6061` picked up about 20 s after start, ran in 34 s, published to `done/`; the heartbeat updates |
 | Add-in | the add-in's handler re-entered by `adsk.doEvents()` during a job (guarded by `busy` and a per-process flag) | autocam_addin | none |
 
 ## What this changes in the pipeline (M1.2)
