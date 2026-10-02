@@ -329,3 +329,27 @@ def test_missing_template_keeps_cards_queued(tmp_path):
     assert sorted(h.queue.pending()) == ["r001-al5052", "r001-al6061"]
     assert h.list_of("cb") == "ready_for_cam"
     assert any("Can't CAM pc_smoked parts yet" in t for t in h.tracker.comments_on("ctl"))
+
+
+def test_onshape_refusing_one_link_rejects_those_cards_and_the_run_goes_on(tmp_path):
+    # Seen on the real board: 400 "Error retrieving Part Metadata" for a part's link.
+    bad = FakeTransport([
+        ("GET", "/parts/", [resp(400, body={"message": "Error retrieving Part Metadata", "status": 400})] * 2),
+    ])
+    h = Harness(tmp_path, transport=bad)
+    h.runner.tick()
+    for c in ("ca", "cb"):
+        assert h.list_of(c) == "needs_fixing"
+        assert "Error retrieving Part Metadata" in h.tracker.comments_on(c)[-1]
+        assert "Part Studio" in h.tracker.comments_on(c)[-1]
+    assert h.queue.pending() == ["r001-al5052"]          # the .step attachment card still went through
+    assert h.list_of("ctl") == "control"
+    h.runner.tick()                                        # nothing is retried
+    assert len(bad.sent) == 2
+
+
+def test_onshape_refusing_the_keys_stops_the_run_and_leaves_the_cards(tmp_path):
+    h = Harness(tmp_path, transport=FakeTransport([("GET", "/parts/", [resp(401, body={"message": "Unauthorized"})])]))
+    h.runner.tick()
+    assert h.list_of("ca") == "ready_for_cam" and h.list_of("cb") == "ready_for_cam"
+    assert any("refused the API keys" in c for c in h.tracker.comments_on("ctl"))

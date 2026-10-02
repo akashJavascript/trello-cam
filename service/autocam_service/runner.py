@@ -20,6 +20,7 @@ run and a real run never finishes a dry one.
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -36,7 +37,7 @@ from .jobs import JobBuildError, build_job
 from .materials import resolve_material
 from .onshape.budget import REFUSE, WARN, decide, estimate_calls
 from .onshape.cache import sha256_file
-from .onshape.client import BudgetExceeded, QuotaExhausted, RateLimited
+from .onshape.client import BudgetExceeded, OnshapeError, QuotaExhausted, RateLimited
 from .onshape.export import Exporter, ExportError, TryAgainLater
 from .onshape.ledger import Ledger, utc_now
 from .results import IngestedJob, ingest
@@ -48,6 +49,15 @@ from .tracker.dryrun import DryRunTracker
 
 log = logging.getLogger("autocam.runner")
 STOPPING = (BudgetExceeded, QuotaExhausted, RateLimited)
+
+
+def onshape_problem(e: OnshapeError) -> str:
+    """What to tell the card when Onshape refuses a request about that part (seen 2026-10-02: 400 "Error
+    retrieving Part Metadata" on the first real card). One card's problem never stops the run."""
+    m = re.search(r'"message"\s*:\s*"([^"]*)"', str(e))
+    said = m.group(1) if m else str(e).split(": ", 1)[-1][:200]
+    return (f"Onshape couldn't read that link ({e.status}: {said}). Check that the link opens a **Part Studio** "
+            "tab (not an Assembly or Drawing) at a **version**, and that the part is in it")
 WRITE_ATTEMPTS = 3   # a Trello write that fails on this many ticks is given up (logged), so no run is stuck forever
 
 
@@ -192,6 +202,13 @@ class Runner:
                 continue
             except ExportError as e:
                 prepared = str(e)
+            except OnshapeError as e:
+                if e.status in (401, 403):
+                    summary["stop_reason"] = (f"Onshape refused the API keys ({e.status}); check .env and "
+                                              f"onshape.base_url ({self.cfg.onshape.base_url})")
+                    summary["untouched"] += 1
+                    continue
+                prepared = onshape_problem(e)
             if isinstance(prepared, str):
                 self._reject(state, req.card.id, text.part_problem_comment(run_id, [prepared]))
                 summary["rejected"] += 1
