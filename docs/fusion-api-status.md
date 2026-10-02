@@ -77,6 +77,22 @@ Results so far (2026-10-01, Fusion 2705.1.15, Python 3.14.0, fresh install):
 
 Each run lists the ones it used in `result.json` (`worker.untested_steps`) and the `autocam_run` message box.
 
+**First `autocam_run` (2026-10-01, run t174019): status ok.**
+- **Job:** one 1/8 in aluminum plate with bore-size holes; 1 sheet; the program passed the guard and the sheet check.
+- **Ran without errors, first time in Fusion:**
+  - the Arrange flip from `upDirection`;
+  - `Setup.name`;
+  - bore `holeMode` + `circularFaces`;
+  - `PostProcessInput.postProperties`;
+  - the preview camera.
+- **The posted program:**
+  - `M11 C8` mist on;
+  - only `[bore holes]` and `[outer p01-1]`: unused template ops were dropped and the outline copy was renamed;
+  - clearance `Z2.225`;
+  - `G53 Z` only at the start and the end.
+- **Still to check:** the simulation (stock, origin, cut through, hole sizes) and the preview image.
+- **Not yet exercised:** drill holes, inner loops, several parts in one setup, and pauses.
+
 | Area | Call | Used by | Fallback |
 |---|---|---|---|
 | Design | `Design.findEntityByToken(occurrence.entityToken)` | fx_adapter | keep the object references |
