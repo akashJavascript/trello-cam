@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from autocam_core.tapguard import GuardSpec, check_program, parse_code, rejected_path
+from autocam_core.tapguard import GuardSpec, _arc_box, check_program, parse_code, rejected_path
 
 REPO = Path(__file__).resolve().parents[2]
 SAMPLE = (REPO / "tests/fixtures/taps/sheet_mist.tap").read_bytes()
@@ -302,3 +302,33 @@ def test_travel_above_the_stock_may_leave_the_sheet():
 
 def test_without_a_sheet_size_nothing_is_checked():
     assert not any("off the sheet" in p for p in check(edit("G1 X8. F60.", "G1 X-1. F60.")).problems)
+
+
+# ---- arcs are bounded by what they sweep, not their whole circle
+
+def test_arc_box_follows_the_direction():
+    # Half circle from (10, 10) to (12, 10) around (11, 10).
+    assert _arc_box(10, 10, 12, 10, 11, 10, clockwise=False) == pytest.approx((10, 9, 12, 10))   # G3: underneath
+    assert _arc_box(10, 10, 12, 10, 11, 10, clockwise=True) == pytest.approx((10, 10, 12, 11))   # G2: over the top
+
+
+def test_arc_box_full_circle_and_short_arc():
+    assert _arc_box(12, 10, 12, 10, 11, 10, clockwise=False) == pytest.approx((10, 9, 12, 11))
+    # A short stretch of a 28 in radius outline stays a small box.
+    x0, y0 = 7.9564 + 0.2, 13.4923 - 0.2
+    box = _arc_box(x0, y0, 7.9564, 13.4923, x0 - 27.8577, y0 + 0.139, clockwise=False)
+    assert box[2] - box[0] < 0.5 and box[3] - box[1] < 0.5
+
+
+def test_big_radius_outline_mid_sheet_passes():
+    # Run t184402: a C-shaped plate's outline ramping down along a 28 in radius arc, mid-sheet.
+    data = edit("G3 X9. Y5. I0. J1.", "G3 X3.9 Y4.05 Z0.0962 I-27.8577 J0.139", count=1)
+    report = check(data, ON_SHEET)
+    assert not report.clamp_violations and not any("off the sheet" in p for p in report.problems), report.summary()
+
+
+def test_arc_that_really_dips_into_a_clamp_strip_is_still_caught():
+    # From (9, 5) around (9, 3) to (11, 3): G3 goes the long way, down through Y1 (inside the front strip)
+    # at Z0; G2 is the quarter turn on the right and stays clear.
+    assert check(edit("G1 Y8.\r\n", "G3 X11. Y3. I0. J-2.\r\nG1 Y8.\r\n"), ON_SHEET).clamp_violations
+    assert not check(edit("G1 Y8.\r\n", "G2 X11. Y3. I0. J-2.\r\nG1 Y8.\r\n"), ON_SHEET).clamp_violations

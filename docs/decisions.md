@@ -214,3 +214,12 @@ An independent review of the new Fusion-side code found these; each is fixed and
   job needs.
 - **No job timeout inside Fusion.** A job runs on the main thread and can't be interrupted. The heartbeat
   reports the job and when it started, so the service can flag a stuck one.
+
+## 2026-10-01: arcs in the guard are bounded by what they sweep
+
+Run t184402 (two C-shaped 1/4 in plates) was rejected for "too low over a clamp zone" and "cuts off the
+sheet" on a G3 of about 28 in radius in the middle of the sheet. The guard bounded every arc by its whole
+circle, which for that radius covers most of the machine. Now an arc is bounded by its endpoints plus the
+0/90/180/270 degree points it actually passes (G2 clockwise, G3 counterclockwise; start = end is a full circle).
+That's still conservative (a box, not the curve). Tests cover direction, full circles, the 28 in case, and an
+arc that really dips into a clamp strip.

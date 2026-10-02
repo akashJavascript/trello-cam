@@ -178,6 +178,29 @@ def _segment_hits(x0: float, y0: float, x1: float, y1: float, rect: Rect) -> boo
     return True
 
 
+def _arc_box(x0: float, y0: float, x1: float, y1: float, cx: float, cy: float, clockwise: bool) -> Rect:
+    """XY bounding box of the part of the circle an arc actually sweeps (G2 clockwise, G3 counterclockwise).
+
+    Not the whole circle: a short stretch of a 28 in radius outline would otherwise look like it reaches the
+    clamp strips and leaves the sheet. Start == end is a full circle.
+    """
+    a0 = math.atan2(y0 - cy, x0 - cx)
+    a1 = math.atan2(y1 - cy, x1 - cx)
+    if clockwise:
+        a0, a1 = a1, a0                       # the same points, swept counterclockwise
+    sweep = (a1 - a0) % (2 * math.pi)
+    if math.hypot(x1 - x0, y1 - y0) < 1e-6:
+        sweep = 2 * math.pi
+    r = math.hypot(x0 - cx, y0 - cy)
+    xs, ys = [x0, x1], [y0, y1]
+    for k in range(4):
+        angle = k * math.pi / 2
+        if (angle - a0) % (2 * math.pi) <= sweep + 1e-12:
+            xs.append(cx + r * math.cos(angle))
+            ys.append(cy + r * math.sin(angle))
+    return min(xs), min(ys), max(xs), max(ys)
+
+
 def _rects_overlap(a: Rect, b: Rect) -> bool:
     return a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
 
@@ -441,8 +464,7 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
                 problems.append(f"{where(n, raw)} (arc without a known start and I/J)")
                 continue
             cx, cy = x + values["I"], y + values["J"]
-            r = math.hypot(values["I"], values["J"])
-            arc_box = (cx - r, cy - r, cx + r, cy + r)
+            arc_box = _arc_box(x, y, nx, ny, cx, cy, clockwise=motion == 2)
             xy_moves = True
 
         if xy_moves and motion == 0 and z is not None and spec.stock_top_in is not None \
