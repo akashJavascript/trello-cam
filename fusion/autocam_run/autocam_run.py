@@ -43,7 +43,7 @@ def _job_from_steps(ui):
     from autocam_service.batching import Batch, ReadyPart
     from autocam_service.cards import PartRequest
     from autocam_service.config import DEFAULT_CONFIG, load_config
-    from autocam_service.jobs import build_job
+    from autocam_service.jobs import JobBuildError, build_job
     from autocam_service.onshape.cache import sha256_file
     from autocam_service.tracker.base import Card
 
@@ -69,7 +69,16 @@ def _job_from_steps(ui):
         ready.append(ReadyPart(req, material, step, sha256_file(step)))
     batch = Batch(material, tuple((f"p{i:02d}", r) for i, r in enumerate(ready, 1)))
     run_id = time.strftime("t%H%M%S")
-    return build_job(cfg, batch, run_id, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    try:
+        return build_job(cfg, batch, run_id, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    except JobBuildError as e:
+        lines = [f"Can't build the job: {e}", "", "Templates the config expects:"]
+        lines += [f"  {t.file}  ({'found' if t.file.is_file() else 'MISSING'})" for t in cfg.templates.values()]
+        folder = REPO / "fusion" / "templates"
+        found = sorted(f.name for f in folder.iterdir() if f.name != "README.md")
+        lines += ["", f"Files in {folder}:"] + [f"  {name}" for name in found] + (["  (none)"] if not found else [])
+        ui.messageBox("\n".join(lines), TITLE)
+        raise KeyboardInterrupt from None
 
 
 def _summary(result, out_dir: Path) -> str:
