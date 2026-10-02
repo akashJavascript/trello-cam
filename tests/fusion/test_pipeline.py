@@ -362,6 +362,6 @@ def test_team_save_failure_or_no_folder_still_delivers_the_job(tmp_path):
     assert any("not saved to Fusion Team" in n for n in result.notes)
 
     (tmp_path / "b").mkdir()
-    rig = Rig(tmp_path / "b")
+    rig = Rig(tmp_path / "b", team=("", ""))
     result = rig.run(rig.job([("gusset", 1, plate(), (4.0, 4.0))]))
     assert rig.fake.saved_to_team == [] and any("no Fusion Team folder" in n for n in result.notes)
