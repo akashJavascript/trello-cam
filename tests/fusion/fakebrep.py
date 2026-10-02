@@ -197,6 +197,7 @@ def install():
                                               ConeSurfaceType=2, SphereSurfaceType=3, TorusSurfaceType=4,
                                               NurbsSurfaceType=7)
     core.Line3D = types.SimpleNamespace(classType=lambda: LINE)
+    core.DataEventHandler = object
     fusion.PointContainment = types.SimpleNamespace(PointInsidePointContainment=INSIDE)
     adsk.core, adsk.fusion, adsk.cam = core, fusion, cam
     sys.modules.update({"adsk": adsk, "adsk.core": core, "adsk.fusion": fusion, "adsk.cam": cam})

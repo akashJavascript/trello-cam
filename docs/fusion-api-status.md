@@ -68,7 +68,7 @@ Results so far (2026-10-01, Fusion 2705.1.15, Python 3.14.0, fresh install):
 | Post | NC program params, `postParameters`, `updatePostParameters`, `NCProgram.postProcess` | fx_post | **works** (lists the post's properties: `useMist`, `safePositionMethod`, `useXYZFeeds`, `writeMachine`, ...) | none |
 | Post | `getMachiningTime(setup, 100, feed, 0).machiningTime` | fx_post | **works** (seconds) | omit from card |
 | Save | `Document.saveAs(name, folder, description, tag)` into the project/folder from config (found via `app.data.activeHub` / `dataHubs` → `dataProjects` → `rootFolder.dataFolders.itemByName`), then wait for `doc.dataFile` | fx_design | untested (written 2026-10-01) | local `.f3d` attachment |
-| Save | `DataFile.fusionWebURL` (and `isComplete` if it exists) | fx_design | untested | project/folder/file name on card |
+| Save | `DataFile.fusionWebURL` | fx_design | **read too early it's a folder link.** 2026-10-02: right after `saveAs`, `doc.dataFile.fusionWebURL` decoded to `urn:adsk.wipprod:fs.folder:...` and didn't open. Now: wait for `Application.dataFileComplete` for this file, then read the link, and drop it if it's still a folder (the run notes record which) | file name + project on the card |
 | Save | `createFusionArchiveExportOptions` (local `.f3d`) | fx_save | **works** | none |
 | Preview | `Viewport.saveAsImageFile` per sheet (top view, fit) | fx_preview | **works** | one image for all sheets |
 | Add-in | custom event fired from a background thread | autocam_addin | untested | none |

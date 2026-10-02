@@ -30,7 +30,7 @@ UNCONFIRMED = {
     "chain_side_type": "ChainSelection.sideType = AlwaysInside for single loops",
     "chain_direction": "ChainSelection.isReverted so the chain runs against the loop's way (cut side follows direction)",
     "gouge_check": "BRepBody.pointContainment on the posted program's cutting points",
-    "team_save": "Document.saveAs into the Fusion Team folder, then DataFile.fusionWebURL",
+    "team_save": "Document.saveAs into the Fusion Team folder, wait for Application.dataFileComplete, then DataFile.fusionWebURL",
 }
 
 

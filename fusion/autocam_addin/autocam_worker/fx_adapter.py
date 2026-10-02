@@ -196,7 +196,9 @@ class FusionAdapter(Adapter):
 
     def save_to_team(self, name, project, folder):
         self._used("team_save")
-        return fx_design.save_to_team(self.app, self.doc, name, project, folder)
+        url, saved, note = fx_design.save_to_team(self.app, self.doc, name, project, folder)
+        self.run_notes.append(note)
+        return url, saved
 
     def finish(self, keep_open):
         if self.doc is not None and not keep_open:

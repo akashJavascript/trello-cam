@@ -63,3 +63,13 @@ def test_cuts_into_parts_tests_the_tool_center_against_the_bodies(fx):
               (3, 17.0, 2.0, 0.0),       # past the plate's right edge: air
               (4, 13.0, 2.0, 0.0)]       # the same point again: checked once
     assert adapter.cuts_into_parts("S1", points) == [(2, 13.0, 2.0)]
+
+
+def test_fusion_team_link_kind(fx):
+    import base64
+    # The link run 2026-10-02 got right after saveAs: a folder, not the file.
+    folder = "https://dtechhs88.autodesk360.com/g/projects/202610021148992906/data/dXJuOmFkc2sud2lwcHJvZDpmcy5mb2xkZXI6Y28uLWNZenB"
+    assert fx.design.link_kind(folder) == "folder"
+    urn = base64.urlsafe_b64encode(b"urn:adsk.wipprod:dm.lineage:AbCdEf123").decode().rstrip("=")
+    assert fx.design.link_kind(f"https://x.autodesk360.com/g/data/{urn}") == "file"
+    assert fx.design.link_kind("https://x.autodesk360.com/g/data/@@@") == "unknown"

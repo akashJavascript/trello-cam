@@ -189,17 +189,53 @@ def _find_folder(project, path: str):
     return folder
 
 
-def save_to_team(app, doc, name: str, project: str, folder_path: str, timeout_s: float = 300.0):
-    """Save into the team folder and wait until the document has a data file with a web link."""
-    folder = _find_folder(_find_project(app, project), folder_path)
-    if not call("Document.saveAs", doc.saveAs, name, folder, "auto-CAM job", ""):
-        raise AdapterError("Document.saveAs returned False")
+def link_kind(url: str) -> str:
+    """'file', 'folder' or 'unknown': the last part of a Fusion Team link is a base64 URN."""
+    import base64
+    tail = url.rstrip("/").rsplit("/", 1)[-1].split("?", 1)[0]
+    try:
+        urn = base64.urlsafe_b64decode(tail + "=" * (-len(tail) % 4)).decode("ascii", errors="replace")
+    except (ValueError, TypeError):
+        return "unknown"
+    if "fs.folder" in urn:
+        return "folder"
+    if "fs.file" in urn or "dm.lineage" in urn:
+        return "file"
+    return "unknown"
 
-    def uploaded():
+
+class _UploadDone(adsk.core.DataEventHandler):
+    """Application.dataFileComplete: the saved file has finished uploading."""
+
+    def __init__(self, name: str):
+        super().__init__()
+        self.name = name
+        self.file = None
+
+    def notify(self, args):
         try:
-            data_file = doc.dataFile
-            return data_file is not None and bool(data_file.fusionWebURL) and getattr(data_file, "isComplete", True)
-        except Exception:  # noqa: BLE001 - not there yet
-            return False
-    wait_for(uploaded, timeout_s, "the upload to Fusion Team")
-    return doc.dataFile.fusionWebURL, doc.dataFile.name
+            f = args.file
+            if f is not None and f.name.startswith(self.name):
+                self.file = f
+        except Exception:  # noqa: BLE001 - never raise into Fusion
+            pass
+
+
+def save_to_team(app, doc, name: str, project: str, folder_path: str, timeout_s: float = 300.0):
+    """Save into the team folder, wait until Fusion says the upload is complete, then read the file's link.
+
+    Seen 2026-10-01: reading doc.dataFile right after saveAs gave a link to the *folder* (a placeholder while
+    the upload ran). Returns (link or None, name, note); a link that still isn't a file's is not returned."""
+    folder = _find_folder(_find_project(app, project), folder_path)
+    done = _UploadDone(name)
+    app.dataFileComplete.add(done)
+    try:
+        if not call("Document.saveAs", doc.saveAs, name, folder, "auto-CAM job", ""):
+            raise AdapterError("Document.saveAs returned False")
+        wait_for(lambda: done.file is not None, timeout_s, "the upload to Fusion Team to finish")
+    finally:
+        app.dataFileComplete.remove(done)
+    url = done.file.fusionWebURL
+    kind = link_kind(url) if url else "none"
+    note = f"Fusion Team: {done.file.name} uploaded; link kind {kind}: {url}"
+    return (url if kind != "folder" else None), done.file.name, note
