@@ -90,8 +90,10 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
   - only `[bore holes]` and `[outer p01-1]`: unused template ops were dropped and the outline copy was renamed;
   - clearance `Z2.225`;
   - `G53 Z` only at the start and the end.
-- **Still to check:** the simulation (stock, origin, cut through, hole sizes) and the preview image.
-- **Not yet exercised:** drill holes, inner loops, several parts in one setup, and pauses.
+- **Simulation (checked by the user):** looks right: the full-sheet stock, the origin corner, the part cut
+  through, and the bored holes.
+- **Second run with several parts: "looks fine"** (the user). Which first-time calls it used is still to be
+  read from its `result.json`.
 
 | Area | Call | Used by | Fallback |
 |---|---|---|---|
