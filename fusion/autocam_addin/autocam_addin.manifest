@@ -1,0 +1,11 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "addin",
+	"author": "",
+	"description": {
+		"": "Auto-CAM worker: runs the jobs the service puts in the hot folder (nest, CAM, post, check). No dialogs; see logs/fusion_worker.log."
+	},
+	"supportedOS": "windows|mac",
+	"editEnabled": true,
+	"runOnStartup": false
+}

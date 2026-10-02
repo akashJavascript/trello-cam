@@ -20,6 +20,7 @@ Pure Python: everything Fusion does goes through the Adapter (adapter.py).
 
 import hashlib
 import shutil
+import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -55,6 +56,16 @@ MOVE_TOL_IN = 0.001     # a copy that moved more than this after nesting stops i
 
 class JobFailed(Exception):
     """The job as a whole can't run. Nothing was made."""
+
+
+# One job at a time per Fusion process. Fusion runs event handlers while a job waits (adsk.doEvents), so the
+# add-in could otherwise start a queued job inside a manual autocam_run job. Kept on `sys` because autocam_run
+# reloads the autocam_* modules, which would give each copy its own flag.
+_RUNNING = "_autocam_job_running"
+
+
+def job_running() -> Optional[str]:
+    return getattr(sys, _RUNNING, None)
 
 
 def _now() -> str:
@@ -511,15 +522,21 @@ def process_job(job: Job, adapter: Adapter, out_dir: Path, *, attempt: int = 1, 
 
     started = now()
     check_job(job)
-    log(f"job {job.job_id}: {len(job.parts)} parts, material {job.material.key}")
-    adapter.begin(job.job_id)
+    if job_running():
+        raise JobFailed(f"another job ({job_running()}) is already running in this Fusion")
+    setattr(sys, _RUNNING, job.job_id)
     try:
-        result = _run(job, adapter, out_dir, log, attempt, started, now)
-    finally:
+        log(f"job {job.job_id}: {len(job.parts)} parts, material {job.material.key}")
+        adapter.begin(job.job_id)
         try:
-            adapter.finish(keep_open)
+            result = _run(job, adapter, out_dir, log, attempt, started, now)
         finally:
-            (out_dir / LOG).write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+            try:
+                adapter.finish(keep_open)
+            finally:
+                (out_dir / LOG).write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+    finally:
+        setattr(sys, _RUNNING, None)
     problems = result.validate()
     if problems:
         raise JobFailed(f"worker bug: result.json would be invalid: {'; '.join(problems)}")

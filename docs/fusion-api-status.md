@@ -116,6 +116,8 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
 | Design | `Occurrence.isLightBulbOn = False` for copies taken out of the job (not deleted: deleting an Arrange input could make Fusion solve it again) | fx_adapter | none |
 | Post | `PostProcessInput.postProperties` (`NamedValues` of every property, `useMist` from the material) | fx_cam | NC program + `postParameters` (probe: works) |
 | Preview | `Viewport.camera` framed on one sheet (target, eye, `viewExtents`) | fx_design | fit view |
+| Add-in | `registerCustomEvent` + `fireCustomEvent` from a background thread; the handler runs the job on the main thread | autocam_addin | none |
+| Add-in | the add-in's handler re-entered by `adsk.doEvents()` during a job (guarded by `busy` and a per-process flag) | autocam_addin | none |
 
 ## What this changes in the pipeline (M1.2)
 

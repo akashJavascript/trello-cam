@@ -197,3 +197,20 @@ An independent review of the new Fusion-side code found these; each is fixed and
   0.25 in inside the nest region.
 - **A part whose top is split into several faces needs manual CAM**, because there's no single outline.
 - **Single inner loops are chained from every edge of the loop**; the cutting side is a manual check.
+
+## 2026-10-01: M2 add-in
+
+- **Thin add-in, tested loop.** `autocam_addin.py` only wires Fusion up. A background thread updates the
+  heartbeat every 10 s and fires a custom event when a job waits; the handler calls `Worker.tick()` on the
+  main thread. The loop is `autocam_worker/worker.py`: recover on the first tick, one job per tick, done or
+  failed, and the heartbeat.
+- **Failures.** A job that can't run, or hits a worker bug, goes straight to `failed/` with the reason or the
+  traceback; retrying wouldn't change it. Only a Fusion crash leaves the job in `processing/` for a retry, up to
+  `fusion.max_attempts`.
+- **One job per Fusion process.** A flag on `sys` (not in an `autocam_*` module, which `autocam_run` reloads)
+  stops the add-in from starting a queued job inside a manual `autocam_run` job while Fusion pumps events.
+- **The add-in reads three config values** (queue folder, logs folder, max attempts) from
+  `config/autocam.toml`. That is an exception to "Fusion never reads config": jobs still carry everything a
+  job needs.
+- **No job timeout inside Fusion.** A job runs on the main thread and can't be interrupted. The heartbeat
+  reports the job and when it started, so the service can flag a stuck one.

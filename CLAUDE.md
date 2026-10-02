@@ -25,8 +25,11 @@ Full context and decisions: `docs/BRIEF.md`. Read it before planning or changing
 - `core/autocam_core/` pure logic, **standard library only**: imported by the Fusion add-in and the service.
   Fusion 2705 bundles Python 3.14 (confirmed by api_probe); CI runs the core tests on 3.14.
 - `service/autocam_service/` plain-Python Windows service: Trello + Onshape + hot folder.
+- `fusion/autocam_addin/` the Fusion add-in (M2): `autocam_addin.py` wires Fusion to the job loop in
+  `autocam_worker/worker.py`.
 - `fusion/autocam_addin/autocam_worker/` the Fusion side: `pipeline.py` (pure job flow, tested offline against
-  `tests/fusion/fakeadapter.py`), `adapter.py` (the interface), `fx_*.py` (the real Fusion calls, untested in Fusion).
+  `tests/fusion/fakeadapter.py`), `worker.py` (the add-in's job loop), `adapter.py` (the interface), `fx_*.py`
+  (the real Fusion calls; see `docs/fusion-api-status.md` for what has run in Fusion).
 - `fusion/autocam_run/` Fusion script for manual runs: STEP files or a job.json -> the pipeline.
 - `fusion/autocam_nest/` Phase 1 Fusion script (reference only; its Arrange calls fail in Fusion).
 - `fusion/posts/` the shop's WinCNC post (reference copy; do not edit; sha256-pinned by a test).

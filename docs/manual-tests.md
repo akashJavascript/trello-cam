@@ -178,7 +178,31 @@ Run on the machine with no material, work zero set as usual. Use `fusion/tests/p
 
 ## M2: add-in hot-folder worker
 
-_Added in M2._
+The add-in runs whatever the service puts in `C:\dev\frc-autocam\queue\incoming\`, one job at a time, with
+no dialogs. Until the service runs for real, queue jobs by hand from earlier `autocam_run` runs.
+
+**Start it:** Scripts and Add-Ins (`Shift+S`) → **Add-Ins** tab → "+" → `C:\dev\frc-autocam\fusion\autocam_addin`
+→ Run. Leave "Run on Startup" off for now (that's M5).
+
+**Queue a job by hand** (copies the newest `autocam_run` job into the hot folder under its job id):
+```powershell
+$src = Get-ChildItem C:\dev\frc-autocam\fusion\autocam_run\out\*\job.json | Sort-Object LastWriteTime | Select-Object -Last 1
+$id = (Get-Content $src.FullName -Raw | ConvertFrom-Json).job_id
+New-Item -ItemType Directory -Force C:\dev\frc-autocam\queue\incoming | Out-Null
+Copy-Item $src.FullName "C:\dev\frc-autocam\queue\incoming\$id.json"
+```
+To queue the same job again, first delete `queue\done\<id>` (or `queue\failed\<id>`).
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Within ~10 s of starting the add-in, `queue\worker_heartbeat.json` exists and its `ts` keeps updating | |
+| 2 | A queued job ends up in `queue\done\<id>\` with `result.json`, the `.tap` and the `.png`; the document is closed afterwards | |
+| 3 | `logs\fusion_worker.log` shows the job's attempt and its status | |
+| 4 | Close Fusion (Task Manager) while a job runs; restart Fusion and the add-in: the job runs again (attempt 2) | |
+| 5 | Kill it again during attempt 2: on the next start the job goes to `queue\failed\<id>\` saying it was started 2 times | |
+| 6 | Edit a queued job's `"core_version"` to `"0.0.1"`: it goes to `failed\` with `CORE_VERSION_MISMATCH` | |
+| 7 | While the add-in is idle, Fusion stays usable (only a job run blocks it) | |
+| 8 | Stop the add-in, `git pull`, start it again: the new code runs (the log's start line) | |
 
 ## M5: reboot test on the shop PC
 

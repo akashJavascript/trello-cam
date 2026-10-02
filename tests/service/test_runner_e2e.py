@@ -1,7 +1,9 @@
 """The whole service loop, offline: fake Trello, scripted Onshape, fake Fusion worker."""
 
 import copy
+import json
 import sys
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -126,6 +128,49 @@ def test_full_run(tmp_path):
         assert h.tracker.comments_on(c)[-1].startswith("Nested in run r001")
     assert [url for cid, url, _ in h.tracker.links if cid == "ca"] == [alu.url]
     assert h.tracker.comments_on("ctl")[-1].startswith("Run r001 finished.")
+    assert h.store.active() is None
+    assert not any(e[0] == "move" and e[2] == "ready_to_cut" for e in h.tracker.log)
+
+
+def test_full_run_through_the_real_worker_loop_and_pipeline(tmp_path, monkeypatch):
+    """Service -> hot folder -> the add-in's job loop and the whole pipeline (only Fusion faked) -> Trello."""
+    tests = Path(__file__).resolve().parents[1]
+    monkeypatch.syspath_prepend(str(tests / "fusion"))
+    monkeypatch.syspath_prepend(str(tests / "core"))
+    from fakeadapter import FakeAdapter
+    from geombuilder import PlateBuilder
+    from autocam_core.schema_job import read_job
+    from autocam_worker.worker import Worker
+    import autocam_service.jobs as jobs
+    monkeypatch.setattr(jobs, "fusion_path", lambda p: Path(p).resolve().as_posix())   # WSL: keep /mnt/c paths
+
+    h = Harness(tmp_path)
+    for key, t in RAW["templates"].items():
+        f = tmp_path / "templates" / f"{key}.f3dhsm-template"
+        if f.exists():
+            guid = RAW["tools"][t["tool"]]["guid"]
+            f.write_text(json.dumps([[op, guid] for op in ("[bore] holes", "[inner] cutouts", "[outer] outline")]))
+    h.runner.tick()
+    fake = FakeAdapter()
+    for job_id in h.queue.pending():
+        for part in read_job(h.queue.incoming / f"{job_id}.json").parts:
+            b = PlateBuilder(part.name)
+            b.hole(0.25)
+            fake.register(Path(part.step), b.build(), (4.0, 3.0))
+    worker = Worker(h.queue, lambda job: fake, max_attempts=2, fusion_version="fake")
+    while worker.tick():
+        pass
+    assert sorted(p.name for p in h.queue.done.iterdir()) == ["r001-al5052", "r001-al6061", "r001-pc_smoked"]
+    h.runner.tick()
+
+    sheets = {c.name: c for c in h.sheet_cards()}
+    assert set(sheets) == {"5052 0.125 - 4 mm O-flute ALU - S1 (0 pauses) - r001",
+                           "6061 0.125 - 4 mm O-flute ALU - S1 (1 pauses) - r001",
+                           "PC smoked 0.125 - 4 mm O-flute POLY - S1 (0 pauses) - r001"}
+    alu = sheets["6061 0.125 - 4 mm O-flute ALU - S1 (1 pauses) - r001"]
+    assert h.files_on(alu.id)[0] == "6061_0p125_r001_S1.tap"
+    for c in ("ca", "cb", "cd"):
+        assert h.list_of(c) == "nested"
     assert h.store.active() is None
     assert not any(e[0] == "move" and e[2] == "ready_to_cut" for e in h.tracker.log)
 
