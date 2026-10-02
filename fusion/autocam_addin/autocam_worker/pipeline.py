@@ -44,6 +44,7 @@ from autocam_core.schema_result import (
 )
 from autocam_core.sheetcheck import check_sheet_program, pause_spec
 from autocam_core.tooling import FeaturePlan, ToolNeed, part_tool, plan_features, sheet_tool
+from autocam_core.toolpoints import cutting_points
 
 from .adapter import BEARING, BORE, DRILL, INNER, OUTER, POCKET, TAGS, Adapter, AdapterError, OpFill, Rect
 
@@ -486,6 +487,17 @@ def _post_sheet(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> Non
     data = text.encode("ascii", errors="surrogateescape")
     counts = sheet.counts()
     check = check_sheet_program(data, job, sheet.thickness_in, sheet.tool_key, sheet.outer_order, counts)
+    if check.passed:
+        # The tool center must never be inside a part: catches a cutout or outline cut on the wrong side.
+        try:
+            hits = adapter.cuts_into_parts(sheet.name, cutting_points(text, sheet.thickness_in))
+        except AdapterError as e:
+            hits = []
+            sheet.errors.append(Issue(E.TAP_REJECTED, f"couldn't check the toolpaths against the parts: {e}"))
+        if hits:
+            where = "; ".join(f"line {n} (X{x:.4f} Y{y:.4f})" for n, x, y in hits[:5])
+            sheet.errors.append(Issue(E.TAP_REJECTED, f"the tool cuts into a part (a cutout or outline cut on the "
+                                                      f"wrong side?): {where}"))
     g = check.guard
     guard = GuardSummary(g.passed, g.sha256, g.floor_in, g.min_z_in, g.units, g.offenders, g.clamp_violations,
                          g.problems)
@@ -494,7 +506,7 @@ def _post_sheet(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> Non
         pauses = PauseSummary("tap_text", check.pauses.expected, check.pauses.found,
                               tuple(PauseEntryResult(e.after, e.line) for e in check.pauses.entries),
                               check.pauses.problems)
-    if check.passed:
+    if check.passed and not sheet.errors:
         tap, rejected = f"{sheet.name}.tap", None
     else:
         tap, rejected = None, f"{sheet.name}.REJECTED.tap"
@@ -677,6 +689,7 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             tool_need=part.need.tool if part.need else None, holes=holes,
             errors=_dedupe(part.errors), warnings=_dedupe(part.warnings)))
 
+    notes += list(adapter.notes())
     job_errors: Tuple[Issue, ...] = ()
     if not sheets:
         job_errors = (Issue(E.NOTHING_TO_NEST, "no part could be nested"),)

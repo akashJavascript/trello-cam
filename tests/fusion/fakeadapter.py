@@ -49,6 +49,8 @@ class FakeAdapter(Adapter):
         self.fail_make_sheet: Set[str] = set()         # sheet names
         self.op_states: Dict[str, Tuple[bool, Optional[str], Optional[str]]] = {}  # op name -> state
         self.fail_post: Set[str] = set()               # sheet names
+        self.gouges: Dict[str, List[Tuple[int, float, float]]] = {}   # sheet -> points reported inside a part
+        self.points_checked: Dict[str, int] = {}
         self.arrange_envelopes: List[Tuple[float, float, float, float]] = []
         self.finished: Optional[bool] = None
 
@@ -195,6 +197,10 @@ class FakeAdapter(Adapter):
         path = folder / f"{program_name}.tap"
         path.write_bytes(text.encode("ascii"))
         return path
+
+    def cuts_into_parts(self, sheet, points):
+        self.points_checked[sheet] = len(points)
+        return self.gouges.get(sheet, [])
 
     def machining_time(self, sheet):
         return 600.0

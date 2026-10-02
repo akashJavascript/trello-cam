@@ -27,6 +27,9 @@ UNCONFIRMED = {
     "arrange_refuse": "ArrangeComponent.deleteMe for a part that would lie on its side",
     "discard_hide": "Occurrence.isLightBulbOn = False for copies taken out of the job",
     "generate_retry": "CAM.generateToolpath again for ops left with no toolpath and no error",
+    "chain_side_type": "ChainSelection.sideType = AlwaysInside for single loops",
+    "chain_direction": "ChainSelection.isReverted so the chain runs the loop's way (cut side follows direction)",
+    "gouge_check": "BRepBody.pointContainment on the posted program's cutting points",
 }
 
 
@@ -97,7 +100,30 @@ def select_face_loops(op, faces, loop_type, contour_param: str) -> None:
     value.applyCurveSelections(sels)
 
 
-def select_loops(op, whole_faces, single_loops, contour_param: str) -> None:
+def chain_api() -> str:
+    """What this Fusion's chain selection offers, for the run notes (decides how the cut side is set)."""
+    sides = getattr(adsk.cam, "SideTypes", None)
+    names = sorted(n for n in dir(adsk.cam.ChainSelection) if not n.startswith("_"))
+    side_names = sorted(n for n in dir(sides) if n.endswith("SideType")) if sides is not None else []
+    return f"ChainSelection: {', '.join(names)}; SideTypes: {', '.join(side_names) or 'none'}"
+
+
+def _inside(chain, loop, used) -> None:
+    """Cut a single loop on its inside. Fusion picks the cut side of a chain from the chain's direction, and a
+    chain built from edges runs the way its first edge happens to point (2026-10-01: round cutouts came out
+    a tool width too big while the triangles were right). Prefer an explicit side; else run the chain the
+    way the loop runs, so every inner loop goes the same way round."""
+    sides = getattr(adsk.cam, "SideTypes", None)
+    if sides is not None and hasattr(type(chain), "sideType") and hasattr(sides, "AlwaysInsideSideType"):
+        chain.sideType = sides.AlwaysInsideSideType
+        used("chain_side_type")
+        return
+    if hasattr(type(chain), "isReverted"):
+        chain.isReverted = bool(loop.coEdges.item(0).isOpposedToEdge)
+        used("chain_direction")
+
+
+def select_loops(op, whole_faces, single_loops, contour_param: str, used=lambda key: None) -> None:
     """whole_faces: faces whose inner loops are all cut; single_loops: BRepLoops cut on their own."""
     value = _contours(op, contour_param)
     sels = value.getCurveSelections()
@@ -110,6 +136,7 @@ def select_loops(op, whole_faces, single_loops, contour_param: str) -> None:
     for loop in single_loops:
         chain = sels.createNewChainSelection()
         chain.inputGeometry = [co.edge for co in items(loop.coEdges)]   # the whole loop, in order
+        _inside(chain, loop, used)
     value.applyCurveSelections(sels)
 
 

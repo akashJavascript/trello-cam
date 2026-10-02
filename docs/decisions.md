@@ -223,3 +223,18 @@ circle, which for that radius covers most of the machine. Now an arc is bounded 
 0/90/180/270 degree points it actually passes (G2 clockwise, G3 counterclockwise; start = end is a full circle).
 That's still conservative (a box, not the curve). Tests cover direction, full circles, the 28 in case, and an
 arc that really dips into a clamp strip.
+
+## 2026-10-01: the tool center must never be inside a part
+
+Run t184808 posted and passed every check, but in the simulation some round cutouts were cut on the outside of
+their line (a tool width too big); the triangles were right. Those loops are selected one by one as edge chains
+(the face also has drilled/bored holes), and Fusion takes a chain's cut side from its direction, which comes from
+the edges, not the loop. Two changes:
+- **Fix:** use the chain's explicit inside side setting if this Fusion has one (`sideType`). Otherwise run each
+  chain the way its loop runs (`isReverted` from the first co-edge). The run notes record what `ChainSelection`
+  offers.
+- **Safety net, whatever the cause:** after the guard passes, every point where the tool center goes below the
+  stock top (`autocam_core/toolpoints.py`: feed-move ends and midpoints, arc midpoints, drill points) is tested
+  against the sheet's part bodies (`pointContainment`, just above the cut). A point inside a part rejects the
+  sheet. This catches a wrong-side cutout or outline, a template mistake, anything that would cut into a part. The
+  service can't repeat it (no geometry), so it runs in Fusion only.

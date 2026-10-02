@@ -152,6 +152,16 @@ class Adapter:
         """Post with the pinned .cps file into an empty folder; returns the program file."""
         raise NotImplementedError
 
+    def cuts_into_parts(self, sheet: str, points: Sequence[Tuple[int, float, float, float]]
+                        ) -> List[Tuple[int, float, float]]:
+        """points: (line, x, y, z) where the tool center goes below the stock top, in sheet coordinates.
+        Returns the ones inside a part on that sheet (the tool center must always be in air)."""
+        raise NotImplementedError
+
+    def notes(self) -> Tuple[str, ...]:
+        """Anything worth keeping from this run that isn't an error (e.g. API details seen for the first time)."""
+        return ()
+
     def machining_time(self, sheet: str) -> Optional[float]:
         raise NotImplementedError
 

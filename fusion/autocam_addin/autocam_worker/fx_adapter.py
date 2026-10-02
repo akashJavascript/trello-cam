@@ -6,6 +6,9 @@ entity token, so a reference that went stale after a timeline change is found ag
 
 import functools
 import sys
+
+import adsk.core
+import adsk.fusion
 from pathlib import Path
 from typing import Dict, List
 
@@ -14,7 +17,7 @@ from autocam_core.schema_job import Job
 from . import fx_cam, fx_design, fx_geometry
 from .adapter import BEARING, BORE, DRILL, INNER, OUTER, Adapter, AdapterError, Box
 from .fx_cam import UNCONFIRMED
-from .fx_util import call
+from .fx_util import call, to_cm
 
 
 class FusionAdapter(Adapter):
@@ -27,7 +30,9 @@ class FusionAdapter(Adapter):
         self.doc = self.design = self.cam = None
         self.tokens: Dict[str, str] = {}       # copy id -> occurrence entity token
         self.setups: Dict[str, object] = {}     # sheet -> setup
+        self.sheet_info: Dict[str, tuple] = {}  # sheet -> (origin, thickness, copy ids)
         self.used: List[str] = []
+        self.run_notes: List[str] = []
 
     def _used(self, key: str) -> None:
         if UNCONFIRMED[key] not in self.used:
@@ -38,6 +43,9 @@ class FusionAdapter(Adapter):
 
     def untested(self):
         return tuple(self.used)
+
+    def notes(self):
+        return tuple(self.run_notes)
 
     # -- design
     def begin(self, job_id):
@@ -96,6 +104,7 @@ class FusionAdapter(Adapter):
         if len(models) > 1:
             self._used("multi_model_setup")
         self.setups[sheet] = fx_cam.make_setup(self.cam, sheet, models, stock, self.job.fusion_params["setup"])
+        self.sheet_info[sheet] = (origin, thickness_in, list(copy_ids))
 
     def apply_template(self, sheet, template_path):
         return fx_cam.apply_template(self._setup(sheet), template_path)
@@ -112,7 +121,11 @@ class FusionAdapter(Adapter):
             whole, single = self._inner_selection(fill.loops)
             if single:
                 self._used("inner_chains")
-            call(f"{op_name}: select loops", fx_cam.select_loops, op, whole, single, params["selections"]["contour"])
+                note = fx_cam.chain_api()
+                if note not in self.run_notes:
+                    self.run_notes.append(note)
+            call(f"{op_name}: select loops", fx_cam.select_loops, op, whole, single, params["selections"]["contour"],
+                 self._used)
             fx_cam.cut_to_stock_bottom(op)
         else:
             raise AdapterError(f"[{fill.tag}] ops aren't automated yet")
@@ -148,6 +161,28 @@ class FusionAdapter(Adapter):
         self._used("post_properties")
         return Path(fx_cam.post(self.cam, self._setup(sheet), program_name, str(folder), post_path, properties))
 
+    def cuts_into_parts(self, sheet, points):
+        self._used("gouge_check")
+        (ox, oy), t, copy_ids = self.sheet_info[sheet]
+        bodies = [(fx_design.body(self._occ(c)), fx_design.box_in(self._occ(c))) for c in copy_ids]
+        inside = adsk.fusion.PointContainment.PointInsidePointContainment
+        hits, seen = [], set()
+        for line, x, y, z in points:
+            X, Y = x + ox, y + oy
+            Z = min(max(z + 0.01, 0.01), t - 0.01)       # just above the cut, within the plate
+            key = (round(X, 3), round(Y, 3), round(Z, 2))
+            if key in seen:
+                continue
+            seen.add(key)
+            for b, (x0, y0, _, x1, y1, _) in bodies:
+                if x0 <= X <= x1 and y0 <= Y <= y1 and b.pointContainment(
+                        adsk.core.Point3D.create(to_cm(X), to_cm(Y), to_cm(Z))) == inside:
+                    hits.append((line, x, y))
+                    break
+            if len(hits) >= 20:
+                break
+        return hits
+
     def machining_time(self, sheet):
         return fx_cam.machining_time(self.cam, self._setup(sheet))
 
@@ -178,6 +213,6 @@ def _as_adapter_error(name, method):
 
 
 for _name in ("begin", "import_step", "extract", "add_copy", "arrange", "box", "faces_up", "discard", "make_sheet",
-              "apply_template", "fill", "make_outer_ops", "delete_op", "generate", "post", "machining_time",
-              "preview", "export_f3d", "finish"):
+              "apply_template", "fill", "make_outer_ops", "delete_op", "generate", "post", "cuts_into_parts",
+              "machining_time", "preview", "export_f3d", "finish"):
     setattr(FusionAdapter, _name, _as_adapter_error(_name, getattr(FusionAdapter, _name)))

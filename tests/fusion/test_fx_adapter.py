@@ -51,3 +51,15 @@ def test_inner_loops_whole_face_or_one_by_one(fx):
     assert whole == [] and len(single) == 1
     loop = single[0]
     assert loop is occ.bRepBodies[0].faces[top - 1].loops[2] and not loop.isOuter
+
+
+def test_cuts_into_parts_tests_the_tool_center_against_the_bodies(fx):
+    occ = fakebrep.plate(6.0, 4.0, 0.25, holes=((0.5, (2.0, 2.0)),))
+    adapter = fx.adapter.FusionAdapter(types.SimpleNamespace(version="x"), job=None)
+    adapter._occ = lambda cid: occ
+    adapter.sheet_info["S1"] = ((-10.0, 0.0), 0.25, ["p01.1"])     # sheet origin at x=-10 in the design
+    points = [(1, 12.0, 2.0, 0.0),       # the hole's center: air
+              (2, 13.0, 2.0, 0.0),       # 1 in to its right: inside the plate
+              (3, 17.0, 2.0, 0.0),       # past the plate's right edge: air
+              (4, 13.0, 2.0, 0.0)]       # the same point again: checked once
+    assert adapter.cuts_into_parts("S1", points) == [(2, 13.0, 2.0)]

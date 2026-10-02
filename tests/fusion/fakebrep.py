@@ -181,8 +181,9 @@ def plate(w, h, t, holes=()):
         for v in (e.startVertex, e.endVertex):
             if v not in verts:
                 verts.append(v)
+    box = types.SimpleNamespace(minPoint=P(0, 0, 0), maxPoint=P(W, H, T))
     body = types.SimpleNamespace(isSolid=True, faces=Collection(faces), edges=Collection(edges),
-                                 vertices=Collection(verts), pointContainment=contains)
+                                 vertices=Collection(verts), pointContainment=contains, boundingBox=box)
     return types.SimpleNamespace(name="plate:1", bRepBodies=Collection([body]), childOccurrences=Collection())
 
 

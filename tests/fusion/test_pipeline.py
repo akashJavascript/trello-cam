@@ -330,3 +330,15 @@ def test_split_top_face_needs_manual_cam(tmp_path):
     b._face(kind="plane", z0=0.125, z1=0.125, normal_dot=1.0, area=10.0)
     job = rig.job([("split", 1, b.build(), (4.0, 4.0))])
     assert "top is split into 2 faces" in rig.run(job).parts[0].errors[0].msg
+
+
+def test_tool_cutting_into_a_part_rejects_the_sheet(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.gouges["6061_0p125_r001_S1"] = [(57, 3.1, 4.2)]
+    job = rig.job([("gusset", 1, plate(holes=(2.0,)), (4.0, 4.0))])
+    result = rig.run(job)
+    (sheet,) = result.sheets
+    assert sheet.tap is None and sheet.tap_rejected
+    assert "cuts into a part" in sheet.errors[0].msg and "line 57" in sheet.errors[0].msg
+    assert rig.fake.points_checked["6061_0p125_r001_S1"] > 0
+    assert [vs.cuttable for vs in rig.service_view(job, result).sheets] == [False]
