@@ -11,8 +11,8 @@ _Last updated 2026-10-01 (branch `m1-offline`)._
 | M1.1 pure core | Done and unit-tested |
 | M1.2-M1.7 Fusion adapters + pipeline | **Working in Fusion for through-cut aluminum plates** (2026-10-01): drilled, bored and bearing holes, cutouts, several parts per sheet, pauses, the guard and a check that the tool never enters a part. Still to run in Fusion: several sheets, the 1/8 in tool, polycarbonate. Pockets wait on a 2D Adaptive dump. Fusion Team save (M1.7) **works**: jobs save to 5940 BREAD / AutoCAM test with a file link |
 | M2 add-in hot-folder worker | Written: `fusion/autocam_addin/` (job loop in `autocam_worker/worker.py`, tested offline, including a full service run through it); **works in Fusion** (2026-10-01: a queued job ran by itself into `done/`). Still worth doing once on the shop PC: kill Fusion mid-job and check the retry (`docs/manual-tests.md` → M2, checks 4-5) |
-| M3 service: Trello read + Onshape export + jobs | Done offline with fakes; **never run against real Trello or Onshape** |
-| M4 service: results back to Trello | Done offline with fakes and a fake Fusion worker |
+| M3 service: Trello read + Onshape export + jobs | **First real run worked** (2026-10-02, board https://trello.com/b/fsuTYbO3/5940-autocam): a real card -> Onshape STEP export -> job. It found and fixed: Markdown around `Qty:`, and an Onshape 400 crashing the pass (now that card goes to Needs fixing) |
+| M4 service: results back to Trello | **First real run worked** (2026-10-02): the sheet card with the program came back to Sheet review |
 | M5 ops | Health card text done (`health.py`); wiring it into the service and Windows auto-start not started |
 | M6 tabs | Not needed unless the no-tab trial fails |
 
