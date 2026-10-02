@@ -73,6 +73,25 @@ def test_card_problems(desc, problem):
     assert "How a part card should look" in comment and "`Smoked`" in comment
 
 
+@pytest.mark.parametrize("qty_line, qty", [
+    ("`Qty: 1`", 1),                     # copied from the read-me card (seen on the real board)
+    ("**Qty:** 2", 2),
+    ("- Qty: 3", 3),
+    ("Qty:\u00a04", 4),
+    ("> qty = 5", 5),
+])
+def test_qty_line_survives_markdown(qty_line, qty):
+    result = parse_card(card(f"[{VERSION_URL}]({VERSION_URL} \"smartCard-inline\")\n{qty_line}"))
+    assert isinstance(result, PartRequest), getattr(result, "problems", None)
+    assert result.qty == qty
+
+
+def test_material_line_survives_markdown():
+    c = card("**Material:** `6061`\n`Qty: 1`", attachments=(Attachment("a1", "p.step", "u"),))
+    result = parse_card(c)
+    assert isinstance(result, PartRequest) and result.material_hint == "6061"
+
+
 def test_step_attachment_fallback_needs_material():
     step = Attachment("a1", "plate.STEP", "https://trello.example/a1")
     res = parse_card(card("Qty: 1", attachments=[step]))

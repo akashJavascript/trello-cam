@@ -15,8 +15,16 @@ from .onshape.urls import LinkError, OnshapeLink, first_onshape_url, parse_link
 from .tracker.base import Attachment, Card
 
 MAX_QTY = 100
-QTY_RE = re.compile(r"^[ \t]*qty[ \t]*[:=][ \t]*(\S*)[ \t]*$", re.IGNORECASE | re.MULTILINE)
-MATERIAL_RE = re.compile(r"^[ \t]*material[ \t]*[:=][ \t]*(.*?)[ \t]*$", re.IGNORECASE | re.MULTILINE)
+QTY_RE = re.compile(r"^[ \t>\-]*qty[ \t]*[:=][ \t]*(\S*)[ \t]*$", re.IGNORECASE | re.MULTILINE)
+MATERIAL_RE = re.compile(r"^[ \t>\-]*material[ \t]*[:=][ \t]*(.*?)[ \t]*$", re.IGNORECASE | re.MULTILINE)
+
+
+def _plain(desc: str) -> str:
+    """The description without Markdown emphasis or code marks, for the Qty/Material lines only.
+
+    Trello keeps what students type as Markdown: copying `Qty: 2` from the read-me card stores the backticks
+    (seen 2026-10-02). Links are read from the raw text instead (URLs may contain these characters)."""
+    return re.sub(r"[`*]", "", (desc or "").replace("\u00a0", " "))
 STEP_SUFFIXES = (".step", ".stp")
 
 FORMAT_HELP = """How a part card should look:
@@ -55,7 +63,7 @@ def parse_card(card: Card, smoked_label: str = "Smoked", tool_label: str = "Tool
         problems.append("the card title must be the part's name exactly as in Onshape")
 
     qty = 0
-    found = [m.strip() for m in QTY_RE.findall(card.desc or "")]
+    found = [m.strip() for m in QTY_RE.findall(_plain(card.desc))]
     if not found:
         problems.append("no `Qty: N` line in the description")
     elif len(set(found)) > 1:
@@ -75,7 +83,7 @@ def parse_card(card: Card, smoked_label: str = "Smoked", tool_label: str = "Tool
 
     steps = [a for a in card.attachments if a.name.lower().endswith(STEP_SUFFIXES)]
     step = None
-    hints = [m.strip() for m in MATERIAL_RE.findall(card.desc or "") if m.strip()]
+    hints = [m.strip() for m in MATERIAL_RE.findall(_plain(card.desc)) if m.strip()]
     hint = hints[0] if hints else None
     if not url:
         if not steps:
