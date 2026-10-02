@@ -211,23 +211,23 @@ retry_after_max_wait_s = 60.0   # a longer Retry-After stops the run instead of 
 "Polycarbonate" = "pc_clear"    # the Smoked label turns this into pc_smoked
 
 [trello]
-board_id = ""
+board_id = "6ac00269a17b9c9e14cca924"   # https://trello.com/b/fsuTYbO3/5940-autocam
 poll_interval_s = 60
 attachment_limit_mb = 10        # Trello Free plan limit
 job_timeout_s = 3600            # service gives up waiting for a Fusion job after this
 checklist_name = "Review"
 checklist = ["Simulated in Fusion", "Correct stock loaded", "Correct cutter loaded", "Clamps placed as shown"]
 
-[trello.lists]                  # list IDs; `autocam trello-discover` will print them (M3)
-inbox = ""
-ready_for_cam = ""
-needs_fixing = ""
-nested = ""
-sheet_review = ""
-ready_to_cut = ""
-cut = ""
-control = ""
-run_nest = ""
+[trello.lists]                  # list IDs (made by `autocam trello-setup`, 2026-10-02)
+inbox = "6ac0026a66e818f7107c352d"
+ready_for_cam = "6ac0026a2ee6c0eeb685602d"
+needs_fixing = "6ac0026bd34a0d025a7f0a66"
+nested = "6ac0026b4d41d11e7f2a3ac3"
+sheet_review = "6ac0026b744b6964194f359f"
+ready_to_cut = "6ac0026c4442c15e984f34a9"
+cut = "6ac0026c1d0c81e2cdf15ac0"
+control = "6ac0026cfe5942cefb71f3b9"
+run_nest = "6ac0026dcb97beec4d14f79d"
 
 [trello.targets]                # where automation moves cards; "ready_to_cut" is never allowed
 part_nested = "nested"
@@ -238,8 +238,8 @@ checklist_return = "sheet_review"
 control_return = "control"
 
 [trello.cards]
-run_nest_control = ""
-system = ""
+run_nest_control = "6ac0026df4db9bd12416eb1f"
+system = "6ac0026e5a5b72b5f5331c88"
 
 [fusion]
 post_description = "ShopSabre with automatic mist"

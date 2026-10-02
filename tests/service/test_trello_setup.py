@@ -51,7 +51,8 @@ LABELS = {"smoked": "Smoked", "tool_eighth": "Tool 1/8"}
 def test_creates_a_whole_board_and_prints_valid_config():
     fake = FakeTrello()
     http = TrelloHttp("KEY", "TOKEN", transport=fake, sleep=lambda s: None)
-    result = setup_board(http, create="5940 AutoCAM", labels=LABELS)
+    result = setup_board(http, create="5940 AutoCAM", labels=LABELS, workspace="w" * 24)
+    assert fake.boards[result.board_id]["idOrganization"] == "w" * 24
     names = [l["name"] for l in fake.lists]
     assert names == list(LIST_NAMES.values())
     control = result.lists["control"]

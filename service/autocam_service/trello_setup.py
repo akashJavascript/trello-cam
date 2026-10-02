@@ -52,11 +52,14 @@ class BoardSetup:
 
 
 def setup_board(http, *, board: Optional[str] = None, create: Optional[str] = None,
-                labels: Optional[Dict[str, str]] = None) -> BoardSetup:
-    """http: TrelloHttp. Either an existing board (id or short link) or a new board's name."""
+                labels: Optional[Dict[str, str]] = None, workspace: Optional[str] = None) -> BoardSetup:
+    """http: TrelloHttp. Either an existing board (id or short link) or a new board's name (in `workspace`)."""
     created: List[str] = []
     if create:
-        b = http.call("POST", "/boards", {"name": create, "defaultLists": "false", "defaultLabels": "false"})
+        params = {"name": create, "defaultLists": "false", "defaultLabels": "false"}
+        if workspace:
+            params["idOrganization"] = workspace
+        b = http.call("POST", "/boards", params)
         created.append(f"board {create}")
     else:
         b = http.call("GET", f"/boards/{board}", {"fields": "name,url"})

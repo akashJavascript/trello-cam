@@ -66,6 +66,7 @@ class Harness:
             f.write_bytes(b"template")
             data["templates"][key]["file"] = str(f)
         data["paths"] = {k: str(tmp_path / k) for k in ("queue", "cache", "state", "logs")}
+        data["trello"]["cards"] = {"run_nest_control": "", "system": ""}   # the fake board, not the real one
         for dotted, value in cfg.items():
             node = data
             *path, last = dotted.split("__")

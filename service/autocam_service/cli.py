@@ -47,6 +47,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     where = ts.add_mutually_exclusive_group(required=True)
     where.add_argument("--create", metavar="NAME", help="make a new board with this name")
     where.add_argument("--board", help="set up an existing board (ID or short link from its URL)")
+    ts.add_argument("--workspace", help="workspace (organization) ID for a new board")
     args = parser.parse_args(argv)
 
     if args.command == "config-check":
@@ -67,7 +68,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.command == "trello-discover":
             return trello_discover(cfg, env_file, args.board)
         if args.command == "trello-setup":
-            return trello_setup(cfg, env_file, args.board, args.create)
+            return trello_setup(cfg, env_file, args.board, args.create, args.workspace)
     except CredentialsError as e:
         print(f"Credentials: {e}")
         return 1
@@ -185,11 +186,12 @@ def _norm(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
-def trello_setup(cfg, env_file: Path, board: Optional[str], create: Optional[str]) -> int:
+def trello_setup(cfg, env_file: Path, board: Optional[str], create: Optional[str],
+                 workspace: Optional[str] = None) -> int:
     from .app import trello_tracker
     from .trello_setup import setup_board
     tracker = trello_tracker(cfg, env_file)
-    result = setup_board(tracker.http, board=board, create=create,
+    result = setup_board(tracker.http, board=board, create=create, workspace=workspace,
                          labels={"smoked": cfg.labels.smoked, "tool_eighth": cfg.labels.tool_eighth})
     print(f"Board: {result.url}")
     print("Created: " + (", ".join(result.created) or "nothing (everything was already there)"))
