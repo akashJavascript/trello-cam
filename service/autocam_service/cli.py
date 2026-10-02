@@ -7,6 +7,7 @@
     make-job          build a job.json from local STEP files (no Trello, no Onshape) for manual Fusion runs
     ledger            Onshape call counts; `ledger reset-latch` after a 402 has been dealt with
     trello-discover   print the board's list and card IDs as a ready-to-paste [trello.lists] block
+    trello-setup      create the board's lists, control/status cards and labels (only what's missing)
 """
 
 import argparse
@@ -42,6 +43,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     lg.add_argument("action", nargs="?", default="report", choices=("report", "reset-latch"))
     td = sub.add_parser("trello-discover", help="print list and card IDs for config")
     td.add_argument("--board", help="board ID or short link (default: trello.board_id)")
+    ts = sub.add_parser("trello-setup", help="create the lists, cards and labels the service needs")
+    where = ts.add_mutually_exclusive_group(required=True)
+    where.add_argument("--create", metavar="NAME", help="make a new board with this name")
+    where.add_argument("--board", help="set up an existing board (ID or short link from its URL)")
     args = parser.parse_args(argv)
 
     if args.command == "config-check":
@@ -61,6 +66,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return ledger(cfg, args.action)
         if args.command == "trello-discover":
             return trello_discover(cfg, env_file, args.board)
+        if args.command == "trello-setup":
+            return trello_setup(cfg, env_file, args.board, args.create)
     except CredentialsError as e:
         print(f"Credentials: {e}")
         return 1
@@ -176,6 +183,19 @@ _EXPECTED_LIST_NAMES = {key: key.replace("_", "") for key in TRELLO_LISTS}
 
 def _norm(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def trello_setup(cfg, env_file: Path, board: Optional[str], create: Optional[str]) -> int:
+    from .app import trello_tracker
+    from .trello_setup import setup_board
+    tracker = trello_tracker(cfg, env_file)
+    result = setup_board(tracker.http, board=board, create=create,
+                         labels={"smoked": cfg.labels.smoked, "tool_eighth": cfg.labels.tool_eighth})
+    print(f"Board: {result.url}")
+    print("Created: " + (", ".join(result.created) or "nothing (everything was already there)"))
+    print("\nPaste this into config/autocam.toml (IDs aren't secrets):\n")
+    print(result.config_block())
+    return 0
 
 
 def trello_discover(cfg, env_file: Path, board: Optional[str]) -> int:

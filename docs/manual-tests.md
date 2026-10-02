@@ -215,6 +215,69 @@ To queue the same job again, first delete `queue\done\<id>` (or `queue\failed\<i
 | 7 | While the add-in is idle, Fusion stays usable (only a job run blocks it) | |
 | 8 | Stop the add-in, `git pull`, start it again: the new code runs (the log's start line) | |
 
+## M3: real board setup and the first supervised run
+
+The service runs on the **same PC as Fusion**: they share the `queue\` folder.
+
+### 1. Python and the service (once per PC, about 10 minutes)
+
+```powershell
+winget install -e --id Python.Python.3.12        # or python.org; tick "Add python.exe to PATH"
+# close and reopen PowerShell, then:
+cd C:\dev\frc-autocam
+py -3.12 -m venv C:\dev\venvs\frc-autocam
+C:\dev\venvs\frc-autocam\Scripts\pip install -e .
+C:\dev\venvs\frc-autocam\Scripts\autocam config-check
+Copy-Item .env.example .env                      # .env is gitignored: keys never go into git
+notepad .env
+```
+
+### 2. Trello key and token (only you can do this; never paste them into chat)
+
+1. Sign in to Trello as the account the service will act as (a mentor's, or a bot account in the team's
+   workspace; a bot uses one of the 10 Free-plan seats).
+2. Open https://trello.com/power-ups/admin, click **New**, name it `5940 AutoCAM`, pick the team's workspace.
+   Leave the iframe connector URL empty. Create it.
+3. On its page, open **API key**, click **Generate a new API key**, and copy the key into `.env` as
+   `TRELLO_API_KEY`.
+4. Next to the key, follow the link to generate a **token** by hand, click **Allow**, and copy the token into
+   `.env` as `TRELLO_TOKEN`.
+
+### 3. Make the board
+
+```powershell
+C:\dev\venvs\frc-autocam\Scripts\autocam trello-setup --create "5940 AutoCAM"
+```
+It creates:
+- the 9 lists;
+- the `Run nest` and `System` cards in Control;
+- a "How to add a part" card in Inbox;
+- the `Smoked` and `Tool 1/8` labels.
+
+It prints a `[trello]` block. Send that block over to be committed to `config/autocam.toml` (IDs aren't secrets),
+or set up an existing board instead with `--board <short link>`.
+
+### 4. Onshape API keys
+
+1. Create a key at https://dev-portal.onshape.com/keys, or your enterprise's developer portal. Read access is enough.
+2. Copy the access key and secret key into `.env` as `ONSHAPE_ACCESS_KEY` and `ONSHAPE_SECRET_KEY`.
+3. If the team's Onshape address isn't `cad.onshape.com` (an enterprise address like `<name>.onshape.com`),
+   `onshape.base_url` must be that address: enterprise keys only work there.
+
+### 5. First supervised run (1-2 parts; `onshape.per_run_max_calls` is 15 for now)
+
+1. Add one or two real part cards to **Ready for CAM**, in the format on the read-me card.
+2. Check the board without Trello writes or Onshape calls:
+   ```powershell
+   C:\dev\venvs\frc-autocam\Scripts\autocam dry-run --offline --verbose
+   ```
+3. With Fusion and the add-in running, drag `Run nest` into the **Run nest** list, then run one pass:
+   ```powershell
+   C:\dev\venvs\frc-autocam\Scripts\autocam tick --verbose
+   ```
+4. When the add-in has finished the job, run `autocam tick` again. Sheet cards appear in **Sheet review**.
+5. Check `autocam ledger` (Onshape calls used) and the cards' comments.
+
 ## M5: reboot test on the shop PC
 
 _Added in M5._
