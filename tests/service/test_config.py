@@ -36,7 +36,8 @@ def test_real_config_loads():
 
 def test_placeholders_and_warnings_are_reported():
     cfg = load_config()
-    assert {"pauses.resume_key", "trello.lists.ready_to_cut", "fusion_team.project"} <= set(cfg.placeholders)
+    assert {"pauses.resume_key", "trello.lists.ready_to_cut"} <= set(cfg.placeholders)
+    assert "fusion_team.project" not in cfg.placeholders
     assert not any(p.endswith(".color") for p in cfg.placeholders)
     assert any("poly_eighth.f3dhsm-template not exported yet" in w for w in cfg.warnings)
 

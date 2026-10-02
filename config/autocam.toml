@@ -299,9 +299,9 @@ allowed_g = [0, 1, 2, 3, 4, 20, 53, 80, 81, 90]
 allowed_m = [0, 3, 5, 11, 12]
 clamp_margin_in = 0.25
 
-[fusion_team]
-project = ""                    # open question 7
-folder = ""
+[fusion_team]                   # where each job's Fusion document is saved (searched in every hub you can see)
+project = "5940 BREAD"          # in Brock's hub
+folder = "AutoCAM test"         # must exist; nested folders as "a/b"
 
 [paths]                         # relative to the repo root
 queue = "queue"
