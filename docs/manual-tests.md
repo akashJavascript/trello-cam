@@ -263,6 +263,11 @@ or set up an existing board instead with `--board <short link>`.
 2. Copy the access key and secret key into `.env` as `ONSHAPE_ACCESS_KEY` and `ONSHAPE_SECRET_KEY`.
 3. If the team's Onshape address isn't `cad.onshape.com` (an enterprise address like `<name>.onshape.com`),
    `onshape.base_url` must be that address: enterprise keys only work there.
+4. Check them with one logged call (it counts against the budget, in this PC's ledger):
+   ```powershell
+   C:\dev\venvs\frc-autocam\Scripts\autocam onshape-check
+   ```
+   It says whose keys they are, or why Onshape refused them.
 
 ### 5. First supervised run (1-2 parts; `onshape.per_run_max_calls` is 15 for now)
 

@@ -81,3 +81,21 @@ def test_dry_run_writes_nothing_to_trello(tmp_path):
     kinds = [w[0] for w in dry.intended]
     assert kinds.count("move") == 2 and "comment" in kinds
     assert h.store.load("r001").dry_run
+
+
+def test_onshape_check_makes_one_logged_call(tmp_path, capsys):
+    from autocam_service.app import ledger_for
+    from autocam_service.cli import onshape_check
+    from fakeonshape import FakeTransport, resp
+    cfg = cfg_with_templates(tmp_path)
+    env = tmp_path / ".env"
+    env.write_text("ONSHAPE_ACCESS_KEY=AK\nONSHAPE_SECRET_KEY=SK\n")
+    ok = FakeTransport([("GET", "/users/sessioninfo", [resp(body={"name": "Akash", "email": "a@x"})])])
+    assert onshape_check(cfg, env, transport=ok) == 0
+    assert "belong to Akash" in capsys.readouterr().out
+    assert len(ok.sent) == 1 and ledger_for(cfg).month_count() == 1
+
+    refused = FakeTransport([("GET", "/users/sessioninfo", [resp(401, b"{}")])])
+    assert onshape_check(cfg, env, transport=refused) == 1
+    out = capsys.readouterr().out
+    assert "enterprise" in out and ledger_for(cfg).month_count() == 1     # a 401 isn't billable

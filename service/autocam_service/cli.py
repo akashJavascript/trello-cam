@@ -8,6 +8,7 @@
     ledger            Onshape call counts; `ledger reset-latch` after a 402 has been dealt with
     trello-discover   print the board's list and card IDs as a ready-to-paste [trello.lists] block
     trello-setup      create the board's lists, control/status cards and labels (only what's missing)
+    onshape-check     one logged Onshape call: do the keys and onshape.base_url work, and whose are they
 """
 
 import argparse
@@ -43,6 +44,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     lg.add_argument("action", nargs="?", default="report", choices=("report", "reset-latch"))
     td = sub.add_parser("trello-discover", help="print list and card IDs for config")
     td.add_argument("--board", help="board ID or short link (default: trello.board_id)")
+    sub.add_parser("onshape-check", help="one logged Onshape call to check the keys and the address")
     ts = sub.add_parser("trello-setup", help="create the lists, cards and labels the service needs")
     where = ts.add_mutually_exclusive_group(required=True)
     where.add_argument("--create", metavar="NAME", help="make a new board with this name")
@@ -67,6 +69,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return ledger(cfg, args.action)
         if args.command == "trello-discover":
             return trello_discover(cfg, env_file, args.board)
+        if args.command == "onshape-check":
+            return onshape_check(cfg, env_file)
         if args.command == "trello-setup":
             return trello_setup(cfg, env_file, args.board, args.create, args.workspace)
     except CredentialsError as e:
@@ -184,6 +188,36 @@ _EXPECTED_LIST_NAMES = {key: key.replace("_", "") for key in TRELLO_LISTS}
 
 def _norm(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def onshape_check(cfg, env_file: Optional[Path], transport=None) -> int:
+    """One Onshape call, through the one client and its ledger like every other call."""
+    from .app import ledger_for
+    from .onshape.client import OnshapeClient, OnshapeError, RequestsTransport
+    creds = load_credentials(env_file)
+    creds.require("onshape")
+    led = ledger_for(cfg)
+    latch = led.latched()
+    if latch:
+        print(f"Onshape calls are latched off ({latch['reason']}); see `autocam ledger`")
+        return 1
+    client = OnshapeClient(base_url=cfg.onshape.base_url, access_key=creds.get("ONSHAPE_ACCESS_KEY"),
+                           secret_key=creds.get("ONSHAPE_SECRET_KEY"), ledger=led,
+                           transport=transport or RequestsTransport(), run_id="check", max_calls=1,
+                           retry_after_max_wait_s=cfg.onshape.retry_after_max_wait_s)
+    try:
+        info = client.get_json("/api/v10/users/sessioninfo", purpose="key_check")
+    except OnshapeError as e:
+        print(f"Onshape refused: {e}")
+        if e.status in (401, 403):
+            print(f"Check the keys in .env. Keys made in an enterprise only work at the enterprise's address "
+                  f"(like https://<name>.onshape.com); onshape.base_url is {cfg.onshape.base_url}.")
+        return 1
+    finally:
+        print(f"Onshape calls this month (this PC's ledger): {led.month_count()}")
+    print(f"OK: {cfg.onshape.base_url} accepts these keys. They belong to {info.get('name', '?')} "
+          f"({info.get('email', 'no email shown')}).")
+    return 0
 
 
 def trello_setup(cfg, env_file: Path, board: Optional[str], create: Optional[str],
