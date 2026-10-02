@@ -87,11 +87,13 @@ def _summary(result, out_dir: Path) -> str:
         what = s.tap or (f"NOT OFFERED ({s.errors[0].msg})" if s.errors else "not posted")
         n = sum(p.count for p in s.parts)
         lines.append(f"{s.name}: {n} part(s), {s.cutter_label}: {what}")
+        lines += [f"    warning: {w.msg}" for w in s.warnings]
     for p in result.parts:
         if p.errors:
             lines.append(f"{p.part_key}: {p.errors[0].msg}")
         elif p.deferred:
             lines.append(f"{p.part_key}: didn't fit, deferred")
+        lines += [f"{p.part_key} warning: {w.msg}" for w in p.warnings]
     for e in result.errors:
         lines.append(e.msg)
     if result.worker.untested_steps:
