@@ -28,7 +28,7 @@ UNCONFIRMED = {
     "discard_hide": "Occurrence.isLightBulbOn = False for copies taken out of the job",
     "generate_retry": "CAM.generateToolpath again for ops left with no toolpath and no error",
     "chain_side_type": "ChainSelection.sideType = AlwaysInside for single loops",
-    "chain_direction": "ChainSelection.isReverted so the chain runs the loop's way (cut side follows direction)",
+    "chain_direction": "ChainSelection.isReverted so the chain runs against the loop's way (cut side follows direction)",
     "gouge_check": "BRepBody.pointContainment on the posted program's cutting points",
 }
 
@@ -110,16 +110,20 @@ def chain_api() -> str:
 
 def _inside(chain, loop, used) -> None:
     """Cut a single loop on its inside. Fusion picks the cut side of a chain from the chain's direction, and a
-    chain built from edges runs the way its first edge happens to point (2026-10-01: round cutouts came out
-    a tool width too big while the triangles were right). Prefer an explicit side; else run the chain the
-    way the loop runs, so every inner loop goes the same way round."""
+    chain built from edges runs the way its first edge happens to point.
+
+    Seen in Fusion 2705.1.15 (2026-10-01; ChainSelection has no sideType there):
+    - not reverted at all: round cutouts outside, triangles inside (edge directions vary);
+    - isReverted = first co-edge isOpposedToEdge (chain runs the loop's way): every cutout outside;
+    - so: isReverted = not isOpposedToEdge (chain runs against the loop's way).
+    The posted program is still tested against the part bodies (pipeline), so a wrong side is never offered."""
     sides = getattr(adsk.cam, "SideTypes", None)
     if sides is not None and hasattr(type(chain), "sideType") and hasattr(sides, "AlwaysInsideSideType"):
         chain.sideType = sides.AlwaysInsideSideType
         used("chain_side_type")
         return
     if hasattr(type(chain), "isReverted"):
-        chain.isReverted = bool(loop.coEdges.item(0).isOpposedToEdge)
+        chain.isReverted = not loop.coEdges.item(0).isOpposedToEdge
         used("chain_direction")
 
 

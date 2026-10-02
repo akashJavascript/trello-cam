@@ -111,7 +111,11 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
 | Setup | `Setup.name = program name`; several part bodies as `models` | fx_cam | default names |
 | Selections | drill: `holeMode` + `holeFaces` (`CadObjectParameterValue.value = [faces]`) | fx_cam | none yet |
 | Selections | bore/bearing: `holeMode` + `circularFaces` | fx_cam | Drill op, bore-milling cycle |
-| Selections | inner: several faces in one contour selection; single loops via `createNewChainSelection` with every edge of the loop (`loop.coEdges`). **Run t184808: the chains generate, but some round loops were cut on the outside** (triangles were right): the cut side follows the chain direction. Now `sideType` = inside if available, else `isReverted` from the first co-edge; and every run tests the posted cutting points against the part bodies | fx_cam | none |
+| Selections | inner: several faces in one contour selection; single loops via `createNewChainSelection` with every edge of the loop (`loop.coEdges`). The cut side follows the chain direction, and `ChainSelection` has no `sideType` in Fusion 2705.1.15:
+  - Run t184808, no direction set: round loops were cut outside, triangles inside.
+  - Run t204258, `isReverted = isOpposedToEdge`: every loop was cut outside. The safety net rejected the sheet: **pointContainment on the cutting points works**.
+  - Now `isReverted = not isOpposedToEdge`; not yet seen in Fusion.
+  - The generate retry was used in t204258. | fx_cam | none |
 | Arrange | `ArrangeComponent.deleteMe()` to leave out a part that would lie on its side; matching placed parts by occurrence name | fx_design | reject the part |
 | Design | `Occurrence.isLightBulbOn = False` for copies taken out of the job (not deleted: deleting an Arrange input could make Fusion solve it again) | fx_adapter | none |
 | Post | `PostProcessInput.postProperties` (`NamedValues` of every property, `useMist` from the material) | fx_cam | NC program + `postParameters` (probe: works) |
