@@ -9,7 +9,7 @@ import adsk.core
 import adsk.fusion
 
 from .adapter import AdapterError, Arranged
-from .fx_util import call, items, normal, to_cm, to_in, vec, vi
+from .fx_util import call, items, normal, to_cm, to_in, vec, vi, wait_for
 
 
 def new_design(app):
@@ -163,3 +163,43 @@ def export_f3d(design, path: str) -> None:
     em = design.exportManager
     if not call("export .f3d", em.execute, em.createFusionArchiveExportOptions(path)):
         raise AdapterError("export returned False")
+
+
+def _find_project(app, name: str):
+    hubs = [app.data.activeHub] + [h for h in items(app.data.dataHubs)]
+    seen = []
+    for hub in hubs:
+        if hub is None:
+            continue
+        for project in items(hub.dataProjects):
+            if project.name == name:
+                return project
+            seen.append(project.name)
+    raise AdapterError(f"no Fusion Team project named {name!r} (found: {', '.join(sorted(set(seen))) or 'none'})")
+
+
+def _find_folder(project, path: str):
+    folder = project.rootFolder
+    for part in [p for p in path.replace("\\", "/").split("/") if p]:
+        sub = folder.dataFolders.itemByName(part)
+        if sub is None:
+            names = [f.name for f in items(folder.dataFolders)]
+            raise AdapterError(f"no folder {part!r} in {folder.name!r} (found: {', '.join(names) or 'none'})")
+        folder = sub
+    return folder
+
+
+def save_to_team(app, doc, name: str, project: str, folder_path: str, timeout_s: float = 300.0):
+    """Save into the team folder and wait until the document has a data file with a web link."""
+    folder = _find_folder(_find_project(app, project), folder_path)
+    if not call("Document.saveAs", doc.saveAs, name, folder, "auto-CAM job", ""):
+        raise AdapterError("Document.saveAs returned False")
+
+    def uploaded():
+        try:
+            data_file = doc.dataFile
+            return data_file is not None and bool(data_file.fusionWebURL) and getattr(data_file, "isComplete", True)
+        except Exception:  # noqa: BLE001 - not there yet
+            return False
+    wait_for(uploaded, timeout_s, "the upload to Fusion Team")
+    return doc.dataFile.fusionWebURL, doc.dataFile.name

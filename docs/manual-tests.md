@@ -159,6 +159,17 @@ the same folder.
 - [ ] `result.json` reports each sheet's **nominal** stock thickness (e.g. 0.125), not the measured one. The
       service rejects any other value.
 
+## M1.7: saving to Fusion Team
+
+Needs `[fusion_team] project` and `folder` in `config/autocam.toml` (a nested folder is written `CAM/Auto`).
+The folder must already exist; the automation doesn't create folders.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Run a job (`autocam_run` or the add-in): the file appears in that project folder, named after the job (e.g. `t181442-al6061`) | |
+| 2 | `result.json` has `fusion_team.url`, and the link opens the file in a browser | |
+| 3 | Set a project name that doesn't exist: the job still finishes, with the local `.f3d` and a note naming the projects it did find | |
+
 ## M1.6: pause air tests (decision 19). Required before any real cut.
 
 Run on the machine with no material, work zero set as usual. Use `fusion/tests/pause_air_test.tap`

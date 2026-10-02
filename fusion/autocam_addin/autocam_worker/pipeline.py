@@ -39,8 +39,8 @@ from autocam_core.pauses import PauseError, insert
 from autocam_core.plate import PlateAnalysis, analyze
 from autocam_core.schema_job import Job, PartSpec, ToolSpec
 from autocam_core.schema_result import (
-    RESULT_SCHEMA, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary, PostResult, Result,
-    SheetPart, SheetResult, ToolForce, WorkerInfo, overall_status, result_json,
+    RESULT_SCHEMA, FusionTeamResult, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary,
+    PostResult, Result, SheetPart, SheetResult, ToolForce, WorkerInfo, overall_status, result_json,
 )
 from autocam_core.sheetcheck import check_sheet_program, pause_spec
 from autocam_core.tooling import FeaturePlan, ToolNeed, part_tool, plan_features, sheet_tool
@@ -671,6 +671,16 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             f3d_name, f3d_bytes = f3d.name, f3d.stat().st_size
         except (AdapterError, OSError) as e:
             notes.append(f"no .f3d: {e}")
+    team: Optional[FusionTeamResult] = None
+    if sheets and job.fusion_team.project:
+        try:
+            url, saved = adapter.save_to_team(job.job_id, job.fusion_team.project, job.fusion_team.folder)
+            team = FusionTeamResult(url, saved)
+            log(f"saved to Fusion Team: {saved} {url or '(no link yet)'}")
+        except AdapterError as e:
+            notes.append(f"not saved to Fusion Team ({e}); the .f3d is attached instead")
+    elif sheets:
+        notes.append("no Fusion Team folder in config ([fusion_team]); only the local .f3d")
 
     part_rows: List[PartResult] = []
     for part in parts.values():
@@ -699,6 +709,6 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
         schema=RESULT_SCHEMA, core_version=CORE_VERSION, job_id=job.job_id, run_id=job.run_id,
         status=overall_status(sheet_rows, part_tuple, job_errors),
         worker=WorkerInfo(fusion_version, python_version, attempt, started, now(), adapter.untested()),
-        post=PostResult("path", True, dict(job.post.properties)), fusion_team=None,
+        post=PostResult("path", True, dict(job.post.properties)), fusion_team=team,
         f3d=f3d_name, f3d_bytes=f3d_bytes, sheets=sheet_rows, parts=part_tuple, errors=job_errors,
         notes=tuple(notes))

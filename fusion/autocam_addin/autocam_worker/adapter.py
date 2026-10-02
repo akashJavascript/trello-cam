@@ -172,6 +172,11 @@ class Adapter:
     def export_f3d(self, path: Path) -> None:
         raise NotImplementedError
 
+    def save_to_team(self, name: str, project: str, folder: str) -> Tuple[Optional[str], str]:
+        """Save the document into a Fusion Team project folder ("a/b" for nested folders) and wait for it to
+        reach the cloud. Returns (web link or None, the saved file's name)."""
+        raise NotImplementedError
+
     def finish(self, keep_open: bool) -> None:
         """Close the document without saving (unless keep_open)."""
         raise NotImplementedError

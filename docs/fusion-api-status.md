@@ -67,8 +67,8 @@ Results so far (2026-10-01, Fusion 2705.1.15, Python 3.14.0, fresh install):
 | Post | post library lookup by description | fx_post | **works** in the local library (`user://shopsabre_automatic_mist.cps`); the cloud location raises `RuntimeError: 3 : Given URL does not point to an existing folder` on this install | not needed with post by path |
 | Post | NC program params, `postParameters`, `updatePostParameters`, `NCProgram.postProcess` | fx_post | **works** (lists the post's properties: `useMist`, `safePositionMethod`, `useXYZFeeds`, `writeMachine`, ...) | none |
 | Post | `getMachiningTime(setup, 100, feed, 0).machiningTime` | fx_post | **works** (seconds) | omit from card |
-| Save | `Document.saveAs` to Fusion Team folder, wait for upload | fx_save | untested | local `.f3d` attachment |
-| Save | `DataFile.fusionWebURL` | fx_save | untested | project/folder/file name on card |
+| Save | `Document.saveAs(name, folder, description, tag)` into the project/folder from config (found via `app.data.activeHub` / `dataHubs` → `dataProjects` → `rootFolder.dataFolders.itemByName`), then wait for `doc.dataFile` | fx_design | untested (written 2026-10-01) | local `.f3d` attachment |
+| Save | `DataFile.fusionWebURL` (and `isComplete` if it exists) | fx_design | untested | project/folder/file name on card |
 | Save | `createFusionArchiveExportOptions` (local `.f3d`) | fx_save | **works** | none |
 | Preview | `Viewport.saveAsImageFile` per sheet (top view, fit) | fx_preview | **works** | one image for all sheets |
 | Add-in | custom event fired from a background thread | autocam_addin | untested | none |

@@ -51,6 +51,8 @@ class FakeAdapter(Adapter):
         self.fail_post: Set[str] = set()               # sheet names
         self.gouges: Dict[str, List[Tuple[int, float, float]]] = {}   # sheet -> points reported inside a part
         self.points_checked: Dict[str, int] = {}
+        self.team_error: Optional[str] = None
+        self.saved_to_team: List[Tuple[str, str, str]] = []
         self.arrange_envelopes: List[Tuple[float, float, float, float]] = []
         self.finished: Optional[bool] = None
 
@@ -210,6 +212,12 @@ class FakeAdapter(Adapter):
 
     def export_f3d(self, path):
         path.write_bytes(b"fake f3d")
+
+    def save_to_team(self, name, project, folder):
+        if self.team_error:
+            raise AdapterError(self.team_error)
+        self.saved_to_team.append((name, project, folder))
+        return f"https://team.example/{project}/{name}", name
 
     def finish(self, keep_open):
         self.finished = keep_open

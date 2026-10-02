@@ -342,3 +342,26 @@ def test_tool_cutting_into_a_part_rejects_the_sheet(tmp_path):
     assert "cuts into a part" in sheet.errors[0].msg and "line 57" in sheet.errors[0].msg
     assert rig.fake.points_checked["6061_0p125_r001_S1"] > 0
     assert [vs.cuttable for vs in rig.service_view(job, result).sheets] == [False]
+
+
+def test_saved_to_the_fusion_team_folder_when_configured(tmp_path):
+    rig = Rig(tmp_path, team=("Robot 2027", "CAM/Auto"))
+    job = rig.job([("gusset", 1, plate(), (4.0, 4.0))])
+    result = rig.run(job)
+    assert rig.fake.saved_to_team == [("r001-al6061", "Robot 2027", "CAM/Auto")]
+    assert result.fusion_team.url == "https://team.example/Robot 2027/r001-al6061"
+    assert result.fusion_team.name == "r001-al6061"
+
+
+def test_team_save_failure_or_no_folder_still_delivers_the_job(tmp_path):
+    rig = Rig(tmp_path, team=("Robot 2027", "CAM/Auto"))
+    rig.fake.team_error = "no Fusion Team project named 'Robot 2027'"
+    job = rig.job([("gusset", 1, plate(), (4.0, 4.0))])
+    result = rig.run(job)
+    assert result.fusion_team is None and result.sheets[0].tap and result.f3d
+    assert any("not saved to Fusion Team" in n for n in result.notes)
+
+    (tmp_path / "b").mkdir()
+    rig = Rig(tmp_path / "b")
+    result = rig.run(rig.job([("gusset", 1, plate(), (4.0, 4.0))]))
+    assert rig.fake.saved_to_team == [] and any("no Fusion Team folder" in n for n in result.notes)

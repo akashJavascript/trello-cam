@@ -194,6 +194,10 @@ class FusionAdapter(Adapter):
     def export_f3d(self, path):
         fx_design.export_f3d(self.design, str(path))
 
+    def save_to_team(self, name, project, folder):
+        self._used("team_save")
+        return fx_design.save_to_team(self.app, self.doc, name, project, folder)
+
     def finish(self, keep_open):
         if self.doc is not None and not keep_open:
             call("close document", self.doc.close, False)
@@ -214,5 +218,5 @@ def _as_adapter_error(name, method):
 
 for _name in ("begin", "import_step", "extract", "add_copy", "arrange", "box", "faces_up", "discard", "make_sheet",
               "apply_template", "fill", "make_outer_ops", "delete_op", "generate", "post", "cuts_into_parts",
-              "machining_time", "preview", "export_f3d", "finish"):
+              "machining_time", "preview", "export_f3d", "save_to_team", "finish"):
     setattr(FusionAdapter, _name, _as_adapter_error(_name, getattr(FusionAdapter, _name)))
