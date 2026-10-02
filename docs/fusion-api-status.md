@@ -97,9 +97,14 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
   - **Setup:** several part bodies as setup models worked.
   - **Cut order:** `p02-1, p02-2, p02-3, p01-1, p02-4`.
   - **Pauses:** 4/4, each verified in position and content.
+- **1/4 in C-shaped plates with drilled holes, bored holes, bearing holes and cutouts (runs t181442 to the
+  run after t204258).** Each run turned up one problem, all now fixed:
+  - toolpaths had to be waited for and retried;
+  - the guard's arc bounds were too loose for big arcs;
+  - single-loop chains need `isReverted = not isOpposedToEdge`.
+  Drill `holeFaces` and the chain selections now work (simulated by the user).
 - **Not exercised yet:**
-  - drill `holeFaces` (no 0.156/0.159 holes so far);
-  - inner loops, both whole-face and single-loop chains (no cutouts so far);
+  - whole-face inner selection (a face whose every inner loop is a cutout);
   - more than one sheet;
   - a part needing the 1/8 in tool.
 
@@ -114,7 +119,8 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
 | Selections | inner: several faces in one contour selection; single loops via `createNewChainSelection` with every edge of the loop (`loop.coEdges`). The cut side follows the chain direction, and `ChainSelection` has no `sideType` in Fusion 2705.1.15:
   - Run t184808, no direction set: round loops were cut outside, triangles inside.
   - Run t204258, `isReverted = isOpposedToEdge`: every loop was cut outside. The safety net rejected the sheet: **pointContainment on the cutting points works**.
-  - Now `isReverted = not isOpposedToEdge`; not yet seen in Fusion.
+  - `isReverted = not isOpposedToEdge` **works**: the next run had every single loop cut inside (the user
+    simulated it), and the sheet passed the part-body check.
   - The generate retry was used in t204258. | fx_cam | none |
 | Arrange | `ArrangeComponent.deleteMe()` to leave out a part that would lie on its side; matching placed parts by occurrence name | fx_design | reject the part |
 | Design | `Occurrence.isLightBulbOn = False` for copies taken out of the job (not deleted: deleting an Arrange input could make Fusion solve it again) | fx_adapter | none |

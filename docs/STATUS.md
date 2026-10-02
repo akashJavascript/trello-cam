@@ -9,7 +9,7 @@ _Last updated 2026-10-01 (branch `m1-offline`)._
 | M0 scaffolding, config, `.env` | Done, on `main` |
 | M1.0 dump_params / api_probe / smoke test / probes | Done: api_probe, dump_params, the smoke test (stopped at Arrange), `pipeline_probe` and three `pipeline_probe2` runs. Every call the through-cut pipeline needs has been seen working. Results: `docs/fusion-api-status.md` |
 | M1.1 pure core | Done and unit-tested |
-| M1.2-M1.7 Fusion adapters + pipeline | **Working in Fusion for bored plates:** one and five parts on a sheet, pauses verified (2026-10-01). Still to run in Fusion: drilled holes, cutouts, several sheets, the 1/8 in tool. Pockets wait on a 2D Adaptive dump; Fusion Team save (M1.7) not written |
+| M1.2-M1.7 Fusion adapters + pipeline | **Working in Fusion for through-cut aluminum plates** (2026-10-01): drilled, bored and bearing holes, cutouts, several parts per sheet, pauses, the guard and a check that the tool never enters a part. Still to run in Fusion: several sheets, the 1/8 in tool, polycarbonate. Pockets wait on a 2D Adaptive dump; Fusion Team save (M1.7) not written |
 | M2 add-in hot-folder worker | Written: `fusion/autocam_addin/` (job loop in `autocam_worker/worker.py`, tested offline, including a full service run through it); the add-in itself is **untested in Fusion**. Checklist: `docs/manual-tests.md` → M2 |
 | M3 service: Trello read + Onshape export + jobs | Done offline with fakes; **never run against real Trello or Onshape** |
 | M4 service: results back to Trello | Done offline with fakes and a fake Fusion worker |
