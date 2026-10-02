@@ -92,8 +92,16 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
   - `G53 Z` only at the start and the end.
 - **Simulation (checked by the user):** looks right: the full-sheet stock, the origin corner, the part cut
   through, and the bored holes.
-- **Second run with several parts: "looks fine"** (the user). Which first-time calls it used is still to be
-  read from its `result.json`.
+- **Multi-part run (t174221): status ok, "looks fine" in the simulation.**
+  - **Job:** 1 sheet, `p02` x4 and `p01` x1, bore-size holes only.
+  - **Setup:** several part bodies as setup models worked.
+  - **Cut order:** `p02-1, p02-2, p02-3, p01-1, p02-4`.
+  - **Pauses:** 4/4, each verified in position and content.
+- **Not exercised yet:**
+  - drill `holeFaces` (no 0.156/0.159 holes so far);
+  - inner loops, both whole-face and single-loop chains (no cutouts so far);
+  - more than one sheet;
+  - a part needing the 1/8 in tool.
 
 | Area | Call | Used by | Fallback |
 |---|---|---|---|
