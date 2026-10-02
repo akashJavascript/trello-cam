@@ -116,6 +116,7 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
 | Design | `Occurrence.isLightBulbOn = False` for copies taken out of the job (not deleted: deleting an Arrange input could make Fusion solve it again) | fx_adapter | none |
 | Post | `PostProcessInput.postProperties` (`NamedValues` of every property, `useMist` from the material) | fx_cam | NC program + `postParameters` (probe: works) |
 | Preview | `Viewport.camera` framed on one sheet (target, eye, `viewExtents`) | fx_design | fit view |
+| Toolpaths | `GenerateToolpathFuture.isGenerationCompleted` isn't enough. Run t181442 (a 1/4 in plate, 29 cutouts) read `[outer] p01-1` as "no toolpath, no error"; it generated fine by hand. Now: wait until no op `isGenerating`, then `CAM.generateToolpath` once more for ops with neither a toolpath nor an error | fx_cam | none |
 | Add-in | `registerCustomEvent` + `fireCustomEvent` from a background thread; the handler runs the job on the main thread | autocam_addin | none |
 | Add-in | the add-in's handler re-entered by `adsk.doEvents()` during a job (guarded by `busy` and a per-process flag) | autocam_addin | none |
 

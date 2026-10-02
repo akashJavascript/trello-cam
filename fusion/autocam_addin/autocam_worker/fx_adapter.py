@@ -142,7 +142,7 @@ class FusionAdapter(Adapter):
         call(f"delete op {op_name}", fx_cam.op_by_name(self._setup(sheet), op_name).deleteMe)
 
     def generate(self, sheets):
-        return fx_cam.generate(self.cam, {s: self._setup(s) for s in sheets}, self.timeout)
+        return fx_cam.generate(self.cam, {s: self._setup(s) for s in sheets}, self.timeout, self._used)
 
     def post(self, sheet, program_name, folder, post_path, properties):
         self._used("post_properties")

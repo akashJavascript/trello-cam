@@ -26,6 +26,7 @@ UNCONFIRMED = {
     "arrange_flip": "ArrangeComponent.isDirectionFlipped chosen from upDirection",
     "arrange_refuse": "ArrangeComponent.deleteMe for a part that would lie on its side",
     "discard_hide": "Occurrence.isLightBulbOn = False for copies taken out of the job",
+    "generate_retry": "CAM.generateToolpath again for ops left with no toolpath and no error",
 }
 
 
@@ -134,9 +135,20 @@ def outline_copies(setup, template_op, outlines, contour_param: str) -> None:
     template_op.deleteMe()
 
 
-def generate(cam, setups, timeout_s: float):
-    future = call("generateAllToolpaths", cam.generateAllToolpaths, False)
-    wait_for(lambda: future.isGenerationCompleted, timeout_s, "toolpath generation")
+def generate(cam, setups, timeout_s: float, used=lambda key: None):
+    all_ops = [o for s in setups.values() for o in ops(s)]
+
+    def settle(future, what):
+        wait_for(lambda: future.isGenerationCompleted, timeout_s, what)
+        wait_for(lambda: not any(o.isGenerating for o in all_ops), timeout_s, f"{what} to finish")
+
+    settle(call("generateAllToolpaths", cam.generateAllToolpaths, False), "toolpath generation")
+    # Seen in Fusion (2026-10-01, a 1/4 in plate with 29 cutouts): the outline op came back with no toolpath and
+    # no error, and generated fine when asked again by hand. Ask once more for any op like that.
+    missing = [o for o in all_ops if not o.hasToolpath and not o.hasError]
+    if missing:
+        used("generate_retry")
+        settle(call("generateToolpath (retry)", cam.generateToolpath, collection(missing)), "toolpath regeneration")
     out = {}
     for name, setup in setups.items():
         out[name] = [OpState(o.name, bool(o.hasToolpath), (o.error or "error") if o.hasError else None,
