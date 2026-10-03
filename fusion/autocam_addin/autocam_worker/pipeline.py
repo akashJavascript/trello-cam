@@ -833,7 +833,7 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
             # Tabbed parts' cutouts: a copy of the op per tab count, made before the op is filled, so each
             # copy starts empty; they land after it (and before the outlines).
             for n, group in sorted(tabbed.items()):
-                name = f"{names[0]} - {n} tabs each"
+                name = f"{names[0]} - {n} tab{'s' if n != 1 else ''} each"
                 adapter.copy_op(sheet.name, names[0], name)
                 adapter.fill(sheet.name, name, OpFill(INNER, loops=tuple(group)))
                 adapter.set_tabs(sheet.name, name, n)

@@ -87,7 +87,7 @@ def set_tabs(op, names, per_contour: int) -> None:
     width and height. A spacing by distance left contours shorter than the distance without any."""
     set_expr(op, names["enabled"], "true")
     set_expr(op, names["positioning"], "'tabCount'")
-    set_expr(op, names["per_contour"], str(int(per_contour)))
+    set_expr(op, names.get("per_contour", "tabsPerContour"), str(int(per_contour)))   # jobs from before 0.8.0
 
 
 def copy_op(setup, op, name: str) -> None:
