@@ -294,7 +294,7 @@ or set up an existing board instead with `--board <short link>`.
 
 | # | Check | Result |
 |---|---|---|
-| 1 | A card made from the New part template has the "Nest this part" box, ticked. A card made by hand gets one within a minute | |
+| 1 | A card made from the New part template, and one made by hand, each get the "Nest this part" box, ticked, within about a minute | |
 | 2 | Drag two cards into Ready for CAM 1 minute apart: one run starts, about 2 minutes after the second | |
 | 3 | Untick "Nest this part" on a card in Ready for CAM: it stays there and no run takes it. Tick it again: a run starts | |
 | 4 | With a sheet in Sheet review and nothing ticked, add a part of the same material: the **same** sheet card is rebuilt (new run number in the title, a "Rebuilt" comment, one `.tap`, checklists unticked), and the new part's card links to it | |

@@ -4,7 +4,9 @@
   Lists with an older name (Inbox, Nested) are renamed in place, so their IDs and the config stay the same.
   The old `Run nest` list and its control card are archived (runs start from Ready for CAM now).
 - **Cards:** the `System` status card (in Control), the "How to add a part" card and the "New part" card
-  template (in Drafts, with the "Nest this part" box ticked). Their text is brought up to date.
+  template (in Drafts). Their text is brought up to date. The template has no "Nest this part" box: Trello
+  unticks checklist items when it copies a card (seen 2026-10-02), so the service adds the box, ticked, to
+  every part card instead (runner.ready_cards). A box left on the template from before is removed.
 - **Labels:** `Smoked` and `Tool 1/8`.
 
 Only what's missing or out of date is written, so running it again is safe. It prints the `[trello]` config
@@ -112,12 +114,11 @@ def setup_board(http, *, board: Optional[str] = None, create: Optional[str] = No
     card(README_TITLE, "inbox", FORMAT_HELP.format(smoked=labels.get("smoked", "Smoked"),
                                                    tool=labels.get("tool_eighth", "Tool 1/8")))
     template = card(TEMPLATE_TITLE, "inbox", TEMPLATE_DESC, template=True)
-    box, item = nest_box
-    checklists = http.call("GET", f"/cards/{template}/checklists", {"fields": "name", "checkItem_fields": "name,state"})
-    if not any(cl.get("name") == box for cl in checklists):
-        cl = http.call("POST", f"/cards/{template}/checklists", {"name": box})
-        http.call("POST", f"/checklists/{cl['id']}/checkItems", {"name": item, "checked": "true"})
-        created.append(f"{box} box on {TEMPLATE_TITLE}")
+    box = nest_box[0]
+    for cl in http.call("GET", f"/cards/{template}/checklists", {"fields": "name"}):
+        if cl.get("name") == box:
+            http.call("DELETE", f"/checklists/{cl['id']}")
+            created.append(f"removed the {box} box from {TEMPLATE_TITLE} (copies would come out unticked)")
 
     have_labels = {_norm(l.get("name") or "") for l in http.call("GET", f"/boards/{board_id}/labels", {"fields": "name"})}
     for key, color in LABEL_COLORS.items():

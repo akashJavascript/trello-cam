@@ -275,9 +275,11 @@ the edges, not the loop. Two changes:
     for CAM and comes back. Comments don't count, so a part that didn't fit doesn't restart runs every 2 minutes.
   - Cards past the per-run Onshape limit wait and start the next run as soon as this one is done. That's
     needed now that nobody chooses what goes in a run (15 calls is about 2 uncached parts).
-- **"Nest this part" box:** a checklist named `Nest` with one item, ticked by default. It's in the New part
-  template, and the service adds it, ticked, to any part card in Drafts or Ready for CAM without one. An unticked
-  card stays in Ready for CAM and runs skip it; ticking it counts as a change. No box at all means nest.
+- **"Nest this part" box:** a checklist named `Nest` with one item, ticked by default. The service adds it,
+  ticked, to any part card in Drafts or Ready for CAM without one (within a minute). It isn't on the New part
+  template: Trello unticks checklist items when it copies a card (checked on the real board 2026-10-02), so
+  every card made from the template would have come out "don't nest". An unticked card stays in Ready for
+  CAM and runs skip it; ticking it counts as a change. No box at all means nest.
 - **Open sheets get the new parts:** a sheet card is open while it's in Sheet review, cuttable, and nobody has
   ticked a Review item (the user's choice; once someone starts reviewing, the sheet is frozen).
   - A run nests the open sheets of a material again together with that material's new parts. The parts already

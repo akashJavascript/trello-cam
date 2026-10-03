@@ -25,6 +25,9 @@ class FakeTrello:
         path = urlsplit(url).path.removeprefix("/1")
         parts = path.strip("/").split("/")
         given = {k: v for k, v in params.items() if k not in ("key", "token")}
+        if method == "DELETE":
+            self.checklists = [c for c in self.checklists if c["id"] != parts[1]]
+            return 200, {}, b"{}"
         if method == "PUT":
             item = next(x for x in self.lists + self.cards if x["id"] == parts[1])
             changes = {"closed": given["value"]} if parts[2:] == ["closed"] else given
@@ -78,9 +81,7 @@ def test_creates_a_whole_board_and_prints_valid_config():
     assert readme["idList"] == result.lists["inbox"] and "Qty: 2" in readme["desc"] and "`" not in readme["desc"]
     template = next(c for c in fake.cards if c["name"] == "New part")
     assert template["isTemplate"] == "true" and template["idList"] == result.lists["inbox"]
-    box = [cl for cl in fake.checklists if cl["idCard"] == template["id"]]
-    assert [(cl["name"], [(i["name"], i["state"]) for i in cl["checkItems"]]) for cl in box] == \
-        [("Nest", [("Nest this part", "complete")])]
+    assert [cl for cl in fake.checklists if cl["idCard"] == template["id"]] == []   # the service adds the box
     assert {l["name"] for l in fake.labels} == {"Smoked", "Tool 1/8"}
     assert all(TRELLO_ID_RE.match(v) for v in list(result.lists.values()) + list(result.cards.values()))
 
@@ -139,3 +140,15 @@ def test_an_existing_board_is_updated_in_place():
     assert set(result.cards) == {"system"}
     again = setup_board(http, board=board, labels=LABELS)
     assert again.created == []
+
+
+def test_a_nest_box_on_the_template_is_removed():
+    # Trello copies a template's checklist items unticked, so cards made from it would never be nested.
+    fake = FakeTrello()
+    http = TrelloHttp("KEY", "TOKEN", transport=fake, sleep=lambda s: None)
+    first = setup_board(http, create="5940 AutoCAM", labels=LABELS)
+    template = next(c for c in fake.cards if c["name"] == "New part")
+    http.call("POST", f"/cards/{template['id']}/checklists", {"name": "Nest"})
+    result = setup_board(http, board=first.board_id, labels=LABELS)
+    assert result.created == ["removed the Nest box from New part (copies would come out unticked)"]
+    assert [cl for cl in fake.checklists if cl["idCard"] == template["id"]] == []
