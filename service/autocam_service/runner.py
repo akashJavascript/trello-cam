@@ -87,6 +87,7 @@ class Runner:
     # ------------------------------------------------------------ tick
     def tick(self) -> None:
         self.check_ready_to_cut()
+        self.follow_cut()
         state = self.s.store.active()
         if state is not None and state.dry_run != self.dry_run:
             log.warning("active run %s is a %s run; this %s tick leaves it alone", state.run_id,
@@ -102,7 +103,7 @@ class Runner:
         self.finish_start(state)
         trigger = self.trigger_card()
         if trigger is not None:
-            self.t.comment(trigger.id, f"Run {state.run_id} is still in progress; wait for it to finish.")
+            self.t.comment(trigger.id, f"Run {state.run_id} is still going. Try again when it's done.")
             self.t.move(trigger.id, self.targets["control_return"])
         self.collect(state)
 
@@ -126,18 +127,36 @@ class Runner:
         for card in self.t.list_cards("ready_to_cut"):
             info = ours.get(card.id)
             if info is not None and not info.get("cuttable"):
-                self._send_back(card.id, "Moved back to Sheet review: this sheet's program was rejected, so it "
-                                         "can't be cut. See the card description.")
+                self._send_back(card.id, "Moved back: this sheet failed the safety checks, so it can't be cut.")
                 continue
             state = self.t.checklist(card.id, name)
             if state is None:
                 if info is not None:
-                    self._send_back(card.id, f"Moved back to Sheet review: the {name} checklist is missing.")
+                    self._send_back(card.id, f"Moved back: the {name} checklist is missing.")
                 continue
             if state.complete and state.total >= expected:
                 continue
-            self._send_back(card.id, f"Moved back to Sheet review: the {name} checklist is {state.done}/{state.total} "
-                                     "done. Tick every item after checking it, then move the card again.")
+            self._send_back(card.id, f"Moved back: tick every {name} item first ({state.done} of {state.total} done).")
+
+    def follow_cut(self) -> None:
+        """Part cards follow their sheet(s) to Cut: once every sheet a part is on is in Cut, the part card moves
+        there too (only from On a sheet, so a card someone moved by hand is left alone)."""
+        ours = self.s.store.sheet_cards()
+        newly = [c.id for c in self.t.list_cards(self.targets["part_cut"]) if c.id in ours and not ours[c.id].get("cut")]
+        if not newly:
+            return
+        for sheet_id in newly:
+            self.s.store.mark_sheet_cut(sheet_id)
+        ours = self.s.store.sheet_cards()
+        for part_id in dict.fromkeys(p for s in newly for p in ours[s].get("parts", [])):
+            on = [info for info in ours.values() if part_id in info.get("parts", [])]
+            if not all(info.get("cut") for info in on):
+                continue
+            try:
+                if self.t.get_card(part_id).list_key == self.targets["part_nested"]:
+                    self.t.move(part_id, self.targets["part_cut"])
+            except Exception as e:  # noqa: BLE001 - a deleted card mustn't stop the tick
+                log.warning("couldn't move part card %s to Cut: %s", part_id, e)
 
     def _send_back(self, card_id: str, comment: str) -> None:
         self.t.move(card_id, self.targets["checklist_return"])
@@ -148,7 +167,7 @@ class Runner:
         store, cfg = self.s.store, self.cfg
         cards = self.t.list_cards("ready_for_cam")
         if not cards:
-            self.t.comment(trigger.id, "Nothing in Ready for CAM; no run started.")
+            self.t.comment(trigger.id, "Nothing in Ready for CAM.")
             self.t.move(trigger.id, self.targets["control_return"])
             return None
         state = RunState(run_id=self._new_run_id(), started_utc=_iso(self.s.clock()), trigger_card=trigger.id,
@@ -168,10 +187,12 @@ class Runner:
 
         exporter = self.s.exporter_for(run_id)
         linked = [r for r in requests if r.link is not None]
-        studios = {r.link.key: r.link for r in linked}
-        uncached_studios = sum(1 for link in studios.values() if exporter.cache.parts(link) is None)
+        studios = {r.link.studio: r.link for r in linked}
+        # Workspace links aren't pinned yet: count their pin call and assume nothing is cached.
+        uncached_studios = sum(1 for link in studios.values() if link.is_workspace or exporter.cache.parts(link) is None)
+        pins = sum(1 for link in studios.values() if link.is_workspace)
         uncached_parts = sum(1 for r in linked if not exporter.is_cached(r.link, r.name))
-        estimate = estimate_calls(uncached_parts, uncached_studios, cfg.onshape.calls_per_part_estimate)
+        estimate = estimate_calls(uncached_parts, uncached_studios, cfg.onshape.calls_per_part_estimate) + pins
         decision = decide(estimate, month_used=self.s.ledger.month_count(),
                           year_used=self.s.ledger.year_count(cfg.onshape.budget_year_start),
                           latched=self.s.ledger.latched() is not None, per_run_max=cfg.onshape.per_run_max_calls,
@@ -263,8 +284,8 @@ class Runner:
             job_text = self.s.store.job_text(job_id)
             if job_text is not None:
                 self.s.queue.submit(job_id, job_text, resume=True)
-        state.notes.insert(0, f"Run {state.run_id} was interrupted while starting; continuing with the "
-                              f"{len(state.jobs)} job(s) it had queued. Cards it hadn't reached stay in Ready for CAM.")
+        state.notes.insert(0, f"Run {state.run_id} was interrupted while starting and carries on with what it had "
+                              "queued. Cards it hadn't reached stay in Ready for CAM.")
         state.phase = COLLECTING
         self.s.store.save(state)
 
@@ -283,14 +304,15 @@ class Runner:
             choice = resolve_material(exported.material, None, req.smoked, self.cfg.onshape.material_map,
                                       self.cfg.materials)
             step_path, sha, part_id = exported.step_path, exported.step_sha256, exported.part_id
+            mid = exported.microversion
         else:
             step_path = self._download_step(req)
-            sha, part_id = sha256_file(step_path), None
+            sha, part_id, mid = sha256_file(step_path), None, None
             choice = resolve_material(None, req.material_hint, req.smoked, self.cfg.onshape.material_map,
                                       self.cfg.materials)
         if choice.key is None:
             return choice.problem
-        return ReadyPart(req, choice.key, step_path, sha, part_id)
+        return ReadyPart(req, choice.key, step_path, sha, part_id, mid)
 
     def _download_step(self, req: PartRequest) -> Path:
         att = req.step_attachment
@@ -355,7 +377,7 @@ class Runner:
                 WRITE_ATTEMPTS)
             for key, card_id in js.parts.items():
                 once(store, state, f"{job_id}:{key}:failed", lambda c=card_id: self.t.comment(
-                    c, f"The CAM job for this part ({job_id}) failed: {ing.failure}. The card stays in Ready for CAM."),
+                    c, f"CAM failed this run ({ing.failure}). The card stays in Ready for CAM."),
                     WRITE_ATTEMPTS)
             return
 
@@ -363,7 +385,8 @@ class Runner:
                       for key, cid in js.parts.items()}
         sheet_urls: Dict[int, str] = {}
         cuttable: Dict[int, bool] = {}
-        f3d = ing.file(ing.result.f3d)
+        team = ing.result.fusion_team
+        f3d = None if team and team.url else ing.file(ing.result.f3d)     # the Fusion Team link replaces it
         for vs in ing.sheets:
             key = f"{job_id}:S{vs.sheet.index}"
             desc = text.sheet_description(ing.job, ing, vs, resume_key=cfg.pauses.resume_key, part_cards=part_cards)
@@ -374,7 +397,8 @@ class Runner:
                 cuttable[vs.sheet.index] = False
                 continue
             card_id, url = card_ref.split(" ", 1)
-            store.register_sheet(card_id, run_id, vs.cuttable)
+            store.register_sheet(card_id, run_id, vs.cuttable,
+                                 [js.parts[p.part_key] for p in vs.sheet.parts if p.part_key in js.parts])
             sheet_urls[vs.sheet.index] = url
             cuttable[vs.sheet.index] = vs.cuttable
             if vs.cuttable:
@@ -382,10 +406,15 @@ class Runner:
                     card_id, vs.sheet.tap, vs.tap_bytes, vs.check.guard), WRITE_ATTEMPTS)
                 once(store, state, f"{key}:checklist", lambda: self.t.add_checklist(
                     card_id, cfg.trello.checklist_name, cfg.trello.checklist), WRITE_ATTEMPTS)
+                once(store, state, f"{key}:machine", lambda: self.t.add_checklist(
+                    card_id, cfg.trello.machine_checklist_name, cfg.trello.machine_checklist), WRITE_ATTEMPTS)
             png = ing.file(vs.sheet.preview_png)
             if png is not None:
-                once(store, state, f"{key}:png", lambda: self.t.attach_file(
+                png_id = once(store, state, f"{key}:png", lambda: self.t.attach_file(
                     card_id, png.name, png.read_bytes(), "image/png"), WRITE_ATTEMPTS)
+                if png_id != GAVE_UP:
+                    once(store, state, f"{key}:cover", lambda: self.t.set_cover(card_id, png_id) or png_id,
+                         WRITE_ATTEMPTS)
             if f3d is not None and f3d.stat().st_size <= self.t.attachment_limit_bytes:
                 once(store, state, f"{key}:f3d", lambda: self.t.attach_file(
                     card_id, f3d.name, f3d.read_bytes(), "application/octet-stream"), WRITE_ATTEMPTS)
@@ -397,8 +426,8 @@ class Runner:
             if part is None or inconsistent:
                 reasons = list(inconsistent or ("Fusion reported nothing for this part",))
                 once(store, state, f"{key}:comment", lambda: self.t.comment(card_id, text.part_problem_comment(
-                    run_id, [f"the CAM result for this part doesn't add up ({'; '.join(reasons)}); "
-                             "a mentor should check this run"])), WRITE_ATTEMPTS)
+                    run_id, [f"The CAM result doesn't add up ({'; '.join(reasons)}). A mentor should check "
+                             f"run {run_id}."])), WRITE_ATTEMPTS)
                 once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]), WRITE_ATTEMPTS)
                 continue
             links = [(i, sheet_urls[i]) for i in part.sheets if i in sheet_urls]

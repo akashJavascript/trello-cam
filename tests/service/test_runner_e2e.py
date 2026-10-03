@@ -50,7 +50,7 @@ def cards():
         Card("ctl", "Run nest", "", "run_nest", "https://trello.example/c/ctl"),
         Card("ca", "hood_gusset", f"Qty: 2\n{STUDIO}", "ready_for_cam", "https://trello.example/c/ca"),
         Card("cb", "window", f"Qty: 1\n{STUDIO}", "ready_for_cam", "https://trello.example/c/cb", ("Smoked",)),
-        Card("cc", "bracket", f"Qty: 1\nhttps://cad.onshape.com/documents/{D}/w/{W}/e/{E}", "ready_for_cam",
+        Card("cc", "bracket", f"Qty: 1\nhttps://cad.onshape.com/documents/{D}/m/{W}/e/{E}", "ready_for_cam",
              "https://trello.example/c/cc"),
         Card("cd", "spacer", "Qty: 1\nMaterial: 5052", "ready_for_cam", "https://trello.example/c/cd",
              attachments=(Attachment("att-d", "spacer.step", "https://trello.example/a/d"),)),
@@ -107,9 +107,9 @@ def test_full_run(tmp_path):
     h = Harness(tmp_path)
     h.runner.tick()
     assert sorted(h.queue.pending()) == ["r001-al5052", "r001-al6061", "r001-pc_smoked"]
-    assert h.list_of("cc") == "needs_fixing" and "workspace" in h.tracker.comments_on("cc")[0]
+    assert h.list_of("cc") == "needs_fixing" and "microversion" in h.tracker.comments_on("cc")[0]
     assert h.list_of("ctl") == "control"
-    assert h.tracker.comments_on("ctl")[0].startswith("Run r001 started: 3 part card(s) in 3 job(s).")
+    assert h.tracker.comments_on("ctl")[0].startswith("Run r001 started: 3 parts.")
     assert h.ledger.month_count() == 7   # one parts list + 2 x (translation, poll, download)
     assert all(h.list_of(c) == "ready_for_cam" for c in ("ca", "cb", "cd"))
 
@@ -117,18 +117,25 @@ def test_full_run(tmp_path):
     h.runner.tick()
 
     sheets = {c.name: c for c in h.sheet_cards()}
-    assert set(sheets) == {"5052 0.125 - 4 mm O-flute ALU - S1 (0 pauses) - r001",
-                           "6061 0.125 - 4 mm O-flute ALU - S1 (1 pauses) - r001",
-                           "PC smoked 0.125 - 4 mm O-flute POLY - S1 (0 pauses) - r001"}
-    alu = sheets["6061 0.125 - 4 mm O-flute ALU - S1 (1 pauses) - r001"]
+    assert set(sheets) == {"5052 1/8in - 4 mm O-flute ALU - 1 part - 15 min - r001 S1",
+                           "6061 1/8in - 4 mm O-flute ALU - 2 parts - 15 min - r001 S1",
+                           "PC smoked 1/8in - 4 mm O-flute POLY - 1 part - 15 min - r001 S1"}
+    alu = sheets["6061 1/8in - 4 mm O-flute ALU - 2 parts - 15 min - r001 S1"]
     assert h.files_on(alu.id) == ["6061_0p125_r001_S1.tap", "6061_0p125_r001_S1.png"]
-    assert "**LOAD: 4 mm O-flute ALU**" in alu.desc and "lowest Z 0.0000 in" in alu.desc
-    assert h.tracker.checklist(alu.id, "Review").total == 4
+    assert alu.desc.startswith("LOAD\nStock: 6061 1/8in (0.125), 24 x 48\nCutter: 4 mm O-flute ALU (T1).")
+    assert "Clamps: front and back edges only. Mist: on." in alu.desc
+    assert "It stops after each part but the last (1 stops)" in alu.desc and "Lowest Z 0.0000in" in alu.desc
+    assert "CUT ORDER\n1. hood_gusset (1 of 2)\n2. hood_gusset (2 of 2)" in alu.desc
+    assert "`" not in alu.desc and "**" not in alu.desc
+    assert h.tracker.checklist(alu.id, "Review").total == 2
+    assert h.tracker.checklist(alu.id, "At the machine").total == 3
+    png = next(aid for aid, (cid, name, _) in h.tracker.files.items() if cid == alu.id and name.endswith(".png"))
+    assert h.tracker.covers[alu.id] == png
     for c in ("ca", "cb", "cd"):
         assert h.list_of(c) == "nested"
-        assert h.tracker.comments_on(c)[-1].startswith("Nested in run r001")
+        assert h.tracker.comments_on(c)[-1] == "On sheet S1 (run r001)."
     assert [url for cid, url, _ in h.tracker.links if cid == "ca"] == [alu.url]
-    assert h.tracker.comments_on("ctl")[-1].startswith("Run r001 finished.")
+    assert h.tracker.comments_on("ctl")[-1].startswith("Run r001 done: 3 sheets in Sheet review.")
     assert h.store.active() is None
     assert not any(e[0] == "move" and e[2] == "ready_to_cut" for e in h.tracker.log)
 
@@ -165,10 +172,10 @@ def test_full_run_through_the_real_worker_loop_and_pipeline(tmp_path, monkeypatc
     h.runner.tick()
 
     sheets = {c.name: c for c in h.sheet_cards()}
-    assert set(sheets) == {"5052 0.125 - 4 mm O-flute ALU - S1 (0 pauses) - r001",
-                           "6061 0.125 - 4 mm O-flute ALU - S1 (1 pauses) - r001",
-                           "PC smoked 0.125 - 4 mm O-flute POLY - S1 (0 pauses) - r001"}
-    alu = sheets["6061 0.125 - 4 mm O-flute ALU - S1 (1 pauses) - r001"]
+    assert set(sheets) == {"5052 1/8in - 4 mm O-flute ALU - 1 part - 10 min - r001 S1",
+                           "6061 1/8in - 4 mm O-flute ALU - 2 parts - 10 min - r001 S1",
+                           "PC smoked 1/8in - 4 mm O-flute POLY - 1 part - 10 min - r001 S1"}
+    alu = sheets["6061 1/8in - 4 mm O-flute ALU - 2 parts - 10 min - r001 S1"]
     assert h.files_on(alu.id)[0] == "6061_0p125_r001_S1.tap"
     for c in ("ca", "cb", "cd"):
         assert h.list_of(c) == "nested"
@@ -230,7 +237,7 @@ def test_rejected_program_is_never_uploaded(tmp_path):
     assert all(c.name.startswith("NOT CUTTABLE") for c in h.sheet_cards())
     assert not any(name.endswith(".tap") for _, name, _ in h.tracker.files.values())
     assert h.list_of("ca") == "needs_fixing"
-    assert "program was rejected" in h.tracker.comments_on("ca")[-1]
+    assert "failed the safety checks" in h.tracker.comments_on("ca")[-1]
 
 
 def test_outlines_that_never_reach_the_stock_bottom_are_rejected(tmp_path):
@@ -263,7 +270,7 @@ def test_failed_deferred_and_rejected_parts(tmp_path):
     h.runner.tick()
     assert h.list_of("cb") == "ready_for_cam" and "failed" in h.tracker.comments_on("cb")[-1]
     assert any("r001-pc_smoked failed in Fusion" in t for t in h.tracker.comments_on("ctl"))
-    assert h.list_of("ca") == "ready_for_cam" and "none were cut" in h.tracker.comments_on("ca")[-1]
+    assert h.list_of("ca") == "ready_for_cam" and "Didn't fit this run" in h.tracker.comments_on("ca")[-1]
 
 
 def test_part_error_from_fusion_goes_to_needs_fixing(tmp_path):
@@ -284,7 +291,7 @@ def test_ready_to_cut_needs_a_complete_checklist(tmp_path):
     h.tracker.cards[sheet.id] = sheet.__class__(**{**sheet.__dict__, "list_key": "ready_to_cut"})  # a human moves it
     h.runner.tick()
     assert h.list_of(sheet.id) == "sheet_review"
-    assert "checklist is 0/4 done" in h.tracker.comments_on(sheet.id)[-1]
+    assert "tick every Review item first (0 of 2 done)" in h.tracker.comments_on(sheet.id)[-1]
     h.tracker.tick_all(sheet.id, "Review")
     h.tracker.cards[sheet.id] = h.tracker.cards[sheet.id].__class__(
         **{**h.tracker.cards[sheet.id].__dict__, "list_key": "ready_to_cut"})
@@ -307,7 +314,7 @@ def test_trigger_during_a_run_and_job_timeout(tmp_path):
     h.tracker.move("ctl", "run_nest")
     h.now = NOW + timedelta(hours=2)
     h.runner.tick()
-    assert any("Run r001 is still in progress" in t for t in h.tracker.comments_on("ctl"))
+    assert any("Run r001 is still going" in t for t in h.tracker.comments_on("ctl"))
     assert h.list_of("ctl") == "control"
     assert sum("hasn't finished" in t for t in h.tracker.comments_on("ctl")) == 3   # one per queued job
     h.runner.tick()
@@ -319,7 +326,7 @@ def test_offline_leaves_uncached_cards_queued(tmp_path):
     h.runner.tick()
     assert h.queue.pending() == ["r001-al5052"]           # only the .step card could be prepared
     assert h.list_of("ca") == "ready_for_cam" and h.list_of("cb") == "ready_for_cam"
-    assert "2 card(s) were left in Ready for CAM" in h.tracker.comments_on("ctl")[0]
+    assert "2 left in Ready for CAM" in h.tracker.comments_on("ctl")[0]
 
 
 def test_missing_template_keeps_cards_queued(tmp_path):
@@ -353,3 +360,41 @@ def test_onshape_refusing_the_keys_stops_the_run_and_leaves_the_cards(tmp_path):
     h.runner.tick()
     assert h.list_of("ca") == "ready_for_cam" and h.list_of("cb") == "ready_for_cam"
     assert any("refused the API keys" in c for c in h.tracker.comments_on("ctl"))
+
+
+def test_parts_follow_their_sheet_to_cut(tmp_path):
+    h = Harness(tmp_path)
+    h.runner.tick()
+    run_fake_worker(h.queue)
+    h.runner.tick()
+    alu = next(c for c in h.sheet_cards() if c.name.startswith("6061"))
+    assert h.list_of("ca") == "nested"
+    h.tracker.move(alu.id, "cut")                  # a mentor cut the sheet
+    h.runner.tick()
+    assert h.list_of("ca") == "cut"
+    assert h.list_of("cb") == "nested"             # on a different sheet, not cut yet
+    h.runner.tick()                                # nothing happens twice
+    assert sum(1 for e in h.tracker.log if e[:2] == ("move", "ca")) == 2
+
+
+def test_a_part_on_two_sheets_waits_for_both_and_hand_moves_are_respected(tmp_path):
+    h = Harness(tmp_path)
+    h.tracker.cards["ca"] = h.tracker.cards["ca"].__class__(**{**h.tracker.cards["ca"].__dict__, "list_key": "nested"})
+    h.tracker.cards["cb"] = h.tracker.cards["cb"].__class__(**{**h.tracker.cards["cb"].__dict__, "list_key": "needs_fixing"})
+    s1 = h.tracker.create_card("sheet_review", "S1", "")
+    s2 = h.tracker.create_card("sheet_review", "S2", "")
+    h.store.register_sheet(s1.id, "r001", True, ["ca", "cb"])
+    h.store.register_sheet(s2.id, "r001", True, ["ca"])
+    h.tracker.move(s1.id, "cut")
+    h.runner.follow_cut()
+    assert h.list_of("ca") == "nested"             # still on S2
+    assert h.list_of("cb") == "needs_fixing"       # someone moved it by hand: left alone
+    h.tracker.move(s2.id, "cut")
+    h.runner.follow_cut()
+    assert h.list_of("ca") == "cut"
+
+
+def test_thickness_labels_and_not_cuttable_titles():
+    from autocam_service.sheet_cards import thickness_label
+    assert [thickness_label(t) for t in (0.0625, 0.125, 0.1875, 0.25, 0.5, 1.0, 0.09)] == \
+        ["1/16in", "1/8in", "3/16in", "1/4in", "1/2in", "1in", "0.09in"]

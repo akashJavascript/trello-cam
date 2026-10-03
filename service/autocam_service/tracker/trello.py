@@ -151,6 +151,9 @@ class TrelloTracker(Tracker):
             self.http.call("POST", f"/checklists/{cl['id']}/checkItems", {"name": item})
         return cl["id"]
 
+    def _set_cover(self, card_id: str, attachment_id: str) -> None:
+        self.http.call("PUT", f"/cards/{card_id}", {"idAttachmentCover": attachment_id})
+
     # setup helpers
     def board_lists(self, board_id: str) -> List[Tuple[str, str]]:
         return [(l["id"], l["name"]) for l in self.http.call("GET", f"/boards/{board_id}/lists", {"fields": "name"})]

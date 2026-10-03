@@ -238,3 +238,29 @@ the edges, not the loop. Two changes:
   against the sheet's part bodies (`pointContainment`, just above the cut). A point inside a part rejects the
   sheet. This catches a wrong-side cutout or outline, a template mistake, anything that would cut into a part. The
   service can't repeat it (no geometry), so it runs in Fusion only.
+
+## 2026-10-02: the board made simpler (the user's choices)
+
+- **Trigger:** unchanged. Drag the Run nest card into the Run nest list.
+- **Links:** workspace links (`/w/`) work as well as version links. A run pins each workspace to its current
+  microversion: 1 Onshape call per Part Studio per run. The cache is keyed by that microversion, so an edited
+  Part Studio is exported again and an unchanged one costs nothing more. The job records the microversion
+  (`OnshapeRef.microversion`; core version 0.2.0, so a stale add-in refuses new jobs instead of misreading them).
+  The translation API takes a workspace, not a microversion, so a Part Studio edited in the seconds between the
+  pin and the export would be exported as edited; that window is accepted.
+- **Quantity:** still required, but written any common way: `Qty: 4`, `Qty 4`, `Quantity: 4`, `x4`, `4x`, or at
+  the end of the title (`P-2011 x4`). Markdown around it is ignored.
+- **Part names:** matched ignoring case and extra spaces. A Part Studio with one solid part needs no name match.
+- **Plain text everywhere**, as short as possible:
+  - **Problem comments** say only what's wrong and how to fix it.
+  - **Sheet cards** read as LOAD / RUN / CUT ORDER, with the title leading with what stock to grab
+    (`6061 1/8in - 4 mm O-flute ALU - 5 parts - 23 min - r004 S1`).
+- **Board:**
+  - Inbox becomes Drafts and Nested becomes On a sheet (renamed in place; same IDs).
+  - A "New part" card template, with the quantity left blank on purpose.
+  - The nest preview is the sheet card's cover.
+  - Two checklists: Review (required for Ready to cut) and At the machine (for the operator).
+  - No `.f3d` attachment when the Fusion Team link exists.
+- **Parts follow their sheets to Cut:** once every sheet a part is on is in Cut, its card moves there, but only
+  from On a sheet, so a card someone moved by hand is left alone.
+- **No "In CAM" list:** the user wanted the fewest lists.

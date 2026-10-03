@@ -271,7 +271,8 @@ or set up an existing board instead with `--board <short link>`.
 
 ### 5. First supervised run (1-2 parts; `onshape.per_run_max_calls` is 15 for now)
 
-1. Add one or two real part cards to **Ready for CAM**, in the format on the read-me card.
+1. Add one or two real part cards to **Ready for CAM** (the "New part" template in Drafts has the format: the
+   Part Studio link, workspace or version, and a quantity).
 2. Check the board without Trello writes or Onshape calls:
    ```powershell
    C:\dev\venvs\frc-autocam\Scripts\autocam dry-run --offline --verbose

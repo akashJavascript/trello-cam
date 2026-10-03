@@ -50,3 +50,6 @@ class DryRunTracker(Tracker):
     def _add_checklist(self, card_id, name, items):
         self.intended.append(("add_checklist", card_id, name, tuple(items)))
         return self._fake_id("cl")
+
+    def _set_cover(self, card_id, attachment_id):
+        self.intended.append(("set_cover", card_id, attachment_id))

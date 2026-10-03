@@ -16,6 +16,7 @@ class FakeTracker(Tracker):
         self.links: List[Tuple[str, str, str]] = []
         self.checklists: Dict[Tuple[str, str], List[List]] = {}  # (card, name) -> [[item, done], ...]
         self.downloads: Dict[str, bytes] = {}                    # attachment id -> bytes to return
+        self.covers: Dict[str, str] = {}                         # card id -> attachment id
         self.log: List[Tuple] = []
         self._ids = itertools.count(1)
 
@@ -68,6 +69,10 @@ class FakeTracker(Tracker):
         self.checklists[(card_id, name)] = [[item, False] for item in items]
         self.log.append(("checklist", card_id, name))
         return self._id("cl")
+
+    def _set_cover(self, card_id: str, attachment_id: str) -> None:
+        self.covers[card_id] = attachment_id
+        self.log.append(("cover", card_id, attachment_id))
 
     # test helpers
     def tick_all(self, card_id: str, name: str) -> None:

@@ -19,10 +19,17 @@ class FakeTrello:
         self.ids = (f"{n:024x}" for n in itertools.count(1))
         self.boards, self.lists, self.cards, self.labels = {}, [], [], []
         self.posts = []
+        self.puts = []
 
     def __call__(self, method, url, params, files, headers):
         path = urlsplit(url).path.removeprefix("/1")
         parts = path.strip("/").split("/")
+        if method == "PUT":
+            item = next(x for x in self.lists + self.cards if x["id"] == parts[1])
+            changes = {k: v for k, v in params.items() if k not in ("key", "token")}
+            item.update(changes)
+            self.puts.append((path, changes))
+            return 200, {}, json.dumps(item).encode()
         if method == "POST":
             self.posts.append(path)
             item = {"id": next(self.ids), **{k: v for k, v in params.items() if k not in ("key", "token")}}
@@ -58,7 +65,9 @@ def test_creates_a_whole_board_and_prints_valid_config():
     control = result.lists["control"]
     assert {c["name"] for c in fake.cards if c["idList"] == control} == {"Run nest", "System"}
     readme = next(c for c in fake.cards if c["name"] == README_TITLE)
-    assert readme["idList"] == result.lists["inbox"] and "Qty: 2" in readme["desc"]
+    assert readme["idList"] == result.lists["inbox"] and "Qty: 2" in readme["desc"] and "`" not in readme["desc"]
+    template = next(c for c in fake.cards if c["name"] == "New part")
+    assert template["isTemplate"] == "true" and template["idList"] == result.lists["inbox"]
     assert {l["name"] for l in fake.labels} == {"Smoked", "Tool 1/8"}
     assert all(TRELLO_ID_RE.match(v) for v in list(result.lists.values()) + list(result.cards.values()))
 
@@ -89,8 +98,27 @@ def test_existing_lists_are_reused_by_name():
     keep = http.call("POST", "/lists", {"name": "ready for cam", "idBoard": board})["id"]
     result = setup_board(http, board=board, labels=LABELS)
     assert result.lists["ready_for_cam"] == keep
-    assert "list Ready for CAM" not in result.created and "list Inbox" in result.created
+    assert "list Ready for CAM" not in result.created and "list Drafts" in result.created
 
 
 def test_repo_config_still_loads():
     load_config()
+
+
+
+def test_an_existing_board_is_updated_in_place():
+    fake = FakeTrello()
+    http = TrelloHttp("KEY", "TOKEN", transport=fake, sleep=lambda s: None)
+    board = http.call("POST", "/boards", {"name": "5940 AutoCAM"})["id"]
+    inbox = http.call("POST", "/lists", {"name": "Inbox", "idBoard": board})["id"]
+    nested = http.call("POST", "/lists", {"name": "Nested", "idBoard": board})["id"]
+    control = http.call("POST", "/lists", {"name": "Control", "idBoard": board})["id"]
+    old_run = http.call("POST", "/cards", {"name": "Run nest", "idList": control, "desc": "old **markdown** text"})["id"]
+    result = setup_board(http, board=board, labels=LABELS)
+    assert result.lists["inbox"] == inbox and result.lists["nested"] == nested      # same IDs, config unchanged
+    assert {"renamed list Inbox to Drafts", "renamed list Nested to On a sheet", "updated card Run nest"} <= set(result.created)
+    renames = [p for p in fake.puts if p[0].startswith("/lists/")]
+    assert sorted(n["name"] for _, n in renames) == ["Drafts", "On a sheet"]
+    assert result.cards["run_nest_control"] == old_run
+    again = setup_board(http, board=board, labels=LABELS)
+    assert again.created == []

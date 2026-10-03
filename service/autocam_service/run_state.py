@@ -6,7 +6,7 @@ recorded. A crash between the write and the record can repeat at most that one w
 
     state/runs/r017.json          the run
     state/jobs/r017-al6061.json   the service's own copy of each job it submitted
-    state/sheet_cards.json        every sheet card the service made, and whether its program is cuttable
+    state/sheet_cards.json        every sheet card the service made: cuttable or not, its part cards, cut yet
 
 A run is saved before anything else happens (phase "starting"), so a crash while starting resumes
 the same run instead of starting a new one and paying for its Onshape exports again.
@@ -15,7 +15,7 @@ the same run instead of starting a new one and paying for its Onshape exports ag
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 from autocam_core.hotfolder import write_atomic
 
@@ -91,9 +91,19 @@ class RunStore:
         path = self.jobs_dir / f"{job_id}.json"
         return path.read_text(encoding="utf-8") if path.exists() else None
 
-    def register_sheet(self, card_id: str, run_id: str, cuttable: bool) -> None:
+    def register_sheet(self, card_id: str, run_id: str, cuttable: bool, parts: Sequence[str] = ()) -> None:
+        """parts: the part card ids on this sheet (they follow it to Cut)."""
         sheets = self.sheet_cards()
-        sheets[card_id] = {"run": run_id, "cuttable": cuttable}
+        sheets[card_id] = {**sheets.get(card_id, {}), "run": run_id, "cuttable": cuttable, "parts": list(parts)}
+        self._write_sheets(sheets)
+
+    def mark_sheet_cut(self, card_id: str) -> None:
+        sheets = self.sheet_cards()
+        if card_id in sheets:
+            sheets[card_id]["cut"] = True
+            self._write_sheets(sheets)
+
+    def _write_sheets(self, sheets: Dict[str, Dict]) -> None:
         self.sheets_file.parent.mkdir(parents=True, exist_ok=True)
         write_atomic(self.sheets_file, (json.dumps(sheets, indent=1) + "\n").encode("utf-8"))
 

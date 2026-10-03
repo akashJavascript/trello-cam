@@ -32,11 +32,10 @@ def test_version_link_parses():
 
 
 @pytest.mark.parametrize("url, why", [
-    (f"https://cad.onshape.com/documents/{D}/w/{W}/e/{E}", "workspace"),
     (f"https://cad.onshape.com/documents/{D}/m/{W}/e/{E}", "microversion"),
-    (f"https://cad.onshape.com/documents/{D}/v/{V}", "Part Studio tab"),
-    (f"http://cad.onshape.com/documents/{D}/v/{V}/e/{E}", "not an Onshape link"),
-    (f"https://evil.example.com/documents/{D}/v/{V}/e/{E}", "not an Onshape link"),
+    (f"https://cad.onshape.com/documents/{D}/v/{V}", "isn't a link to a Part Studio"),
+    (f"http://cad.onshape.com/documents/{D}/v/{V}/e/{E}", "isn't an Onshape link"),
+    (f"https://evil.example.com/documents/{D}/v/{V}/e/{E}", "isn't an Onshape link"),
 ])
 def test_bad_links_are_rejected(url, why):
     with pytest.raises(LinkError, match=why):
@@ -58,19 +57,20 @@ def test_good_card():
 
 
 @pytest.mark.parametrize("desc, problem", [
-    (VERSION_URL, "no `Qty: N` line"),
-    (f"Qty: four\n{VERSION_URL}", "`Qty: four` isn't a whole number"),
-    (f"Qty: 0\n{VERSION_URL}", "`Qty: 0` isn't a whole number"),
-    (f"Qty: 2\nqty: 3\n{VERSION_URL}", "more than one `Qty:` line"),
-    (f"Qty: 2\nhttps://cad.onshape.com/documents/{D}/w/{W}/e/{E}", "workspace"),
-    ("Qty: 2", "no Onshape version link"),
+    (VERSION_URL, "No quantity. Add a line like Qty: 2"),
+    (f"Qty: four\n{VERSION_URL}", "Quantity four isn't a whole number"),
+    (f"Qty: 0\n{VERSION_URL}", "Quantity 0 isn't a whole number"),
+    (f"Qty: 2\nqty: 3\n{VERSION_URL}", "Two different quantities (2, 3)"),
+    (f"Qty: 2\nhttps://cad.onshape.com/documents/{D}/m/{W}/e/{E}", "microversion"),
+    ("Qty: 2", "No Onshape link"),
 ])
 def test_card_problems(desc, problem):
     res = parse_card(card(desc))
     assert isinstance(res, CardProblem)
     assert any(problem in p for p in res.problems), res.problems
     comment = res.comment()
-    assert "How a part card should look" in comment and "`Smoked`" in comment
+    assert comment.startswith("Not queued:\n- ") and "move this card back to Ready for CAM" in comment
+    assert "`" not in comment                       # plain text: nothing for students to copy by mistake
 
 
 @pytest.mark.parametrize("qty_line, qty", [
@@ -95,7 +95,7 @@ def test_material_line_survives_markdown():
 def test_step_attachment_fallback_needs_material():
     step = Attachment("a1", "plate.STEP", "https://trello.example/a1")
     res = parse_card(card("Qty: 1", attachments=[step]))
-    assert isinstance(res, CardProblem) and "needs a `Material: ...` line" in res.problems[0]
+    assert isinstance(res, CardProblem) and "needs a material" in res.problems[0]
     req = parse_card(card("Qty: 1\nMaterial: 6061", attachments=[step]))
     assert isinstance(req, PartRequest) and req.step_attachment == step and req.material_hint == "6061"
 
@@ -184,3 +184,30 @@ def test_dry_run_records_writes_and_sends_none():
     assert new.id.startswith("dryrun-") and new.list_key == "sheet_review"
     assert inner.comments == [] and inner.get_card("c1").list_key == "ready_for_cam"
     assert [i[0] for i in dry.intended] == ["comment", "move", "create_card"]
+
+
+
+@pytest.mark.parametrize("desc, title, qty, name", [
+    ("Qty 4", "gusset", 4, "gusset"),
+    ("Quantity: 4", "gusset", 4, "gusset"),
+    ("x4", "gusset", 4, "gusset"),
+    ("4x", "gusset", 4, "gusset"),
+    ("", "gusset x4", 4, "gusset"),
+    ("", "gusset (x4)", 4, "gusset"),
+    ("", "  gusset   plate x2 ", 2, "gusset plate"),
+    ("Qty: 3", "gusset x3", 3, "gusset"),          # the same quantity twice is fine
+])
+def test_quantity_forms_and_title(desc, title, qty, name):
+    res = parse_card(card(f"{VERSION_URL}\n{desc}", name=title))
+    assert isinstance(res, PartRequest), getattr(res, "problems", None)
+    assert (res.qty, res.name) == (qty, name)
+
+
+def test_workspace_links_are_accepted():
+    res = parse_card(card(f"https://cad.onshape.com/documents/{D}/w/{W}/e/{E}\nQty: 1"))
+    assert isinstance(res, PartRequest) and res.link.is_workspace and res.link.vid == W
+
+
+def test_conflicting_title_and_description_quantity():
+    res = parse_card(card(f"{VERSION_URL}\nQty: 2", name="gusset x4"))
+    assert isinstance(res, CardProblem) and "Two different quantities (2, 4)" in res.problems[0]

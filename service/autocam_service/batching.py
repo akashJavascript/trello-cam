@@ -18,6 +18,7 @@ class ReadyPart:
     step_path: Path
     step_sha256: str
     onshape_part_id: Optional[str] = None
+    onshape_microversion: Optional[str] = None     # workspace links: the state that was exported
 
 
 @dataclass(frozen=True)

@@ -183,7 +183,9 @@ def ledger(cfg, action: str) -> int:
     return 0
 
 
-_EXPECTED_LIST_NAMES = {key: key.replace("_", "") for key in TRELLO_LISTS}
+def _list_names(key: str):
+    from .trello_setup import LIST_NAMES, OLD_NAMES
+    return [_norm(n) for n in (LIST_NAMES[key],) + OLD_NAMES.get(key, ())]
 
 
 def _norm(name: str) -> str:
@@ -244,8 +246,8 @@ def trello_discover(cfg, env_file: Path, board: Optional[str]) -> int:
     lists = tracker.board_lists(board)
     by_norm = {_norm(name): (lid, name) for lid, name in lists}
     print("[trello.lists]")
-    for key, want in _EXPECTED_LIST_NAMES.items():
-        hit = by_norm.get(want)
+    for key in TRELLO_LISTS:
+        hit = next((by_norm[n] for n in _list_names(key) if n in by_norm), None)
         print(f'{key} = "{hit[0]}"   # {hit[1]}' if hit else f'{key} = ""   # no list named like "{key}" found')
     print("\n# all lists on the board:")
     for lid, name in lists:

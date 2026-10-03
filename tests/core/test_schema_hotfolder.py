@@ -39,7 +39,7 @@ JOB = {
     "fusion_team": {"project": "", "folder": ""},
     "parts": [{"part_key": "p01", "card_id": "c1", "card_url": "https://trello.com/c/x", "name": "gusset",
                "qty": 2, "step": "C:/cache/a.step", "step_sha256": "cd" * 32, "source": "onshape",
-               "onshape": {"did": "d", "vid": "v", "eid": "e", "part_id": "JHD", "url": "https://cad.onshape.com/x"},
+               "onshape": {"did": "d", "vid": "v", "eid": "e", "part_id": "JHD", "url": "https://cad.onshape.com/x", "microversion": None},
                "force_small_tool": False}],
 }
 

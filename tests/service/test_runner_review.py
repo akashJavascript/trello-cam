@@ -147,7 +147,7 @@ def test_rejected_sheet_cannot_sit_in_ready_to_cut(tmp_path):
     _human_moves(h, sheet.id, "ready_to_cut")
     h.runner.tick()
     assert h.list_of(sheet.id) == "sheet_review"
-    assert "program was rejected" in h.tracker.comments_on(sheet.id)[-1]
+    assert "failed the safety checks" in h.tracker.comments_on(sheet.id)[-1]
 
 
 def test_checklist_with_items_removed_does_not_count(tmp_path):

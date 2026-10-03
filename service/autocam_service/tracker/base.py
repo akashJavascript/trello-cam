@@ -105,6 +105,10 @@ class Tracker(abc.ABC):
     def add_checklist(self, card_id: str, name: str, items: Sequence[str]) -> str:
         return self._add_checklist(card_id, name, list(items))
 
+    def set_cover(self, card_id: str, attachment_id: str) -> None:
+        """Show an attached image on the card's front (the nest preview on sheet cards)."""
+        self._set_cover(card_id, attachment_id)
+
     def _attach_checked(self, card_id: str, name: str, data: bytes, mime: str) -> str:
         if len(data) > self.attachment_limit_bytes:
             raise UploadRefused(f"{name} is {len(data) / 1048576:.1f} MB; the attachment limit is "
@@ -133,3 +137,6 @@ class Tracker(abc.ABC):
 
     @abc.abstractmethod
     def _add_checklist(self, card_id: str, name: str, items: List[str]) -> str: ...
+
+    @abc.abstractmethod
+    def _set_cover(self, card_id: str, attachment_id: str) -> None: ...

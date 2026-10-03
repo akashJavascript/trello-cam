@@ -32,7 +32,7 @@ CLAMP_EDGES = ("front", "back", "zero_end")
 OP_TAGS = ("drill", "bore", "bearing", "pocket", "inner", "outer")
 TRELLO_LISTS = ("inbox", "ready_for_cam", "needs_fixing", "nested", "sheet_review",
                 "ready_to_cut", "cut", "control", "run_nest")
-TRELLO_TARGETS = ("part_nested", "part_rejected", "part_deferred", "sheet_created",
+TRELLO_TARGETS = ("part_nested", "part_rejected", "part_deferred", "part_cut", "sheet_created",
                   "checklist_return", "control_return")
 TRELLO_CARDS = ("run_nest_control", "system")
 NEVER_AUTOMATED = "ready_to_cut"
@@ -195,6 +195,8 @@ class Trello:
     job_timeout_s: int
     checklist_name: str
     checklist: Tuple[str, ...]
+    machine_checklist_name: str
+    machine_checklist: Tuple[str, ...]
     lists: Mapping[str, str]
     targets: Mapping[str, str]
     cards: Mapping[str, str]
@@ -583,6 +585,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         job_timeout_s=t.integer("job_timeout_s", minimum=60),
         checklist_name=t.string("checklist_name", required=True),
         checklist=t.strings("checklist"),
+        machine_checklist_name=t.string("machine_checklist_name", required=True),
+        machine_checklist=t.strings("machine_checklist"),
         lists=MappingProxyType(t.string_map("lists", keys=TRELLO_LISTS, value_pattern=TRELLO_ID_RE)),
         targets=MappingProxyType(t.string_map("targets", keys=TRELLO_TARGETS)),
         cards=MappingProxyType(t.string_map("cards", keys=TRELLO_CARDS, value_pattern=TRELLO_ID_RE)),

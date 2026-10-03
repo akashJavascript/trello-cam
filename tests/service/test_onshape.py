@@ -189,7 +189,7 @@ def test_export_then_cache_hit_costs_nothing(ledger, tmp_path):
 
 
 @pytest.mark.parametrize("name, message", [
-    ("nope", "no part named 'nope'"), ("dup", "2 parts are named 'dup'"), ("skin", "is a sheet body"),
+    ("nope", "no part named 'nope'"), ("dup", "2 parts in that Part Studio are named 'dup'"), ("skin", "is a sheet body"),
 ])
 def test_part_lookup_problems(ledger, tmp_path, name, message):
     ex = Exporter(client(ledger, FakeTransport(export_routes())), OnshapeCache(tmp_path), POLLS, sleep=lambda s: None)
@@ -253,3 +253,68 @@ def test_no_signature_over_plain_http_or_other_ports(ledger, location):
                        ("GET", "/api/v10/x", [resp(200, b"data")])])
     client(ledger, t).get_bytes("/api/v10/documents/d/x/externaldata/f", purpose="dl")
     assert "Authorization" not in t.sent[1][2]
+
+
+# ---- workspace links: pinned to a microversion per run; the cache follows the microversion
+
+WS = f"https://cad.onshape.com/documents/{'a' * 24}/w/{'c' * 24}/e/{'d' * 24}"
+
+
+def ws_routes(mid, export=True):
+    routes = [("GET", "/currentmicroversion", [resp(body={"microversion": mid})]),
+              ("GET", f"/parts/d/{'a' * 24}/w/{'c' * 24}/", [resp(body=PARTS)])]
+    if export:
+        routes += [("POST", f"/partstudios/d/{'a' * 24}/w/{'c' * 24}/", [resp(body={"id": "T1"})]),
+                   ("GET", "/translations/T1", [resp(body={"requestState": "DONE", "resultExternalDataIds": ["F1"]})]),
+                   ("GET", "/externaldata/F1", [resp(200, b"ISO-10303-21; step")])]
+    return routes
+
+
+def exporter(ledger, tmp_path, routes):
+    t = FakeTransport(routes)
+    return Exporter(client(ledger, t), OnshapeCache(tmp_path / "cache"), POLLS, sleep=lambda s: None), t
+
+
+def test_workspace_link_is_pinned_and_exported_from_the_workspace(ledger, tmp_path):
+    ex, t = exporter(ledger, tmp_path, ws_routes("e" * 24))
+    out = ex.export(parse_link(WS), "hood_gusset")
+    assert out.microversion == "e" * 24 and not out.from_cache
+    urls = [u for _, u, _, _ in t.sent]
+    assert "/currentmicroversion" in urls[0] and len(urls) == 5
+    assert out.step_path.name.startswith(f"{'a' * 24}_m{'e' * 24}_{'d' * 24}")
+
+
+def test_unchanged_workspace_costs_one_call_next_run(ledger, tmp_path):
+    ex, _ = exporter(ledger, tmp_path, ws_routes("e" * 24))
+    ex.export(parse_link(WS), "hood_gusset")
+    again, t = exporter(ledger, tmp_path, [("GET", "/currentmicroversion", [resp(body={"microversion": "e" * 24})])])
+    out = again.export(parse_link(WS), "hood_gusset")
+    assert out.from_cache and len(t.sent) == 1
+
+
+def test_edited_workspace_is_exported_again(ledger, tmp_path):
+    ex, _ = exporter(ledger, tmp_path, ws_routes("e" * 24))
+    ex.export(parse_link(WS), "hood_gusset")
+    again, t = exporter(ledger, tmp_path, ws_routes("f" * 24))
+    out = again.export(parse_link(WS), "hood_gusset")
+    assert not out.from_cache and out.microversion == "f" * 24 and len(t.sent) == 5
+
+
+def test_one_pin_per_workspace_per_run(ledger, tmp_path):
+    ex, t = exporter(ledger, tmp_path, ws_routes("e" * 24, export=False))
+    ex.find_part(parse_link(WS), "hood_gusset")
+    ex.find_part(parse_link(WS), "HOOD_GUSSET")
+    assert sum("/currentmicroversion" in u for _, u, _, _ in t.sent) == 1
+    assert not ex.is_cached(parse_link(WS), "hood_gusset")     # unpinned: never assumed cached
+
+
+@pytest.mark.parametrize("title", ["HOOD_GUSSET", "  hood_gusset ", "Hood_Gusset"])
+def test_part_names_ignore_case_and_spaces(ledger, tmp_path, title):
+    ex, _ = exporter(ledger, tmp_path, [("GET", "/parts/", [resp(body=PARTS)])])
+    assert ex.find_part(LINK, title)["partId"] == "JHD"
+
+
+def test_single_part_studio_needs_no_name(ledger, tmp_path):
+    only = [{"name": "Part 1", "partId": "JHD", "bodyType": "solid"}]
+    ex, _ = exporter(ledger, tmp_path, [("GET", "/parts/", [resp(body=only)])])
+    assert ex.find_part(LINK, "left gusset")["partId"] == "JHD"

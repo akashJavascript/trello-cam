@@ -121,10 +121,11 @@ class FusionTeamSpec:
 @dataclass(frozen=True)
 class OnshapeRef:
     did: str
-    vid: str
+    vid: str                           # version id, or the workspace id for workspace links
     eid: str
     part_id: str
-    url: str
+    url: str                           # the link on the card
+    microversion: Optional[str] = None  # workspace links: the exact state that was exported
 
 
 @dataclass(frozen=True)
