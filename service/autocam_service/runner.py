@@ -609,7 +609,11 @@ class Runner:
                 continue
             found[card_id] = (info, specs)
         while True:
-            elsewhere = {p for card_id, info in reg.items() if card_id not in found for p in info.get("parts", [])}
+            # parts also on a sheet that isn't open (cut and archived sheets are history: a part card can come
+            # back to be cut again)
+            elsewhere = {p for card_id, info in reg.items()
+                         if card_id not in found and not info.get("cut") and not info.get("archived")
+                         for p in info.get("parts", [])}
             closed = [card_id for card_id, (info, _) in found.items() if elsewhere & set(info["parts"])]
             if not closed:
                 break

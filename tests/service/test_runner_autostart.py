@@ -300,3 +300,19 @@ def test_runs_from_before_the_change_report_on_the_system_card(tmp_path):
     h.runner.tick()
     assert h.tracker.comments_on(SYS)[-1] == "Run r001 done: 1 new sheet in Sheet review."
     assert h.tracker.comments_on("6ac0026df4db9bd12416eb1f") == []
+
+
+def test_a_part_cut_before_doesnt_stop_its_open_sheet_from_being_rebuilt(tmp_path):
+    # Seen on the board (r010): the part cards had been on r006, already cut, which kept r009 from reopening.
+    h = harness(tmp_path, step_card("c1", "plate"), step_card("c2", "gusset"))
+    run(h)
+    first = sheet(h)
+    h.tracker.move(first.id, "cut")
+    h.runner.tick()                                       # both parts follow it to Cut
+    for c in ("c1", "c2"):
+        h.tracker.move(c, "ready_for_cam")                # to be cut again
+    run(h)
+    second = next(c for c in h.sheet_cards())
+    h.tracker.move("c1", "ready_for_cam")                 # changed, sent again while its new sheet is open
+    run(h)
+    assert [c.id for c in h.sheet_cards()] == [second.id] and "r003 S1" in h.tracker.cards[second.id].name
