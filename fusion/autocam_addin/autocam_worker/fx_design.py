@@ -39,9 +39,10 @@ def import_step(app, design, path: str, name: str):
     return occ
 
 
-def add_copy(design, occ):
+def add_copy(design, occ, transform=None):
+    """Another occurrence of occ's component, where occ is now, or at `transform`."""
     return call("addExistingComponent", design.rootComponent.occurrences.addExistingComponent,
-                occ.component, occ.transform2)
+                occ.component, transform if transform is not None else occ.transform2)
 
 
 def body(occ):

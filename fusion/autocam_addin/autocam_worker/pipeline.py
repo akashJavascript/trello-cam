@@ -308,7 +308,6 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], s
     if reach - lo < SQUEEZE_MIN_GAIN_IN:
         log(f"{thickness:g} in: not squeezed: the last sheet's parts take {reach:.1f} in, at least {lo:.1f} in")
         return slot
-    source = {p.key: p.copies[0] for p in parts if p.copies}
     hi, kept = reach, None                           # kept: (origin, full envelope, copies, reach)
     for k in range(SQUEEZE_TRIES):
         target = round((lo + hi) / 2, 3)
@@ -322,14 +321,15 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], s
         try:
             for c in last:
                 copy = f"{c}~s{k}"
-                adapter.add_copy(source[c.rsplit(".", 1)[0]], copy)
+                adapter.add_copy(f"{c.rsplit('.', 1)[0]}.1", copy, at_import=True)
                 up[copy] = up[c]
                 copies.append(copy)
             got = adapter.arrange(copies, probe, job.nest.part_spacing_in, {c: up[c] for c in copies})
             fits = set(got.placed) == set(copies)
             r = max(adapter.box(c).y1 for c in copies) - probe[1] if fits else None
             log(f"{thickness:g} in squeeze try {k + 1}: {target:.1f} in long: placed {len(got.placed)} of "
-                f"{len(copies)}" + (f", {r:.1f} in" if fits else ""))
+                f"{len(copies)}" + (f", {r:.1f} in" if fits else "")
+                + (f"; refused: {next(iter(got.refused.values()))}" if got.refused else ""))
         except AdapterError as e:
             log(f"squeezing the last {thickness:g} in sheet stopped: {e}")
             _discard(adapter, copies, log)

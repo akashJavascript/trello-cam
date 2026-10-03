@@ -29,6 +29,7 @@ class FusionAdapter(Adapter):
         self.timeout = generate_timeout_s
         self.doc = self.design = self.cam = None
         self.tokens: Dict[str, str] = {}       # copy id -> occurrence entity token
+        self.imported_at: Dict[str, object] = {}   # imported copy id -> its transform right after the import
         self.setups: Dict[str, object] = {}     # sheet -> setup
         self.sheet_info: Dict[str, tuple] = {}  # sheet -> (origin, thickness, copy ids)
         self.used: List[str] = []
@@ -63,12 +64,16 @@ class FusionAdapter(Adapter):
     def import_step(self, copy_id, path):
         occ = fx_design.import_step(self.app, self.design, path, copy_id.rsplit(".", 1)[0])
         self.tokens[copy_id] = occ.entityToken
+        self.imported_at[copy_id] = occ.transform2.copy()
 
     def extract(self, copy_id):
         return call("extract geometry", fx_geometry.extract, copy_id.rsplit(".", 1)[0], self._occ(copy_id))
 
-    def add_copy(self, source_id, copy_id):
-        self.tokens[copy_id] = fx_design.add_copy(self.design, self._occ(source_id)).entityToken
+    def add_copy(self, source_id, copy_id, at_import=False):
+        if at_import and source_id not in self.imported_at:
+            raise AdapterError(f"{source_id} wasn't imported in this job")
+        where = self.imported_at[source_id] if at_import else None
+        self.tokens[copy_id] = fx_design.add_copy(self.design, self._occ(source_id), where).entityToken
 
     def arrange(self, copy_ids, envelope, spacing_in, up_faces):
         self._used("arrange_flip")

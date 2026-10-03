@@ -35,6 +35,7 @@ class FakeAdapter(Adapter):
     def __init__(self):
         self.parts: Dict[str, Tuple[PartGeometry, Tuple[float, float]]] = {}
         self.copies: Dict[str, str] = {}               # copy id -> STEP path
+        self.ever: Dict[str, str] = {}                 # every copy ever made -> STEP path (discard only hides)
         self.boxes: Dict[str, Box] = {}
         self.columns = False          # True: pack like Fusion did in r009 (down the left edge first)
         self.sheets: Dict[str, dict] = {}
@@ -74,15 +75,21 @@ class FakeAdapter(Adapter):
         if path in self.fail_import or path not in self.parts:
             raise AdapterError(f"importToTarget failed for {path}")
         self.copies[copy_id] = path
+        self.ever[copy_id] = path
         geometry, (w, h) = self.parts[path]
         self.boxes[copy_id] = Box(0.0, 0.0, 0.0, w, h, geometry.thickness_in)
 
     def extract(self, copy_id):
         return self.parts[self.copies[copy_id]][0]
 
-    def add_copy(self, source_id, copy_id):
-        self.copies[copy_id] = self.copies[source_id]
-        self.boxes[copy_id] = self.boxes[source_id]
+    def add_copy(self, source_id, copy_id, at_import=False):
+        self.calls.append(f"add_copy {source_id} -> {copy_id}" + (" (at import)" if at_import else ""))
+        self.copies[copy_id] = self.ever[copy_id] = self.ever[source_id]
+        if at_import:
+            geometry, (w, h) = self.parts[self.ever[source_id]]
+            self.boxes[copy_id] = Box(0.0, 0.0, 0.0, w, h, geometry.thickness_in)
+        else:
+            self.boxes[copy_id] = self.boxes[source_id]
 
     def arrange(self, copy_ids, envelope, spacing_in, up_faces):
         self.arrange_envelopes.append(envelope)

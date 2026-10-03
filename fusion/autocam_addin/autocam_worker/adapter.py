@@ -97,8 +97,9 @@ class Adapter:
     def extract(self, copy_id: str) -> PartGeometry:
         raise NotImplementedError
 
-    def add_copy(self, source_id: str, copy_id: str) -> None:
-        """Another occurrence of source_id's part, at the same place."""
+    def add_copy(self, source_id: str, copy_id: str, at_import: bool = False) -> None:
+        """Another occurrence of source_id's part, at the same place, or (at_import) where source_id was when it
+        was imported: a copy of a part Arrange has moved and flipped isn't arranged again (r012, squeeze)."""
         raise NotImplementedError
 
     def arrange(self, copy_ids: Sequence[str], envelope: Rect, spacing_in: float,
