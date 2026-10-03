@@ -1,6 +1,6 @@
 # Status
 
-_Last updated 2026-10-02 (branch `m1-offline`)._
+_Last updated 2026-10-03 (branch `m1-offline`)._
 
 ## Where things are
 
@@ -42,7 +42,7 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
 **2026-10-03: sheets are now laid out in the machine's axes** (X across, Y front to back). Programs from
 r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisions.md`).
 
-## What's left (2026-10-02)
+## What's left (2026-10-03)
 
 ### Before the first real cut
 1. **Z touch-off on the spoilboard** (decision 22): the programs' Z0 is the spoilboard, not the sheet top.
@@ -59,13 +59,13 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   just wait for the next run). Raise it once the ledger looks right (15 calls so far).
 
 ### Not seen working on the real board or machine yet
-- **Board:** a new part filling an open sheet (manual tests M3 section 7); "Cut the whole sheet without
-  stopping" on a 2+ part sheet; unticking "Nest this part".
+- **Board:** "Cut the whole sheet without stopping" on a 2+ part sheet; unticking "Nest this part". (A new
+  part filling an open sheet works: r005 S1 -> r006 S1.)
 - **Fusion:**
   - several sheets in one run, the 1/8 in tool, polycarbonate;
-  - killing Fusion mid-job (M2 checks 4-5);
-  - the add-in's self-reload. It needs one more Stop/Run in Fusion: it was last started before that code existed.
-- **The service restarting itself on Windows:** seen working (twice).
+  - killing Fusion mid-job (M2 checks 4-5).
+- **Self-updating:** the service restarting itself and the add-in reloading itself both work (many times,
+  most recently into core 0.5.0 on 2026-10-03).
 
 ### Still to build
 - **Templates:** `alu_eighth`, `poly_4mm`, `poly_eighth` (only `alu_4mm` exists). Until then, polycarbonate
@@ -83,11 +83,14 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   air-test the first offcut sheet). Since core 0.5.0 an offcut also keeps the **room beside** the parts cut
   (a one-off no longer writes off the whole width of its band), filled first by the next nest. Works in
   Fusion (hand-queued test job, 2026-10-03); not cut on the machine yet (manual tests 5c, 7 to 9).
+- **Offered, not asked for yet:** a **Rush** label for one urgent part (start at once, skip open sheets);
+  releasing an offcut whose sheet card is archived without being cut (today it stays reserved for good);
+  picking the best-fitting offcut instead of the oldest; a season stock-use tally on the System card.
 - **Later ideas** (not planned): part-in-part nesting (needs per-part cut ordering first).
 
 ## Not verified yet (don't rely on these until they are)
 
 - **Fusion:** what has run is in `docs/fusion-api-status.md`; everything else in `fx_*.py` is untested.
 - **The machine:** no program has been cut or air-tested yet.
-- **Onshape and Trello** have worked for real (runs r001-r005); version links, Smoked labels, `.step`
-  attachments and 5052 haven't been through a real run.
+- **Onshape and Trello** have worked for real (runs r001-r016, `.step` attachments included); version links,
+  Smoked labels and 5052 haven't been through a real run.
