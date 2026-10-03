@@ -138,6 +138,14 @@ def make_stock(design, name: str, origin, size_x_in: float, size_y_in: float, th
     ext = call("extrude stock", comp.features.extrudeFeatures.addSimple, sketch.profiles.item(0), vi(thickness_in),
                adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
     occ.isLightBulbOn = False
+    try:   # the sheet's edge, for the preview and the review (r015: with the stock hidden nothing showed it)
+        edge = root.sketches.add(root.xYConstructionPlane)
+        edge.name = f"SHEET {name}"
+        edge.sketchCurves.sketchLines.addTwoPointRectangle(
+            adsk.core.Point3D.create(to_cm(x), to_cm(y), 0),
+            adsk.core.Point3D.create(to_cm(x + size_x_in), to_cm(y + size_y_in), 0))
+    except Exception:  # noqa: BLE001 - only cosmetic
+        pass
     return ext.bodies.item(0).createForAssemblyContext(occ)
 
 
