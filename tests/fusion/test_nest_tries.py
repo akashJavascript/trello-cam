@@ -33,7 +33,8 @@ def test_the_best_of_the_orders_is_kept(tmp_path):
 def test_one_kind_of_part_is_arranged_once(tmp_path):
     rig = Rig(tmp_path)
     result = rig.run(rig.job([("gusset", 4, plate(name="gusset"), (6.0, 4.0))]))
-    assert len(rig.fake.arrange_envelopes) == 1 and not any("~" in c for c in rig.fake.copies)
+    # one order only (no "~2" copies); the squeeze may try shorter areas, but these can't get shorter
+    assert not any("~" in c for c in rig.fake.copies) and not any("~2" in c for c in rig.fake.calls)
     assert not any("beat the listed order" in n for n in result.notes)
 
 
@@ -52,3 +53,14 @@ def test_sheet_use_is_reported(tmp_path):
     [sheet] = result.sheets
     assert sheet.parts_area_in2 == 3 * 48.0 and sheet.usable_area_in2 == 21.0 * 38.5
     assert sheet.free_length_in == 38.5 - 4.0                # one row of three, 4 in deep, at the front
+
+
+def test_parts_run_down_the_left_edge_are_squeezed_into_a_strip_across_the_front(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.columns = True                               # pack like Fusion did in r009: down the left edge first
+    result = rig.run(rig.job([("gusset", 4, plate(name="gusset"), (6.0, 4.0))]))
+    [sheet] = result.sheets
+    # One column would run 16.75 in down the sheet; two columns of two take 8.25 in.
+    assert sheet.free_length_in == 38.5 - 8.25 and sheet.used_y_in[1] < 0.5 + 0.25 + 8.25 + 0.25 + 1e-6
+    assert all(p.placed == p.qty for p in result.parts)
+    assert len({c for c in rig.fake.copies}) == 4 and all("~s" in c for c in rig.fake.copies)   # the squeezed copies

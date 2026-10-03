@@ -36,6 +36,7 @@ class FakeAdapter(Adapter):
         self.parts: Dict[str, Tuple[PartGeometry, Tuple[float, float]]] = {}
         self.copies: Dict[str, str] = {}               # copy id -> STEP path
         self.boxes: Dict[str, Box] = {}
+        self.columns = False          # True: pack like Fusion did in r009 (down the left edge first)
         self.sheets: Dict[str, dict] = {}
         self.calls: List[str] = []
         self.upside_down: Set[str] = set()             # part keys Arrange turns over
@@ -88,6 +89,8 @@ class FakeAdapter(Adapter):
         if self.arrange_error:
             raise AdapterError(self.arrange_error)
         x0, y0, x1, y1 = envelope
+        if self.columns:
+            return self._arrange_columns(copy_ids, envelope, spacing_in)
         x, y, row = x0, y0, 0.0
         placed, refused = [], {}
         for cid in copy_ids:
@@ -106,6 +109,23 @@ class FakeAdapter(Adapter):
             x, y, row = px + w + spacing_in, py, max(prow, h)
         return Arranged(tuple(placed), refused)
 
+    def _arrange_columns(self, copy_ids, envelope, spacing_in):
+        """Like Fusion's Arrange in r009: down the left edge first (along Y), then the next column."""
+        x0, y0, x1, y1 = envelope
+        x, y, col = x0, y0, 0.0
+        placed = []
+        for cid in copy_ids:
+            geometry, (w, h) = self.parts[self.copies[cid]]
+            px, py, pcol = x, y, col
+            if py + h > y1 + 1e-9:
+                px, py, pcol = x + col + spacing_in, y0, 0.0
+            if px + w > x1 + 1e-9 or py + h > y1 + 1e-9:
+                continue
+            self.boxes[cid] = Box(px, py, 0.0, px + w, py + h, geometry.thickness_in)
+            placed.append(cid)
+            x, y, col = px, py + h + spacing_in, max(pcol, w)
+        return Arranged(tuple(placed), {})
+
     def box(self, copy_id):
         return self.boxes[copy_id]
 
@@ -120,7 +140,8 @@ class FakeAdapter(Adapter):
 
     def discard(self, copy_id):
         self.calls.append(f"discard {copy_id}")
-        self._shift(self.move_on_discard)
+        if "~" not in copy_id:            # a try's or squeeze's own copies are in their own Arrange: no re-solve
+            self._shift(self.move_on_discard)
         self.copies.pop(copy_id, None)
         self.boxes.pop(copy_id, None)
 

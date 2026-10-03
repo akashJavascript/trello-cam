@@ -142,7 +142,9 @@ def make_stock(design, name: str, origin, size_x_in: float, size_y_in: float, th
 
 
 def preview(app, rect, path: str) -> None:
-    """Top view framed on one sheet."""
+    """Top view framed on one sheet, as seen from the front of the machine (X across, Y away from you). An
+    upright sheet gets an upright picture. viewExtents is at least the sheet's longer side, so the whole sheet
+    fits whichever image side Fusion measures it on."""
     x0, y0, x1, y1 = (to_cm(v) for v in rect)
     vp = app.activeViewport
     cam = vp.camera
@@ -152,10 +154,11 @@ def preview(app, rect, path: str) -> None:
     cam.eye = adsk.core.Point3D.create(cx, cy, 500)
     cam.upVector = adsk.core.Vector3D.create(0, 1, 0)
     cam.isFitView = False
-    cam.viewExtents = max(x1 - x0, y1 - y0) * 0.55
+    cam.viewExtents = max(x1 - x0, y1 - y0) * 1.08
     vp.camera = cam
     adsk.doEvents()
-    if not vp.saveAsImageFile(path, 1600, 900):
+    width, height = (1000, 1600) if (y1 - y0) > (x1 - x0) else (1600, 900)
+    if not vp.saveAsImageFile(path, width, height):
         raise AdapterError("saveAsImageFile returned False")
 
 

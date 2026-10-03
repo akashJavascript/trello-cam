@@ -470,3 +470,20 @@ degrees for this machine and must not be cut.
   and offcuts get less. The "Sheet use ... the back N in are empty" line on the next sheets will show it, and
   the fix would be the "shortest strip" step (shrinking the Arrange area along Y).
 
+## 2026-10-03: the last sheet is squeezed into a strip across the front
+
+r009 showed that in the machine's axes, Fusion's Arrange packs against the **left edge**: the four parts ran
+30.6 in down the sheet, 6.5 in wide, leaving a long strip on the right that the offcut model (stretches along
+the length) can't use. So after the best try is picked, the last sheet of each thickness group is
+**squeezed** (`pipeline._squeeze`): its parts are arranged again into full-width areas that get shorter,
+halving between the longest "shorter side" of its parts and what they take now (up to 4 tries), and the
+shortest area that holds them all is kept.
+- **What it leaves:** the parts in a strip across the front, and the back of the sheet free, for parts that
+  join it later or as an offcut.
+- **How it's done:** each try has its own copies, and the copies not kept are hidden, so nothing an Arrange
+  placed is moved or deleted.
+- **When it's skipped:** if the last sheet couldn't get at least 2 in shorter.
+- **Cost:** up to 4 Arranges (a few seconds each).
+- **The preview** is now framed on the whole sheet and saved upright (1000 x 1600) for an upright sheet, as
+  seen from the front of the machine. The old framing assumed a sideways sheet and cut off the ends.
+

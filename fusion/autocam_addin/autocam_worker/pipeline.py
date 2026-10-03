@@ -257,6 +257,8 @@ def _offcut_slots(offcuts, spin: bool) -> List[Tuple[str, Placement]]:
 # ------------------------------------------------------------------ 3. nesting
 
 NEST_ORDERS = ("as listed", "biggest first", "longest first")
+SQUEEZE_TRIES = 4           # halvings of the last sheet's length when looking for the shortest strip
+SQUEEZE_MIN_GAIN_IN = 2.0   # only worth trying if the last sheet could get at least this much shorter
 
 
 @dataclass
@@ -284,6 +286,72 @@ def _plate_size(adapter: Adapter, part: _Part) -> Tuple[float, float]:
         return 0.0, 0.0
     a, w, _ = sorted((b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0), reverse=True)
     return a, w
+
+
+def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], sizes: Dict[str, Tuple[float, float]],
+             up: Dict[str, int], x_start: float, slot: int, pitch: float, thickness: float,
+             log: Callable[[str], None]) -> int:
+    """Fusion's Arrange packs against the left edge, so a few parts can run down the whole length of the last
+    sheet (r009). Fit the last sheet's parts into full-width areas that get shorter, halving between the longest
+    "shorter side" of its parts and what they take now, and keep the shortest that holds them all: a strip
+    across the front, with the back of the sheet left free for parts that join it later or as an offcut.
+    Each try has its own copies; the ones not kept are hidden. Returns the next free sheet slot."""
+    if not best.envelopes or best.failed:
+        return slot
+    origin, env = best.envelopes[-1]
+    last = list(best.placed[-1])
+    try:
+        reach = max(adapter.box(c).y1 for c in last) - env[1]
+    except AdapterError:
+        return slot
+    lo = max(min(sizes[c.rsplit(".", 1)[0]]) for c in last)       # each part needs its shorter side, at least
+    if reach - lo < SQUEEZE_MIN_GAIN_IN:
+        return slot
+    source = {p.key: p.copies[0] for p in parts if p.copies}
+    hi, kept = reach, None                           # kept: (origin, full envelope, copies, reach)
+    for k in range(SQUEEZE_TRIES):
+        target = round((lo + hi) / 2, 3)
+        if hi - target < 0.5:
+            break
+        o = (x_start + slot * pitch, 0.0)
+        slot += 1
+        dx, dy = o[0] - origin[0], o[1] - origin[1]
+        probe = (env[0] + dx, env[1] + dy, env[2] + dx, env[1] + dy + target)
+        copies: List[str] = []
+        try:
+            for c in last:
+                copy = f"{c}~s{k}"
+                adapter.add_copy(source[c.rsplit(".", 1)[0]], copy)
+                up[copy] = up[c]
+                copies.append(copy)
+            got = adapter.arrange(copies, probe, job.nest.part_spacing_in, {c: up[c] for c in copies})
+            fits = set(got.placed) == set(copies)
+            r = max(adapter.box(c).y1 for c in copies) - probe[1] if fits else None
+        except AdapterError as e:
+            log(f"squeezing the last {thickness:g} in sheet stopped: {e}")
+            _discard(adapter, copies, log)
+            break
+        if fits:
+            if kept:
+                _discard(adapter, kept[2], log)
+            kept = (o, (env[0] + dx, env[1] + dy, env[2] + dx, env[3] + dy), copies, r)
+            hi = r
+        else:
+            _discard(adapter, copies, log)
+            lo = target
+    if kept is None or kept[3] > reach - 0.5:
+        if kept:
+            _discard(adapter, kept[2], log)
+        return slot
+    o, full, copies, r = kept
+    _discard(adapter, last, log)
+    swap = dict(zip(last, copies))
+    for p in parts:
+        p.copies = [swap.get(c, c) for c in p.copies]
+    best.envelopes[-1] = (o, full)
+    best.placed[-1] = tuple(copies)
+    log(f"{thickness:g} in: last sheet squeezed toward the front: {reach:.1f} -> {r:.1f} in along its length")
+    return slot
 
 
 def _part_order(parts: Sequence[_Part], order: str, sizes: Dict[str, Tuple[float, float]]) -> List[str]:
@@ -402,6 +470,7 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
                          f"({said(best)} instead of {said(tries[0])})")
     for p in parts:
         p.copies = list(best.copies[p.key])
+    slot = _squeeze(adapter, job, best, parts, sizes, up, x_start, slot, pitch, thickness, log)
     up = {c: up[c] for p in parts for c in p.copies}
     envelopes = best.envelopes
     stock_of = {env: st for (_, env), st in zip(best.envelopes, best.stock)}
