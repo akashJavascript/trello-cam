@@ -288,3 +288,15 @@ def test_a_dragged_back_part_waits_if_its_sheet_is_being_reviewed(tmp_path):
     h.runner.tick()
     assert h.list_of("c1") == "ready_for_cam" and "Waiting for the next run" in h.tracker.comments_on("c1")[-1]
     assert taps_on(h, s1.id) == ["6061_0p125_r001_S1.tap"]
+
+
+def test_runs_from_before_the_change_report_on_the_system_card(tmp_path):
+    h = harness(tmp_path, step_card("c1", "plate"))
+    h.runner.tick()
+    state = h.store.active()
+    state.trigger_card = "6ac0026df4db9bd12416eb1f"          # the retired Run nest card
+    h.store.save(state)
+    run_fake_worker(h.queue)
+    h.runner.tick()
+    assert h.tracker.comments_on(SYS)[-1] == "Run r001 done: 1 new sheet in Sheet review."
+    assert h.tracker.comments_on("6ac0026df4db9bd12416eb1f") == []

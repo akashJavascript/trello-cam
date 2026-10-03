@@ -2,6 +2,7 @@
 
 import logging
 import logging.handlers
+import os
 import time
 from pathlib import Path
 from typing import Optional
@@ -75,7 +76,25 @@ def build_services(cfg: Config, *, env_file: Optional[Path], dry_run: bool, offl
     return Services(cfg, tracker, Queue(cfg.paths.queue).ensure(), store, ledger, exporter_for)
 
 
+def disable_quick_edit() -> None:
+    """Windows consoles pause a program the moment someone clicks in the window ("QuickEdit" selection) until
+    Esc or Enter, and the service then hangs on its next log line. Seen 2026-10-02: a finished job waited
+    24 minutes. Turn QuickEdit off for this console (right-click > Mark still selects text)."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(-10)                  # STD_INPUT_HANDLE
+        mode = ctypes.c_uint32()
+        if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            kernel32.SetConsoleMode(handle, (mode.value & ~0x0040) | 0x0080)   # -QUICK_EDIT, +EXTENDED_FLAGS
+    except Exception as e:  # noqa: BLE001 - no console (e.g. a scheduled task): nothing to do
+        log.debug("couldn't turn off QuickEdit: %s", e)
+
+
 def run_forever(runner: Runner, interval_s: float) -> None:
+    disable_quick_edit()
     log.info("service started; polling every %s s", interval_s)
     while True:
         try:

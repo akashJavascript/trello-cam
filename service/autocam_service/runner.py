@@ -382,14 +382,16 @@ class Runner:
         self.s.store.save(state)
 
     def _notice(self, state: RunState, key: str, message: Callable[[], str]) -> None:
-        """A run-level comment on the System card (at most once per run and key; logged if there's no card)."""
-        if not state.trigger_card:
+        """A run-level comment on the System card (at most once per run and key; logged if there's no card).
+        Runs started before the Run nest card was retired recorded that card; theirs go to System too."""
+        card = self.cfg.trello.cards.get("system") or state.trigger_card
+        if not card:
             if key not in state.writes:
                 log.info("%s: %s", state.run_id, message())
                 state.writes[key] = ""
                 self.s.store.save(state)
             return
-        once(self.s.store, state, key, lambda: self.t.comment(state.trigger_card, message()), WRITE_ATTEMPTS)
+        once(self.s.store, state, key, lambda: self.t.comment(card, message()), WRITE_ATTEMPTS)
 
     def finish_start(self, state: RunState) -> None:
         """Say on the System card what the run started with (at most once per run)."""
