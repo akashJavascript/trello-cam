@@ -75,8 +75,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   (`docs/manual-tests.md` → M5).
 - **M6 tabs:** only if the no-tab trial fails.
 - **Better nests** (2026-10-02): several Arrange tries per thickness, the best kept, and "Sheet use" on the
-  card. Untested in Fusion: needs the add-in restarted once and a run with 2+ kinds of parts
-  (manual tests M3 section 5b).
+  card. Then the last sheet is **squeezed** into a strip across the front, since Fusion's Arrange packs down
+  the left edge. Both work in Fusion (r006: tries; r014: 4 parts went from 30.6 in down the left edge to a
+  7.5 in strip). The squeeze's copies have to be made before the first Arrange (decisions, 2026-10-03).
 - **Offcuts** (2026-10-03): partly used sheets kept in an Offcuts list and filled before new sheets. Tested
   offline; not seen on the machine yet (manual tests M3 section 5c: air-test the first offcut sheet).
 - **Later ideas** (not planned): part-in-part nesting (needs per-part cut ordering first).
