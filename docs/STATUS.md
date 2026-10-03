@@ -39,19 +39,46 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
 - **One rule to confirm:** "no sideways rapid below the stock top" assumes templates use full retraction.
   Check it on real Fusion output in M1.2.
 
-## What only you can do next
+## What's left (2026-10-02)
 
-1. ~~Enable CI~~: done. GitHub Actions runs pytest on Linux and Windows (Python 3.12) and the core on 3.14 (Fusion's Python).
-2. ~~Run `pipeline_probe2`~~: done (three runs).
-3. **Export the four CAM templates** into `fusion/templates/` (rules in `fusion/templates/README.md`). Every
-   bottom height must be **stock bottom, offset 0**: the team's usual "From contour" stops at the plate top when
-   the automation selects the top face, and the sheet check now rejects that program. Jobs can't be built until
-   the 4 mm templates exist.
-4. **Review the defaults** in `docs/decisions.md` → "overnight work".
+### Before the first real cut
+1. **Z touch-off on the spoilboard** (decision 22): the programs' Z0 is the spoilboard, not the sheet top.
+2. **No-tab trial** on one well-held sheet (decision 6). Parts come loose when their outline finishes.
+3. **Pause test** on a sheet with 2+ parts: tick "Add an air test program" under Options and run it
+   (`docs/manual-tests.md` → M1.6). Record the resume key: `pauses.resume_key` is empty, so cards say
+   "the continue key".
+4. **Confirm the clamp values** and the other `[assumed]` entries in `config/autocam.toml` (`autocam
+   config-check` lists them): clamp reach, clearance and height decide where parts may go.
+
+### Decisions waiting on you
+- **Fast air test:** run the air test's cutting moves at a fast feed (250 in/min proposed: P-2011 goes from 12.6
+  to about 3 minutes). Needs your machine's comfortable top feed.
+- **Merge `m1-offline` into `main`:** everything since M0 is on the branch.
+- **Onshape per-run cap:** `onshape.per_run_max_calls` is still 15, about 2 uncached parts per run (more cards
+  just wait for the next run). Raise it once the ledger looks right (17 calls so far).
+
+### Not seen working on the real board or machine yet
+- **Board:** a new part filling an open sheet (manual tests M3 section 7); "Cut the whole sheet without
+  stopping" on a 2+ part sheet; unticking "Nest this part".
+- **Fusion:**
+  - several sheets in one run, the 1/8 in tool, polycarbonate;
+  - killing Fusion mid-job (M2 checks 4-5);
+  - the add-in's self-reload. It needs one more Stop/Run in Fusion: it was last started before that code existed.
+- **The service restarting itself on Windows:** seen working (twice).
+
+### Still to build
+- **Templates:** `alu_eighth`, `poly_4mm`, `poly_eighth` (only `alu_4mm` exists). Until then, polycarbonate
+  parts and parts that need the 1/8 in endmill stay in Ready for CAM.
+- **Pockets:** needs a `dump_params` run on a job with a 2D Adaptive op.
+- **M5:** the System card's live status (worker heartbeat, queue, Onshape budget; the text is written) and
+  starting everything at Windows logon (the service in Task Scheduler, Fusion with the add-in on startup).
+- **M6 tabs:** only if the no-tab trial fails.
+- **Later ideas** (not planned): part-in-part nesting, scrap/offcut sheets, a better nest by trying several
+  Arrange runs.
 
 ## Not verified yet (don't rely on these until they are)
 
-- **Fusion scripts:** all the probes have run; what they confirmed is in `docs/fusion-api-status.md`.
-- **Onshape:** HMAC signing, `/api/v10` paths and response field names.
-- **Trello adapter:** request shapes follow the REST docs. It has only been tested against a fake HTTP layer.
-- **Windows:** CI passes the whole offline suite on `windows-latest`. Fusion, the real Trello and Onshape calls, and the shop PC itself are still untested.
+- **Fusion:** what has run is in `docs/fusion-api-status.md`; everything else in `fx_*.py` is untested.
+- **The machine:** no program has been cut or air-tested yet.
+- **Onshape and Trello** have worked for real (runs r001-r005); version links, Smoked labels, `.step`
+  attachments and 5052 haven't been through a real run.
