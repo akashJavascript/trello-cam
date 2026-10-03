@@ -14,7 +14,7 @@ _Last updated 2026-10-02 (branch `m1-offline`)._
 | M3 service: Trello read + Onshape export + jobs | **First real run worked** (2026-10-02, board https://trello.com/b/fsuTYbO3/5940-autocam): a real card -> Onshape STEP export -> job. It found and fixed: Markdown around `Qty:`, and an Onshape 400 crashing the pass (now that card goes to Needs fixing) |
 | M4 service: results back to Trello | **First real run worked** (2026-10-02): the sheet card with the program came back to Sheet review |
 | Board flow (2026-10-02) | Runs start by themselves 2 min after cards land in Ready for CAM; "Nest this part" box; new parts fill sheets nobody has started reviewing (cards updated in place). Tested offline; first real run (r005) published fine. **Options** on sheet cards since 2026-10-02: cut without stopping, and an air test (a raised copy that cuts nothing). Tested offline and on r005's real program; the service applies them on the real board. The service restarts itself into new code (seen working twice) |
-| M5 ops | Health card text done (`health.py`); wiring it into the service and Windows auto-start not started |
+| M5 ops | **Built 2026-10-02:** the System card's description is a live status (Fusion alive, run, waiting cards, Onshape budget, last error), with one comment when jobs wait for a closed Fusion; one service at a time (a lock); `ops/install-autostart.ps1` starts the service and Fusion at logon (dry run checked; not installed yet). Checks in `docs/manual-tests.md` → M5 |
 | M6 tabs | Not needed unless the no-tab trial fails |
 
 M1.1 pure core covers:
@@ -70,8 +70,8 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
 - **Templates:** `alu_eighth`, `poly_4mm`, `poly_eighth` (only `alu_4mm` exists). Until then, polycarbonate
   parts and parts that need the 1/8 in endmill stay in Ready for CAM.
 - **Pockets:** needs a `dump_params` run on a job with a 2D Adaptive op.
-- **M5:** the System card's live status (worker heartbeat, queue, Onshape budget; the text is written) and
-  starting everything at Windows logon (the service in Task Scheduler, Fusion with the add-in on startup).
+- **M5, on the shop PC:** run `ops\install-autostart.ps1`, tick the add-in's Run on Startup, then a reboot test
+  (`docs/manual-tests.md` → M5).
 - **M6 tabs:** only if the no-tab trial fails.
 - **Later ideas** (not planned): part-in-part nesting, scrap/offcut sheets, a better nest by trying several
   Arrange runs.

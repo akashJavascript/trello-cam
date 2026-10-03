@@ -314,6 +314,31 @@ or set up an existing board instead with `--board <short link>`.
 | 5 | Tick a Review item on that sheet, add another part: it gets a new sheet card; the ticked one doesn't change | |
 | 6 | Open the rebuilt sheet's Fusion file: the old parts and the new one are all there, and the toolpaths look right | |
 
-## M5: reboot test on the shop PC
+## M5: status card, start at logon, reboot test on the shop PC
 
-_Added in M5._
+### 1. The System card's status (works as soon as the service has the M5 code)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | The System card's description reads "Status at <time>...", then Fusion, Run, Ready for CAM and Onshape lines, and its time moves on about every 10 minutes | |
+| 2 | Drag a card into Ready for CAM: within a minute the status says "1 card waiting, the next run starts in about 2 min" | |
+| 3 | Close Fusion with a job waiting: within ~6 minutes the System card gets one comment, "Fusion isn't running, and 1 job is waiting for it...". Start Fusion again: one "Fusion is running again" comment | |
+| 4 | Start a second `autocam run` while one runs: it says "the service is already running" and quits (needs one manual restart of the service first) | |
+
+### 2. Start everything at logon (once, as the user the shop PC logs in as)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\dev\frc-autocam\ops\install-autostart.ps1 -DryRun   # shows what it will set up
+powershell -ExecutionPolicy Bypass -File C:\dev\frc-autocam\ops\install-autostart.ps1
+```
+Then, in Fusion: Shift+S > Add-Ins > autocam_addin > tick **Run on Startup**. Set Sleep to Never (when plugged in).
+Close the service window you started by hand before logging off, or the logon copy will say it's already running.
+Undo with `ops\uninstall-autostart.ps1`.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Task Scheduler shows "AutoCAM service" and "AutoCAM Fusion", triggered at logon | |
+| 2 | Log off and on: Fusion opens by itself, and ~30 s after logon a window titled "autocam service" starts the service | |
+| 3 | The add-in starts with Fusion: `queue\worker_heartbeat.json` updates and the System card says "Fusion: running" | |
+| 4 | Reboot the PC (after someone logs in, or with automatic sign-in): the same, with no other steps | |
+| 5 | A card dragged into Ready for CAM after the reboot is nested without anyone touching the PC | |

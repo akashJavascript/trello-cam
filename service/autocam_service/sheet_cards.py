@@ -151,6 +151,15 @@ def air_test_failed_comment(why: str) -> str:
     return f"Couldn't make the air test: {why}."
 
 
+def fusion_down_comment(jobs: int) -> str:
+    return (f"Fusion isn't running, and {jobs} job{'s are' if jobs != 1 else ' is'} waiting for it. Start Fusion "
+            "with the auto-CAM add-in on the shop PC.")
+
+
+def fusion_back_comment() -> str:
+    return "Fusion is running again. The waiting jobs carry on."
+
+
 def options_failed_comment(why: str) -> str:
     return f"Couldn't apply the options: {why}."
 

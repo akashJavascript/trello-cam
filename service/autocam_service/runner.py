@@ -35,12 +35,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
+from autocam_core import CORE_VERSION
 from autocam_core.airtest import SUFFIX as AIR_SUFFIX, air_test_name, check_air_test, lift_program, note_for
 from autocam_core.hotfolder import Queue, write_atomic
 from autocam_core.pauses import PauseError, remove as remove_pauses
 from autocam_core.sheetcheck import check_sheet_program, pause_spec
 from autocam_core.schema_job import PartSpec, job_json, load_job
 
+from . import health
 from . import sheet_cards as text
 from .autostart import ReadyWatch, wants_nest
 from .batching import ReadyPart, make_batches
@@ -105,6 +107,8 @@ class Runner:
         self.dry_run = isinstance(s.tracker, DryRunTracker)
         delay = s.cfg.trello.start_delay_s if start_delay_s is None else start_delay_s
         self.watch = ReadyWatch(s.store.watch_file, delay)
+        self.waiting_count = 0                                   # cards waiting for a run (for the status)
+        self._status_sent: Optional[Tuple[str, datetime]] = None  # (status without its time, when it was sent)
 
     # ------------------------------------------------------------ tick
     def tick(self) -> None:
@@ -118,6 +122,7 @@ class Runner:
                         "dry" if state.dry_run else "real", "dry" if self.dry_run else "real")
             return
         start = self.watch.observe(waiting, self.s.clock())
+        self.waiting_count = len(self.watch.waiting_cards(waiting))
         if state is None:
             if start:
                 self.start_run(waiting)
@@ -126,6 +131,41 @@ class Runner:
             self.resume_start(state)
         self.finish_start(state)
         self.collect(state)
+
+    # ------------------------------------------------------------ status (M5)
+    def status(self, last_error: Optional[str] = None) -> health.Health:
+        led, cfg, now = self.s.ledger, self.cfg, self.s.clock()
+        active = self.s.store.active()
+        return health.Health(
+            now=now, heartbeat=self.s.queue.read_heartbeat(), service_core=CORE_VERSION,
+            queue_incoming=len(self.s.queue.pending()),
+            queue_processing=len(list(self.s.queue.processing.glob("*.json"))),
+            month_calls=led.month_count(), month_soft=cfg.onshape.monthly_soft_calls,
+            year_calls=led.year_count(cfg.onshape.budget_year_start), year_cap=cfg.onshape.yearly_cap_calls,
+            latch=led.latched(), active_run=active.run_id if active else None, last_error=last_error,
+            waiting_cards=self.waiting_count, next_run_in_s=self.watch.remaining_s(now))
+
+    def report_health(self, last_error: Optional[str] = None) -> None:
+        """The System card's description (health.py): rewritten when anything in it changes, and every
+        status.update_every_s so its time shows the service is alive. One comment when jobs are waiting for a
+        Fusion that isn't running, and one when Fusion is back."""
+        card = self.cfg.trello.cards.get("system")
+        if not card or self.dry_run:
+            return
+        h = self.status(last_error)
+        stale_after = self.cfg.status.fusion_stale_after_s
+        same = health.render(h, stale_after, with_time=False)
+        if (self._status_sent is None or self._status_sent[0] != same
+                or (h.now - self._status_sent[1]).total_seconds() >= self.cfg.status.update_every_s):
+            self.t.update_card(card, "System", health.render(h, stale_after))
+            self._status_sent = (same, h.now)
+        said = self.s.store.alerts().get("fusion_down", False)
+        if health.stuck(h, stale_after) and not said:
+            self.t.comment(card, text.fusion_down_comment(h.queue_incoming + h.queue_processing))
+            self.s.store.set_alert("fusion_down", True)
+        elif said and not health.is_stale(h, stale_after):
+            self.t.comment(card, text.fusion_back_comment())
+            self.s.store.set_alert("fusion_down", False)
 
     def ready_cards(self) -> List[Card]:
         """The cards in Ready for CAM whose "Nest this part" box is ticked. Part cards in Drafts and Ready for

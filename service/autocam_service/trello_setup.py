@@ -30,7 +30,7 @@ OLD_NAMES = {"inbox": ("Inbox",), "nested": ("Nested",)}     # renamed in place
 assert tuple(LIST_NAMES) == TRELLO_LISTS
 
 RETIRED_CARDS = ("Run nest",)
-SYSTEM_DESC = "The auto-CAM service writes here when a run starts and finishes."
+SYSTEM_DESC = "The auto-CAM service writes its status here, and comments when a run starts and finishes."
 README_TITLE = README_CARD
 TEMPLATE_TITLE = "New part"
 TEMPLATE_DESC = "Paste the Part Studio link here\nQty: "
@@ -96,10 +96,10 @@ def setup_board(http, *, board: Optional[str] = None, create: Optional[str] = No
             http.call("PUT", f"/cards/{c['id']}", {"closed": "true"})
             created.append(f"archived card {c['name']}")
 
-    def card(title: str, list_key: str, desc: str, template: bool = False) -> str:
+    def card(title: str, list_key: str, desc: str, template: bool = False, keep_desc: bool = False) -> str:
         for c in cards:
             if _norm(c["name"]) == _norm(title):
-                if c.get("desc", "") != desc:
+                if c.get("desc", "") != desc and not keep_desc:
                     http.call("PUT", f"/cards/{c['id']}", {"desc": desc})
                     created.append(f"updated card {title}")
                 return c["id"]
@@ -110,7 +110,7 @@ def setup_board(http, *, board: Optional[str] = None, create: Optional[str] = No
         return http.call("POST", "/cards", params)["id"]
 
     labels = labels or {}
-    found = {"system": card("System", "control", SYSTEM_DESC)}
+    found = {"system": card("System", "control", SYSTEM_DESC, keep_desc=True)}   # the service writes its status there
     card(README_TITLE, "inbox", FORMAT_HELP.format(smoked=labels.get("smoked", "Smoked"),
                                                    tool=labels.get("tool_eighth", "Tool 1/8")))
     template = card(TEMPLATE_TITLE, "inbox", TEMPLATE_DESC, template=True)

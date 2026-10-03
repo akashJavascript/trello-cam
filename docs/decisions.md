@@ -340,3 +340,21 @@ within a minute (Sheet review or Ready to cut), unticking undoes them, and a reb
 - **What still needs a manual restart:** a change to `restart.py` itself (the supervisor is loaded once), or
   a new dependency (that needs `pip install -e .` first).
 
+## 2026-10-02: M5, status and start at logon
+
+- **System card description = live status** (`health.py`, `Runner.report_health`): whether Fusion is running (the add-in's
+  heartbeat, stale after 5 min) and whether the add-in runs older code, the current run, cards waiting for the next
+  run, Onshape calls, a 402 latch, and the last error of the past 24 h. Plain text, local time. It's rewritten when
+  something in it changes, and every 10 minutes so the time shows the service is alive (`[status]`). Run comments
+  stay comments on the same card.
+- **Alerts:** one comment when jobs are waiting and Fusion isn't running, one when it's back
+  (`state/alerts.json`, so a restart doesn't repeat them). A closed Fusion with nothing waiting (a quiet night) says
+  nothing, except in the status.
+- **One service at a time:** the supervisor holds an OS lock on `state/service.lock`, so a hand-started copy can't
+  run beside the logon task's (two copies could start the same run). Checked on Windows Python.
+- **Start at logon** (`ops/install-autostart.ps1`): two Task Scheduler tasks for the logged-in user, no admin.
+  The service starts 30 s after logon in a visible "autocam service" window; Fusion starts through its Start Menu
+  shortcut, whose launcher survives Fusion updates. The add-in's "Run on Startup" stays a tick in Fusion (the
+  manifest stays off, so a development PC doesn't start it uninvited). Automatic Windows sign-in is left to the
+  team: it's a security choice for the shop PC.
+

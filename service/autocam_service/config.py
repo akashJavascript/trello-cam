@@ -74,6 +74,12 @@ class Machine:
 
 
 @dataclass(frozen=True)
+class Status:
+    update_every_s: int
+    fusion_stale_after_s: int
+
+
+@dataclass(frozen=True)
 class Sheet:
     length_in: float
     width_in: float
@@ -265,6 +271,7 @@ class Config:
     fusion: Fusion
     tapguard: TapGuard
     fusion_team: FusionTeam
+    status: Status
     paths: Paths
     placeholders: Tuple[str, ...]  # dotted keys still set to ""
     warnings: Tuple[str, ...]
@@ -635,6 +642,11 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
     fusion_team = FusionTeam(project=t.string("project"), folder=t.string("folder"))
     t.finish()
 
+    t = top.table("status")
+    status = Status(update_every_s=t.integer("update_every_s", minimum=60),
+                    fusion_stale_after_s=t.integer("fusion_stale_after_s", minimum=30))
+    t.finish()
+
     t = top.table("paths")
     paths = Paths(**{k: root / t.string(k, required=True) for k in ("queue", "cache", "state", "logs")})
     t.finish()
@@ -648,7 +660,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         nest=nest, clamps=clamps, pauses=pauses, plate=plate, materials=MappingProxyType(materials),
         tools=MappingProxyType(tools), tooling=MappingProxyType(tooling), holes=holes,
         op_tags=op_tags, templates=MappingProxyType(templates), labels=labels, onshape=onshape,
-        trello=trello, fusion=fusion, tapguard=tapguard, fusion_team=fusion_team, paths=paths,
+        trello=trello, fusion=fusion, tapguard=tapguard, fusion_team=fusion_team, status=status, paths=paths,
         placeholders=tuple(_placeholders(data)), warnings=(),
     )
     warnings: List[str] = []

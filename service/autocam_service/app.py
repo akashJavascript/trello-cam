@@ -4,11 +4,13 @@ import logging
 import logging.handlers
 import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 from autocam_core.hotfolder import Queue
 
+from . import health
 from .config import Config
 from .credentials import load_credentials
 from .restart import EXIT_RESTART, CodeWatch
@@ -94,18 +96,35 @@ def disable_quick_edit() -> None:
         log.debug("couldn't turn off QuickEdit: %s", e)
 
 
+ERROR_SHOWN_S = 24 * 3600     # how long the System card shows the last error
+
+
 def run_forever(runner: Runner, interval_s: float, code: Optional[CodeWatch] = None,
-                sleep=time.sleep) -> int:
-    """Tick every interval_s. Returns EXIT_RESTART when `code` says new code or config is ready to run."""
+                sleep=time.sleep, clock=lambda: datetime.now(timezone.utc)) -> int:
+    """Tick every interval_s and update the System card's status. Returns EXIT_RESTART when `code` says new
+    code or config is ready to run."""
     disable_quick_edit()
     log.info("service started; polling every %s s", interval_s)
+    last_error: Optional[Tuple[datetime, str]] = None
     while True:
         try:
             runner.tick()
         except KeyboardInterrupt:
             raise
-        except Exception:  # noqa: BLE001 - keep polling; the error is logged with its traceback
+        except Exception as e:  # noqa: BLE001 - keep polling; the error is logged with its traceback
             log.exception("tick failed")
+            last_error = (clock(), f"{type(e).__name__}: {e}"[:300])
+        report = getattr(runner, "report_health", None)
+        if report is not None:
+            shown = None
+            if last_error and (clock() - last_error[0]).total_seconds() < ERROR_SHOWN_S:
+                shown = f"{health.local_time(last_error[0])}: {last_error[1]}"
+            try:
+                report(shown)
+            except KeyboardInterrupt:
+                raise
+            except Exception:  # noqa: BLE001 - the status is a nice-to-have; the next pass tries again
+                log.exception("updating the System card failed")
         sleep(interval_s)
         if code is not None and code.should_restart():
             return EXIT_RESTART

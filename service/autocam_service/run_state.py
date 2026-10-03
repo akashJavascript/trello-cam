@@ -68,6 +68,7 @@ class RunStore:
         self.jobs_dir = Path(state_dir) / "jobs"
         self.sheets_file = Path(state_dir) / "sheet_cards.json"
         self.watch_file = Path(state_dir) / "ready_watch.json"
+        self.alerts_file = Path(state_dir) / "alerts.json"
         self.prefix = prefix
 
     def _path(self, run_id: str) -> Path:
@@ -140,6 +141,19 @@ class RunStore:
             return json.loads(self.sheets_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {}
+
+    def alerts(self) -> Dict[str, bool]:
+        """Alerts already said on the System card (so a restart doesn't say them again)."""
+        try:
+            return dict(json.loads(self.alerts_file.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            return {}
+
+    def set_alert(self, key: str, on: bool) -> None:
+        alerts = self.alerts()
+        alerts[key] = on
+        self.alerts_file.parent.mkdir(parents=True, exist_ok=True)
+        write_atomic(self.alerts_file, (json.dumps(alerts, indent=1) + "\n").encode("utf-8"))
 
     def active(self) -> Optional[RunState]:
         for run_id in reversed(self.run_ids()):

@@ -14,6 +14,7 @@ The supervisor itself is loaded once; a change to this file needs one manual res
 
 import hashlib
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -34,13 +35,17 @@ def code_files(root: Path) -> List[Path]:
     return sorted([*(root / "service" / "autocam_service").rglob("*.py"), *(root / "core" / "autocam_core").rglob("*.py")])
 
 
-def new_code_loads(config: Path, env_file: Optional[Path]) -> Optional[str]:
-    """None if the code on disk imports and the config loads (in a fresh Python), else what went wrong."""
+def new_code_loads(config: Path, env_file: Optional[Path], root: Optional[Path] = None) -> Optional[str]:
+    """None if the code on disk imports and the config loads (in a fresh Python), else what went wrong.
+    root: the repo whose code to check (default: the one this file is in)."""
+    root = Path(root) if root is not None else Path(__file__).resolve().parents[2]
     cmd = [sys.executable, "-c", _CHECK, "--config", str(config)]
     if env_file is not None:
         cmd += ["--env-file", str(env_file)]
+    paths = [str(root / "core"), str(root / "service")] + [p for p in [os.environ.get("PYTHONPATH")] if p]
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(paths)}
     try:
-        r = subprocess.run(cmd + ["config-check"], capture_output=True, text=True, timeout=120)
+        r = subprocess.run(cmd + ["config-check"], capture_output=True, text=True, timeout=120, env=env)
     except (OSError, subprocess.SubprocessError) as e:
         return f"couldn't run the check: {e}"
     return None if r.returncode == 0 else (r.stdout + r.stderr).strip()[-2000:] or f"exit code {r.returncode}"
@@ -91,6 +96,34 @@ class CodeWatch:
         self.rejected, self.pending = self.fingerprint(), None
         log.error("%s, but the new version doesn't load, so the old one keeps running:\n%s", why, problem)
         return False
+
+
+class AlreadyRunning(Exception):
+    pass
+
+
+class SingleInstance:
+    """An OS lock on state/service.lock for as long as the supervisor runs, so a second `autocam run` (started
+    by hand while the logon task's copy runs) can't start the same run twice. The OS drops it if we die."""
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._f = open(self.path, "a+")
+        try:
+            if os.name == "nt":
+                import msvcrt
+                self._f.seek(0)
+                msvcrt.locking(self._f.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self._f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            self._f.close()
+            raise AlreadyRunning(f"the service is already running (it holds {self.path})")
+
+    def release(self) -> None:
+        self._f.close()
 
 
 def supervise(child_cmd: List[str], spawn: Callable[[List[str]], int] = subprocess.call,

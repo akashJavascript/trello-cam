@@ -68,9 +68,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     env_file = args.env_file or cfg.root / ".env"
     try:
         if args.command == "run" and not args.child:
-            from .restart import supervise
+            from .restart import AlreadyRunning, SingleInstance, supervise
+            try:
+                lock = SingleInstance(cfg.paths.state / "service.lock")
+            except AlreadyRunning as e:
+                print(f"autocam: {e}. Close the other one first (its window is titled 'autocam service').")
+                return 1
             print("autocam: the service restarts by itself when its code or config changes. Ctrl+C to stop.")
-            return supervise([sys.executable, "-m", "autocam_service", *argv, "--child"])
+            try:
+                return supervise([sys.executable, "-m", "autocam_service", *argv, "--child"])
+            finally:
+                lock.release()
         if args.command in ("tick", "run", "dry-run"):
             return service(cfg, env_file, args.command, args.offline, args.verbose, getattr(args, "now", False),
                            config_path=args.config, env_arg=args.env_file)

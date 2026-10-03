@@ -81,9 +81,10 @@ def test_the_real_code_and_config_pass_the_check():
     assert new_code_loads(DEFAULT_CONFIG, None) is None
 
 
-def test_autocam_run_starts_the_supervisor(monkeypatch):
+def test_autocam_run_starts_the_supervisor(monkeypatch, tmp_path):
     seen = []
     monkeypatch.setattr(restart, "supervise", lambda cmd: seen.append(cmd) or 0)
+    monkeypatch.setattr(restart, "SingleInstance", lambda path: types.SimpleNamespace(release=lambda: None))
     assert cli.main(["run", "--verbose"]) == 0
     assert seen[0][1:] == ["-m", "autocam_service", "run", "--verbose", "--child"]
 
@@ -93,3 +94,11 @@ def test_a_broken_config_fails_the_check(tmp_path):
     bad.write_text(DEFAULT_CONFIG.read_text(encoding="utf-8").replace("[trello]", "[trello]\nnot_a_setting = 1", 1))
     problem = new_code_loads(bad, None)
     assert problem is not None and "not_a_setting: unknown key" in problem
+
+
+def test_only_one_service_at_a_time(tmp_path):
+    first = restart.SingleInstance(tmp_path / "service.lock")
+    with pytest.raises(restart.AlreadyRunning):
+        restart.SingleInstance(tmp_path / "service.lock")
+    first.release()
+    restart.SingleInstance(tmp_path / "service.lock").release()     # free again once the first one is gone
