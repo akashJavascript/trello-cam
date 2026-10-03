@@ -55,7 +55,7 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
   to about 3 minutes). Needs your machine's comfortable top feed.
 - **Merge `m1-offline` into `main`:** everything since M0 is on the branch.
 - **Onshape per-run cap:** `onshape.per_run_max_calls` is still 15, about 2 uncached parts per run (more cards
-  just wait for the next run). Raise it once the ledger looks right (17 calls so far).
+  just wait for the next run). Raise it once the ledger looks right (15 calls so far).
 
 ### Not seen working on the real board or machine yet
 - **Board:** a new part filling an open sheet (manual tests M3 section 7); "Cut the whole sheet without
