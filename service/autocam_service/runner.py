@@ -46,7 +46,7 @@ from autocam_core.schema_job import OffcutSpec, PartSpec, job_json, load_job
 
 from . import health, tally
 from . import sheet_cards as text
-from .autostart import ReadyWatch, signature, wants_nest
+from .autostart import ReadyWatch, box, signature, wants_nest
 from .batching import ReadyPart, make_batches
 from .cards import README_CARD, CardProblem, PartRequest, parse_card
 from .config import Config
@@ -227,7 +227,7 @@ class Runner:
 
     def ready_cards(self) -> List[Card]:
         """The cards in Ready for CAM whose "Nest this part" box is ticked. Part cards in Drafts and Ready for
-        CAM that have no box get one, ticked (cards made from the New part template already have it)."""
+        CAM that have no box get one, ticked, and a "Hold it in with tabs" box, ticked if tabs.default."""
         t = self.cfg.trello
         ready: List[Card] = []
         for list_key in ("inbox", "ready_for_cam"):
@@ -239,6 +239,11 @@ class Runner:
                         self.t.add_checklist(card.id, t.nest_checklist, [t.nest_item], checked=True)
                     except Exception as e:  # noqa: BLE001 - a missing box mustn't stop the tick (no box = nest)
                         log.warning("couldn't add the %s box to %s: %s", t.nest_checklist, card.id, e)
+                if not any(c.checklist == t.tabs_checklist for c in card.checks):
+                    try:
+                        self.t.add_checklist(card.id, t.tabs_checklist, [t.tabs_item], checked=self.cfg.tabs.default)
+                    except Exception as e:  # noqa: BLE001 - no box means tabs.default
+                        log.warning("couldn't add the %s box to %s: %s", t.tabs_checklist, card.id, e)
                 if list_key == "ready_for_cam" and wants_nest(card, t.nest_checklist, t.nest_item):
                     ready.append(card)
         return ready
@@ -803,6 +808,9 @@ class Runner:
         requests: List[PartRequest] = []
         for card in cards:
             parsed = parse_card(card, cfg.labels.smoked, cfg.labels.tool_eighth)
+            if not isinstance(parsed, CardProblem):
+                parsed = replace(parsed, tabs=box(card, cfg.trello.tabs_checklist, cfg.trello.tabs_item,
+                                                  cfg.tabs.default))
             if isinstance(parsed, CardProblem):
                 self._reject(state, card.id, parsed.comment(cfg.labels.smoked, cfg.labels.tool_eighth))
                 summary["rejected"] += 1

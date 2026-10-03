@@ -141,6 +141,11 @@ class Adapter:
         each cutting to stock bottom; then delete the template op."""
         raise NotImplementedError
 
+    def set_tabs(self, sheet: str, op_name: str, distance_in: float) -> None:
+        """Turn on the outline op's tabs (the template's shape, width and height), spaced distance_in apart
+        along the outline."""
+        raise NotImplementedError
+
     def delete_op(self, sheet: str, op_name: str) -> None:
         raise NotImplementedError
 

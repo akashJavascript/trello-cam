@@ -34,7 +34,9 @@ FORMAT_HELP = """1. In Onshape, open the Part Studio with your part and copy the
 3. Move the card to Ready for CAM. About 2 minutes later it's nested, together with whatever else is waiting
    and any sheet still in Sheet review that has room.
 
-Untick "Nest this part" to keep a card in Ready for CAM without nesting it.
+Untick "Nest this part" to keep a card in Ready for CAM without nesting it. Tick "Hold it in with tabs" if
+tape alone won't hold it: its outline gets small tabs, and you break the part out after the cut. (Already on
+a sheet? Tick it and move the card back to Ready for CAM.)
 Need one part now? Add the {rush} label before moving it: it's nested at once (within a minute, after any run
 already going), on its own: an offcut or a new sheet, not a sheet waiting in Sheet review.
 Labels, if needed: {smoked} for smoked polycarbonate, {tool} to force the 1/8 in endmill.
@@ -65,6 +67,7 @@ class PartRequest:
     material_hint: Optional[str]
     smoked: bool
     force_small_tool: bool
+    tabs: bool = False                   # the card's "Hold it in with tabs" box (set by the runner)
 
 
 @dataclass(frozen=True)

@@ -88,6 +88,10 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
             lines.append("It cuts the whole sheet without stopping: cut parts stay loose in the sheet until it's "
                          "done. Keep hands off until the spindle stops at the end.")
 
+    tabbed = {p.part_key for p in job.parts if p.tabs}
+    if vs.cuttable and tabbed & {p.part_key for p in s.parts}:
+        lines.append("Parts marked tabs stay held to the sheet by small tabs: leave them in at the stops, and "
+                     "break them out once the program is done.")
     lines += ["", "CUT ORDER"]
     counts = {}
     totals = {p.part_key: p.count for p in s.parts}
@@ -96,7 +100,7 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         counts[part_key] = counts.get(part_key, 0) + 1
         name = part_cards.get(part_key, (part_key, ""))[0]
         of = f" ({counts[part_key]} of {totals[part_key]})" if totals.get(part_key, 1) > 1 else ""
-        lines.append(f"{i}. {name}{of}")
+        lines.append(f"{i}. {name}{of}" + (" - tabs" if part_key in tabbed else ""))
 
     use = sheet_use(s)
     if use:

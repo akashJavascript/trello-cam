@@ -159,7 +159,8 @@ class FakeAdapter(Adapter):
         if sheet in self.fail_make_sheet:
             raise AdapterError("setups.add: RuntimeError: 3 : something broke")
         self.sheets[sheet] = {"origin": origin, "size": (size_x_in, size_y_in), "t": thickness_in,
-                              "copies": list(copy_ids), "ops": [], "fills": {}, "outer": [], "deleted": []}
+                              "copies": list(copy_ids), "ops": [], "fills": {}, "outer": [], "deleted": [],
+                              "tabs": {}}
 
     def apply_template(self, sheet, template_path):
         ops = [TemplateOp(name, guid) for name, guid in json.loads(Path(template_path).read_text())]
@@ -174,6 +175,10 @@ class FakeAdapter(Adapter):
         s["ops"].remove(template_op)
         s["ops"] += [name for name, _, _ in outlines]
         s["outer"] = list(outlines)
+
+    def set_tabs(self, sheet, op_name, distance_in):
+        assert op_name in self.sheets[sheet]["ops"], op_name
+        self.sheets[sheet]["tabs"][op_name] = distance_in
 
     def delete_op(self, sheet, op_name):
         s = self.sheets[sheet]
@@ -208,8 +213,11 @@ class FakeAdapter(Adapter):
                 ox, oy = s["origin"]
                 o = OUTLINE_OFFSET_IN
                 xa, ya, xb, yb = b.x0 - ox - o, b.y0 - oy - o, b.x1 - ox + o, b.y1 - oy + o
-                lines += [f"G0 X{xa:.4f} Y{ya:.4f}", f"Z{retract:g}", "G1 Z0. F20.", f"G1 X{xb:.4f} F60.",
-                          f"G1 Y{yb:.4f}", f"G1 X{xa:.4f}", f"G1 Y{ya:.4f}", f"G0 Z{clear:g}"]
+                lines += [f"G0 X{xa:.4f} Y{ya:.4f}", f"Z{retract:g}", "G1 Z0. F20."]
+                if op in s["tabs"]:                   # a tab halfway along the first side: up 0.04 in and back
+                    mid = (xa + xb) / 2
+                    lines += [f"G1 X{mid:.4f} F60.", "G1 Z0.04", f"G1 X{mid + 0.157:.4f}", "G1 Z0."]
+                lines += [f"G1 X{xb:.4f} F60.", f"G1 Y{yb:.4f}", f"G1 X{xa:.4f}", f"G1 Y{ya:.4f}", f"G0 Z{clear:g}"]
                 continue
             fill = s["fills"][op]
             for cid in [c for c, _ in fill.holes] + [c for c, _, _ in fill.loops]:

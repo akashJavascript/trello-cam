@@ -12,7 +12,7 @@ from autocam_core.holes import HoleRules
 from autocam_core.schema import to_dict
 from autocam_core.schema_job import (
     JOB_SCHEMA, FixtureSpec, FusionTeamSpec, GuardSettings, Job, MaterialSpec, NestSpec, OffcutSpec, OnshapeRef, PartSpec,
-    PauseSettings, PlateSpec, PostSpec, SheetSpec, ToolingSpec, ToolSpec, load_job,
+    PauseSettings, PlateSpec, PostSpec, SheetSpec, TabSpec, ToolingSpec, ToolSpec, load_job,
 )
 
 from .batching import Batch
@@ -78,7 +78,7 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
             source="onshape" if link else ("local" if req.card.id.startswith("local-") else "trello_attachment"),
             onshape=OnshapeRef(link.did, link.vid, link.eid, ready.onshape_part_id or "", link.url,
                                ready.onshape_microversion) if link else None,
-            force_small_tool=req.force_small_tool))
+            force_small_tool=req.force_small_tool, tabs=req.tabs))
     for n, spec in enumerate(carried, len(parts) + 1):
         parts.append(replace(spec, part_key=f"p{n:02d}"))
 
@@ -108,5 +108,6 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
         fusion_team=FusionTeamSpec(cfg.fusion_team.project, cfg.fusion_team.folder),
         parts=tuple(parts),
         offcuts=tuple(offcuts),
+        tabs=TabSpec(cfg.tabs.distance_in),
     )
     return load_job(to_dict(job))  # same validation Fusion will apply

@@ -185,10 +185,14 @@ def _same_z(a, b) -> bool:
 _PLAIN = re.compile(r"^\s*(?:G0*90\s*)?(?:F\s*[\d.]+\s*)?$")
 
 
+TAB_MAX_IN = 0.25    # a lap at the final depth may rise this far over a tab and come back down
+
+
 def one_lap(text: str) -> str:
     """Each `[outer]` op cut down to one lap: rapid to where the lap at its final depth starts, down to that
-    depth, the lap, back up. An op with anything but moves between its first and last move is left as it is.
-    Raises AirTestError if a kept lap move would start anywhere else or in another mode."""
+    depth, the lap, back up. The lap runs from the first feed move at that depth to the last one, through any
+    tabs (feed moves up to TAB_MAX_IN above it). An op with anything but moves between its first and last move
+    is left as it is. Raises AirTestError if a kept lap move would start anywhere else or in another mode."""
     lines = re.split(r"(?<=\n)", text)
     track = _track(lines)
     starts = [i for i, l in enumerate(lines) if op_tag(l) is not None] + [len(lines)]
@@ -210,8 +214,13 @@ def one_lap(text: str) -> str:
             mode, start, end = track[i]
             if mode in _FEED_G and _same_z(start[2], floor) and _same_z(end[2], floor):
                 lap.append(i)
+            elif lap and mode in _FEED_G and all(z is not None and floor - 1e-6 <= z <= floor + TAB_MAX_IN
+                                                 for z in (start[2], end[2])):
+                lap.append(i)                     # over a tab and back down
             elif lap:
                 break
+        while lap and not _same_z(track[lap[-1]][2][2], floor):
+            lap.pop()                             # it ends at the final depth, not partway over a tab
         if not lap:
             continue
         nl = "\r\n" if lines[lap[0]].endswith("\r\n") else "\n"

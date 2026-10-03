@@ -555,3 +555,20 @@ The operator has to find the piece a sheet card names. What happens when it isn'
   core 0.6.0): turned, it would sit past its own front edge, with nothing to zero on. A card that's missing
   something gets one reply, and another only when it changes.
 
+## 2026-10-03: tabs, per part, off by default (the user's choice)
+
+Tape alone didn't hold parts in the team's earlier trials, so tabs are built (M6), as an option that starts
+off ("make tabs an option you can turn off but make it default off"):
+- **Where it's set:** a "Hold it in with tabs" box on part cards (checklist Tabs), unticked unless
+  `[tabs] default = true`. The service adds it, like the Nest box. A part already on a sheet: tick it and
+  move the card back to Ready for CAM (its sheet is rebuilt if nobody has started reviewing it).
+- **What it does:** that part's `[outer]` ops get the template's own tabs turned on (`group_tabs`,
+  `tabPositioning = 'distance'`, `tabDistance = [tabs] distance_in`, 2.5 in like the team's manual job). The
+  template keeps the tab shape, width and height (rectangular, the cutter's width, a quarter of it high).
+  Fusion places them along the outline, so they can land on arcs: the brief's own placement (straight
+  segments only, away from corners, at points) is still possible later if cleanup is a pain.
+- **Sheet cards** mark tabbed parts in the cut order and say to break them out once the program is done (at
+  the stops they stay held).
+- **The air test** follows the outline through tab lifts: the lap at the final depth may rise up to 0.25 in
+  over a tab and come back down (`airtest.TAB_MAX_IN`).
+

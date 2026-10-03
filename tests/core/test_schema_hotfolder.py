@@ -59,7 +59,8 @@ def test_job_round_trips():
         sheet={"length_in": 48.0, "width_in": 24.0, "reach_in": 40.0},
         fixture={**d["fixture"], "clamp_zones_in": [[0.0, 0.0, 48.0, 1.25]]},
         nest={**d["nest"], "offcut_gap_in": 0.5, "offcut_min_in": 6.0, "offcut_beside_min_in": 3.0},
-        offcuts=[]))                                                 # defaults: older jobs still load
+        parts=[{**p, "tabs": False} for p in d["parts"]],
+        offcuts=[], tabs={"distance_in": 2.5}))                      # defaults: older jobs still load
     assert load_job(json.loads(json.dumps(to_dict(job)))) == job
 
 

@@ -176,6 +176,19 @@ def test_a_single_lap_outline_stays_the_same_path():
                           "G1 X4.", "G1 Y4."]
 
 
+def test_the_lap_goes_over_the_tabs():
+    from autocam_core.airtest import one_lap
+    tabbed = RAMPED.replace("X2. Z0.\r\nX5.\r\nG3 X6. Y2. I0. J1.\r\nG1 Y5.\r\nX1.\r\nY1.\r\nX2.\r\n",
+                            "X2. Z0.\r\nX3.\r\nZ0.04\r\nX3.2\r\nZ0.\r\nX5.\r\nG3 X6. Y2. I0. J1.\r\nG1 Y5.\r\n"
+                            "X1.\r\nY3.\r\nZ0.04\r\nY2.8\r\nZ0.\r\nY1.\r\nX2.\r\n")
+    out = one_lap(tabbed).split("\r\n")
+    start = out.index("[outer p01-1]")
+    assert out[start + 4:] == ["G0 X2. Y1.", "G0 Z0.3", "G1 Z0.",
+                               "G1 X3.", "Z0.04", "X3.2", "Z0.", "X5.", "G3 X6. Y2. I0. J1.", "G1 Y5.", "X1.",
+                               "Y3.", "Z0.04", "Y2.8", "Z0.", "Y1.", "X2.",          # both tabs, then back down
+                               "G0 Z2.", "G53 Z", "M5", "G53 P10", ""]
+
+
 def test_an_outline_with_anything_else_in_it_is_left_alone():
     from autocam_core.airtest import one_lap
     odd = RAMPED.replace("X5.\r\nY5.\r\nX1.\r\nY1.\r\nX2. Z0.1", "X5.\r\nM11 C8\r\nY5.\r\nX1.\r\nY1.\r\nX2. Z0.1")

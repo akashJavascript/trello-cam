@@ -154,5 +154,9 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
 
 ## Tabs (M6), names confirmed
 
+Used since 2026-10-03 (`fx_cam.set_tabs`, untested in Fusion): `group_tabs` = true, `tabPositioning` =
+'distance', `tabDistance` on each tabbed part's `[outer]` op; the team template's tab shape, width
+(`tool_diameter`) and height (`tool_diameter * 0.25`) are kept.
+
 `group_tabs`, `tabShape`, `tabWidth`, `tabHeight`, `tabPositioning` ('distance' | 'tabCount'), `tabDistance`,
 `tabPositions` (manual / at-points, a `CadObjectParameterValue`), `noTabZones`.

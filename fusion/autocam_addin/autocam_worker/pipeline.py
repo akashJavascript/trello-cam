@@ -18,7 +18,7 @@
    arranged again or deleted.
 4. Per sheet: one tool, each part's feature plan with that tool, the cut order of the outlines.
 5. CAM per sheet: stock + setup, template (every op's tool GUID checked), selections, one outline op per
-   part copy in cut order.
+   part copy in cut order, with the template's tabs turned on for parts that ask for them (PartSpec.tabs).
 6. Post, insert the pauses, and check the final bytes with the check the service repeats
    (sheetcheck.py). Failures are kept as *.REJECTED.tap.
 7. Preview, .f3d, result.json.
@@ -826,6 +826,9 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     outlines = [(outer_op_name(inst), by_instance[inst].body_id, parts[by_instance[inst].part_key].analysis.up_face_id)
                 for inst in sheet.outer_order]
     adapter.make_outer_ops(sheet.name, by_tag[OUTER][0], outlines)
+    for inst in sheet.outer_order:                    # the template's tabs, on for the parts that ask for them
+        if parts[by_instance[inst].part_key].spec.tabs:
+            adapter.set_tabs(sheet.name, outer_op_name(inst), job.tabs.distance_in)
     sheet.built = True
 
 

@@ -363,6 +363,18 @@ Run `autocam trello-setup` once (the read-me card's new Offcuts paragraph).
 | 6 | Make a card in Offcuts with Material, Thickness and Length lines: it becomes "#N - ... offcut"; a sheet nested on it says to push it against the front stop. A card missing a line gets one reply saying what's needed | |
 | 7 | **Air-test** the first sheet switched to another offcut, and the first one on a scrap | |
 
+### 10. Tabs (2026-10-03)
+
+Run `autocam trello-setup` once (the read-me card's line about tabs).
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Part cards get a **Tabs** box, "Hold it in with tabs", unticked | |
+| 2 | Tick it on one part and nest it: the sheet card's cut order says "- tabs" for it, and the description says to break tabbed parts out at the end | |
+| 3 | Open the Fusion file: that part's `[outer]` op has Tabs on (distance, 2.5 in); the other parts' don't. Simulate it | |
+| 4 | Tick "Add an air test program": the air test traces the whole outline, tabs included (small bumps up) | |
+| 5 | Cut it: the tabs hold the part through the cut and break out cleanly. If they're too weak or too strong, change the template's tab width/height (or `[tabs] distance_in`) | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

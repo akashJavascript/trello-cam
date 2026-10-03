@@ -151,6 +151,11 @@ class FusionAdapter(Adapter):
         fx_cam.outline_copies(setup, fx_cam.op_by_name(setup, template_op), faces,
                               self.job.fusion_params["selections"]["contour"])
 
+    def set_tabs(self, sheet, op_name, distance_in):
+        self._used("tabs")
+        call(f"{op_name}: tabs", fx_cam.set_tabs, fx_cam.op_by_name(self._setup(sheet), op_name),
+             self.job.fusion_params["tabs"], distance_in)
+
     def delete_op(self, sheet, op_name):
         call(f"delete op {op_name}", fx_cam.op_by_name(self._setup(sheet), op_name).deleteMe)
 

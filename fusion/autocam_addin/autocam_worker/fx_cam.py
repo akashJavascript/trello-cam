@@ -31,6 +31,7 @@ UNCONFIRMED = {
     "chain_direction": "ChainSelection.isReverted so the chain runs against the loop's way (cut side follows direction)",
     "gouge_check": "BRepBody.pointContainment on the posted program's cutting points",
     "team_save": "Document.saveAs into the Fusion Team folder, wait for Application.dataFileComplete, then DataFile.fusionWebURL",
+    "tabs": "outline op tabs: group_tabs, tabPositioning = 'distance', tabDistance",
 }
 
 
@@ -78,6 +79,17 @@ def apply_template(setup, path: str):
     t_in.camTemplate = template
     call("createFromCAMTemplate2", setup.createFromCAMTemplate2, t_in)
     return [TemplateOp(o.name, tool_guid(o)) for o in ops(setup)]
+
+
+def set_tabs(op, names, distance_in: float) -> None:
+    """The op's tabs on, by distance along the outline (the template keeps their shape, width and height)."""
+    set_expr(op, names["enabled"], "true")
+    set_expr(op, names["positioning"], "'distance'")
+    p = param(op, names["distance"])
+    p.expression = f"{distance_in:g} in"
+    got = getattr(p.value, "value", None)
+    if got is not None and abs(got - to_cm(distance_in)) > 1e-4:
+        raise AdapterError(f"{names['distance']} = {distance_in:g} in didn't stick (reads {p.expression})")
 
 
 def cut_to_stock_bottom(op) -> None:

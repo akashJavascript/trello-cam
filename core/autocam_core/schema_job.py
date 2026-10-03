@@ -143,6 +143,14 @@ class PartSpec:
     source: str
     onshape: Optional[OnshapeRef]
     force_small_tool: bool
+    tabs: bool = False                                 # hold it in with tabs (core 0.7.0)
+
+
+@dataclass(frozen=True)
+class TabSpec:
+    """Tabs on the outlines of parts that ask for them: the template's tabs (shape, width, height) turned on,
+    spaced along the outline (core 0.7.0)."""
+    distance_in: float = 2.5
 
 
 @dataclass(frozen=True)
@@ -178,6 +186,7 @@ class Job:
     fusion_team: FusionTeamSpec
     parts: Tuple[PartSpec, ...]
     offcuts: Tuple[OffcutSpec, ...] = ()
+    tabs: TabSpec = TabSpec()
 
     def validate(self) -> List[str]:
         e: List[str] = []
@@ -221,6 +230,8 @@ class Job:
             if any(not (0 <= x0 < x1 <= self.sheet.width_in and 0 <= y0 < y1 <= self.sheet.length_in)
                    for x0, y0, x1, y1 in o.beside_in):
                 e.append(f"offcuts.{o.id}: room beside cuts must be inside the sheet")
+        if self.tabs.distance_in <= 0:
+            e.append("tabs.distance_in: must be > 0")
         if not self.parts:
             e.append("parts: empty")
         for p in self.parts:

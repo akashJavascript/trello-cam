@@ -32,6 +32,12 @@ def wants_nest(card: Card, checklist: str, item: str) -> bool:
     return not states or any(states)
 
 
+def box(card: Card, checklist: str, item: str, default: bool) -> bool:
+    """The item's tick, or `default` if the card doesn't have it."""
+    states = [c.done for c in card.checks if c.checklist == checklist and c.item == item]
+    return any(states) if states else default
+
+
 def signature(card: Card) -> str:
     """What the card says, not when it was last touched (comments must not count)."""
     data = [card.name, card.desc, sorted(card.labels), sorted(a.id for a in card.attachments)]

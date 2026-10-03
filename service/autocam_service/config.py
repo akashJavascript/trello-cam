@@ -75,6 +75,12 @@ class Machine:
 
 
 @dataclass(frozen=True)
+class Tabs:
+    default: bool = False        # part cards' "Hold it in with tabs" box starts ticked
+    distance_in: float = 2.5     # between tabs along an outline
+
+
+@dataclass(frozen=True)
 class Status:
     update_every_s: int
     fusion_stale_after_s: int
@@ -221,6 +227,8 @@ class Trello:
     lists: Mapping[str, str]
     targets: Mapping[str, str]
     cards: Mapping[str, str]
+    tabs_checklist: str = "Tabs"
+    tabs_item: str = "Hold it in with tabs"
     stock_checklist: str = "Stock"
     not_found_item: str = "The offcut isn't on the rack"
     renest_item: str = "Re-nest it on other stock (a new run and a new review)"
@@ -287,6 +295,7 @@ class Config:
     paths: Paths
     placeholders: Tuple[str, ...]  # dotted keys still set to ""
     warnings: Tuple[str, ...]
+    tabs: Tabs = Tabs()
 
     def stock_types(self) -> List[Tuple[Material, float]]:
         return [(m, t) for m in self.materials.values() for t in m.thicknesses_in]
@@ -630,6 +639,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         lists=MappingProxyType(t.string_map("lists", keys=TRELLO_LISTS, value_pattern=TRELLO_ID_RE)),
         targets=MappingProxyType(t.string_map("targets", keys=TRELLO_TARGETS)),
         cards=MappingProxyType(t.string_map("cards", keys=TRELLO_CARDS, value_pattern=TRELLO_ID_RE)),
+        tabs_checklist=t.string("tabs_checklist", default="Tabs"),
+        tabs_item=t.string("tabs_item", default="Hold it in with tabs"),
         stock_checklist=t.string("stock_checklist", default="Stock"),
         not_found_item=t.string("not_found_item", default="The offcut isn't on the rack"),
         renest_item=t.string("renest_item", default="Re-nest it on other stock (a new run and a new review)"),
@@ -671,6 +682,12 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                     season_start=t.string("season_start", pattern=MONTH_DAY_RE, default="09-01"))
     t.finish()
 
+    t = top.table("tabs") if "tabs" in top.data else None
+    tabs = Tabs(default=t.boolean("default"), distance_in=t.number("distance_in", positive=True, default=2.5)) \
+        if t else Tabs()
+    if t:
+        t.finish()
+
     t = top.table("paths")
     paths = Paths(**{k: root / t.string(k, required=True) for k in ("queue", "cache", "state", "logs")})
     t.finish()
@@ -685,7 +702,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         tools=MappingProxyType(tools), tooling=MappingProxyType(tooling), holes=holes,
         op_tags=op_tags, templates=MappingProxyType(templates), labels=labels, onshape=onshape,
         trello=trello, fusion=fusion, tapguard=tapguard, fusion_team=fusion_team, status=status, paths=paths,
-        placeholders=tuple(_placeholders(data)), warnings=(),
+        placeholders=tuple(_placeholders(data)), warnings=(), tabs=tabs,
     )
     warnings: List[str] = []
     _cross_check(cfg, data, errors, warnings)

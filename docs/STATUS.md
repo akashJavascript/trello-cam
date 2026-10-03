@@ -15,7 +15,7 @@ _Last updated 2026-10-03 (branch `m1-offline`)._
 | M4 service: results back to Trello | **First real run worked** (2026-10-02): the sheet card with the program came back to Sheet review |
 | Board flow (2026-10-02) | Runs start by themselves 2 min after cards land in Ready for CAM; "Nest this part" box; new parts fill sheets nobody has started reviewing (cards updated in place). Tested offline; first real run (r005) published fine. **Options** on sheet cards since 2026-10-02: cut without stopping, and an air test (a raised copy that cuts nothing). Tested offline and on r005's real program; the service applies them on the real board. The service restarts itself into new code (seen working twice) |
 | M5 ops | **Built 2026-10-02:** the System card's description is a live status (Fusion alive, run, waiting cards, Onshape budget, last error), with one comment when jobs wait for a closed Fusion; one service at a time (a lock); `ops/install-autostart.ps1` starts the service and Fusion at logon (dry run checked; not installed yet). Checks in `docs/manual-tests.md` → M5 |
-| M6 tabs | Not needed unless the no-tab trial fails |
+| M6 tabs | **Built 2026-10-03** (tape alone didn't hold parts in the team's trials): a "Hold it in with tabs" box on part cards, unticked by default (`[tabs] default`); the template's tabs turned on for that part's outline, 2.5 in apart. Tested offline; untested in Fusion |
 
 M1.1 pure core covers:
 - the `.tap` guard and pause insertion/verification;
@@ -46,7 +46,8 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 
 ### Before the first real cut
 1. **Z touch-off on the spoilboard** (decision 22): the programs' Z0 is the spoilboard, not the sheet top.
-2. **No-tab trial** on one well-held sheet (decision 6). Parts come loose when their outline finishes.
+2. **Tabs trial:** cut a sheet with a tabbed part and check the tabs hold and break out cleanly (tape
+   alone didn't hold parts in the team's earlier trials).
 3. **Pause test** on a sheet with 2+ parts: tick "Add an air test program" under Options and run it
    (`docs/manual-tests.md` → M1.6). Record the resume key: `pauses.resume_key` is empty, so cards say
    "the continue key".
@@ -73,7 +74,6 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 - **Pockets:** needs a `dump_params` run on a job with a 2D Adaptive op.
 - **M5, on the shop PC:** run `ops\install-autostart.ps1`, tick the add-in's Run on Startup, then a reboot test
   (`docs/manual-tests.md` → M5).
-- **M6 tabs:** only if the no-tab trial fails.
 - **Better nests** (2026-10-02): several Arrange tries per thickness, the best kept, and "Sheet use" on the
   card. Then the last sheet is **squeezed** into a strip across the front, since Fusion's Arrange packs down
   the left edge. Both work in Fusion (r006: tries; r014: 4 parts went from 30.6 in down the left edge to a
