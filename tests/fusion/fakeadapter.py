@@ -176,9 +176,14 @@ class FakeAdapter(Adapter):
         s["ops"] += [name for name, _, _ in outlines]
         s["outer"] = list(outlines)
 
-    def set_tabs(self, sheet, op_name, distance_in):
+    def set_tabs(self, sheet, op_name, per_contour):
         assert op_name in self.sheets[sheet]["ops"], op_name
-        self.sheets[sheet]["tabs"][op_name] = distance_in
+        self.sheets[sheet]["tabs"][op_name] = per_contour
+
+    def copy_op(self, sheet, op_name, new_name):
+        s = self.sheets[sheet]
+        assert op_name in s["ops"] and op_name not in s["fills"], f"{op_name} is filled already"
+        s["ops"].append(new_name)
 
     def delete_op(self, sheet, op_name):
         s = self.sheets[sheet]

@@ -562,11 +562,18 @@ built off by default, then switched on by default the same day ("make tabs on by
 - **Where it's set:** a "Hold it in with tabs" box on part cards (checklist Tabs), ticked to start
   (`[tabs] default = true`; untick it for a part tape holds on its own). The service adds it, like the Nest box. A part already on a sheet: tick it and
   move the card back to Ready for CAM (its sheet is rebuilt if nobody has started reviewing it).
-- **What it does:** that part's `[outer]` ops get the template's own tabs turned on (`group_tabs`,
-  `tabPositioning = 'distance'`, `tabDistance = [tabs] distance_in`, 2.5 in like the team's manual job). The
-  template keeps the tab shape, width and height (rectangular, the cutter's width, a quarter of it high).
-  Fusion places them along the outline, so they can land on arcs: the brief's own placement (straight
-  segments only, away from corners, at points) is still possible later if cleanup is a pain.
+- **What it does:** that part's outline (`[outer]` op) and cutouts (`[inner]` loops) get the template's own
+  tabs turned on (`group_tabs`), the template keeping their shape, width and height (rectangular, the
+  cutter's width, a quarter of it high).
+- **How many** (`autocam_core/tabs.py`, same day, after the user saw cutouts get none): spacing them by
+  distance (2.5 in) gave contours shorter than that no tabs. Now each contour gets a count from its length:
+  one per `[tabs] distance_in`, at least 2 and at most 6 (the brief's numbers), but no more than fit (one per
+  four cutter widths of contour, so a cutout under about 0.6 in around gets none and is cut free). Fusion
+  spreads them evenly (`tabPositioning = 'tabCount'`, `tabsPerContour`). Lengths come from the wall faces'
+  areas over the plate thickness. A cutout op holds one count for all its contours, so a tabbed part's
+  cutouts go in copies of the `[inner]` op, one per count ("[inner] cutouts - 2 tabs each"), made before
+  it's filled and placed after it, before the outlines. Tabs can still land on arcs: the brief's own
+  placement (straight segments, away from corners, at points) is still possible later.
 - **Sheet cards** say to break tabbed parts out once the program is done (at the stops they stay held):
   once if every part has tabs, else with each tabbed part marked in the cut order.
 - **The air test** follows the outline through tab lifts: the lap at the final depth may rise up to 0.25 in

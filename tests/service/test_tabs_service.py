@@ -25,7 +25,7 @@ def test_with_tabs_off_by_default_part_cards_get_an_unticked_box_and_it_reaches_
     run_fake_worker(h.queue)
     h.runner.tick()
     desc = sheet(h).desc
-    assert "Parts marked tabs stay held to the sheet by small tabs" in desc
+    assert "Parts marked tabs, and the slugs in their cutouts, are held by small tabs" in desc
     assert "3. gusset - tabs" in desc and "1. plate (1 of 2)\n" in desc
 
 
@@ -37,7 +37,8 @@ def test_tabs_are_on_by_default(tmp_path):
     run_fake_worker(h.queue)
     h.runner.tick()
     desc = sheet(h).desc
-    assert "Every part is held to the sheet by small tabs" in desc and "- tabs" not in desc   # said once
+    assert "Every part, and the slug in each of its cutouts, is held by small tabs" in desc
+    assert "- tabs" not in desc                                       # said once
 
 
 def test_a_tabbed_sheet_through_the_real_pipeline_with_an_air_test(tmp_path, monkeypatch):

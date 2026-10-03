@@ -148,9 +148,11 @@ class PartSpec:
 
 @dataclass(frozen=True)
 class TabSpec:
-    """Tabs on the outlines of parts that ask for them: the template's tabs (shape, width, height) turned on,
-    spaced along the outline (core 0.7.0)."""
+    """Tabs on the outlines and cutouts of parts that ask for them: the template's tabs (shape, width, height)
+    turned on, a count per contour from its length (tabs.py; core 0.7.0, counts 0.8.0)."""
     distance_in: float = 2.5
+    min_per_contour: int = 2
+    max_per_contour: int = 6
 
 
 @dataclass(frozen=True)
@@ -232,6 +234,8 @@ class Job:
                 e.append(f"offcuts.{o.id}: room beside cuts must be inside the sheet")
         if self.tabs.distance_in <= 0:
             e.append("tabs.distance_in: must be > 0")
+        if not 1 <= self.tabs.min_per_contour <= self.tabs.max_per_contour:
+            e.append("tabs: need 1 <= min_per_contour <= max_per_contour")
         if not self.parts:
             e.append("parts: empty")
         for p in self.parts:

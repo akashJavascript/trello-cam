@@ -53,6 +53,13 @@ class PlateBuilder:
         self._loop(on if on is not None else self._top_id(), walls)
         return walls
 
+    def cutout(self, length: float, center=(4.0, 4.0)):
+        """A through cutout whose walls add up to `length` around (four flat walls, areas set)."""
+        walls = tuple(self._face(kind="plane", z0=0.0, z1=self.t, normal_dot=0.0, area=length * self.t / 4)
+                      for _ in range(4))
+        self._loop(self._top_id(), walls)
+        return walls
+
     def inside_corner(self, r: float, center=(5.0, 5.0)) -> int:
         return self._cyl(r, center, 90.0, 0.0, self.t)
 

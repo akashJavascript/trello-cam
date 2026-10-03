@@ -18,7 +18,9 @@
    arranged again or deleted.
 4. Per sheet: one tool, each part's feature plan with that tool, the cut order of the outlines.
 5. CAM per sheet: stock + setup, template (every op's tool GUID checked), selections, one outline op per
-   part copy in cut order, with the template's tabs turned on for parts that ask for them (PartSpec.tabs).
+   part copy in cut order. Parts that ask for tabs (PartSpec.tabs) get the template's tabs on their outline
+   and their cutouts, a count per contour from its length (tabs.py); cutouts go in copies of the [inner] op,
+   one per count.
 6. Post, insert the pauses, and check the final bytes with the check the service repeats
    (sheetcheck.py). Failures are kept as *.REJECTED.tap.
 7. Preview, .f3d, result.json.
@@ -46,6 +48,7 @@ from autocam_core.names import outer_op_name, program_name
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
 from autocam_core.plate import PlateAnalysis, analyze
+from autocam_core.tabs import outline_length, tab_count, walls_length
 from autocam_core.schema_job import Job, PartSpec, ToolSpec
 from autocam_core.schema_result import (
     RESULT_SCHEMA, FusionTeamResult, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary,
@@ -748,6 +751,10 @@ def _op_tag(name: str) -> Optional[str]:
     return found[0] if len(found) == 1 else None
 
 
+def _tabs_for(job: Job, part: _Part, length_in: float, tool_d: float) -> int:
+    return tab_count(length_in, job.tabs.distance_in, tool_d, job.tabs.min_per_contour, job.tabs.max_per_contour)
+
+
 def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> None:
     tool = job.tooling.tools[sheet.tool_key]
     copy_ids = [p.body_id for _, p in sheet.instances]
@@ -787,6 +794,8 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
 
     holes: Dict[str, List[Tuple[str, Tuple[int, ...]]]] = {DRILL: [], BORE: [], BEARING: []}
     loops: List[Tuple[str, int, int]] = []
+    tool_d = job.tooling.tools[sheet.tool_key].diameter_in
+    tabbed: Dict[int, List[Tuple[str, int, int]]] = {}   # tab count -> tabbed parts' cutouts that get that many
     floors: List[Tuple[str, int]] = []
     for _, placed in sheet.instances:
         part = parts[placed.part_key]
@@ -794,13 +803,19 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
         through = part.analysis.through_holes
         for tag, indexes in ((DRILL, plan.drill), (BORE, plan.bore), (BEARING, plan.bearing)):
             holes[tag] += [(placed.body_id, through[i].face_ids) for i in indexes]
-        loops += [(placed.body_id, loop.face_id, loop.index) for loop in plan.inner_loops]
+        for loop in plan.inner_loops:
+            n = _tabs_for(job, part, walls_length(part.analysis.geometry, loop.wall_face_ids), tool_d) \
+                if part.spec.tabs else 0
+            (tabbed.setdefault(n, []) if n else loops).append((placed.body_id, loop.face_id, loop.index))
         floors += [(placed.body_id, f) for f in plan.pocket_floor_ids]
     if holes[BEARING] and BEARING not in by_tag and BORE in by_tag:
         holes[BORE] += holes[BEARING]
         holes[BEARING] = []
         sheet.warnings.append(Issue(E.OP_WARNING, "the template has no [bearing] op; bearing holes are bored with [bore]"))
 
+    if tabbed and INNER not in by_tag:
+        loops += [loop for group in tabbed.values() for loop in group]     # reported as a missing [inner] op
+        tabbed = {}
     fills = {DRILL: OpFill(DRILL, holes=tuple(holes[DRILL])), BORE: OpFill(BORE, holes=tuple(holes[BORE])),
              BEARING: OpFill(BEARING, holes=tuple(holes[BEARING])), INNER: OpFill(INNER, loops=tuple(loops)),
              POCKET: OpFill(POCKET, floors=tuple(floors))}
@@ -814,6 +829,14 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     for tag, names in by_tag.items():
         if tag == OUTER:
             continue
+        if tag == INNER:
+            # Tabbed parts' cutouts: a copy of the op per tab count, made before the op is filled, so each
+            # copy starts empty; they land after it (and before the outlines).
+            for n, group in sorted(tabbed.items()):
+                name = f"{names[0]} - {n} tabs each"
+                adapter.copy_op(sheet.name, names[0], name)
+                adapter.fill(sheet.name, name, OpFill(INNER, loops=tuple(group)))
+                adapter.set_tabs(sheet.name, name, n)
         fill = fills[tag]
         if fill.holes or fill.loops or fill.floors:
             adapter.fill(sheet.name, names[0], fill)
@@ -827,8 +850,15 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
                 for inst in sheet.outer_order]
     adapter.make_outer_ops(sheet.name, by_tag[OUTER][0], outlines)
     for inst in sheet.outer_order:                    # the template's tabs, on for the parts that ask for them
-        if parts[by_instance[inst].part_key].spec.tabs:
-            adapter.set_tabs(sheet.name, outer_op_name(inst), job.tabs.distance_in)
+        part = parts[by_instance[inst].part_key]
+        if part.spec.tabs:
+            g = part.analysis.geometry
+            inner = {w for loop in part.analysis.through_loops for w in loop.wall_face_ids}
+            n = _tabs_for(job, part, outline_length(g, inner), tool_d)
+            if n:
+                adapter.set_tabs(sheet.name, outer_op_name(inst), n)
+            else:
+                sheet.warnings.append(Issue(E.OP_WARNING, f"{part.spec.name} is too small for tabs: it's cut free"))
     sheet.built = True
 
 

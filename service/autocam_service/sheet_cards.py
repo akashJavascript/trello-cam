@@ -91,12 +91,12 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
     on_sheet = {p.part_key for p in s.parts}
     tabbed = {p.part_key for p in job.parts if p.tabs} & on_sheet
     if vs.cuttable and tabbed == on_sheet:
-        lines.append("Every part is held to the sheet by small tabs: leave them in at the stops, and break them "
-                     "out once the program is done.")
+        lines.append("Every part, and the slug in each of its cutouts, is held by small tabs: leave them in at the "
+                     "stops, and break them out once the program is done.")
         tabbed = set()                                # nothing to mark
     elif vs.cuttable and tabbed:
-        lines.append("Parts marked tabs stay held to the sheet by small tabs: leave them in at the stops, and "
-                     "break them out once the program is done.")
+        lines.append("Parts marked tabs, and the slugs in their cutouts, are held by small tabs: leave them in at "
+                     "the stops, and break them out once the program is done.")
     lines += ["", "CUT ORDER"]
     counts = {}
     totals = {p.part_key: p.count for p in s.parts}

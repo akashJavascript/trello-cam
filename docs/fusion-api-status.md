@@ -154,7 +154,11 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
 
 ## Tabs (M6), names confirmed
 
-Used since 2026-10-03 (`fx_cam.set_tabs`): `group_tabs` = true, `tabPositioning` = 'distance', `tabDistance`
+Since the tab counts (2026-10-03, untested in Fusion): `tabPositioning` = 'tabCount' with `tabsPerContour`
+(the template's own parameter, 1 there), on outline ops and on copies of the `[inner]` op
+(`fx_cam.copy_op`: `CAMTemplate.createFromOperations` + `createFromCAMTemplate2`, as for outlines).
+
+Before that (`fx_cam.set_tabs`): `group_tabs` = true, `tabPositioning` = 'distance', `tabDistance`
 on each tabbed part's `[outer]` op; the team template's tab shape, width (`tool_diameter`) and height
 (`tool_diameter * 0.25`) are kept. **Works** (hand-queued job `ttabs1-al6061`, r016's 4 parts, tabs on 2): the
 two tabbed outlines rise off the floor to Z0.0394 6 and 5 times (about 5 tabs each at 2.5 in), the other two

@@ -77,7 +77,9 @@ class Machine:
 @dataclass(frozen=True)
 class Tabs:
     default: bool = False        # part cards' "Hold it in with tabs" box starts ticked
-    distance_in: float = 2.5     # between tabs along an outline
+    distance_in: float = 2.5     # about this far apart along a contour
+    min_per_contour: int = 2
+    max_per_contour: int = 6
 
 
 @dataclass(frozen=True)
@@ -683,8 +685,9 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
     t.finish()
 
     t = top.table("tabs") if "tabs" in top.data else None
-    tabs = Tabs(default=t.boolean("default"), distance_in=t.number("distance_in", positive=True, default=2.5)) \
-        if t else Tabs()
+    tabs = Tabs(default=t.boolean("default"), distance_in=t.number("distance_in", positive=True, default=2.5),
+                min_per_contour=t.integer("min_per_contour", minimum=1, default=2),
+                max_per_contour=t.integer("max_per_contour", minimum=1, default=6)) if t else Tabs()
     if t:
         t.finish()
 

@@ -141,9 +141,13 @@ class Adapter:
         each cutting to stock bottom; then delete the template op."""
         raise NotImplementedError
 
-    def set_tabs(self, sheet: str, op_name: str, distance_in: float) -> None:
-        """Turn on the outline op's tabs (the template's shape, width and height), spaced distance_in apart
-        along the outline."""
+    def set_tabs(self, sheet: str, op_name: str, per_contour: int) -> None:
+        """Turn on the contour op's tabs (the template's shape, width and height), this many on each of its
+        contours, spread evenly."""
+        raise NotImplementedError
+
+    def copy_op(self, sheet: str, op_name: str, new_name: str) -> None:
+        """Another op like op_name (from the template, before it's filled), at the end of the setup."""
         raise NotImplementedError
 
     def delete_op(self, sheet: str, op_name: str) -> None:
