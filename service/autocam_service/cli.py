@@ -254,7 +254,7 @@ def trello_setup(cfg, env_file: Path, board: Optional[str], create: Optional[str
     result = setup_board(tracker.http, board=board, create=create, workspace=workspace,
                          labels={"smoked": cfg.labels.smoked, "tool_eighth": cfg.labels.tool_eighth,
                                  "rush": cfg.labels.rush},
-                         nest_box=(cfg.trello.nest_checklist, cfg.trello.nest_item))
+                         nest_box=(cfg.trello.nest_checklist, cfg.trello.nest_item), tabs_default=cfg.tabs.default)
     print(f"Board: {result.url}")
     print("Created: " + (", ".join(result.created) or "nothing (everything was already there)"))
     print("\nPaste this into config/autocam.toml (IDs aren't secrets):\n")

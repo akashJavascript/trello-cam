@@ -88,8 +88,13 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
             lines.append("It cuts the whole sheet without stopping: cut parts stay loose in the sheet until it's "
                          "done. Keep hands off until the spindle stops at the end.")
 
-    tabbed = {p.part_key for p in job.parts if p.tabs}
-    if vs.cuttable and tabbed & {p.part_key for p in s.parts}:
+    on_sheet = {p.part_key for p in s.parts}
+    tabbed = {p.part_key for p in job.parts if p.tabs} & on_sheet
+    if vs.cuttable and tabbed == on_sheet:
+        lines.append("Every part is held to the sheet by small tabs: leave them in at the stops, and break them "
+                     "out once the program is done.")
+        tabbed = set()                                # nothing to mark
+    elif vs.cuttable and tabbed:
         lines.append("Parts marked tabs stay held to the sheet by small tabs: leave them in at the stops, and "
                      "break them out once the program is done.")
     lines += ["", "CUT ORDER"]

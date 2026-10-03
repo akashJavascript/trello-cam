@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from .cards import FORMAT_HELP, README_CARD
+from .cards import FORMAT_HELP, README_CARD, TABS_HELP
 from .config import TRELLO_LISTS
 
 LIST_NAMES = {
@@ -59,7 +59,7 @@ class BoardSetup:
 
 def setup_board(http, *, board: Optional[str] = None, create: Optional[str] = None,
                 labels: Optional[Dict[str, str]] = None, workspace: Optional[str] = None,
-                nest_box: Tuple[str, str] = ("Nest", "Nest this part")) -> BoardSetup:
+                nest_box: Tuple[str, str] = ("Nest", "Nest this part"), tabs_default: bool = False) -> BoardSetup:
     """http: TrelloHttp. Either an existing board (id or short link) or a new board's name (in `workspace`)."""
     created: List[str] = []
     if create:
@@ -114,7 +114,8 @@ def setup_board(http, *, board: Optional[str] = None, create: Optional[str] = No
     found = {"system": card("System", "control", SYSTEM_DESC, keep_desc=True)}   # the service writes its status there
     card(README_TITLE, "inbox", FORMAT_HELP.format(smoked=labels.get("smoked", "Smoked"),
                                                    tool=labels.get("tool_eighth", "Tool 1/8"),
-                                                   rush=labels.get("rush", "Rush")))
+                                                   rush=labels.get("rush", "Rush"),
+                                                   tabs=TABS_HELP[tabs_default]))
     template = card(TEMPLATE_TITLE, "inbox", TEMPLATE_DESC, template=True)
     box = nest_box[0]
     for cl in http.call("GET", f"/cards/{template}/checklists", {"fields": "name"}):

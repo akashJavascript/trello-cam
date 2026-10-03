@@ -13,8 +13,8 @@ from test_runner_e2e import RAW
 TABS = "Hold it in with tabs"
 
 
-def test_part_cards_get_an_unticked_tabs_box_and_it_reaches_the_job(tmp_path):
-    h = harness(tmp_path, step_card("c1", "plate", qty=2), step_card("c2", "gusset"))
+def test_with_tabs_off_by_default_part_cards_get_an_unticked_box_and_it_reaches_the_job(tmp_path):
+    h = harness(tmp_path, step_card("c1", "plate", qty=2), step_card("c2", "gusset"), tabs__default=False)
     h.runner.ready_cards()
     assert h.tracker.checklists[("c1", "Tabs")] == [[TABS, False]]
     h.tracker.tick_all("c2", "Tabs")
@@ -29,11 +29,15 @@ def test_part_cards_get_an_unticked_tabs_box_and_it_reaches_the_job(tmp_path):
     assert "3. gusset - tabs" in desc and "1. plate (1 of 2)\n" in desc
 
 
-def test_the_default_can_be_tabs_on(tmp_path):
-    h = harness(tmp_path, step_card("c1", "plate"), tabs__default=True)
+def test_tabs_are_on_by_default(tmp_path):
+    h = harness(tmp_path, step_card("c1", "plate"))                   # config/autocam.toml: [tabs] default = true
     h.runner.tick()
     assert h.tracker.checklists[("c1", "Tabs")] == [[TABS, True]]
     assert [p.tabs for p in read_job(next(h.queue.incoming.glob("r001-*.json"))).parts] == [True]
+    run_fake_worker(h.queue)
+    h.runner.tick()
+    desc = sheet(h).desc
+    assert "Every part is held to the sheet by small tabs" in desc and "- tabs" not in desc   # said once
 
 
 def test_a_tabbed_sheet_through_the_real_pipeline_with_an_air_test(tmp_path, monkeypatch):

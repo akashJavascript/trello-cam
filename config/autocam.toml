@@ -332,7 +332,7 @@ fusion_stale_after_s = 300      # no heartbeat from the add-in for this long: Fu
 season_start = "09-01"          # the stock tally counts sheets cut since this day (MM-DD) each year
 
 [tabs]                          # tabs on the outlines of parts whose "Hold it in with tabs" box is ticked
-default = false                 # true: the box starts ticked on new part cards
+default = true                  # the box starts ticked on new part cards (the user's choice, 2026-10-03)
 distance_in = 2.5               # between tabs along an outline; their shape, width and height are the template's
 
 [paths]                         # relative to the repo root

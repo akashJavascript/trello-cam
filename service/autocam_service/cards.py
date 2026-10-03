@@ -26,6 +26,12 @@ TITLE_QTY_RE = re.compile(r"^(?P<name>.*?)[ \t]*\(?[x\u00d7][ \t]*(?P<qty>\d+)\)
 MATERIAL_RE = re.compile(r"^[ \t>\-]*material[ \t]*[:=][ \t]*(.*?)[ \t]*$", re.IGNORECASE | re.MULTILINE)
 STEP_SUFFIXES = (".step", ".stp")
 README_CARD = "How to add a part (read me)"
+TABS_HELP = {
+    True: ("\"Hold it in with tabs\" starts ticked: its outline gets small tabs, and you break the part out "
+           "after the cut. Untick it for a part tape holds on its own."),
+    False: ("Tick \"Hold it in with tabs\" if tape alone won't hold it: its outline gets small tabs, and you "
+            "break the part out after the cut."),
+}
 
 FORMAT_HELP = """1. In Onshape, open the Part Studio with your part and copy the address bar.
 2. Make a card in Drafts (or use the New part template).
@@ -34,9 +40,8 @@ FORMAT_HELP = """1. In Onshape, open the Part Studio with your part and copy the
 3. Move the card to Ready for CAM. About 2 minutes later it's nested, together with whatever else is waiting
    and any sheet still in Sheet review that has room.
 
-Untick "Nest this part" to keep a card in Ready for CAM without nesting it. Tick "Hold it in with tabs" if
-tape alone won't hold it: its outline gets small tabs, and you break the part out after the cut. (Already on
-a sheet? Tick it and move the card back to Ready for CAM.)
+Untick "Nest this part" to keep a card in Ready for CAM without nesting it. {tabs} (Already on a sheet?
+Change it and move the card back to Ready for CAM.)
 Need one part now? Add the {rush} label before moving it: it's nested at once (within a minute, after any run
 already going), on its own: an offcut or a new sheet, not a sheet waiting in Sheet review.
 Labels, if needed: {smoked} for smoked polycarbonate, {tool} to force the 1/8 in endmill.

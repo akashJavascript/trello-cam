@@ -369,8 +369,8 @@ Run `autocam trello-setup` once (the read-me card's line about tabs).
 
 | # | Check | Result |
 |---|---|---|
-| 1 | Part cards get a **Tabs** box, "Hold it in with tabs", unticked | |
-| 2 | Tick it on one part and nest it: the sheet card's cut order says "- tabs" for it, and the description says to break tabbed parts out at the end | |
+| 1 | Part cards get a **Tabs** box, "Hold it in with tabs", ticked | |
+| 2 | Untick it on one of two parts and nest them: the sheet card's cut order says "- tabs" for the other, and the description says to break tabbed parts out at the end (with every part tabbed, it says so once) | |
 | 3 | Open the Fusion file: that part's `[outer]` op has Tabs on (distance, 2.5 in); the other parts' don't. Simulate it | |
 | 4 | Tick "Add an air test program": the air test traces the whole outline, tabs included (small bumps up) | |
 | 5 | Cut it: the tabs hold the part through the cut and break out cleanly. If they're too weak or too strong, change the template's tab width/height (or `[tabs] distance_in`) | |
