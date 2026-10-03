@@ -306,6 +306,7 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], s
         return slot
     lo = max(min(sizes[c.rsplit(".", 1)[0]]) for c in last)       # each part needs its shorter side, at least
     if reach - lo < SQUEEZE_MIN_GAIN_IN:
+        log(f"{thickness:g} in: not squeezed: the last sheet's parts take {reach:.1f} in, at least {lo:.1f} in")
         return slot
     source = {p.key: p.copies[0] for p in parts if p.copies}
     hi, kept = reach, None                           # kept: (origin, full envelope, copies, reach)
@@ -327,6 +328,8 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], s
             got = adapter.arrange(copies, probe, job.nest.part_spacing_in, {c: up[c] for c in copies})
             fits = set(got.placed) == set(copies)
             r = max(adapter.box(c).y1 for c in copies) - probe[1] if fits else None
+            log(f"{thickness:g} in squeeze try {k + 1}: {target:.1f} in long: placed {len(got.placed)} of "
+                f"{len(copies)}" + (f", {r:.1f} in" if fits else ""))
         except AdapterError as e:
             log(f"squeezing the last {thickness:g} in sheet stopped: {e}")
             _discard(adapter, copies, log)
@@ -342,6 +345,7 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], s
     if kept is None or kept[3] > reach - 0.5:
         if kept:
             _discard(adapter, kept[2], log)
+        log(f"{thickness:g} in: the last sheet stays {reach:.1f} in long (nothing shorter held all its parts)")
         return slot
     o, full, copies, r = kept
     _discard(adapter, last, log)
