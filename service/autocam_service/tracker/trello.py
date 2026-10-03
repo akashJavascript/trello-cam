@@ -8,7 +8,7 @@ import time
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import urlsplit
 
-from .base import Attachment, Card, Check, ChecklistState, Tracker
+from .base import Attachment, Card, CardNotFound, Check, ChecklistState, Tracker
 
 API = "https://api.trello.com/1"
 TEXT_LIMIT = 16000          # Trello caps comments and descriptions at 16384 characters
@@ -82,7 +82,7 @@ class TrelloHttp:
 
 
 class TrelloTracker(Tracker):
-    CARD_PARAMS = {"fields": "id,name,desc,idList,labels,shortUrl,isTemplate", "attachments": "true",
+    CARD_PARAMS = {"fields": "id,name,desc,idList,labels,shortUrl,isTemplate,closed", "attachments": "true",
                    "attachment_fields": "id,name,url,mimeType,bytes,isUpload",
                    "checklists": "all", "checklist_fields": "name", "checkItem_fields": "name,state"}
 
@@ -107,14 +107,19 @@ class TrelloTracker(Tracker):
         return Card(id=c["id"], name=c.get("name") or "", desc=c.get("desc") or "",
                     list_key=self.list_keys.get(c.get("idList")), url=c.get("shortUrl") or "",
                     labels=tuple(l.get("name") or "" for l in c.get("labels") or []), attachments=atts,
-                    checks=checks, is_template=bool(c.get("isTemplate")))
+                    checks=checks, is_template=bool(c.get("isTemplate")), closed=bool(c.get("closed")))
 
     # reads
     def list_cards(self, list_key: str) -> List[Card]:
         return [self._card(c) for c in self.http.call("GET", f"/lists/{self._list_id(list_key)}/cards", self.CARD_PARAMS)]
 
     def get_card(self, card_id: str) -> Card:
-        return self._card(self.http.call("GET", f"/cards/{card_id}", self.CARD_PARAMS))
+        try:
+            return self._card(self.http.call("GET", f"/cards/{card_id}", self.CARD_PARAMS))
+        except TrelloError as e:
+            if e.status == 404:
+                raise CardNotFound(card_id) from e
+            raise
 
     def checklist(self, card_id: str, name: str) -> Optional[ChecklistState]:
         """All checklists with this name count together (a half-created duplicate can't be ticked instead)."""

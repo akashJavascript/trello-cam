@@ -338,6 +338,17 @@ or set up an existing board instead with `--board <short link>`.
 | 5 | Tick a Review item on that sheet, add another part: it gets a new sheet card; the ticked one doesn't change | |
 | 6 | Open the rebuilt sheet's Fusion file: the old parts and the new one are all there, and the toolpaths look right | |
 
+### 8. Rush, freed offcuts, the stock tally (2026-10-03)
+
+First run `autocam trello-setup` once (it adds the **Rush** label and the new line on the read-me card).
+
+| # | Check | Result |
+|---|---|---|
+| 1 | With a sheet waiting in Sheet review, give a part card of the same material the **Rush** label and move it to Ready for CAM: a run starts within a minute with only that card, its sheet card is titled "RUSH - ...", and the waiting sheet isn't rebuilt | |
+| 2 | A normal card added next waits the usual 2 minutes and fills the waiting sheet, not the rush sheet | |
+| 3 | Archive a sheet card that's on an offcut, without cutting it: within a minute the offcut card says "Free again: ..." and the next run can use the offcut | |
+| 4 | Move a sheet card to Cut: the System card's "Stock since ..." line counts it (new sheet or offcut) | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

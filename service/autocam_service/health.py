@@ -26,6 +26,8 @@ class Health:
     last_error: Optional[str]
     waiting_cards: int = 0
     next_run_in_s: Optional[float] = None
+    rush_cards: int = 0                      # waiting cards with the Rush label
+    season: str = ""                         # the stock tally line (tally.py)
 
 
 def heartbeat_age_s(now: datetime, heartbeat: Optional[Dict[str, Any]]) -> Optional[float]:
@@ -88,7 +90,10 @@ def render(h: Health, stale_after_s: float, with_time: bool = True) -> str:
     run = f"Run: {h.active_run}, {jobs} job{'s' if jobs != 1 else ''} in Fusion." if h.active_run else "Run: none."
     if h.waiting_cards:
         cards = f"Ready for CAM: {h.waiting_cards} card{'s' if h.waiting_cards != 1 else ''} waiting"
-        if h.active_run:
+        if h.rush_cards:
+            cards += (f" ({h.rush_cards} Rush, nested " + ("as soon as this run is done)." if h.active_run else
+                                                         "within a minute)."))
+        elif h.active_run:
             cards += ", the next run starts after this one."
         elif h.next_run_in_s is not None:
             cards += f", the next run starts in about {_minutes(h.next_run_in_s)}."
@@ -99,6 +104,8 @@ def render(h: Health, stale_after_s: float, with_time: bool = True) -> str:
     lines = [_fusion(h, stale_after_s), run, cards,
              f"Onshape calls: {h.month_calls} this month (warning at {h.month_soft}), "
              f"{h.year_calls} of {h.year_cap} this budget year."]
+    if h.season:
+        lines.append(h.season)
     if h.latch:
         lines.append("ONSHAPE CALLS ARE STOPPED: Onshape said the calls ran out (402). After checking with the "
                      "enterprise admin, run: autocam ledger reset-latch")

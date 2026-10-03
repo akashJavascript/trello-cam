@@ -103,7 +103,8 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
             tool_forced_by=(),
             errors=tuple(Issue("TAP_REJECTED", msg) for msg in check.problems()),
             warnings=(), notes=(), offcut_id=offcut.id if offcut else None,
-            offcut_turned=turned, used_y_in=used_x, beside_used=beside_used, beside_left_in=beside_left)
+            offcut_turned=turned, used_y_in=used_x, beside_used=beside_used, beside_left_in=beside_left,
+            parts_area_in2=9.0 * len(instances))       # 3 x 3 in each
         parts = []
         for p in job.parts:
             if p.part_key == part_error:

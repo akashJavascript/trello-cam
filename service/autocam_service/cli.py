@@ -252,7 +252,8 @@ def trello_setup(cfg, env_file: Path, board: Optional[str], create: Optional[str
     from .trello_setup import setup_board
     tracker = trello_tracker(cfg, env_file)
     result = setup_board(tracker.http, board=board, create=create, workspace=workspace,
-                         labels={"smoked": cfg.labels.smoked, "tool_eighth": cfg.labels.tool_eighth},
+                         labels={"smoked": cfg.labels.smoked, "tool_eighth": cfg.labels.tool_eighth,
+                                 "rush": cfg.labels.rush},
                          nest_box=(cfg.trello.nest_checklist, cfg.trello.nest_item))
     print(f"Board: {result.url}")
     print("Created: " + (", ".join(result.created) or "nothing (everything was already there)"))

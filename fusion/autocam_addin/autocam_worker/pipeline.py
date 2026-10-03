@@ -8,14 +8,14 @@
    leftovers go to the next sheet. If a part's copies don't all fit, none are cut this run (layout.py).
    Arrange packs parts against the envelope's edges, so each envelope is the nest region shrunk by the
    part spacing: an outline's tool path (tool radius + lead-in) then stays out of the clamp strips.
-   Offcuts of that thickness (partly used sheets, offcuts.py) are filled first, loaded the same way round as
-   their last cut, then new sheets. On an offcut, the room beside earlier cuts is filled first (one Arrange per
-   rectangle), then its free stretch: one sheet, several Arranges. It's tried with the parts in a few orders
-   (NEST_ORDERS), each on its own copies and sheets, plus once with offcuts spun round where that gives more
-   room. The best nest is kept: most copies placed, then fewest new sheets, then fewest offcuts spun round,
-   then fewest sheets, then the shortest last sheet (the most room left for parts that join it later). The
-   other tries' copies are hidden like any other leftover; nothing that an Arrange moved is ever arranged again
-   or deleted.
+   Offcuts of that thickness (partly used sheets, offcuts.py) are filled first, smallest room first, loaded the
+   same way round as their last cut, then new sheets. On an offcut, the room beside earlier cuts is filled
+   first (one Arrange per rectangle), then its free stretch: one sheet, several Arranges. It's tried with the
+   parts in a few orders (NEST_ORDERS), each on its own copies and sheets, plus once with offcuts spun round
+   where that gives more room. The best nest is kept: most copies placed, then fewest new sheets, then fewest
+   offcuts spun round, then fewest sheets, then the shortest last sheet (the most room left for parts that join
+   it later). The other tries' copies are hidden like any other leftover; nothing that an Arrange moved is ever
+   arranged again or deleted.
 4. Per sheet: one tool, each part's feature plan with that tool, the cut order of the outlines.
 5. CAM per sheet: stock + setup, template (every op's tool GUID checked), selections, one outline op per
    part copy in cut order.
@@ -254,9 +254,11 @@ def _beside_envelope(job: Job, origin: Tuple[float, float], r: Rect) -> Rect:
 
 def _offcut_places(job: Job, thickness: float) -> List[Tuple[str, Optional[_Way], Optional[_Way]]]:
     """This thickness's offcuts with room: (id, loaded the same way round as its last cut, spun round), either
-    None when that way round leaves too little (no free stretch long enough and no room beside cuts)."""
+    None when that way round leaves too little (no free stretch long enough and no room beside cuts).
+    Smallest room first (best fit): parts go on the scraps they fit, and the big offcuts are kept for big
+    parts."""
     region = job.fixture.nest_region_in
-    out = []
+    out: List[Tuple[str, Optional[_Way], Optional[_Way]]] = []
     for o in job.offcuts:
         if abs(o.thickness_in - thickness) > 1e-6:
             continue
@@ -269,7 +271,11 @@ def _offcut_places(job: Job, thickness: float) -> List[Tuple[str, Optional[_Way]
             ways.append(_Way(turned, stretch, beside) if stretch or beside else None)
         if any(ways):
             out.append((o.id, ways[0], ways[1]))
-    return out
+
+    def room(place) -> float:
+        way = place[1] or place[2]
+        return way.length * (region[2] - region[0]) + sum((r[2] - r[0]) * (r[3] - r[1]) for _, r in way.beside)
+    return sorted(out, key=room)                      # ties keep the job's order
 
 
 def _offcut_slots(offcuts, spin: bool) -> List[Tuple[str, _Way]]:

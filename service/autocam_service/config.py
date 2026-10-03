@@ -78,6 +78,7 @@ class Machine:
 class Status:
     update_every_s: int
     fusion_stale_after_s: int
+    season_start: str = "09-01"
 
 
 @dataclass(frozen=True)
@@ -180,6 +181,7 @@ class Template:
 class Labels:
     smoked: str
     tool_eighth: str
+    rush: str = "Rush"
 
 
 @dataclass(frozen=True)
@@ -582,7 +584,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         t.finish()
 
     t = top.table("labels")
-    labels = Labels(smoked=t.string("smoked", required=True), tool_eighth=t.string("tool_eighth", required=True))
+    labels = Labels(smoked=t.string("smoked", required=True), tool_eighth=t.string("tool_eighth", required=True),
+                    rush=t.string("rush", default="Rush"))
     t.finish()
 
     t = top.table("onshape")
@@ -656,7 +659,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
 
     t = top.table("status")
     status = Status(update_every_s=t.integer("update_every_s", minimum=60),
-                    fusion_stale_after_s=t.integer("fusion_stale_after_s", minimum=30))
+                    fusion_stale_after_s=t.integer("fusion_stale_after_s", minimum=30),
+                    season_start=t.string("season_start", pattern=MONTH_DAY_RE, default="09-01"))
     t.finish()
 
     t = top.table("paths")

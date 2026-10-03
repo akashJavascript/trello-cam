@@ -513,3 +513,23 @@ gusset cost about 85 sq in of an 18 sq in part). The metal is still there. So th
 - **Not kept:** room behind short parts within a band, and room left of them. Arrange packs left and the
   squeeze packs to the front, so most of the free metal is to the right.
 
+## 2026-10-03: Rush, freed offcuts, best fit, a stock tally (the user's choice)
+
+- **Rush:** a part card with the **Rush** label (`labels.rush`, any case) starts a run on the next pass,
+  with only the rush cards, before any other waiting run (after one already in Fusion). It's nested on its
+  own: offcuts (room beside cuts first) or a new sheet, never folded into a sheet waiting in review. Its
+  sheet card is titled "RUSH - ...", and later runs don't open it for new parts, unless one of its own
+  parts comes back (it holds the old copy, so it's rebuilt). A sheet a rush card is already on is the one
+  exception to "on its own", so no part is ever on two uncut sheets. The other waiting cards' 2-minute wait
+  starts again after the rush run is queued.
+- **Freed offcuts:** each pass reads the sheet card holding each reserved offcut (one Trello read each).
+  Archived or deleted without being cut: the offcut is free again, with a comment on its card, and the sheet
+  is marked archived in the registry (its parts can go on other sheets). Archived while in Cut: handled as
+  cut. Trello errors other than "not found" leave it held until the next pass.
+- **Best fit:** a thickness's offcuts are tried smallest room first (free stretch x nest width, plus room
+  beside cuts, loaded as before), so parts go on the scraps they fit and the big offcuts stay for big parts.
+- **Stock tally:** the System card counts sheet cards that went to Cut since `status.season_start` (MM-DD,
+  default 09-01): new sheets by stock, sheets cut from offcuts, and the parts' area as a share of the new
+  sheets' area (it grows as the offcuts on the shelf get used). Cut time and parts area are now recorded
+  with each sheet; older sheets get their area from their job's result.json.
+

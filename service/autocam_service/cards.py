@@ -35,6 +35,8 @@ FORMAT_HELP = """1. In Onshape, open the Part Studio with your part and copy the
    and any sheet still in Sheet review that has room.
 
 Untick "Nest this part" to keep a card in Ready for CAM without nesting it.
+Need one part now? Add the {rush} label before moving it: it's nested at once (within a minute, after any run
+already going), on its own: an offcut or a new sheet, not a sheet waiting in Sheet review.
 Labels, if needed: {smoked} for smoked polycarbonate, {tool} to force the 1/8 in endmill.
 No Onshape? Attach a .step file and add a line like Material: 6061 (or 5052, PC).
 If something is wrong, the card comes back in Needs fixing with a comment saying what to fix."""

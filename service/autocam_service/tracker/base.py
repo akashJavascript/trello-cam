@@ -52,6 +52,11 @@ class Card:
     attachments: Tuple[Attachment, ...] = ()
     checks: Tuple[Check, ...] = ()   # every checklist item on the card
     is_template: bool = False
+    closed: bool = False             # archived (only get_card returns archived cards)
+
+
+class CardNotFound(Exception):
+    """get_card: no such card (deleted). Anything else (Trello down) raises something else."""
 
 
 @dataclass(frozen=True)

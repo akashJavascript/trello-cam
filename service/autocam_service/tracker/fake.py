@@ -4,7 +4,7 @@ import itertools
 from dataclasses import replace
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from .base import Attachment, Card, Check, ChecklistState, Tracker
+from .base import Attachment, Card, CardNotFound, Check, ChecklistState, Tracker
 
 
 class FakeTracker(Tracker):
@@ -39,7 +39,9 @@ class FakeTracker(Tracker):
         return [self._view(c) for c in self.cards.values() if c.list_key == list_key and c.id not in self.archived]
 
     def get_card(self, card_id: str) -> Card:
-        return self._view(self.cards[card_id])
+        if card_id not in self.cards:
+            raise CardNotFound(card_id)
+        return replace(self._view(self.cards[card_id]), closed=card_id in self.archived)
 
     def checklist(self, card_id: str, name: str) -> Optional[ChecklistState]:
         items = self.checklists.get((card_id, name))

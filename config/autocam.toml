@@ -198,6 +198,7 @@ file = "fusion/templates/poly_eighth.f3dhsm-template"
 [labels]
 smoked = "Smoked"
 tool_eighth = "Tool 1/8"
+rush = "Rush"              # one part needed now: nested at once, on its own (an offcut or a new sheet)
 
 [onshape]
 base_url = "https://cad.onshape.com"
@@ -322,6 +323,7 @@ folder = "AutoCAM test"         # must exist; nested folders as "a/b"
 [status]                        # the System card's description (M5)
 update_every_s = 600            # rewritten this often while the service runs, and whenever something changes
 fusion_stale_after_s = 300      # no heartbeat from the add-in for this long: Fusion or the add-in isn't running
+season_start = "09-01"          # the stock tally counts sheets cut since this day (MM-DD) each year
 
 [paths]                         # relative to the repo root
 queue = "queue"

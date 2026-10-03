@@ -3,7 +3,7 @@ import json
 import pytest
 
 from autocam_core.tapguard import GuardSpec, check_program
-from autocam_service.tracker.base import AutomationForbidden, UploadRefused
+from autocam_service.tracker.base import AutomationForbidden, CardNotFound, UploadRefused
 from autocam_service.tracker.trello import TrelloConfigError, TrelloError, TrelloHttp, TrelloTracker
 
 LISTS = {"ready_for_cam": "L1", "needs_fixing": "L2", "sheet_review": "L3", "ready_to_cut": "L4", "nested": ""}
@@ -137,3 +137,13 @@ def test_rebuild_writes():
                      ("POST", "/cards/C1/checklists"), ("POST", "/checklists/CL1/checkItems")]
     assert t.calls[0][2]["name"] == "new title" and t.calls[2][2]["closed"] == "true"
     assert t.calls[6][2]["checked"] == "true"
+
+
+def test_get_card_says_archived_and_deleted_apart_from_trello_trouble():
+    tr, t = tracker((200, {**CARD, "closed": True}), (404, b"The requested resource was not found."),
+                    (401, b"invalid token"))
+    assert tr.get_card("C1").closed and "closed" in t.calls[0][2]["fields"]
+    with pytest.raises(CardNotFound):
+        tr.get_card("C2")                                       # deleted
+    with pytest.raises(TrelloError):
+        tr.get_card("C3")                                       # anything else is not "gone"

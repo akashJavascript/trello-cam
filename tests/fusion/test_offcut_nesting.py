@@ -136,3 +136,19 @@ def test_squeezing_a_sheet_with_parts_beside_cuts_keeps_it_one_sheet(tmp_path):
     # The gussets ran 16.75 in down the free stretch; squeezed, two columns of two take 8.25 in.
     assert sheet.used_y_in == (4.5, 4.75 + 8.25 + 0.25)
     assert not rig.fake.late                              # every copy was made before the first Arrange
+
+
+def test_the_offcut_with_the_least_room_that_fits_is_used_first(tmp_path):
+    rig = Rig(tmp_path)
+    # Listed first: 31.5 in free. Second: a 9 in scrap at the back (loaded as before). The plate fits either.
+    offcuts = [OffcutSpec("big", 0.125, ((0.0, 7.5),)), OffcutSpec("scrap", 0.125, ((0.0, 30.0),))]
+    result = rig.run(job_with(rig, [("plate", 1, plate(name="plate"), (10.0, 5.0))], offcuts))
+    [sheet] = result.sheets
+    assert sheet.offcut_id == "scrap" and not sheet.offcut_turned
+
+
+def test_parts_too_big_for_the_scrap_go_on_the_bigger_offcut(tmp_path):
+    rig = Rig(tmp_path)
+    offcuts = [OffcutSpec("big", 0.125, ((0.0, 7.5),)), OffcutSpec("scrap", 0.125, ((0.0, 30.0),))]
+    result = rig.run(job_with(rig, [("long", 1, plate(name="long"), (10.0, 20.0))], offcuts))
+    assert [s.offcut_id for s in result.sheets] == ["big"]

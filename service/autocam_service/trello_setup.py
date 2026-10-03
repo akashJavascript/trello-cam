@@ -35,7 +35,7 @@ SYSTEM_DESC = "The auto-CAM service writes its status here, and comments when a 
 README_TITLE = README_CARD
 TEMPLATE_TITLE = "New part"
 TEMPLATE_DESC = "Paste the Part Studio link here\nQty: "
-LABEL_COLORS = {"smoked": "black", "tool_eighth": "orange"}
+LABEL_COLORS = {"smoked": "black", "tool_eighth": "orange", "rush": "red"}
 
 
 def _norm(name: str) -> str:
@@ -113,7 +113,8 @@ def setup_board(http, *, board: Optional[str] = None, create: Optional[str] = No
     labels = labels or {}
     found = {"system": card("System", "control", SYSTEM_DESC, keep_desc=True)}   # the service writes its status there
     card(README_TITLE, "inbox", FORMAT_HELP.format(smoked=labels.get("smoked", "Smoked"),
-                                                   tool=labels.get("tool_eighth", "Tool 1/8")))
+                                                   tool=labels.get("tool_eighth", "Tool 1/8"),
+                                                   rush=labels.get("rush", "Rush")))
     template = card(TEMPLATE_TITLE, "inbox", TEMPLATE_DESC, template=True)
     box = nest_box[0]
     for cl in http.call("GET", f"/cards/{template}/checklists", {"fields": "name"}):

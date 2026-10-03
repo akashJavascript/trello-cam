@@ -44,7 +44,7 @@ from autocam_core.sheetcheck import check_sheet_program, pause_spec
 from autocam_core.schema import SchemaError
 from autocam_core.schema_job import OffcutSpec, PartSpec, job_json, load_job
 
-from . import health
+from . import health, tally
 from . import sheet_cards as text
 from .autostart import ReadyWatch, wants_nest
 from .batching import ReadyPart, make_batches
@@ -57,12 +57,12 @@ from .onshape.budget import REFUSE, WARN, decide, estimate_calls
 from .onshape.cache import sha256_file
 from .onshape.client import BudgetExceeded, OnshapeError, QuotaExhausted, RateLimited
 from .onshape.export import Exporter, ExportError, TryAgainLater
-from .onshape.ledger import Ledger, utc_now
+from .onshape.ledger import Ledger, budget_year_start, utc_now
 from .results import IngestedJob, VerifiedSheet, ingest
 from .run_state import (
     COLLECTING, FAILED, GAVE_UP, PUBLISHED, QUEUED, STARTING, JobState, RunState, RunStore, once,
 )
-from .tracker.base import Card, Tracker
+from .tracker.base import Card, CardNotFound, Tracker
 from .tracker.dryrun import DryRunTracker
 
 log = logging.getLogger("autocam.runner")
@@ -78,6 +78,11 @@ def onshape_problem(e: OnshapeError) -> str:
             "tab (not an Assembly or Drawing) at a **version**, and that the part is in it")
 NO_STOP_SUFFIX = "_NOSTOP"
 LAYOUT_CORE = (0, 4, 0)   # jobs before this laid the sheet's length along X; the machine's X runs across the bed
+
+
+def _label(name: str) -> str:
+    """Label names match whatever their case and spacing."""
+    return re.sub(r"\s+", " ", name).strip().lower()
 
 
 def _version(v: str) -> Tuple[int, ...]:
@@ -123,12 +128,14 @@ class Runner:
         self.watch = ReadyWatch(s.store.watch_file, delay)
         self.offcuts = OffcutStore(s.store.offcuts_file)
         self.waiting_count = 0                                   # cards waiting for a run (for the status)
+        self.rush_count = 0                                      # ...of which have the Rush label
         self._status_sent: Optional[Tuple[str, datetime]] = None  # (status without its time, when it was sent)
 
     # ------------------------------------------------------------ tick
     def tick(self) -> None:
         self.check_ready_to_cut()
         self.follow_cut()
+        self.free_offcuts()
         self.retire_old_layout()
         self.sheet_options()
         waiting = self.ready_cards()
@@ -138,9 +145,13 @@ class Runner:
                         "dry" if state.dry_run else "real", "dry" if self.dry_run else "real")
             return
         start = self.watch.observe(waiting, self.s.clock())
-        self.waiting_count = len(self.watch.waiting_cards(waiting))
+        fresh = self.watch.waiting_cards(waiting)
+        rush = [c for c in fresh if self._rush(c)]
+        self.waiting_count, self.rush_count = len(fresh), len(rush)
         if state is None:
-            if start:
+            if rush:
+                self.start_run(rush, rush=True)       # no waiting for more cards, and before anything else
+            elif start:
                 self.start_run(waiting)
             return
         if state.phase == STARTING:
@@ -159,7 +170,37 @@ class Runner:
             month_calls=led.month_count(), month_soft=cfg.onshape.monthly_soft_calls,
             year_calls=led.year_count(cfg.onshape.budget_year_start), year_cap=cfg.onshape.yearly_cap_calls,
             latch=led.latched(), active_run=active.run_id if active else None, last_error=last_error,
-            waiting_cards=self.waiting_count, next_run_in_s=self.watch.remaining_s(now))
+            waiting_cards=self.waiting_count, next_run_in_s=self.watch.remaining_s(now), rush_cards=self.rush_count,
+            season=self.season_text(now))
+
+    def season_text(self, now: datetime) -> str:
+        """The System card's stock tally (tally.py): sheet cards that went to Cut since status.season_start."""
+        since = budget_year_start(now, self.cfg.status.season_start)
+        cut = []
+        for info in self.s.store.sheet_cards().values():
+            if not info.get("cut") or not info.get("job") or info.get("material") not in self.cfg.materials:
+                continue
+            when = info.get("cut_utc")
+            if when and datetime.strptime(when, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=since.tzinfo) < since:
+                continue
+            area = info.get("parts_area_in2")
+            cut.append(tally.CutSheet(self._stock_label(info["material"], info["thickness_in"]),
+                                      bool(info.get("offcut_id")),
+                                      area if area is not None else self._result_area(info)))
+        return tally.season_text(cut, since, self.cfg.sheet.width_in * self.cfg.sheet.length_in,
+                                 len(self.offcuts.all()))
+
+    def _result_area(self, info: Dict) -> Optional[float]:
+        """A sheet's parts area from its job's result.json (sheet cards published before it was recorded)."""
+        try:
+            result = json.loads((self.s.queue.done / info["job"] / "result.json").read_text(encoding="utf-8"))
+            sheet = next(s for s in result.get("sheets", []) if s.get("index") == info.get("index"))
+            return float(sheet["parts_area_in2"]) if sheet.get("parts_area_in2") is not None else None
+        except (OSError, ValueError, StopIteration, KeyError, TypeError):
+            return None
+
+    def _rush(self, card: Card) -> bool:
+        return _label(self.cfg.labels.rush) in {_label(l) for l in card.labels}
 
     def report_health(self, last_error: Optional[str] = None) -> None:
         """The System card's description (health.py): rewritten when anything in it changes, and every
@@ -238,7 +279,7 @@ class Runner:
                 self._offcut_after_cut(cut_cards[sheet_id], ours[sheet_id])
             except Exception as e:  # noqa: BLE001 - the offcut is a nice-to-have; the parts still follow
                 log.warning("offcut for sheet card %s: %s", sheet_id, e)
-            self.s.store.mark_sheet_cut(sheet_id)
+            self.s.store.mark_sheet_cut(sheet_id, _iso(self.s.clock()))
         ours = self.s.store.sheet_cards()
         for part_id in dict.fromkeys(p for s in newly for p in ours[s].get("parts", [])):
             on = [info for info in ours.values() if part_id in info.get("parts", [])]
@@ -251,6 +292,44 @@ class Runner:
                 log.warning("couldn't move part card %s to Cut: %s", part_id, e)
 
     # ------------------------------------------------------------ offcuts
+    def free_offcuts(self) -> None:
+        """An offcut held by a sheet card that was archived or deleted without being cut is free again (its
+        sheet card won't be cut, so nothing else would release it). A card archived while in Cut counts as
+        cut. One Trello read per held offcut."""
+        if self.dry_run:
+            return
+        reg = self.s.store.sheet_cards()
+        for offcut_id, piece in self.offcuts.all().items():
+            holder = piece.get("reserved_by")
+            if not holder:
+                continue
+            try:
+                card: Optional[Card] = self.t.get_card(holder)
+            except CardNotFound:
+                card = None                           # deleted
+            except Exception as e:  # noqa: BLE001 - Trello down: try again next pass
+                log.warning("couldn't check sheet card %s holding offcut %s: %s", holder, offcut_id, e)
+                continue
+            if card is not None and not card.closed:
+                continue
+            info = reg.get(holder, {})
+            if card is not None and card.list_key == self.targets["part_cut"] and not info.get("cut"):
+                try:
+                    self._offcut_after_cut(card, info)    # archived from Cut before a pass saw it there
+                except Exception as e:  # noqa: BLE001
+                    log.warning("offcut for sheet card %s: %s", holder, e)
+                self.s.store.mark_sheet_cut(holder, _iso(self.s.clock()))
+                self.offcuts.release_all([holder])
+                continue
+            self.offcuts.release_all([holder])
+            if holder in reg and not info.get("cut"):
+                reg[holder]["archived"] = True        # its parts are free to go on another sheet too
+                self.s.store._write_sheets(reg)
+            label = info.get("label") or "its sheet card"
+            how = "deleted" if card is None else "archived"
+            self.t.comment(offcut_id, f"Free again: {label} was {how} without being cut.")
+            log.info("offcut %s is free again: sheet card %s was %s", offcut_id, holder, how)
+
     def _free_after(self, used) -> float:
         """The longest free stretch a sheet with these used stretches would offer the next run."""
         region = sheet_fixture(self.cfg).nest_region_in
@@ -471,13 +550,16 @@ class Runner:
         self.t.comment(card_id, comment)
 
     # ------------------------------------------------------------ start
-    def start_run(self, cards: Sequence[Card]) -> Optional[RunState]:
-        """cards: what's in Ready for CAM with the box ticked (a run takes them all, not only the new ones)."""
+    def start_run(self, cards: Sequence[Card], rush: bool = False) -> Optional[RunState]:
+        """cards: what's in Ready for CAM with the box ticked (a run takes them all, not only the new ones).
+        rush: only the Rush cards, nested on their own: on an offcut or a new sheet, not folded into a sheet
+        waiting in review (only a sheet a rush card is already on is rebuilt: it holds an old copy)."""
         store, cfg = self.s.store, self.cfg
         if not cards:
             return None
         state = RunState(run_id=self._new_run_id(), started_utc=_iso(self.s.clock()),
-                         trigger_card=cfg.trello.cards.get("system", ""), dry_run=self.dry_run, phase=STARTING)
+                         trigger_card=cfg.trello.cards.get("system", ""), dry_run=self.dry_run, phase=STARTING,
+                         rush=rush)
         store.save(state)   # reserve the run before any Onshape call or Trello write
         self.watch.took(cards)
         run_id = state.run_id
@@ -540,7 +622,12 @@ class Runner:
             else:
                 ready.append(prepared)
 
-        open_sheets = self.open_sheets({p.request.card.id for p in ready}) if ready else {}
+        renesting = {p.request.card.id for p in ready}
+        open_sheets = self.open_sheets(renesting) if ready else {}
+        if rush:
+            open_sheets = {m: [s for s in sheets if set(s[1]["parts"]) & renesting]
+                           for m, sheets in open_sheets.items()}
+            state.notes.append("Rush: nested right away and on their own (sheets in review were left alone).")
         for batch in make_batches(ready):
             reopened = open_sheets.get(batch.material_key, [])
             carried = list({p.card_id: p for _, _, specs in reopened for p in specs}.values())   # dedupe
@@ -610,6 +697,8 @@ class Runner:
                 continue
             if any(c.done for c in card.checks if c.checklist == review):
                 continue
+            if info.get("rush") and not set(info["parts"]) & set(renesting):
+                continue                              # a rush sheet is for its own parts, unless one changed
             if not all(p in nested or p in renesting for p in info["parts"]):
                 continue
             job = self._job(info["job"])
@@ -891,7 +980,7 @@ class Runner:
         store, cfg = self.s.store, self.cfg
         run_id, job_id = state.run_id, ing.job_id
         key = f"{job_id}:S{vs.sheet.index}"
-        title = text.sheet_title(ing.job, vs)
+        title = ("RUSH - " if state.rush else "") + text.sheet_title(ing.job, vs)
         desc = text.sheet_description(ing.job, ing, vs, resume_key=cfg.pauses.resume_key, part_cards=part_cards,
                                       stock=self._stock_line(vs))
         card_id = url = None
@@ -922,7 +1011,8 @@ class Runner:
         sheet = vs.sheet
         extra = {"label": f"{run_id} S{sheet.index}", "offcut_id": sheet.offcut_id, "turned": sheet.offcut_turned,
                  "used_along": list(sheet.used_y_in) if sheet.used_y_in else None,
-                 "beside_used": list(sheet.beside_used), "beside_left": [list(r) for r in sheet.beside_left_in]}
+                 "beside_used": list(sheet.beside_used), "beside_left": [list(r) for r in sheet.beside_left_in],
+                 "rush": state.rush, "parts_area_in2": sheet.parts_area_in2}
         if sheet.used_y_in:
             before = (self.offcuts.get(sheet.offcut_id) or {}).get("used", []) if sheet.offcut_id else []
             extra["rest_in"] = round(self._free_after(add_used(before, sheet.used_y_in, cfg.sheet.length_in,

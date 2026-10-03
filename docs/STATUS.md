@@ -83,9 +83,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   air-test the first offcut sheet). Since core 0.5.0 an offcut also keeps the **room beside** the parts cut
   (a one-off no longer writes off the whole width of its band), filled first by the next nest. Works in
   Fusion (hand-queued test job, 2026-10-03); not cut on the machine yet (manual tests 5c, 7 to 9).
-- **Offered, not asked for yet:** a **Rush** label for one urgent part (start at once, skip open sheets);
-  releasing an offcut whose sheet card is archived without being cut (today it stays reserved for good);
-  picking the best-fitting offcut instead of the oldest; a season stock-use tally on the System card.
+- **Extras** (2026-10-03, tested offline): a **Rush** label (nested at once, on its own); an offcut is freed
+  when its sheet card is archived or deleted without being cut; offcuts are filled smallest room first; the
+  System card tallies the season's stock ("Stock since Sep 1: ..."). Manual tests M3 section 8.
 - **Later ideas** (not planned): part-in-part nesting (needs per-part cut ordering first).
 
 ## Not verified yet (don't rely on these until they are)

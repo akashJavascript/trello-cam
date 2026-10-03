@@ -44,6 +44,7 @@ class RunState:
     trigger_card: str                     # where run comments go: the System card ("" = nowhere)
     dry_run: bool = False
     phase: str = STARTING
+    rush: bool = False                    # only Rush cards, nested on their own (runner.start_run)
     done: bool = False
     jobs: Dict[str, JobState] = field(default_factory=dict)
     cards: Dict[str, Dict[str, str]] = field(default_factory=dict)   # card_id -> {"name", "url"}
@@ -128,10 +129,12 @@ class RunStore:
             sheets[card_id].update(cuttable=False, parts=[], archived=True)
             self._write_sheets(sheets)
 
-    def mark_sheet_cut(self, card_id: str) -> None:
+    def mark_sheet_cut(self, card_id: str, when_utc: str = "") -> None:
         sheets = self.sheet_cards()
         if card_id in sheets:
             sheets[card_id]["cut"] = True
+            if when_utc:
+                sheets[card_id]["cut_utc"] = when_utc
             self._write_sheets(sheets)
 
     def _write_sheets(self, sheets: Dict[str, Dict]) -> None:
