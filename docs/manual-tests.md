@@ -222,7 +222,7 @@ To queue the same job again, first delete `queue\done\<id>` (or `queue\failed\<i
 | 6 | Edit a queued job's `"core_version"` to `"0.0.1"`: it goes to `failed\` with `CORE_VERSION_MISMATCH` | |
 | 7 | While the add-in is idle, Fusion stays usable (only a job run blocks it) | |
 | 8 | Stop the add-in, `git pull`, start it again: the new code runs (the log's start line) | |
-| 9 | Self-reload: while the add-in is idle, create an empty `queue\reload_addin` file. Within ~10 s the file is gone and `logs\fusion_worker.log` says `reloaded: core X -> X` | |
+| 9 | Self-reload: while the add-in is idle, create an empty `queue\reload_addin` file. Within ~10 s the file is gone and `logs\fusion_worker.log` says `reloaded: core X -> X` | **Passed** 2026-10-02 23:42 |
 | 10 | After a `git pull` that changes `CORE_VERSION`, the log says `reloaded: core <old> -> <new>` within ~10 s, and `queue\worker_heartbeat.json` shows the new `core_version`, with no Stop/Run | |
 
 ## M3: real board setup and the first supervised run
@@ -299,10 +299,21 @@ or set up an existing board instead with `--board <short link>`.
 
 | # | Check | Result |
 |---|---|---|
-| 1 | Put 2+ different parts of one material in a run: `logs\fusion_worker.log` has a line like "0.125 in: kept 'as listed' (as listed: 6 placed on 1 sheet(s), last 21.3 in; biggest first: ...)" | |
+| 1 | Put 2+ different parts of one material in a run: `logs\fusion_worker.log` has a line like "0.125 in: kept 'as listed' (as listed: 6 placed on 1 sheet(s), last 21.3 in; biggest first: ...)" | **Passed** (r006; the job's own `worker.log`) |
 | 2 | The sheet's parts are where the preview shows them, with no extra copies in the setup (the hidden copies of the other tries don't get toolpaths) | |
-| 3 | The sheet card has a "Sheet use: N% ..." line | |
+| 3 | The sheet card has a "Sheet use: N% ..." line | **Passed** (r006: 4%, the last 32 in empty) |
 | 4 | Note how long the job took compared with earlier runs (up to 3x the Arrange time) | |
+
+### 5c. Offcuts
+
+| # | Check | Result |
+|---|---|---|
+| 1 | A new sheet card with room left has an **Offcut** box, ticked | |
+| 2 | Move it to Cut: an offcut card appears in **Offcuts** ("... offcut - N in free"), and the sheet card links to it | |
+| 3 | Queue parts of the same material and thickness: the new sheet card's title says "offcut", and its Stock line says which end goes where | |
+| 4 | Load the sheet as the card says and **air-test it first**: the cutter stays in the free stretch, clear of the earlier cut-outs | |
+| 5 | Cut it: the offcut card is updated with what's left, or archived when it's used up | |
+| 6 | Untick the Offcut box before moving a sheet to Cut: no offcut card | |
 
 ### 6. The service picks up new code by itself
 
@@ -320,7 +331,7 @@ or set up an existing board instead with `--board <short link>`.
 | 1 | A card made from the New part template, and one made by hand, each get the "Nest this part" box, ticked, within about a minute | |
 | 2 | Drag two cards into Ready for CAM 1 minute apart: one run starts, about 2 minutes after the second | |
 | 3 | Untick "Nest this part" on a card in Ready for CAM: it stays there and no run takes it. Tick it again: a run starts | |
-| 4 | With a sheet in Sheet review and nothing ticked, add a part of the same material: the **same** sheet card is rebuilt (new run number in the title, a "Rebuilt" comment, one `.tap`, checklists unticked), and the new part's card links to it | |
+| 4 | With a sheet in Sheet review and nothing ticked, add a part of the same material: the **same** sheet card is rebuilt (new run number in the title, a "Rebuilt" comment, one `.tap`, checklists unticked), and the new part's card links to it | **Passed** (r005 S1 -> r006 S1, P-2011 carried with no Onshape calls) |
 | 5 | Tick a Review item on that sheet, add another part: it gets a new sheet card; the ticked one doesn't change | |
 | 6 | Open the rebuilt sheet's Fusion file: the old parts and the new one are all there, and the toolpaths look right | |
 

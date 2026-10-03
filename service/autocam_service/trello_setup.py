@@ -1,6 +1,6 @@
 """`autocam trello-setup`: build or update the board the service expects.
 
-- **Lists:** Drafts, Ready for CAM, Needs fixing, On a sheet, Sheet review, Ready to cut, Cut, Control.
+- **Lists:** Drafts, Ready for CAM, Needs fixing, On a sheet, Sheet review, Ready to cut, Cut, Offcuts, Control.
   Lists with an older name (Inbox, Nested) are renamed in place, so their IDs and the config stay the same.
   The old `Run nest` list and its control card are archived (runs start from Ready for CAM now).
 - **Cards:** the `System` status card (in Control), the "How to add a part" card and the "New part" card
@@ -23,7 +23,8 @@ from .config import TRELLO_LISTS
 
 LIST_NAMES = {
     "inbox": "Drafts", "ready_for_cam": "Ready for CAM", "needs_fixing": "Needs fixing", "nested": "On a sheet",
-    "sheet_review": "Sheet review", "ready_to_cut": "Ready to cut", "cut": "Cut", "control": "Control",
+    "sheet_review": "Sheet review", "ready_to_cut": "Ready to cut", "cut": "Cut", "offcuts": "Offcuts",
+    "control": "Control",
 }
 RETIRED_LISTS = ("Run nest",)       # archived (with the cards in them) if they're still there
 OLD_NAMES = {"inbox": ("Inbox",), "nested": ("Nested",)}     # renamed in place

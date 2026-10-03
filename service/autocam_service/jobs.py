@@ -11,7 +11,7 @@ from autocam_core import CORE_VERSION, fixture
 from autocam_core.holes import HoleRules
 from autocam_core.schema import to_dict
 from autocam_core.schema_job import (
-    JOB_SCHEMA, FixtureSpec, FusionTeamSpec, GuardSettings, Job, MaterialSpec, NestSpec, OnshapeRef, PartSpec,
+    JOB_SCHEMA, FixtureSpec, FusionTeamSpec, GuardSettings, Job, MaterialSpec, NestSpec, OffcutSpec, OnshapeRef, PartSpec,
     PauseSettings, PlateSpec, PostSpec, SheetSpec, ToolingSpec, ToolSpec, load_job,
 )
 
@@ -44,7 +44,16 @@ def _tool_spec(cfg: Config, tool: Tool) -> Optional[ToolSpec]:
                     template_key=template.key, template_path=fusion_path(template.file))
 
 
-def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried: Sequence[PartSpec] = ()) -> Job:
+def sheet_fixture(cfg: Config) -> fixture.Fixture:
+    return fixture.build(
+        sheet_length_in=cfg.sheet.length_in, sheet_width_in=cfg.sheet.width_in, reach_x_in=cfg.machine.reach_x_in,
+        edge_margin_in=cfg.nest.edge_margin_in, reach_margin_in=cfg.nest.reach_margin_in,
+        clamp_edges=cfg.clamps.edges, clamp_reach_in=cfg.clamps.reach_in, clamp_clearance_in=cfg.clamps.clearance_in,
+        clamp_height_in=cfg.clamps.height_in)
+
+
+def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried: Sequence[PartSpec] = (),
+              offcuts: Sequence[OffcutSpec] = ()) -> Job:
     """carried: parts already on open sheets of this material (from the jobs that made them), nested again
     with the new ones; they keep everything but get part keys after the new parts'."""
     m = cfg.materials[batch.material_key]
@@ -57,11 +66,7 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
     if small is not None:
         tools[small.key] = small
 
-    fx = fixture.build(
-        sheet_length_in=cfg.sheet.length_in, sheet_width_in=cfg.sheet.width_in, reach_x_in=cfg.machine.reach_x_in,
-        edge_margin_in=cfg.nest.edge_margin_in, reach_margin_in=cfg.nest.reach_margin_in,
-        clamp_edges=cfg.clamps.edges, clamp_reach_in=cfg.clamps.reach_in, clamp_clearance_in=cfg.clamps.clearance_in,
-        clamp_height_in=cfg.clamps.height_in)
+    fx = sheet_fixture(cfg)
 
     parts: List[PartSpec] = []
     for key, ready in batch.parts:
@@ -87,7 +92,8 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
         fixture=FixtureSpec(fx.nest_region_in, fx.clamp_zones_in, cfg.clamps.height_in,
                             cfg.clamps.min_clear_above_stock_in),
         nest=NestSpec(cfg.nest.part_spacing_in, cfg.nest.max_sheets_per_group, cfg.nest.rotation,
-                      cfg.nest.part_in_part, cfg.nest.envelope_spacing_in, cfg.nest.short_qty),
+                      cfg.nest.part_in_part, cfg.nest.envelope_spacing_in, cfg.nest.short_qty,
+                      cfg.nest.offcut_gap_in, cfg.nest.offcut_min_in),
         tooling=ToolingSpec(default=default.key, small_features=small.key if small else None, tools=tools),
         holes=HoleRules(cfg.holes.drill_tol_in, cfg.holes.bore_min_in, cfg.holes.bore_min_tol_in,
                         cfg.holes.bore_max_in, tuple(cfg.holes.bearing_sizes_in), cfg.holes.bearing_tol_in),
@@ -101,5 +107,6 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
         fusion_params=copy.deepcopy(dict(cfg.fusion.params)),
         fusion_team=FusionTeamSpec(cfg.fusion_team.project, cfg.fusion_team.folder),
         parts=tuple(parts),
+        offcuts=tuple(offcuts),
     )
     return load_job(to_dict(job))  # same validation Fusion will apply

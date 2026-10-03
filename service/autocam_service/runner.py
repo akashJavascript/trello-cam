@@ -38,9 +38,10 @@ from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 from autocam_core import CORE_VERSION
 from autocam_core.airtest import SUFFIX as AIR_SUFFIX, AirTestError, air_test_name, air_test_program, check_air_test
 from autocam_core.hotfolder import Queue, write_atomic
+from autocam_core.offcuts import add_used, free_length
 from autocam_core.pauses import PauseError, remove as remove_pauses
 from autocam_core.sheetcheck import check_sheet_program, pause_spec
-from autocam_core.schema_job import PartSpec, job_json, load_job
+from autocam_core.schema_job import OffcutSpec, PartSpec, job_json, load_job
 
 from . import health
 from . import sheet_cards as text
@@ -48,8 +49,9 @@ from .autostart import ReadyWatch, wants_nest
 from .batching import ReadyPart, make_batches
 from .cards import README_CARD, CardProblem, PartRequest, parse_card
 from .config import Config
-from .jobs import JobBuildError, build_job
+from .jobs import JobBuildError, build_job, sheet_fixture
 from .materials import resolve_material
+from .offcuts import OffcutStore, card_text, load_line
 from .onshape.budget import REFUSE, WARN, decide, estimate_calls
 from .onshape.cache import sha256_file
 from .onshape.client import BudgetExceeded, OnshapeError, QuotaExhausted, RateLimited
@@ -107,6 +109,7 @@ class Runner:
         self.dry_run = isinstance(s.tracker, DryRunTracker)
         delay = s.cfg.trello.start_delay_s if start_delay_s is None else start_delay_s
         self.watch = ReadyWatch(s.store.watch_file, delay)
+        self.offcuts = OffcutStore(s.store.offcuts_file)
         self.waiting_count = 0                                   # cards waiting for a run (for the status)
         self._status_sent: Optional[Tuple[str, datetime]] = None  # (status without its time, when it was sent)
 
@@ -216,7 +219,12 @@ class Runner:
         newly = [c.id for c in self.t.list_cards(self.targets["part_cut"]) if c.id in ours and not ours[c.id].get("cut")]
         if not newly:
             return
+        cut_cards = {c.id: c for c in self.t.list_cards(self.targets["part_cut"])}
         for sheet_id in newly:
+            try:
+                self._offcut_after_cut(cut_cards[sheet_id], ours[sheet_id])
+            except Exception as e:  # noqa: BLE001 - the offcut is a nice-to-have; the parts still follow
+                log.warning("offcut for sheet card %s: %s", sheet_id, e)
             self.s.store.mark_sheet_cut(sheet_id)
         ours = self.s.store.sheet_cards()
         for part_id in dict.fromkeys(p for s in newly for p in ours[s].get("parts", [])):
@@ -228,6 +236,85 @@ class Runner:
                     self.t.move(part_id, self.targets["part_cut"])
             except Exception as e:  # noqa: BLE001 - a deleted card mustn't stop the tick
                 log.warning("couldn't move part card %s to Cut: %s", part_id, e)
+
+    # ------------------------------------------------------------ offcuts
+    def _free_after(self, used) -> float:
+        """The longest free stretch a sheet with these used stretches would offer the next run."""
+        region = sheet_fixture(self.cfg).nest_region_in
+        return free_length(used, self.cfg.sheet.length_in, region[0], region[2], self.cfg.nest.offcut_gap_in)
+
+    def _stock_label(self, material_key: str, thickness_in: float) -> str:
+        return f"{text.material_label(self.cfg.materials[material_key])} {text.thickness_label(thickness_in)}"
+
+    def available_offcuts(self, material: str, reopened: Sequence[str]) -> List[OffcutSpec]:
+        """The offcuts a job of this material may use: in the Offcuts list, and not reserved by a sheet card
+        (except one this run is rebuilding). Offcuts whose card left the list are forgotten."""
+        on_board = {c.id for c in self.t.list_cards("offcuts")}
+        out = []
+        for offcut_id, piece in self.offcuts.all().items():
+            if offcut_id not in on_board:
+                self.offcuts.remove(offcut_id)
+                continue
+            reserved = piece.get("reserved_by")
+            if piece["material"] != material or (reserved and reserved not in reopened):
+                continue
+            out.append(OffcutSpec(offcut_id, piece["thickness_in"], tuple(tuple(s) for s in piece["used"])))
+        return out
+
+    def _stock_line(self, vs: VerifiedSheet) -> Optional[str]:
+        """The sheet card's Stock line when the sheet is an offcut: which offcut, and which end goes where."""
+        offcut_id = vs.sheet.offcut_id
+        if not offcut_id:
+            return None
+        piece = self.offcuts.get(offcut_id)
+        if piece is None:
+            return "Stock: an offcut that's no longer in the Offcuts list. Check with whoever archived it."
+        last = piece.get("last") or {}
+        return load_line(self._stock_label(piece["material"], vs.sheet.thickness_in), piece.get("url", ""),
+                         last.get("label", "its last sheet"), tuple(last.get("stretch", (0.0, 0.0))),
+                         vs.sheet.offcut_turned, self.cfg.sheet.length_in)
+
+    def _offcut_after_cut(self, card: Card, info: Dict) -> None:
+        """A sheet card just went to Cut: update the offcut it was cut from, or keep the rest as a new one."""
+        if not info.get("job") or not info.get("used_x") or not info.get("cuttable") or info.get("offcut_done"):
+            return
+        cfg, length = self.cfg, self.cfg.sheet.length_in
+        label = info.get("label") or f"{info.get('run')} S{info.get('index')}"
+        cut, turned = tuple(info["used_x"]), bool(info.get("turned"))
+        stock = self._stock_label(info["material"], info["thickness_in"])
+        offcut_id = info.get("offcut_id")
+        if offcut_id:
+            piece = self.offcuts.get(offcut_id)
+            if piece is None:
+                return                                # its card was archived: the sheet is gone
+            used = add_used(piece["used"], cut, length, turned)
+            free = self._free_after(used)
+            if free < cfg.nest.offcut_min_in:
+                self.t.comment(offcut_id, f"Used up: {label} was cut from it.")
+                self.t.archive(offcut_id)
+                self.offcuts.remove(offcut_id)
+                return
+            piece.update(used=[list(s) for s in used], reserved_by=None,
+                         last={"label": label, "stretch": list(add_used((), cut, length, turned)[0])})
+            self.offcuts.put(offcut_id, piece)
+            self.t.update_card(offcut_id, *card_text(stock, free, used, label))
+            self.t.comment(offcut_id, f"{label} was cut from it. {free:.0f} in free now.")
+            return
+        keep = [c.done for c in card.checks if c.checklist == cfg.trello.offcut_checklist]
+        if not any(keep):
+            return                                    # no box (an older card), or someone unticked it
+        used = add_used((), cut, length, False)       # a new sheet: end A was at the zero corner
+        free = self._free_after(used)
+        if free < cfg.nest.offcut_min_in:
+            return
+        new = self.t.create_card("offcuts", *card_text(stock, free, used, label))
+        self.offcuts.put(new.id, {"material": info["material"], "thickness_in": info["thickness_in"],
+                                  "used": [list(s) for s in used], "last": {"label": label, "stretch": list(used[0])},
+                                  "reserved_by": None, "url": new.url})
+        sheets = self.s.store.sheet_cards()
+        sheets.get(card.id, {})["offcut_done"] = True
+        self.s.store._write_sheets(sheets)
+        self.t.comment(card.id, f"The rest of the sheet is in Offcuts: {new.url}")
 
     # ------------------------------------------------------------ sheet options
     def sheet_options(self) -> None:
@@ -252,6 +339,9 @@ class Runner:
 
     def _options(self, card: Card, info: Dict) -> None:
         t = self.cfg.trello
+        if info.get("rest_in", 0) >= self.cfg.nest.offcut_min_in and \
+                not any(c.checklist == t.offcut_checklist for c in card.checks):
+            self.t.add_checklist(card.id, t.offcut_checklist, [t.offcut_item], checked=True)
         if any(c.checklist == LEGACY_AIR_CHECKLIST for c in card.checks):
             self.t.remove_checklists(card.id, LEGACY_AIR_CHECKLIST)
         items = {c.item: c.done for c in card.checks if c.checklist == t.options_checklist}
@@ -345,7 +435,7 @@ class Runner:
             programs[air_test_name(main)] = (air_data, check.guard)
         part_cards = {p.part_key: (p.name, p.card_url) for p in job.parts}
         desc = text.sheet_description(job, ing, vs, resume_key=self.cfg.pauses.resume_key, part_cards=part_cards,
-                                      program=main, stops=stops)
+                                      program=main, stops=stops, stock=self._stock_line(vs))
         return programs, stem, desc, lift, vs.pause_count > 0
 
     def _send_back(self, card_id: str, comment: str) -> None:
@@ -427,7 +517,8 @@ class Runner:
             reopened = open_sheets.get(batch.material_key, [])
             carried = list({p.card_id: p for _, _, specs in reopened for p in specs}.values())   # dedupe
             try:
-                job = build_job(cfg, batch, run_id, _iso(self.s.clock()), carried)
+                offcuts = self.available_offcuts(batch.material_key, [card_id for card_id, _, _ in reopened])
+                job = build_job(cfg, batch, run_id, _iso(self.s.clock()), carried, offcuts)
             except JobBuildError as e:
                 summary["untouched"] += len(batch.parts)
                 state.notes.append(f"Can't CAM {batch.material_key} parts yet: {e}. They stay in Ready for CAM.")
@@ -686,6 +777,7 @@ class Runner:
                 continue
             if plan == "same":                  # nothing new joined these sheets: keep the programs they have
                 continue
+            self.offcuts.release_all(old)             # the rebuilt sheets reserve what they use again
             for i, vs in enumerate(new):
                 placed = self._publish_sheet(state, js, ing, vs, old[i] if i < len(old) else None,
                                              part_cards, counts)
@@ -718,7 +810,8 @@ class Runner:
         run_id, job_id = state.run_id, ing.job_id
         key = f"{job_id}:S{vs.sheet.index}"
         title = text.sheet_title(ing.job, vs)
-        desc = text.sheet_description(ing.job, ing, vs, resume_key=cfg.pauses.resume_key, part_cards=part_cards)
+        desc = text.sheet_description(ing.job, ing, vs, resume_key=cfg.pauses.resume_key, part_cards=part_cards,
+                                      stock=self._stock_line(vs))
         card_id = url = None
         if target is not None:
             # From here until the new program is attached, the card offers nothing to cut.
@@ -744,10 +837,19 @@ class Runner:
             counts["new"] += 1
         if not vs.cuttable:
             counts["bad"] += 1
+        sheet = vs.sheet
+        extra = {"label": f"{run_id} S{sheet.index}", "offcut_id": sheet.offcut_id, "turned": sheet.offcut_turned,
+                 "used_x": list(sheet.used_x_in) if sheet.used_x_in else None}
+        if sheet.used_x_in:
+            before = (self.offcuts.get(sheet.offcut_id) or {}).get("used", []) if sheet.offcut_id else []
+            extra["rest_in"] = round(self._free_after(add_used(before, sheet.used_x_in, cfg.sheet.length_in,
+                                                               sheet.offcut_turned)), 2)
         store.register_sheet(card_id, run_id, vs.cuttable,
                              [js.parts[p.part_key] for p in vs.sheet.parts if p.part_key in js.parts],
                              job=job_id, material=js.material, thickness_in=vs.sheet.thickness_in,
-                             index=vs.sheet.index, url=url)
+                             index=vs.sheet.index, url=url, extra=extra)
+        if sheet.offcut_id:
+            self.offcuts.reserve(sheet.offcut_id, card_id)
         if vs.cuttable:
             once(store, state, f"{key}:tap", lambda: self.t.attach_program(
                 card_id, vs.sheet.tap, vs.tap_bytes, vs.check.guard), WRITE_ATTEMPTS)

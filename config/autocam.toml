@@ -57,6 +57,8 @@ rotation = "all"           # "all" | "none"
 part_in_part = false
 envelope_spacing_in = 6.0  # gap between envelopes while nesting (layout only)
 short_qty = "defer_card"   # a card whose full qty doesn't fit is not cut this run
+offcut_gap_in = 0.5        # a new nest on an offcut stays this far from what was cut before (placement slack)
+offcut_min_in = 6.0        # an offcut needs a free stretch this long (full width) to be kept or used
 
 [clamps]
 edges = ["front", "back"]  # any of "front", "back", "zero_end"; the far end overhangs the bed
@@ -224,6 +226,8 @@ nest_item = "Nest this part"
 options_checklist = "Options"   # sheet cards, both unticked to start; the service applies them within a minute
 no_stop_item = "Cut the whole sheet without stopping"   # the program without the stop after each part
 air_test_item = "Add an air test program (cuts nothing)"  # the program raised machine.air_test_gap_in above the sheet
+offcut_checklist = "Offcut"     # sheet cards with room left: ticked = when it's cut, keep the rest for the next run
+offcut_item = "Keep the rest of the sheet for the next run"
 checklist_name = "Review"                  # all ticked before a sheet may sit in Ready to cut
 checklist = ["Simulated it in Fusion", "Parts and quantities look right"]
 machine_checklist_name = "At the machine"  # for the operator; not checked by the service
@@ -237,6 +241,7 @@ nested = "6ac0026b4d41d11e7f2a3ac3"
 sheet_review = "6ac0026b744b6964194f359f"
 ready_to_cut = "6ac0026c4442c15e984f34a9"
 cut = "6ac0026c1d0c81e2cdf15ac0"
+offcuts = "6ac0b00fbc521a091bedebae"
 control = "6ac0026cfe5942cefb71f3b9"
 
 [trello.targets]                # where automation moves cards; "ready_to_cut" is never allowed

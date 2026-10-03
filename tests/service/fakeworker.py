@@ -10,6 +10,7 @@ from autocam_core import CORE_VERSION
 from autocam_core.errors import Issue
 from autocam_core.hotfolder import Queue
 from autocam_core.names import instance_id, program_name
+from autocam_core.offcuts import best_placement
 from autocam_core.pauses import insert
 from autocam_core.schema_job import read_job
 from autocam_core.schema_result import (
@@ -59,6 +60,18 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
         (claim.out_dir / tap_name).write_bytes(data)
         (claim.out_dir / f"{name}.png").write_bytes(b"\x89PNG fake preview")
         g = check.guard
+        # Like the pipeline: the first offcut of this thickness with room goes before a new sheet. Each part
+        # takes about 4 in along X from the start of the free stretch.
+        region = job.fixture.nest_region_in
+        offcut, place = None, None
+        for o in job.offcuts:
+            p = best_placement(o.used_in, job.sheet.length_in, region[0], region[2], job.nest.offcut_gap_in,
+                               job.nest.offcut_min_in) if abs(o.thickness_in - thickness) < 1e-6 else None
+            if p is not None:
+                offcut, place = o, p
+                break
+        start = place.x0 if place else region[0]
+        used_x = (round(start, 3), round(start + 4.0 * len(instances), 3)) if instances else None
         sheet = SheetResult(
             index=1, name=name, stock_type=f"{job.material.key}-{thickness:g}", thickness_in=thickness, tool=tool,
             tool_guid=job.tooling.tools[tool].guid, cutter_label=job.tooling.tools[tool].cutter_label,
@@ -74,7 +87,8 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
             parts=tuple(SheetPart(p.part_key, p.qty) for p in placed), outer_order=tuple(instances),
             tool_forced_by=(),
             errors=tuple(Issue("TAP_REJECTED", msg) for msg in check.problems()),
-            warnings=(), notes=())
+            warnings=(), notes=(), offcut_id=offcut.id if offcut else None,
+            offcut_turned=bool(place and place.turned), used_x_in=used_x)
         parts = []
         for p in job.parts:
             if p.part_key == part_error:

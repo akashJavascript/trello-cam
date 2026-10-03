@@ -102,6 +102,10 @@ class SheetResult:
     parts_area_in2: Optional[float] = None    # the parts' material (top face areas)
     usable_area_in2: Optional[float] = None   # where parts may go
     free_length_in: Optional[float] = None    # empty strip at the far end of the usable area
+    # Offcuts (core 0.3.0):
+    offcut_id: Optional[str] = None           # nested onto this offcut, not a new sheet
+    offcut_turned: bool = False               # ...loaded end for end
+    used_x_in: Optional[Tuple[float, float]] = None   # the stretch along X it uses, in sheet coordinates
 
 
 @dataclass(frozen=True)

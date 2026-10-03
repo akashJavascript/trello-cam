@@ -395,3 +395,33 @@ quick. On P-2011 (r005) it's 164 in of moves, under a minute, instead of 750 in 
   cut the big part's cutout, and so free the slug, before the small part inside it is cut. It needs per-part
   cut ordering first.
 
+## 2026-10-03: offcuts (the user's choice)
+
+An offcut is **the same sheet put back on the machine**, not a sawn-off piece. The cut parts leave a
+skeleton, but the clamped long edges are never cut, so it clamps and zeros like a new sheet. No saw needed,
+and a cut across the sheet would run through the clamps anyway.
+- **What's recorded** (`core/offcuts.py`, `state/offcuts.json`): the stretches along the sheet's length that are
+  used, in the sheet's own coordinates (end A = the end at the zero corner when it was first cut). That's
+  each sheet's parts from first to last along X, plus the part spacing, which covers the outlines' tool paths.
+- **Where the next nest goes:** the longest free stretch the machine can reach, at least `nest.offcut_gap_in`
+  (0.5 in, placement slack) from anything cut. The sheet is loaded as before or turned end for end, whichever
+  gives more. Turning brings the end that hung off the bed onto it, so a sheet with a short strip used (like
+  r006, 7 in) is nearly a whole new sheet the other way round. A stretch under `nest.offcut_min_in` (6 in)
+  isn't worth loading.
+- **On the board:**
+  - **Keeping it:** a sheet card with room left gets an **Offcut** box, ticked: "Keep the rest of the sheet for
+    the next run". When the card goes to Cut with it ticked, an offcut card goes in the new **Offcuts** list
+    ("6061 3/16in offcut - 38 in free").
+  - **Using it:** runs offer a material's offcuts to its job before new sheets, and the pipeline fills them
+    first, inside the ordering tries (fewest new sheets wins). The sheet card's title says "offcut", and its
+    Stock line says which offcut and which end goes where ("the end where r006 S1's parts were cut at the
+    far end").
+  - **Reservations:** the sheet card reserves the offcut. An open sheet that's rebuilt keeps it; a reviewed one
+    holds it until it's cut; a retired one lets it go.
+  - **After cutting:** the offcut card is updated ("30 in free now"), or archived once it's used up. Archiving
+    an offcut card by hand tells the service the sheet is gone.
+- **Job format:** `Job.offcuts` and two nest settings (core 0.3.0). Sheet results say which offcut, which way
+  round, and the stretch used. The add-in reloads itself on the version change.
+- Sheets published before this (like r006 before it's rebuilt) don't record their used stretch, so cutting
+  them makes no offcut.
+

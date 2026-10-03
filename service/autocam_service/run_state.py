@@ -69,6 +69,7 @@ class RunStore:
         self.sheets_file = Path(state_dir) / "sheet_cards.json"
         self.watch_file = Path(state_dir) / "ready_watch.json"
         self.alerts_file = Path(state_dir) / "alerts.json"
+        self.offcuts_file = Path(state_dir) / "offcuts.json"
         self.prefix = prefix
 
     def _path(self, run_id: str) -> Path:
@@ -100,7 +101,7 @@ class RunStore:
 
     def register_sheet(self, card_id: str, run_id: str, cuttable: bool, parts: Sequence[str] = (), *,
                        job: str = "", material: str = "", thickness_in: float = 0.0, index: int = 0,
-                       url: str = "") -> None:
+                       url: str = "", extra: Optional[Dict] = None) -> None:
         """parts: the part card ids on this sheet (they follow it to Cut). job, material and thickness let a
         later run nest the sheet again with new parts while nobody has started reviewing it."""
         sheets = self.sheet_cards()
@@ -109,6 +110,7 @@ class RunStore:
             sheets[card_id].update(job=job, material=material, thickness_in=thickness_in, index=index, url=url)
             sheets[card_id].pop("options", None)          # a new program: the options are applied to it again
             sheets[card_id].pop("air", None)
+            sheets[card_id].update(extra or {})
         self._write_sheets(sheets)
 
     def set_options(self, card_id: str, options: Dict) -> None:

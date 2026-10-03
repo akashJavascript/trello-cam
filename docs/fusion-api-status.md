@@ -129,8 +129,9 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
 | Toolpaths | `GenerateToolpathFuture.isGenerationCompleted` isn't enough. Run t181442 (a 1/4 in plate, 29 cutouts) read `[outer] p01-1` as "no toolpath, no error"; it generated fine by hand. Now: wait until no op `isGenerating`, then `CAM.generateToolpath` once more for ops with neither a toolpath nor an error | fx_cam | none |
 | Add-in | `registerCustomEvent` + `fireCustomEvent` from a background thread; the handler runs the job on the main thread | autocam_addin | **works** (2026-10-01): queued job `t204634-al6061` picked up about 20 s after start, ran in 34 s, published to `done/`; the heartbeat updates |
 | Add-in | the add-in's handler re-entered by `adsk.doEvents()` during a job (guarded by `busy` and a per-process flag) | autocam_addin | none |
-| Arrange | several tries per thickness, each on its own copies (`add_copy` before any Arrange) and sheet slots; the losers hidden | pipeline (`NEST_ORDERS`) | untested in Fusion (same calls as before, more of them) | set `NEST_ORDERS` to the first entry only |
-| Add-in | self-reload while idle: purge the autocam_* modules and rebuild the worker from the event handler (on a new `CORE_VERSION` or `queue/reload_addin`) | autocam_addin | untested (offline test on a fake adsk only) |
+| Arrange | several tries per thickness, each on its own copies (`add_copy` before any Arrange) and sheet slots; the losers hidden | pipeline (`NEST_ORDERS`) | **works** (r006, 5 parts: 3 tries, the same layout each time, about 5 s extra) | set `NEST_ORDERS` to the first entry only |
+| Arrange | offcuts: the envelope limited to the offcut's free stretch along X (same calls) | pipeline | untested in Fusion | - |
+| Add-in | self-reload while idle: purge the autocam_* modules and rebuild the worker from the event handler (on a new `CORE_VERSION` or `queue/reload_addin`) | autocam_addin | **works** (2026-10-02 23:42: `queue/reload_addin` -> "reloaded: core 0.2.0 -> 0.2.0", then r006 ran on the new code) |
 
 ## What this changes in the pipeline (M1.2)
 

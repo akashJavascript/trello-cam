@@ -31,7 +31,7 @@ FAMILIES = ("aluminum", "polycarbonate")
 CLAMP_EDGES = ("front", "back", "zero_end")
 OP_TAGS = ("drill", "bore", "bearing", "pocket", "inner", "outer")
 TRELLO_LISTS = ("inbox", "ready_for_cam", "needs_fixing", "nested", "sheet_review",
-                "ready_to_cut", "cut", "control")
+                "ready_to_cut", "cut", "offcuts", "control")
 TRELLO_TARGETS = ("part_nested", "part_rejected", "part_deferred", "part_cut", "sheet_created",
                   "checklist_return")
 TRELLO_CARDS = ("system",)
@@ -96,6 +96,8 @@ class Nest:
     part_in_part: bool
     envelope_spacing_in: float
     short_qty: str
+    offcut_gap_in: float
+    offcut_min_in: float
 
 
 @dataclass(frozen=True)
@@ -205,6 +207,8 @@ class Trello:
     nest_checklist: str
     nest_item: str
     options_checklist: str
+    offcut_checklist: str
+    offcut_item: str
     no_stop_item: str
     air_test_item: str
     checklist_name: str
@@ -482,6 +486,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         part_in_part=t.boolean("part_in_part"),
         envelope_spacing_in=t.number("envelope_spacing_in", positive=True),
         short_qty=t.string("short_qty", choices=("defer_card",)),
+        offcut_gap_in=t.number("offcut_gap_in", minimum=0),
+        offcut_min_in=t.number("offcut_min_in", positive=True),
     )
     t.finish()
 
@@ -604,6 +610,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         nest_checklist=t.string("nest_checklist", required=True),
         nest_item=t.string("nest_item", required=True),
         options_checklist=t.string("options_checklist", required=True),
+        offcut_checklist=t.string("offcut_checklist", required=True),
+        offcut_item=t.string("offcut_item", required=True),
         no_stop_item=t.string("no_stop_item", required=True),
         air_test_item=t.string("air_test_item", required=True),
         checklist_name=t.string("checklist_name", required=True),

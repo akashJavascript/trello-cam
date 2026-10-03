@@ -46,7 +46,8 @@ def _clamp_edges(job: Job) -> str:
 def sheet_title(job: Job, vs: VerifiedSheet) -> str:
     s = vs.sheet
     n = sum(p.count for p in s.parts)
-    bits = [f"{material_label(job.material)} {thickness_label(s.thickness_in)}", s.cutter_label,
+    stock = f"{material_label(job.material)} {thickness_label(s.thickness_in)}" + (" offcut" if s.offcut_id else "")
+    bits = [stock, s.cutter_label,
             f"{n} part{'s' if n != 1 else ''}", _minutes(s.machining_time_s), f"{job.run_id} S{s.index}"]
     title = " - ".join(b for b in bits if b)
     return title if vs.cuttable else f"NOT CUTTABLE - {title}"
@@ -54,9 +55,9 @@ def sheet_title(job: Job, vs: VerifiedSheet) -> str:
 
 def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_key: str,
                       part_cards: Mapping[str, Tuple[str, str]], program: Optional[str] = None,
-                      stops: bool = True) -> str:
+                      stops: bool = True, stock: Optional[str] = None) -> str:
     """part_cards: part_key -> (part name, card url). program/stops: the version on the card when the
-    "without stopping" option is on."""
+    "without stopping" option is on. stock: what to load instead of a new sheet (an offcut)."""
     s = vs.sheet
     tool = job.tooling.tools[s.tool]
     m = job.material
@@ -65,8 +66,8 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         lines += ["NOT CUTTABLE. This sheet failed the checks:"] + [f"- {p}" for p in vs.problems] + [""]
 
     lines += ["LOAD",
-              f"Stock: {material_label(m)} {thickness_label(s.thickness_in)} ({s.thickness_in:g}), "
-              f"{job.sheet.width_in:g} x {job.sheet.length_in:g}",
+              stock or f"Stock: {material_label(m)} {thickness_label(s.thickness_in)} ({s.thickness_in:g}), "
+                       f"{job.sheet.width_in:g} x {job.sheet.length_in:g}",
               f"Cutter: {s.cutter_label} (T{tool.number}). Check the cutter itself: tool numbers are shared.",
               f"Clamps: {_clamp_edges(job)}. Mist: {'on' if m.use_mist else 'off'}."]
     for forced in s.tool_forced_by:

@@ -74,7 +74,9 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
 - **Better nests** (2026-10-02): several Arrange tries per thickness, the best kept, and "Sheet use" on the
   card. Untested in Fusion: needs the add-in restarted once and a run with 2+ kinds of parts
   (manual tests M3 section 5b).
-- **Later ideas** (not planned): part-in-part nesting (needs per-part cut ordering first), scrap/offcut sheets.
+- **Offcuts** (2026-10-03): partly used sheets kept in an Offcuts list and filled before new sheets. Tested
+  offline; not seen on the machine yet (manual tests M3 section 5c: air-test the first offcut sheet).
+- **Later ideas** (not planned): part-in-part nesting (needs per-part cut ordering first).
 
 ## Not verified yet (don't rely on these until they are)
 

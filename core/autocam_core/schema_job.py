@@ -57,6 +57,8 @@ class NestSpec:
     part_in_part: bool
     envelope_spacing_in: float
     short_qty: str
+    offcut_gap_in: float = 0.5        # how far a new nest stays from the stretches of an offcut already cut
+    offcut_min_in: float = 6.0        # a free stretch shorter than this isn't worth loading the offcut for
 
 
 @dataclass(frozen=True)
@@ -143,6 +145,14 @@ class PartSpec:
 
 
 @dataclass(frozen=True)
+class OffcutSpec:
+    """A partly used sheet this job may nest onto before starting new sheets (offcuts.py)."""
+    id: str                                            # the offcut card's id
+    thickness_in: float
+    used_in: Tuple[Tuple[float, float], ...]           # used stretches along it, in its own coordinates
+
+
+@dataclass(frozen=True)
 class Job:
     schema: str
     core_version: str
@@ -162,6 +172,7 @@ class Job:
     fusion_params: Dict[str, Any]
     fusion_team: FusionTeamSpec
     parts: Tuple[PartSpec, ...]
+    offcuts: Tuple[OffcutSpec, ...] = ()
 
     def validate(self) -> List[str]:
         e: List[str] = []
@@ -196,6 +207,12 @@ class Job:
         keys = [p.part_key for p in self.parts]
         if len(set(keys)) != len(keys):
             e.append("parts: duplicate part_key")
+        ids = [o.id for o in self.offcuts]
+        if len(set(ids)) != len(ids):
+            e.append("offcuts: duplicate id")
+        for o in self.offcuts:
+            if any(not 0 <= a < b <= self.sheet.length_in for a, b in o.used_in):
+                e.append(f"offcuts.{o.id}: used stretches must be inside the sheet")
         if not self.parts:
             e.append("parts: empty")
         for p in self.parts:
