@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from autocam_core import CORE_VERSION
-from autocam_core.airtest import SUFFIX as AIR_SUFFIX, air_test_name, check_air_test, lift_program, note_for
+from autocam_core.airtest import SUFFIX as AIR_SUFFIX, AirTestError, air_test_name, air_test_program, check_air_test
 from autocam_core.hotfolder import Queue, write_atomic
 from autocam_core.pauses import PauseError, remove as remove_pauses
 from autocam_core.sheetcheck import check_sheet_program, pause_spec
@@ -258,8 +258,9 @@ class Runner:
         if not items:
             self.t.add_checklist(card.id, t.options_checklist, [t.no_stop_item, t.air_test_item])
             return
-        want = {"job": info["job"], "index": info.get("index"),
-                "nostop": items.get(t.no_stop_item, False), "air": items.get(t.air_test_item, False)}
+        air_kind = f"outlines@{self.cfg.machine.air_test_feed_ipm:g}"   # a new kind of air test remakes old ones
+        want = {"job": info["job"], "index": info.get("index"), "nostop": items.get(t.no_stop_item, False),
+                "air": air_kind if items.get(t.air_test_item, False) else False}
         had = info.get("options") or {"job": info["job"], "index": info.get("index"), "nostop": False, "air": False}
         same = all(had.get(k) == v for k, v in want.items())
         if same and had.get("error"):
@@ -280,9 +281,11 @@ class Runner:
             return
         programs, stem, desc, lift, stops = made
         files: Dict[str, str] = {}
+        same_air = all(had.get(k) == want[k] for k in ("job", "index", "air"))   # an air test made the same way
         for a in card.attachments:                    # this sheet's programs: keep the wanted ones, once each
             if a.name.startswith(stem) and a.name.lower().endswith(".tap"):
-                if a.name in programs and a.name not in files:
+                reusable = same_air or not a.name.endswith(f"{AIR_SUFFIX}.tap")
+                if a.name in programs and a.name not in files and reusable:
                     files[a.name] = a.id
                 else:
                     self.t.delete_attachment(card.id, a.id)
@@ -297,7 +300,8 @@ class Runner:
             self.t.comment(card.id, text.no_stop_comment(main, want["nostop"]))
         if want["air"] and not (had.get("air") and same):
             name = next(n for n in programs if n.endswith(f"{AIR_SUFFIX}.tap"))
-            self.t.comment(card.id, text.air_test_comment(name, lift, self.cfg.machine.air_test_gap_in))
+            self.t.comment(card.id, text.air_test_comment(name, lift, self.cfg.machine.air_test_gap_in,
+                                                          self.cfg.machine.air_test_feed_ipm))
 
     def _programs(self, info: Dict, nostop: bool, air: bool):
         """({file name: (bytes, guard report)} with the card's program first, the sheet's program stem, the
@@ -329,7 +333,12 @@ class Runner:
         gap = self.cfg.machine.air_test_gap_in
         lift = sheet.thickness_in + gap
         if air:
-            air_data = lift_program(data.decode("ascii"), lift, note_for(lift, gap)).encode("ascii")
+            try:
+                air_text = air_test_program(data.decode("ascii"), sheet.thickness_in, gap,
+                                            self.cfg.machine.air_test_feed_ipm)
+            except AirTestError as e:
+                return f"the air test couldn't be made ({e})"
+            air_data = air_text.encode("ascii")
             check = check_air_test(air_data, run_job, sheet.thickness_in, sheet.tool, sheet.outer_order, counts, gap)
             if not check.passed:
                 return "the air test failed its check (" + "; ".join(check.problems()) + ")"

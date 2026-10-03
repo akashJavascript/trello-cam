@@ -79,7 +79,10 @@ def test_air_test_on_and_off(tmp_path):
     air = files["6061_0p125_r001_S1_AIRTEST.tap"]
     assert lowest_z(air) == 0.625 and lowest_z(files["6061_0p125_r001_S1.tap"]) == 0.0
     assert air.count(b"M0") == 1 and b"[AIR TEST - RAISED 0.625 IN" in air
-    assert "Air test added: 6061_0p125_r001_S1_AIRTEST.tap" in h.tracker.comments_on(s1.id)[-1]
+    assert "Air test added: 6061_0p125_r001_S1_AIRTEST.tap. It runs only the part outlines, at 200 in/min" in \
+        h.tracker.comments_on(s1.id)[-1]
+    feeds = {w for line in air.decode("ascii").split("\r\n") for w in line.split() if w.startswith("F")}
+    assert feeds == {"F200."}
     h.runner.tick()
     assert len(programs(h, s1.id)) == 2                                # not added twice
     tick(h, s1.id, AIR, done=False)
@@ -164,3 +167,18 @@ def test_no_options_on_a_sheet_that_cannot_be_cut(tmp_path):
     h.runner.tick()
     bad = sheet(h, "NOT CUTTABLE")
     assert (bad.id, "Options") not in h.tracker.checklists
+
+
+def test_an_air_test_made_the_old_way_is_remade(tmp_path):
+    h, s1 = two_part_sheet(tmp_path)
+    tick(h, s1.id, AIR)
+    h.runner.tick()
+    [old] = [a for a, (c, n, _) in h.tracker.files.items() if c == s1.id and n.endswith("_AIRTEST.tap")]
+    h.tracker.files[old] = (s1.id, h.tracker.files[old][1], b"the first version's air test")
+    info = h.store.sheet_cards()[s1.id]
+    h.store.set_options(s1.id, {**info["options"], "air": True})       # what the first version recorded
+    h.runner.tick()
+    files = programs(h, s1.id)
+    assert len(files) == 2 and old not in h.tracker.files
+    assert b"OUTLINES ONLY AT 200 IPM" in files["6061_0p125_r001_S1_AIRTEST.tap"]
+    assert h.store.sheet_cards()[s1.id]["options"]["air"] == "outlines@200"

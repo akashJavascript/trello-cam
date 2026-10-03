@@ -142,9 +142,9 @@ def joined_sheet_failed(problems: Sequence[str]) -> str:
             "A mentor should look at it")
 
 
-def air_test_comment(name: str, lift_in: float, gap_in: float) -> str:
-    return (f"Air test added: {name}. It's this sheet's program raised {lift_in:g} in, so the cutter stays "
-            f"{gap_in:g} in above the sheet and cuts nothing. Run it before the real program.")
+def air_test_comment(name: str, lift_in: float, gap_in: float, feed_ipm: float) -> str:
+    return (f"Air test added: {name}. It runs only the part outlines, at {feed_ipm:g} in/min, raised {lift_in:g} in "
+            f"so the cutter stays {gap_in:g} in above the sheet and cuts nothing. Run it before the real program.")
 
 
 def air_test_failed_comment(why: str) -> str:

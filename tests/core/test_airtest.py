@@ -84,3 +84,61 @@ def test_taking_the_pauses_out_gives_back_the_posted_program():
         remove(paused.replace("G53 P10\r\n[REMOVE PART", "G53 P11\r\n[REMOVE PART", 1), order, spec)
     with pytest.raises(PauseError):
         remove(posted, order, spec)                        # nothing to take out
+
+
+# ---- outlines only, one feed (air_test_program)
+
+def test_only_the_outlines_keep_their_moves():
+    from autocam_core.airtest import outlines_only
+    sheet = text("sheet_mist.tap")
+    air = outlines_only(sheet)
+    lines = air.split("\r\n")
+    assert "[drill]" not in lines and "[inner]" not in lines           # those ops' moves and names are gone
+    assert not any(l.startswith(("G81", "G2 X10.")) for l in lines)
+    assert lines[:9] == ["[6061_0p125_r017_S1]", "[r017-al6061]", "M11 C8", "G90", "G20", "G53 Z",
+                         "S18000", "M3", "G4 X4."]                       # ...but the spindle still starts
+    assert "G80" in lines
+    outer = sheet[sheet.index("[outer p01-1]"):]
+    assert air.endswith(outer)                                          # the outlines are byte for byte the same
+
+
+def test_a_kept_move_that_would_change_is_refused():
+    from autocam_core.airtest import AirTestError, outlines_only
+    program = "\r\n".join(["[p]", "G90", "G20", "G53 Z", "[inner]", "S18000", "M3", "G0 X1. Y1.", "G0 Z0.3",
+                           "G1 Z0. F20.", "[outer p01-1]", "X5. Y5.", "G0 Z2.", ""])   # X5 Y5 is still a G1 move
+    with pytest.raises(AirTestError, match="X5. Y5."):
+        outlines_only(program)
+    with pytest.raises(AirTestError, match="no outline"):
+        outlines_only("[p]\r\nG20\r\n[inner]\r\nG0 X1. Y1.\r\n")
+
+
+def test_every_feed_move_at_one_speed():
+    from autocam_core.airtest import set_feed
+    out = set_feed(text("sheet_mist.tap"), 200)
+    mode = None
+    for line in out.split("\r\n"):
+        if not line or line.startswith("["):
+            continue
+        words = parse_code(line)
+        gs = [v for k, v in words if k == "G"]
+        mode = next((g for g in gs if g in (0, 1, 2, 3, 81)), mode)
+        moving = any(k in "XYZ" for k, _ in words) and 53 not in gs and 4 not in gs
+        if moving and mode in (1, 2, 3, 81):
+            assert "F200." in line and line.count("F") == 1, line
+        elif moving:
+            assert "F" not in line, line
+    assert "G1 Y8. F200." in out and "G1 X8. F200." in out             # added where the post left F out
+
+
+def test_the_whole_air_test_on_the_sample_sheet():
+    from autocam_core.airtest import air_test_program
+    order = ["p01-1", "p02-1", "p02-2"]
+    spec = PauseSpec(mist=True)
+    air = air_test_program(insert(text("sheet_mist.tap"), order, spec), 0.125, 0.5, 200)
+    report = check_program(air.encode("ascii"), GuardSpec(stock_top_in=0.125, mist=True))
+    assert report.passed, report.summary()
+    assert report.min_z_in == pytest.approx(0.625)
+    assert verify(air, order, spec, safe_z_in=2.0).ok and air.count("M0") == 2
+    assert air.split("\r\n")[1] == ("[AIR TEST - RAISED 0.625 IN - CUTTER STAYS 0.5 IN ABOVE THE SHEET - OUTLINES "
+                                    "ONLY AT 200 IPM]")
+    assert "G81" not in air and "[drill]" not in air

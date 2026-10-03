@@ -51,8 +51,6 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
    config-check` lists them): clamp reach, clearance and height decide where parts may go.
 
 ### Decisions waiting on you
-- **Fast air test:** run the air test's cutting moves at a fast feed (250 in/min proposed: P-2011 goes from 12.6
-  to about 3 minutes). Needs your machine's comfortable top feed.
 - **Merge `m1-offline` into `main`:** everything since M0 is on the branch.
 - **Onshape per-run cap:** `onshape.per_run_max_calls` is still 15, about 2 uncached parts per run (more cards
   just wait for the next run). Raise it once the ledger looks right (15 calls so far).

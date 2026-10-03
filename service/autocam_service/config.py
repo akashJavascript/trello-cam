@@ -71,6 +71,7 @@ class Machine:
     park: str
     z_touchoff: str
     air_test_gap_in: float
+    air_test_feed_ipm: float
 
 
 @dataclass(frozen=True)
@@ -463,6 +464,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         park=t.string("park", required=True),
         z_touchoff=t.string("z_touchoff", choices=("spoilboard",)),
         air_test_gap_in=t.number("air_test_gap_in", positive=True),
+        air_test_feed_ipm=t.number("air_test_feed_ipm", positive=True),
     )
     t.finish()
 

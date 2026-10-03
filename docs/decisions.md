@@ -358,3 +358,17 @@ within a minute (Sheet review or Ready to cut), unticking undoes them, and a reb
   manifest stays off, so a development PC doesn't start it uninvited). Automatic Windows sign-in is left to the
   team: it's a security choice for the shop PC.
 
+## 2026-10-02: the air test is the outlines only, at 200 in/min (the user's choice)
+
+The air test now runs only the part outlines, every feed move at `machine.air_test_feed_ipm` (200 in/min),
+still raised 0.5 in above the sheet. That's the part that matters near the clamps, and it makes the air test
+quick. On P-2011 (r005) it's 164 in of moves, under a minute, instead of 750 in and 12.7 minutes.
+- **Outlines only** (`airtest.outlines_only`): the ops before the outlines (holes, cutouts, pockets) lose their
+  moves and their name comments, but keep their spindle, mist and mode lines, so the spindle still starts.
+  The outlines are always the last ops. A check refuses the air test if taking those ops out would change any
+  kept move: its motion mode, or (for anything but a rapid) its start point. The stops between parts are kept.
+- **One feed** (`airtest.set_feed`): every G1, G2, G3 and drill-cycle move gets `F200.`, added where the post left F
+  out (F carries over, and the move before might have been taken out). Rapids stay rapids.
+- Checked like before (guard, pauses, nothing below stock top + 0.5 in). Checked on the real r005 program.
+- An air test already on a card from the earlier version is remade (the options record which kind they made).
+

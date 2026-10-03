@@ -42,6 +42,7 @@ spin_up_dwell_s = 4.0      # the post's G4 X4 after M3
 park = "G53 P10"           # park position, same as the post's program end
 z_touchoff = "spoilboard"
 air_test_gap_in = 0.5      # an air test program runs this far above the top of the sheet
+air_test_feed_ipm = 200.0  # ...outlines only, every feed move at this speed (rapids stay rapids)
 
 [sheet]
 length_in = 48.0
