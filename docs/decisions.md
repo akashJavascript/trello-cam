@@ -425,3 +425,15 @@ and a cut across the sheet would run through the clamps anyway.
 - Sheets published before this (like r006 before it's rebuilt) don't record their used stretch, so cutting
   them makes no offcut.
 
+## 2026-10-03: the air test traces each outline once (the user's choice)
+
+The real outlines ramp down and go round each part several times without retracting (P-2011: 164 in of
+moves, 0.30 in down to 0, four to five laps). In the air that's wasted time, so `airtest.one_lap` keeps
+**one lap per outline**: the lap at its final depth, entered straight down (a rapid to where that lap starts,
+the op's own retract height, then down), and the op's own retract after it. The ramps and the other laps go.
+- Every lap move kept starts at the same point and in the same mode as in the real program (checked), so the
+  path traced is the real final-depth path.
+- An outline op with anything but moves between its first and last move is left as it was.
+- On the real programs: P-2011 164 in -> 29.6 in (about 9 s at 200 in/min); r006 (4 parts) 80 in, about 24 s,
+  stops kept. Air tests already on cards are remade.
+

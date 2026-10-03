@@ -140,5 +140,53 @@ def test_the_whole_air_test_on_the_sample_sheet():
     assert report.min_z_in == pytest.approx(0.625)
     assert verify(air, order, spec, safe_z_in=2.0).ok and air.count("M0") == 2
     assert air.split("\r\n")[1] == ("[AIR TEST - RAISED 0.625 IN - CUTTER STAYS 0.5 IN ABOVE THE SHEET - OUTLINES "
-                                    "ONLY AT 200 IPM]")
+                                    "ONLY, ONE LAP EACH, AT 200 IPM]")
     assert "G81" not in air and "[drill]" not in air
+
+
+# ---- one lap per outline
+
+RAMPED = "\r\n".join([
+    "[p]", "G90", "G20", "G53 Z", "[outer p01-1]", "S18000", "M3", "G4 X4.",
+    "G0 X1. Y1.", "Z2.", "Z0.3",
+    "G1 Z0.25 F20.", "X2. Z0.2 F60.",                                  # ramp in
+    "X5.", "Y5.", "X1.", "Y1.", "X2. Z0.1",                            # lap 1, then ramp down
+    "X5.", "Y5.", "X1.", "Y1.", "X2. Z0.",                             # lap 2, ramp to the bottom
+    "X5.", "G3 X6. Y2. I0. J1.", "G1 Y5.", "X1.", "Y1.", "X2.",        # the lap at the final depth
+    "X2.5 Z0.05",                                                       # ramp out
+    "G0 Z2.", "G53 Z", "M5", "G53 P10", ""])
+
+
+def test_only_the_lap_at_the_final_depth_is_kept():
+    from autocam_core.airtest import one_lap
+    out = one_lap(RAMPED).split("\r\n")
+    start = out.index("[outer p01-1]")
+    assert out[start + 1:start + 4] == ["S18000", "M3", "G4 X4."]                  # the spindle start stays
+    assert out[start + 4:] == ["G0 X2. Y1.", "G0 Z0.3", "G1 Z0.",                  # straight down where the lap starts
+                               "G1 X5.", "G3 X6. Y2. I0. J1.", "G1 Y5.", "X1.", "Y1.", "X2.",
+                               "G0 Z2.", "G53 Z", "M5", "G53 P10", ""]
+
+
+def test_a_single_lap_outline_stays_the_same_path():
+    from autocam_core.airtest import one_lap
+    sheet = text("sheet_mist.tap")
+    out = one_lap(sheet)
+    outer = out[out.index("[outer p01-1]"):].split("\r\n")
+    assert outer[1:9] == ["G0 X4. Y4.", "G0 Z0.325", "G1 Z0.", "G1 X8. F60.", "G3 X9. Y5. I0. J1.", "G1 Y8.",
+                          "G1 X4.", "G1 Y4."]
+
+
+def test_an_outline_with_anything_else_in_it_is_left_alone():
+    from autocam_core.airtest import one_lap
+    odd = RAMPED.replace("X5.\r\nY5.\r\nX1.\r\nY1.\r\nX2. Z0.1", "X5.\r\nM11 C8\r\nY5.\r\nX1.\r\nY1.\r\nX2. Z0.1")
+    assert one_lap(odd) == odd
+
+
+def test_the_whole_air_test_traces_each_outline_once():
+    from autocam_core.airtest import air_test_program
+    air = air_test_program(RAMPED, 0.25, 0.5, 200)
+    assert "OUTLINES ONLY, ONE LAP EACH, AT 200 IPM" in air
+    report = check_program(air.encode("ascii"), GuardSpec(stock_top_in=0.25, mist=False))
+    assert report.passed, report.summary()
+    assert report.min_z_in == pytest.approx(0.75)                       # the final depth, lifted: 0.5 in above the plate
+    assert air.count("X5.") == 1                                        # one lap

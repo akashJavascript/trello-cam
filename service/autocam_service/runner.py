@@ -348,7 +348,7 @@ class Runner:
         if not items:
             self.t.add_checklist(card.id, t.options_checklist, [t.no_stop_item, t.air_test_item])
             return
-        air_kind = f"outlines@{self.cfg.machine.air_test_feed_ipm:g}"   # a new kind of air test remakes old ones
+        air_kind = f"one-lap@{self.cfg.machine.air_test_feed_ipm:g}"   # a new kind of air test remakes old ones
         want = {"job": info["job"], "index": info.get("index"), "nostop": items.get(t.no_stop_item, False),
                 "air": air_kind if items.get(t.air_test_item, False) else False}
         had = info.get("options") or {"job": info["job"], "index": info.get("index"), "nostop": False, "air": False}

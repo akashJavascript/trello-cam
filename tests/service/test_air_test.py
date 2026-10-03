@@ -79,7 +79,7 @@ def test_air_test_on_and_off(tmp_path):
     air = files["6061_0p125_r001_S1_AIRTEST.tap"]
     assert lowest_z(air) == 0.625 and lowest_z(files["6061_0p125_r001_S1.tap"]) == 0.0
     assert air.count(b"M0") == 1 and b"[AIR TEST - RAISED 0.625 IN" in air
-    assert "Air test added: 6061_0p125_r001_S1_AIRTEST.tap. It runs only the part outlines, at 200 in/min" in \
+    assert "Air test added: 6061_0p125_r001_S1_AIRTEST.tap. It traces each part's outline once, at 200 in/min" in \
         h.tracker.comments_on(s1.id)[-1]
     feeds = {w for line in air.decode("ascii").split("\r\n") for w in line.split() if w.startswith("F")}
     assert feeds == {"F200."}
@@ -180,8 +180,8 @@ def test_an_air_test_made_the_old_way_is_remade(tmp_path):
     h.runner.tick()
     files = programs(h, s1.id)
     assert len(files) == 2 and old not in h.tracker.files
-    assert b"OUTLINES ONLY AT 200 IPM" in files["6061_0p125_r001_S1_AIRTEST.tap"]
-    assert h.store.sheet_cards()[s1.id]["options"]["air"] == "outlines@200"
+    assert b"OUTLINES ONLY, ONE LAP EACH, AT 200 IPM" in files["6061_0p125_r001_S1_AIRTEST.tap"]
+    assert h.store.sheet_cards()[s1.id]["options"]["air"] == "one-lap@200"
 
 
 def test_sheet_use_line():

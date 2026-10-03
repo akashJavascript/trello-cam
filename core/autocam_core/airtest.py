@@ -6,7 +6,9 @@ pauses. It's made from the exact bytes that passed the sheet check (air_test_pro
    their moves and comments but keep their spindle, mist and mode lines, so the spindle still starts. The
    outlines are always the last ops. A check makes sure every kept move is the same move it was: the same
    motion mode and, for anything but a rapid, the same start point.
-2. set_feed: every feed move runs at one speed (machine.air_test_feed_ipm); rapids stay rapids.
+2. one_lap: each outline is traced once, the lap at its final depth, entered straight down. The other laps
+   and the ramps between them go. Every lap move kept starts where it did, in the same mode.
+   set_feed: every feed move runs at one speed (machine.air_test_feed_ipm); rapids stay rapids.
 3. lift_program: `lift` is added to every Z and R value. Lines with G53 are left alone: `G53 Z` and the park
    are machine coordinates, already at the top. The stops between parts are kept exactly.
 
@@ -82,7 +84,7 @@ def lift_program(text: str, lift_in: float, note: str = "") -> str:
 
 
 def note_for(lift_in: float, gap_in: float, feed_ipm: float = 0) -> str:
-    feed = f" - OUTLINES ONLY AT {_number(feed_ipm).rstrip('.')} IPM" if feed_ipm else ""
+    feed = f" - OUTLINES ONLY, ONE LAP EACH, AT {_number(feed_ipm).rstrip('.')} IPM" if feed_ipm else ""
     return f"AIR TEST - RAISED {_number(lift_in)} IN - CUTTER STAYS {_number(gap_in)} IN ABOVE THE SHEET{feed}"
 
 
@@ -161,6 +163,87 @@ def outlines_only(text: str) -> str:
     return "".join(kept)
 
 
+def _track(lines):
+    """Per line: (mode, start, end) for a motion line, else None (as _moves, plus where it ends)."""
+    out = []
+    starts = _moves(lines)
+    for line, move in zip(lines, starts):
+        if move is None:
+            out.append(None)
+            continue
+        words = _words(line)
+        axes = {k: v for k, v in words if k in "XYZ" and v is not None}
+        end = tuple(axes.get(k, move[1][i]) for i, k in enumerate("XYZ"))
+        out.append((move[0], move[1], end))
+    return out
+
+
+def _same_z(a, b) -> bool:
+    return a is not None and b is not None and abs(a - b) < 1e-6
+
+
+_PLAIN = re.compile(r"^\s*(?:G0*90\s*)?(?:F\s*[\d.]+\s*)?$")
+
+
+def one_lap(text: str) -> str:
+    """Each `[outer]` op cut down to one lap: rapid to where the lap at its final depth starts, down to that
+    depth, the lap, back up. An op with anything but moves between its first and last move is left as it is.
+    Raises AirTestError if a kept lap move would start anywhere else or in another mode."""
+    lines = re.split(r"(?<=\n)", text)
+    track = _track(lines)
+    starts = [i for i, l in enumerate(lines) if op_tag(l) is not None] + [len(lines)]
+    out, kept = list(lines), {}                  # kept: new line -> original line, for the check
+    for s, e in reversed(list(zip(starts, starts[1:]))):
+        if op_tag(lines[s]) != "outer":
+            continue
+        moving = [i for i in range(s + 1, e) if track[i] is not None]
+        feeds = [i for i in moving if track[i][0] in _FEED_G]
+        if not feeds:
+            continue
+        span = range(moving[0], moving[-1] + 1)
+        if any(track[i] is None and lines[i].strip() and not _is_comment(lines[i])
+               and not _PLAIN.match(lines[i].strip()) for i in span):
+            continue                              # something other than moves in there: leave it alone
+        floor = min(track[i][2][2] for i in feeds if track[i][2][2] is not None)
+        lap = []
+        for i in moving:
+            mode, start, end = track[i]
+            if mode in _FEED_G and _same_z(start[2], floor) and _same_z(end[2], floor):
+                lap.append(i)
+            elif lap:
+                break
+        if not lap:
+            continue
+        nl = "\r\n" if lines[lap[0]].endswith("\r\n") else "\n"
+        sx, sy, _ = track[lap[0]][1]
+        before = [i for i in moving if i < feeds[0] and track[i][0] == 0.0 and track[i][2][2] != track[i][1][2]]
+        retract = track[before[-1]][2][2] if before else None
+        last = moving[-1]
+        clear = track[last][2][2] if track[last][0] == 0.0 and last not in lap else None
+        new = [f"G0 X{_number(sx)} Y{_number(sy)}{nl}"]
+        if retract is not None and retract > floor:
+            new.append(f"G0 Z{_number(retract)}{nl}")
+        new.append(f"G1 Z{_number(floor)}{nl}")
+        for n, i in enumerate(lap):
+            line = lines[i]
+            if n == 0 and not any(k == "G" and v in _MOTION_G for k, v in _words(line)):
+                line = f"G{int(track[i][0])} {line}"
+            new.append(line)
+        if clear is not None:
+            new.append(f"G0 Z{_number(clear)}{nl}")
+        out[span.start:span.stop] = new
+        first = span.start + len(new) - len(lap) - (1 if clear is not None else 0)
+        shift = len(new) - len(span)
+        kept = {k + shift if k >= span.stop else k: v for k, v in kept.items()}
+        kept.update({first + n: i for n, i in enumerate(lap)})
+    result = "".join(out)
+    after = _track(re.split(r"(?<=\n)", result))
+    for new_i, old_i in kept.items():
+        if after[new_i] is None or after[new_i][:2] != track[old_i][:2]:
+            raise AirTestError(f"one lap would change the move {lines[old_i].strip()!r}")
+    return result
+
+
 def set_feed(text: str, feed_ipm: float) -> str:
     """Every feed move (G1, G2, G3, drill cycles) at feed_ipm: an F word on each, replacing any there was."""
     if feed_ipm <= 0:
@@ -184,7 +267,7 @@ def set_feed(text: str, feed_ipm: float) -> str:
 
 def air_test_program(text: str, thickness_in: float, gap_in: float, feed_ipm: float) -> str:
     lift = thickness_in + gap_in
-    return lift_program(set_feed(outlines_only(text), feed_ipm), lift, note_for(lift, gap_in, feed_ipm))
+    return lift_program(set_feed(one_lap(outlines_only(text)), feed_ipm), lift, note_for(lift, gap_in, feed_ipm))
 
 
 def check_air_test(data: bytes, job: Job, thickness_in: float, tool_key: str, outer_order: Sequence[str],
