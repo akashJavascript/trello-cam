@@ -168,6 +168,15 @@ def air_test_failed_comment(why: str) -> str:
     return f"Couldn't make the air test: {why}."
 
 
+def old_layout_comment() -> str:
+    return ("Archived: this sheet was laid out with its length along the machine's X, but X runs across the bed, so "
+            "its program was turned 90 degrees. Don't cut it. Its parts went back to Ready for CAM to be nested again.")
+
+
+def part_old_layout_comment() -> str:
+    return "Back in Ready for CAM: its sheet was laid out the wrong way round for the machine and was archived."
+
+
 def fusion_down_comment(jobs: int) -> str:
     return (f"Fusion isn't running, and {jobs} job{'s are' if jobs != 1 else ' is'} waiting for it. Start Fusion "
             "with the auto-CAM add-in on the shop PC.")

@@ -41,6 +41,7 @@ from autocam_core.hotfolder import Queue, write_atomic
 from autocam_core.offcuts import add_used, free_length
 from autocam_core.pauses import PauseError, remove as remove_pauses
 from autocam_core.sheetcheck import check_sheet_program, pause_spec
+from autocam_core.schema import SchemaError
 from autocam_core.schema_job import OffcutSpec, PartSpec, job_json, load_job
 
 from . import health
@@ -76,6 +77,17 @@ def onshape_problem(e: OnshapeError) -> str:
     return (f"Onshape couldn't read that link ({e.status}: {said}). Check that the link opens a **Part Studio** "
             "tab (not an Assembly or Drawing) at a **version**, and that the part is in it")
 NO_STOP_SUFFIX = "_NOSTOP"
+LAYOUT_CORE = (0, 4, 0)   # jobs before this laid the sheet's length along X; the machine's X runs across the bed
+
+
+def _version(v: str) -> Tuple[int, ...]:
+    try:
+        return tuple(int(p) for p in v.split("."))
+    except ValueError:
+        return (0,)
+
+
+
 LEGACY_AIR_CHECKLIST = "Air test"   # the first version's own box (on r005's card), now an item in Options
 WRITE_ATTEMPTS = 3   # a Trello write that fails on this many ticks is given up (logged), so no run is stuck forever
 
@@ -117,6 +129,7 @@ class Runner:
     def tick(self) -> None:
         self.check_ready_to_cut()
         self.follow_cut()
+        self.retire_old_layout()
         self.sheet_options()
         waiting = self.ready_cards()
         state = self.s.store.active()
@@ -688,8 +701,58 @@ class Runner:
 
     # ------------------------------------------------------------ collect
     def _job(self, job_id: str):
+        """The service's copy of a job, or None (never written, or a format this version can't read)."""
         job_text = self.s.store.job_text(job_id)
-        return load_job(json.loads(job_text)) if job_text else None
+        if not job_text:
+            return None
+        try:
+            return load_job(json.loads(job_text))
+        except (ValueError, SchemaError) as e:
+            log.warning("job %s can't be read by this version: %s", job_id, e)
+            return None
+
+    def retire_old_layout(self) -> None:
+        """Sheet cards from jobs made before the sheet was laid out in the machine's axes (core 0.4.0) have
+        programs turned 90 degrees for the machine. Each one, once: files off, a comment, archived, its offcut
+        released, and its parts that are still On a sheet sent back to Ready for CAM to be nested again."""
+        reg = self.s.store.sheet_cards()
+        stale = []
+        for card_id, info in reg.items():
+            if info.get("archived") or info.get("cut") or not info.get("job") or info.get("old_layout"):
+                continue
+            job_text = self.s.store.job_text(info["job"])
+            if job_text is None:
+                continue
+            try:
+                core = str(json.loads(job_text).get("core_version", "0"))
+            except ValueError:
+                core = "0"
+            if _version(core) < LAYOUT_CORE:
+                stale.append((card_id, info))
+        if not stale:
+            return
+        on_sheet = {c.id for c in self.t.list_cards(self.targets["part_nested"])}
+        for card_id, info in stale:
+            try:
+                self._clear_sheet(card_id)
+                self.t.comment(card_id, text.old_layout_comment())
+                self.t.archive(card_id)
+            except Exception as e:  # noqa: BLE001 - try again next pass
+                log.warning("couldn't retire old-layout sheet card %s: %s", card_id, e)
+                continue
+            for part in info.get("parts", []):
+                if part in on_sheet:
+                    try:
+                        self.t.move(part, self.targets["part_deferred"])
+                        self.t.comment(part, text.part_old_layout_comment())
+                    except Exception as e:  # noqa: BLE001
+                        log.warning("couldn't send part card %s back: %s", part, e)
+            self.offcuts.release_all([card_id])
+            self.s.store.retire_sheet(card_id)
+            sheets = self.s.store.sheet_cards()
+            sheets[card_id]["old_layout"] = True
+            self.s.store._write_sheets(sheets)
+            log.info("retired old-layout sheet card %s (%s)", card_id, info.get("label") or info.get("run"))
 
     def collect(self, state: RunState) -> None:
         store = self.s.store

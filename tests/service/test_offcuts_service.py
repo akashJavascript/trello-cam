@@ -130,3 +130,24 @@ def test_the_load_line_says_when_to_spin_it():
     spun = load_line("6061 3/16in", "u", "r006 S1", (0.5, 7.3), True, 48.0, last_turned=False)
     assert ("Spin it round from how it was for r006 S1 (flat, same side up, don't flip it over): the end where its "
             "parts were cut goes at the back (hanging off the bed).") in spun
+
+
+def test_sheets_from_the_old_layout_are_retired_and_their_parts_sent_back(tmp_path):
+    h, s1 = first_sheet(tmp_path)
+    cut(h, s1.id)
+    [off] = offcut_cards(h)
+    add(h, step_card("c2", "gusset"))
+    run(h)
+    s2 = sheet(h)
+    info = h.store.sheet_cards()[s2.id]
+    old = json.loads(h.store.job_text(info["job"]))
+    old["core_version"] = "0.3.1"                         # as if it was made before the layout change
+    h.store.save_job(info["job"], json.dumps(old))
+    h.runner.tick()
+    assert s2.id in h.tracker.archived and not [n for _, (c, n, _) in h.tracker.files.items() if c == s2.id]
+    assert "turned 90 degrees" in h.tracker.comments_on(s2.id)[-1]
+    assert h.list_of("c2") == "ready_for_cam" and "laid out the wrong way round" in h.tracker.comments_on("c2")[-1]
+    assert json.loads(h.store.offcuts_file.read_text())[off.id]["reserved_by"] is None
+    before = len(h.tracker.comments)
+    h.runner.tick()
+    assert len([c for c in h.tracker.comments if "turned 90" in c[1]]) == 1                # once
