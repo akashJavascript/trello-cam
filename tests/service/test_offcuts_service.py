@@ -61,6 +61,7 @@ def test_the_next_run_nests_onto_the_offcut_and_says_how_to_load_it(tmp_path):
     assert s2.name.startswith("6061 1/8in offcut - 4 mm O-flute ALU")
     assert (f"Stock: the 6061 1/8in offcut, not a new sheet ({off.url}). Put it in with the end where r001 S1's "
             "parts were cut at the far end (hanging off the bed).") in s2.desc
+    assert "Same side up: spin it round flat, don't flip it over." in s2.desc
     assert json.loads(h.store.offcuts_file.read_text())[off.id]["reserved_by"] == s2.id
     # while that sheet holds it, another material's run can't, and a reviewed one keeps it
     h.tracker.checklists[(s2.id, "Review")][0][1] = True
