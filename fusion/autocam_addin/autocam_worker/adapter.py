@@ -122,7 +122,7 @@ class Adapter:
         raise NotImplementedError
 
     # -- CAM
-    def make_sheet(self, sheet: str, origin: Tuple[float, float], length_in: float, width_in: float,
+    def make_sheet(self, sheet: str, origin: Tuple[float, float], size_x_in: float, size_y_in: float,
                    thickness_in: float, copy_ids: Sequence[str]) -> None:
         """Stock solid for the full sheet at origin, and a setup with the copies as models, stock from that
         solid, and the work origin at the stock's bottom front-left corner."""

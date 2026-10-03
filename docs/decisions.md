@@ -447,3 +447,26 @@ fewer new sheets: it ranks right after those in the score. The sheet card says e
 way round as for r006 S1: ..." or "Spin it round from how it was for r006 S1 (flat, same side up, don't flip
 it over): ...". The offcut card's "N in free" is still the most room either way round.
 
+## 2026-10-03: the sheet runs along the machine's Y (found on the real machine)
+
+On the team's ShopSabre 23, **X runs across the bed (30 in) and Y front to back (40 in)**, and the sheet's
+back end overhangs. Everything until now had the sheet's length along X, which put the WCS origin at the
+front-right corner (the user spotted it in Fusion). Programs posted before this (r005-r007) are turned 90
+degrees for this machine and must not be cut.
+- **Sheet coordinates = machine axes now:** X across the 24 in width, left to right; Y along the 48 in
+  length, front to back; origin at the bottom front-left corner. The setup is unchanged in Fusion (model
+  orientation, `wcs_origin_boxPoint = 'bottom 1'`, the minimum corner): the nest is laid out in this frame,
+  so the design, the simulation and a hand re-post all match the machine.
+- **Fixture:** the clamp strips are on the long edges, now the left and right edges (`clamps.edges =
+  ["left", "right"]`; "front" is the end by the operator). The reach is along Y (`machine.reach_y_in = 40`),
+  and the guard checks Y against it. The nest region is (1.25, 0.5) to (22.75, 39.5).
+- **Pipeline:** sheets sit side by side along X (pitch = width + spacing). Offcut stretches, "last sheet
+  reach" and the free length are along Y. Results carry `used_y_in`.
+- **Cards:** "Clamps: left and right edges only"; an offcut's end goes "at the front (by you)" or "at the back
+  (hanging off the bed)".
+- Core 0.4.0 (SheetSpec.reach_in, GuardSpec.reach_y_in, SheetResult.used_y_in).
+- **Not seen yet:** which way Fusion's Arrange packs in the new shape (21.5 in across by 39 in along). If it
+  hugs the left edge and runs the length instead of filling the width from the front, the free length shrinks
+  and offcuts get less. The "Sheet use ... the back N in are empty" line on the next sheets will show it, and
+  the fix would be the "shortest strip" step (shrinking the Arrange area along Y).
+

@@ -60,7 +60,7 @@ def test_the_next_run_nests_onto_the_offcut_and_says_how_to_load_it(tmp_path):
     s2 = sheet(h)
     assert s2.name.startswith("6061 1/8in offcut - 4 mm O-flute ALU")
     assert (f"Stock: the 6061 1/8in offcut, not a new sheet ({off.url}). Put it in the same way round as for "
-            "r001 S1: the end where its parts were cut at the zero corner (front left, by you).") in s2.desc
+            "r001 S1: the end where its parts were cut at the front (by you).") in s2.desc
     assert "Spin" not in s2.desc
     assert json.loads(h.store.offcuts_file.read_text())[off.id]["reserved_by"] == s2.id
     # while that sheet holds it, another material's run can't, and a reviewed one keeps it
@@ -126,7 +126,7 @@ def test_an_open_sheet_on_an_offcut_keeps_it_when_rebuilt(tmp_path):
 def test_the_load_line_says_when_to_spin_it():
     from autocam_service.offcuts import load_line
     same = load_line("6061 3/16in", "u", "r006 S1", (0.5, 7.3), False, 48.0, last_turned=False)
-    assert "the same way round as for r006 S1: the end where its parts were cut at the zero corner" in same
+    assert "the same way round as for r006 S1: the end where its parts were cut at the front (by you)" in same
     spun = load_line("6061 3/16in", "u", "r006 S1", (0.5, 7.3), True, 48.0, last_turned=False)
     assert ("Spin it round from how it was for r006 S1 (flat, same side up, don't flip it over): the end where its "
-            "parts were cut goes at the far end (hanging off the bed).") in spun
+            "parts were cut goes at the back (hanging off the bed).") in spun

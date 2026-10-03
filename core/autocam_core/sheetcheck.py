@@ -57,10 +57,10 @@ def guard_spec(job: Job, thickness_in: float, tool_key: str) -> GuardSpec:
         clamp_zones_in=job.fixture.clamp_zones_in,
         clamp_clear_z_in=clamp_clear_z(thickness_in, job.fixture.clamp_height_in, job.guard.clamp_margin_in),
         tool_radius_in=tool.diameter_in / 2,
-        reach_x_in=job.sheet.reach_x_in,
+        reach_y_in=job.sheet.reach_in,
         mist=job.material.use_mist,
         stock_top_in=thickness_in,
-        sheet_in=(job.sheet.length_in, job.sheet.width_in),
+        sheet_in=(job.sheet.width_in, job.sheet.length_in),
     )
 
 

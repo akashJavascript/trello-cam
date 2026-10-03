@@ -124,10 +124,10 @@ class FakeAdapter(Adapter):
         self.copies.pop(copy_id, None)
         self.boxes.pop(copy_id, None)
 
-    def make_sheet(self, sheet, origin, length_in, width_in, thickness_in, copy_ids):
+    def make_sheet(self, sheet, origin, size_x_in, size_y_in, thickness_in, copy_ids):
         if sheet in self.fail_make_sheet:
             raise AdapterError("setups.add: RuntimeError: 3 : something broke")
-        self.sheets[sheet] = {"origin": origin, "size": (length_in, width_in), "t": thickness_in,
+        self.sheets[sheet] = {"origin": origin, "size": (size_x_in, size_y_in), "t": thickness_in,
                               "copies": list(copy_ids), "ops": [], "fills": {}, "outer": [], "deleted": []}
 
     def apply_template(self, sheet, template_path):

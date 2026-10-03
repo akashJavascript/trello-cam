@@ -38,7 +38,7 @@ class MaterialSpec:
 class SheetSpec:
     length_in: float
     width_in: float
-    reach_x_in: float
+    reach_in: float            # along the sheet's length (machine Y); the rest overhangs the back of the bed
 
 
 @dataclass(frozen=True)

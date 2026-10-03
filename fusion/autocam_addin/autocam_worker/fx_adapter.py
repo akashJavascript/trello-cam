@@ -95,8 +95,8 @@ class FusionAdapter(Adapter):
             raise AdapterError(f"no setup for {sheet}")
         return self.setups[sheet]
 
-    def make_sheet(self, sheet, origin, length_in, width_in, thickness_in, copy_ids):
-        stock = fx_design.make_stock(self.design, sheet, origin, length_in, width_in, thickness_in)
+    def make_sheet(self, sheet, origin, size_x_in, size_y_in, thickness_in, copy_ids):
+        stock = fx_design.make_stock(self.design, sheet, origin, size_x_in, size_y_in, thickness_in)
         if self.cam is None:
             self.cam = call("open Manufacture", fx_cam.cam_product, self.app, self.doc)
         models = [fx_design.body(self._occ(c)) for c in copy_ids]

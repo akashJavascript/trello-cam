@@ -83,8 +83,7 @@ def load_line(stock: str, url: str, last_label: str, last_stretch: Stretch, turn
     middle = (last_stretch[0] + last_stretch[1]) / 2
     if turned:
         middle = sheet_length - middle
-    end = "at the zero corner (front left, by you)" if middle < sheet_length / 2 else \
-        "at the far end (hanging off the bed)"
+    end = "at the front (by you)" if middle < sheet_length / 2 else "at the back (hanging off the bed)"
     head = f"Stock: the {stock} offcut, not a new sheet ({url})."
     if turned == last_turned:
         how = f"Put it in the same way round as for {last_label}: the end where its parts were cut {end}."

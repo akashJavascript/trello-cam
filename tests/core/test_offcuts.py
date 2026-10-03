@@ -6,7 +6,7 @@ L, LO, HI, GAP = 48.0, 0.5, 39.5, 0.5     # sheet length, the nest region along 
 
 
 def test_a_short_strip_used_turns_the_sheet_round_for_a_whole_sheets_worth():
-    used = [(0.0, 7.5)]                    # r006: the first 7.5 in from the zero corner
+    used = [(0.0, 7.5)]                    # r006: the first 7.5 in from the front end
     as_was = free_stretch(used, L, False, LO, HI, GAP)
     assert as_was == (8.0, 39.5)
     turned = best_placement(used, L, LO, HI, GAP, 6.0)
@@ -29,7 +29,7 @@ def test_used_at_both_ends_leaves_the_middle():
 
 
 def test_recording_a_cut_in_the_sheets_own_coordinates():
-    used = add_used([(0.0, 7.5)], (0.5, 20.0), L, turned=True)      # nested turned round, from the zero corner
+    used = add_used([(0.0, 7.5)], (0.5, 20.0), L, turned=True)      # nested turned round, from the front
     assert used == ((0.0, 7.5), (28.0, 47.5))
     assert as_loaded(used, L, True) == [(0.5, 20.0), (40.5, 48.0)]
     assert add_used(used, (5.0, 10.0), L, turned=False) == ((0.0, 10.0), (28.0, 47.5))   # overlaps merge

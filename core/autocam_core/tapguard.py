@@ -51,10 +51,10 @@ class GuardSpec:
     clamp_zones_in: Tuple[Rect, ...] = ()        # in work coordinates (WCS = sheet front-left bottom)
     clamp_clear_z_in: float = math.inf           # every move over a clamp zone must stay at or above this
     tool_radius_in: float = 0.0                  # clamp zones are grown by this much
-    reach_x_in: Optional[float] = None           # no X beyond the machine's reach
+    reach_y_in: Optional[float] = None           # no Y beyond the machine's reach (the sheet's length runs along Y)
     mist: Optional[bool] = None                  # expected useMist; None = don't check
     stock_top_in: Optional[float] = None         # no sideways rapid below this; None = don't check
-    sheet_in: Optional[Tuple[float, float]] = None   # (length, width): below the stock top the tool stays on it
+    sheet_in: Optional[Tuple[float, float]] = None   # (X size, Y size): below the stock top the tool stays on it
 
     def __post_init__(self):
         if self.z_floor_in < 0:
@@ -271,10 +271,10 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
 
     def off_sheet(box: Rect) -> bool:
         """The tool (center grown by its radius) leaves the sheet somewhere in box."""
-        length, width = spec.sheet_in
+        size_x, size_y = spec.sheet_in
         r = spec.tool_radius_in
-        return (box[0] < r - 1e-6 or box[1] < r - 1e-6 or box[2] > length - r + 1e-6
-                or box[3] > width - r + 1e-6)
+        return (box[0] < r - 1e-6 or box[1] < r - 1e-6 or box[2] > size_x - r + 1e-6
+                or box[3] > size_y - r + 1e-6)
 
     def low_enough(height: float) -> bool:
         return spec.sheet_in is not None and spec.stock_top_in is not None and height < spec.stock_top_in - 1e-6
@@ -418,8 +418,8 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
             problems.append(f"{where(n, raw)} (mist is on for this material but M11 C8 is missing)")
         nx = values.get("X", x) if "X" in values else x
         ny = values.get("Y", y) if "Y" in values else y
-        if spec.reach_x_in is not None and "X" in values and nx is not None and nx > spec.reach_x_in + 1e-6:
-            problems.append(f"{where(n, raw)} (X beyond the {spec.reach_x_in} in reach)")
+        if spec.reach_y_in is not None and "Y" in values and ny is not None and ny > spec.reach_y_in + 1e-6:
+            problems.append(f"{where(n, raw)} (Y beyond the {spec.reach_y_in} in reach)")
 
         if cycle is not None and not motion_g:
             # A drilling cycle point: travel at the retract plane, plunge to the cycle Z.

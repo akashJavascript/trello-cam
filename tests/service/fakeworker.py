@@ -23,10 +23,10 @@ from autocam_core.sheetcheck import check_sheet_program, pause_spec
 def make_program(name: str, instances: List[str], thickness: float, mist: bool) -> str:
     clear, retract = thickness + 2.0, thickness + 0.2
     lines = [f"[{name}]"] + (["M11 C8"] if mist else []) + ["G90", "G20", "G53 Z", "[inner]", "S18000", "M3", "G4 X4."]
-    for k, inst in enumerate(instances):
-        x = 2 + 4 * k
-        lines += [f"[outer {inst}]", f"G0 X{x}. Y4.", f"G0 Z{retract:g}", "G1 Z0. F20.", f"G1 X{x + 3}. F60.",
-                  "G1 Y8.", f"G1 X{x}.", "G1 Y4.", f"G0 Z{clear:g}"]
+    for k, inst in enumerate(instances):          # one after another along the sheet's length (Y)
+        y = 2 + 4 * k
+        lines += [f"[outer {inst}]", f"G0 X4. Y{y}.", f"G0 Z{retract:g}", "G1 Z0. F20.", "G1 X7. F60.",
+                  f"G1 Y{y + 3}.", "G1 X4.", f"G1 Y{y}.", f"G0 Z{clear:g}"]
     lines += (["M12 C8"] if mist else []) + ["G53 Z", "M5", "G53 P10"]
     return "\r\n".join(lines) + "\r\n"
 
@@ -67,13 +67,13 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
         for o in job.offcuts:
             if abs(o.thickness_in - thickness) > 1e-6:
                 continue
-            ways = [placement_for(o.used_in, job.sheet.length_in, region[0], region[2], job.nest.offcut_gap_in,
+            ways = [placement_for(o.used_in, job.sheet.length_in, region[1], region[3], job.nest.offcut_gap_in,
                                   job.nest.offcut_min_in, t) for t in (o.last_turned, not o.last_turned)]
             p = ways[0] or ways[1]
             if p is not None:
                 offcut, place = o, p
                 break
-        start = place.x0 if place else region[0]
+        start = place.x0 if place else region[1]
         used_x = (round(start, 3), round(start + 4.0 * len(instances), 3)) if instances else None
         sheet = SheetResult(
             index=1, name=name, stock_type=f"{job.material.key}-{thickness:g}", thickness_in=thickness, tool=tool,
@@ -91,7 +91,7 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
             tool_forced_by=(),
             errors=tuple(Issue("TAP_REJECTED", msg) for msg in check.problems()),
             warnings=(), notes=(), offcut_id=offcut.id if offcut else None,
-            offcut_turned=bool(place and place.turned), used_x_in=used_x)
+            offcut_turned=bool(place and place.turned), used_y_in=used_x)
         parts = []
         for p in job.parts:
             if p.part_key == part_error:

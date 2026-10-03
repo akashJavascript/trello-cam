@@ -28,7 +28,7 @@ DEFAULT_CONFIG = REPO_ROOT / "config" / "autocam.toml"
 
 SCHEMA = 1
 FAMILIES = ("aluminum", "polycarbonate")
-CLAMP_EDGES = ("front", "back", "zero_end")
+CLAMP_EDGES = ("left", "right", "front")      # the long edges, and the end by the operator
 OP_TAGS = ("drill", "bore", "bearing", "pocket", "inner", "outer")
 TRELLO_LISTS = ("inbox", "ready_for_cam", "needs_fixing", "nested", "sheet_review",
                 "ready_to_cut", "cut", "offcuts", "control")
@@ -63,7 +63,7 @@ class ConfigError(Exception):
 
 @dataclass(frozen=True)
 class Machine:
-    reach_x_in: float
+    reach_y_in: float
     z_floor_in: float
     units: str
     spindle_rpm: int
@@ -460,7 +460,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
 
     t = top.table("machine")
     machine = Machine(
-        reach_x_in=t.number("reach_x_in", positive=True),
+        reach_y_in=t.number("reach_y_in", positive=True),
         z_floor_in=t.number("z_floor_in"),
         units=t.string("units", choices=("in",)),
         spindle_rpm=t.integer("spindle_rpm", minimum=1),

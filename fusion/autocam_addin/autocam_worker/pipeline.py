@@ -220,11 +220,11 @@ def _drop(adapter: Adapter, part: _Part, log: Callable[[str], None]) -> None:
 
 def _envelope(job: Job, origin: Tuple[float, float], offcut: Optional[Placement] = None) -> Rect:
     """Where Arrange may put parts on a sheet at origin: the nest region shrunk by the part spacing. On an
-    offcut, only its free stretch along the length."""
+    offcut, only its free stretch along the length (Y)."""
     region, inset = job.fixture.nest_region_in, job.nest.part_spacing_in
-    x0, x1 = (offcut.x0, offcut.x1) if offcut is not None else (region[0], region[2])
-    return (origin[0] + x0 + inset, origin[1] + region[1] + inset,
-            origin[0] + x1 - inset, origin[1] + region[3] - inset)
+    y0, y1 = (offcut.x0, offcut.x1) if offcut is not None else (region[1], region[3])
+    return (origin[0] + region[0] + inset, origin[1] + y0 + inset,
+            origin[0] + region[2] - inset, origin[1] + y1 - inset)
 
 
 def _offcut_places(job: Job, thickness: float) -> List[Tuple[str, Optional[Placement], Optional[Placement]]]:
@@ -235,7 +235,7 @@ def _offcut_places(job: Job, thickness: float) -> List[Tuple[str, Optional[Place
     for o in job.offcuts:
         if abs(o.thickness_in - thickness) > 1e-6:
             continue
-        ways = [placement_for(o.used_in, job.sheet.length_in, region[0], region[2], job.nest.offcut_gap_in,
+        ways = [placement_for(o.used_in, job.sheet.length_in, region[1], region[3], job.nest.offcut_gap_in,
                               job.nest.offcut_min_in, turned) for turned in (o.last_turned, not o.last_turned)]
         if any(ways):
             out.append((o.id, ways[0], ways[1]))
@@ -297,13 +297,13 @@ def _part_order(parts: Sequence[_Part], order: str, sizes: Dict[str, Tuple[float
 
 def _score(adapter: Adapter, t: _Try, last_turned: Dict[str, bool]) -> Tuple[int, int, int, int, float]:
     """Smaller is better: (-copies placed, new sheets, offcuts spun round, sheets, how far the last sheet's parts
-    reach along X)."""
+    reach along its length, Y)."""
     placed = sum(len(p) for p in t.placed)
     if not t.envelopes:
         return (0, 0, 0, 0, 0.0)
     env = t.envelopes[-1][1]
     try:
-        reach = max(adapter.box(c).x1 for c in t.placed[-1]) - env[0]
+        reach = max(adapter.box(c).y1 for c in t.placed[-1]) - env[1]
     except AdapterError:
         reach = float("inf")
     fresh = sum(1 for offcut_id, _ in t.stock if offcut_id is None)
@@ -313,7 +313,7 @@ def _score(adapter: Adapter, t: _Try, last_turned: Dict[str, bool]) -> Tuple[int
 def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part], x_start: float, slot: int,
                 log: Callable[[str], None], notes: List[str]) -> Tuple[List[_Sheet], int]:
     """Arrange one stock thickness onto as many sheets as it takes (up to the job's limit)."""
-    pitch = job.sheet.length_in + job.nest.envelope_spacing_in
+    pitch = job.sheet.width_in + job.nest.envelope_spacing_in       # sheets side by side along X
     by_key = {p.key: p for p in parts}
 
     def key_of(cid: str) -> str:
@@ -482,8 +482,9 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
 # ------------------------------------------------------------------ 4. tool and features per sheet
 
 def _sheet_use(job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> Dict[str, Any]:
-    """How full the sheet is (the parts' material area, the usable area, the empty strip at the far end), which
-    offcut it's on, and the stretch along X it uses (with the outlines' tool paths), in sheet coordinates."""
+    """How full the sheet is (the parts' material area, the usable area, the empty strip at the back), which
+    offcut it's on, and the stretch along its length (Y) it uses (with the outlines' tool paths), in sheet
+    coordinates."""
     if sheet.envelope is None or not sheet.instances:
         return {}
     x0, y0, x1, y1 = sheet.envelope
@@ -492,12 +493,12 @@ def _sheet_use(job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> Dict[str, An
         a = parts[placed.part_key].analysis
         area += a.geometry.face(a.up_face_id).area_in2
     margin = job.nest.part_spacing_in              # covers the outline's tool path around each part
-    used = (round(min(p.bbox_in[0] for _, p in sheet.instances) - sheet.origin[0] - margin, 3),
-            round(max(p.bbox_in[2] for _, p in sheet.instances) - sheet.origin[0] + margin, 3))
+    used = (round(min(p.bbox_in[1] for _, p in sheet.instances) - sheet.origin[1] - margin, 3),
+            round(max(p.bbox_in[3] for _, p in sheet.instances) - sheet.origin[1] + margin, 3))
     return {"parts_area_in2": round(area, 2), "usable_area_in2": round((x1 - x0) * (y1 - y0), 2),
-            "free_length_in": round(max(0.0, x1 - max(p.bbox_in[2] for _, p in sheet.instances)), 2),
+            "free_length_in": round(max(0.0, y1 - max(p.bbox_in[3] for _, p in sheet.instances)), 2),
             "offcut_id": sheet.offcut_id, "offcut_turned": bool(sheet.offcut and sheet.offcut.turned),
-            "used_x_in": used}
+            "used_y_in": used}
 
 
 def _missing_ops(plan: FeaturePlan, capabilities: frozenset) -> List[str]:
@@ -569,7 +570,7 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     if moved:
         sheet.errors.append(Issue(E.ARRANGE_FAILED, f"parts moved after nesting: {'; '.join(moved)}"))
         return
-    adapter.make_sheet(sheet.name, sheet.origin, job.sheet.length_in, job.sheet.width_in, sheet.thickness_in, copy_ids)
+    adapter.make_sheet(sheet.name, sheet.origin, job.sheet.width_in, job.sheet.length_in, sheet.thickness_in, copy_ids)
     ops = adapter.apply_template(sheet.name, tool.template_path)
 
     wrong = [o.name for o in ops if o.tool_guid != tool.guid]
@@ -813,8 +814,8 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             except AdapterError as e:
                 sheet.notes.append(f"machining time unavailable: {e}")
             png = f"{sheet.name}.png"
-            rect = (sheet.origin[0], sheet.origin[1], sheet.origin[0] + job.sheet.length_in,
-                    sheet.origin[1] + job.sheet.width_in)
+            rect = (sheet.origin[0], sheet.origin[1], sheet.origin[0] + job.sheet.width_in,
+                    sheet.origin[1] + job.sheet.length_in)
             try:
                 adapter.preview(sheet.name, rect, out_dir / png)
                 preview = png

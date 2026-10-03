@@ -15,15 +15,16 @@ def test_the_best_of_the_orders_is_kept(tmp_path):
     rig = Rig(tmp_path)
     region = rig.job([("x", 1, plate(name="x"), (1.0, 1.0))]).fixture.nest_region_in
     s = rig.cfg.nest.part_spacing_in
-    assert (region[2] - region[0] - 2 * s, region[3] - region[1] - 2 * s) == (38.5, 21.0)
-    # As listed, the five small plates fill a row and a half and the long plate needs a second sheet of its own,
-    # which it fills to 38 in. Biggest first leaves the small ones for the second sheet, and they reach 36.75 in.
-    job = rig.job([("small", 5, plate(name="small"), (9.0, 7.0)), ("long", 1, plate(name="long"), (38.0, 14.0))])
+    assert (region[2] - region[0] - 2 * s, region[3] - region[1] - 2 * s) == (21.0, 38.5)    # X across, Y along
+    # As listed, the five small plates fill three rows and the big plate needs a second sheet of its own, which
+    # it fills to 18 in along Y. Biggest first leaves one small plate for the second sheet: 7 in.
+    job = rig.job([("small", 5, plate(name="small"), (9.0, 7.0)), ("long", 1, plate(name="long"), (20.0, 18.0))])
     result = rig.run(job)
     assert len(result.sheets) == 2 and all(p.placed == p.qty for p in result.parts)
-    assert [[(p.part_key, p.count) for p in sh.parts] for sh in result.sheets] == [[("p02", 1)], [("p01", 5)]]
-    assert any("nesting the parts biggest first beat the listed order (6 placed on 2 sheet(s), last 36.8 in "
-               "instead of 6 placed on 2 sheet(s), last 38.0 in)" in n for n in result.notes)
+    assert [[(p.part_key, p.count) for p in sh.parts] for sh in result.sheets] == [[("p01", 4), ("p02", 1)],
+                                                                                  [("p01", 1)]]
+    assert any("nesting the parts biggest first beat the listed order (6 placed on 2 sheet(s), last 7.0 in "
+               "instead of 6 placed on 2 sheet(s), last 18.0 in)" in n for n in result.notes)
     # Each try had its own copies; the listed try's were hidden, and the copies left are the winner's.
     assert {f"p01.{n}" for n in range(1, 6)} | {"p02.1"} <= hidden(rig.fake)
     assert set(rig.fake.copies) == {f"p01.{n}~2" for n in range(1, 6)} | {"p02.1~2"}
@@ -49,5 +50,5 @@ def test_sheet_use_is_reported(tmp_path):
     rig = Rig(tmp_path)
     result = rig.run(rig.job([("gusset", 3, plate(name="gusset"), (6.0, 4.0))]))
     [sheet] = result.sheets
-    assert sheet.parts_area_in2 == 3 * 48.0 and sheet.usable_area_in2 == 38.5 * 21.0
-    assert sheet.free_length_in == 38.5 - (3 * 6.0 + 2 * 0.25)
+    assert sheet.parts_area_in2 == 3 * 48.0 and sheet.usable_area_in2 == 21.0 * 38.5
+    assert sheet.free_length_in == 38.5 - 4.0                # one row of three, 4 in deep, at the front

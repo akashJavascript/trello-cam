@@ -38,7 +38,7 @@ def test_make_job_prints_a_valid_job(tmp_path, capsys):
     assert job.job_id == "local001-al6061" and job.parts[0].qty == 3 and job.parts[0].source == "local"
     assert job.post.properties["useMist"] is True and job.post.properties["safePositionMethod"] == "G53"
     assert job.tooling.default == "t1_4mm_alu" and job.tooling.small_features == "t12_eighth_alu"
-    assert job.fixture.nest_region_in == (0.5, 1.25, 39.5, 22.75)
+    assert job.fixture.nest_region_in == (1.25, 0.5, 22.75, 39.5)
 
 
 def test_make_job_submit_and_errors(tmp_path, capsys):

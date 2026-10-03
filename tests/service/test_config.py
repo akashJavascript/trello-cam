@@ -133,7 +133,7 @@ BAD_VARIANTS = [
     ("unknown_section", _set("extras", {}), "extras: unknown key"),
     ("missing_key", _delete("nest", "part_spacing_in"), "nest.part_spacing_in: missing"),
     ("float_for_int", _set("nest", "max_sheets_per_group", 2.5), "expected an integer"),
-    ("bool_for_number", _set("machine", "reach_x_in", True), "expected a number"),
+    ("bool_for_number", _set("machine", "reach_y_in", True), "expected a number"),
     ("schema_mismatch", _set("schema", 2), "this code reads schema 1"),
     ("assumed_key_missing", _set("assumed", "clamps.reach_mm", "typo"), "assumed.clamps.reach_mm: no such key"),
     # shop rules

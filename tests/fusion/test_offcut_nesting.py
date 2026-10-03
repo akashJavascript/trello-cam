@@ -11,21 +11,18 @@ def job_with(rig, parts, offcuts):
 
 
 def stretches(rig):
-    """Each Arrange's area along X, relative to its sheet (the area starts 0.25 in in from the free stretch)."""
-    out = []
-    for x0, _, x1, _ in rig.fake.arrange_envelopes:
-        out.append((x0, x1))
-    return out
+    """Each Arrange's area along the length (Y)."""
+    return [(y0, y1) for _, y0, _, y1 in rig.fake.arrange_envelopes]
 
 
 def test_parts_that_fit_go_on_the_offcut_the_same_way_round_as_before(tmp_path):
     rig = Rig(tmp_path)
-    # Cut once with end A at the zero corner, 7.5 in used: the same way round, 8 to 39.5 in is free.
+    # Cut once with end A at the front, 7.5 in used: the same way round, 8 to 39.5 in along Y is free.
     job = job_with(rig, [("plate", 4, plate(name="plate"), (10.0, 5.0))], [OffcutSpec("off1", 0.125, ((0.0, 7.5),))])
     result = rig.run(job)
     [sheet] = result.sheets
     assert sheet.offcut_id == "off1" and not sheet.offcut_turned                    # no spinning the sheet round
-    assert sheet.used_x_in[0] >= 8.0
+    assert sheet.used_y_in[0] >= 8.0
 
 
 def test_spinning_an_offcut_round_wins_only_when_it_saves_a_new_sheet(tmp_path):
@@ -59,8 +56,8 @@ def test_offcuts_of_another_thickness_or_without_room_are_left_alone(tmp_path):
 
 def test_an_offcut_that_takes_nothing_doesnt_stop_the_nest(tmp_path):
     rig = Rig(tmp_path)
-    # 31.5 in used: turned round, 0.5 to 16 in is free, too short for a 20 in part.
-    job = job_with(rig, [("long", 1, plate(name="long"), (20.0, 5.0))], [OffcutSpec("short", 0.125, ((0.0, 31.5),))])
+    # 31.5 in used: either way round, at most 0.5 to 16 in is free, too short for a part 20 in long.
+    job = job_with(rig, [("long", 1, plate(name="long"), (5.0, 20.0))], [OffcutSpec("short", 0.125, ((0.0, 31.5),))])
     result = rig.run(job)
     assert [s.offcut_id for s in result.sheets] == [None] and result.parts[0].placed == 1
 

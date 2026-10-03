@@ -39,6 +39,9 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
 - **One rule to confirm:** "no sideways rapid below the stock top" assumes templates use full retraction.
   Check it on real Fusion output in M1.2.
 
+**2026-10-03: sheets are now laid out in the machine's axes** (X across, Y front to back). Programs from
+r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisions.md`).
+
 ## What's left (2026-10-02)
 
 ### Before the first real cut

@@ -124,8 +124,8 @@ def faces_up(occ, face_id: int) -> bool:
     return normal(face_by_id(occ, face_id)).z > 0.999
 
 
-def make_stock(design, name: str, origin, length_in: float, width_in: float, thickness_in: float):
-    """A hidden solid the size of the sheet, bottom at Z0, corner at origin."""
+def make_stock(design, name: str, origin, size_x_in: float, size_y_in: float, thickness_in: float):
+    """A hidden solid the size of the sheet (size_x across, size_y along its length), bottom at Z0, corner at origin."""
     root = design.rootComponent
     occ = call("addNewComponent (stock)", root.occurrences.addNewComponent, adsk.core.Matrix3D.create())
     comp = occ.component
@@ -134,7 +134,7 @@ def make_stock(design, name: str, origin, length_in: float, width_in: float, thi
     x, y = origin
     sketch.sketchCurves.sketchLines.addTwoPointRectangle(
         adsk.core.Point3D.create(to_cm(x), to_cm(y), 0),
-        adsk.core.Point3D.create(to_cm(x + length_in), to_cm(y + width_in), 0))
+        adsk.core.Point3D.create(to_cm(x + size_x_in), to_cm(y + size_y_in), 0))
     ext = call("extrude stock", comp.features.extrudeFeatures.addSimple, sketch.profiles.item(0), vi(thickness_in),
                adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
     occ.isLightBulbOn = False

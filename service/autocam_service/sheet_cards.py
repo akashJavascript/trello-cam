@@ -31,15 +31,16 @@ def _minutes(seconds: Optional[float]) -> Optional[str]:
 
 
 def _clamp_edges(job: Job) -> str:
+    """Which edges the clamp strips are on, from the clamp zones (X across the sheet, Y along it)."""
     width = job.sheet.width_in
     edges = []
     for x0, y0, x1, y1 in job.fixture.clamp_zones_in:
-        if y0 <= 0 and y1 < width:
-            edges.append("front")
-        elif y1 >= width and y0 > 0:
-            edges.append("back")
+        if x0 <= 0 and x1 < width:
+            edges.append("left")
+        elif x1 >= width and x0 > 0:
+            edges.append("right")
         else:
-            edges.append("end")
+            edges.append("front")
     return " and ".join(dict.fromkeys(edges)) + " edges only" if edges else "none"
 
 
@@ -121,7 +122,7 @@ def sheet_use(s) -> Optional[str]:
     pct = round(100 * s.parts_area_in2 / s.usable_area_in2)
     text = f"Sheet use: {pct}% of the cutting area is parts"
     if s.free_length_in is not None and s.free_length_in >= 1:
-        text += f", and the last {s.free_length_in:.0f} in are empty"
+        text += f", and the back {s.free_length_in:.0f} in are empty"
     return text + "."
 
 

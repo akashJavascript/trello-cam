@@ -59,7 +59,7 @@ def test_each_stock_thickness_gets_its_own_sheets_and_bad_parts_are_reported(tmp
     result = rig.run(job)
     assert [s.name for s in result.sheets] == ["6061_0p125_r001_S1", "6061_0p25_r001_S2"]
     origins = [rig.fake.sheets[s.name]["origin"][0] for s in result.sheets]
-    assert origins[1] - origins[0] == pytest.approx(job.sheet.length_in + job.nest.envelope_spacing_in)
+    assert origins[1] - origins[0] == pytest.approx(job.sheet.width_in + job.nest.envelope_spacing_in)
     odd = result.parts[2]
     assert odd.errors[0].code == E.THICKNESS_NOT_STOCK and odd.placed == 0 and odd.sheets == ()
     assert "discard p03.1" in rig.fake.calls
@@ -69,7 +69,7 @@ def test_each_stock_thickness_gets_its_own_sheets_and_bad_parts_are_reported(tmp
 
 def test_parts_that_dont_all_fit_are_deferred_whole(tmp_path):
     rig = Rig(tmp_path, max_sheets_per_group=1)
-    # The envelope is 38.5 x 21 in: four 18 x 10 in parts fit, the fifth doesn't.
+    # The envelope is 21 x 38.5 in (X across, Y along): three 18 x 10 in parts fit, not five.
     job = rig.job([("big", 5, plate(), (18.0, 10.0)), ("small", 1, plate(), (2.0, 2.0))])
     result = rig.run(job)
     big, small = result.parts

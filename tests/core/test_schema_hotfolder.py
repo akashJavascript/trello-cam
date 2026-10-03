@@ -20,7 +20,7 @@ JOB = {
     "material": {"key": "al6061", "name": "6061", "family": "aluminum", "color": "",
                  "thicknesses_in": [0.0625, 0.125], "thickness_tol_in": 0.005, "use_mist": True,
                  "program_prefix": "6061"},
-    "sheet": {"length_in": 48, "width_in": 24, "reach_x_in": 40},
+    "sheet": {"length_in": 48, "width_in": 24, "reach_in": 40},
     "fixture": {"nest_region_in": [0.5, 1.25, 39.5, 22.75], "clamp_zones_in": [[0, 0, 48, 1.25]],
                 "clamp_height_in": 1.5, "min_clear_above_stock_in": 2.0},
     "nest": {"part_spacing_in": 0.25, "max_sheets_per_group": 4, "rotation": "all", "part_in_part": False,
@@ -56,7 +56,7 @@ def test_job_round_trips():
     assert job.fixture.nest_region_in == (0.5, 1.25, 39.5, 22.75)
     assert isinstance(job.sheet.length_in, float)
     assert to_dict(job) == mutated(lambda d: d.update(
-        sheet={"length_in": 48.0, "width_in": 24.0, "reach_x_in": 40.0},
+        sheet={"length_in": 48.0, "width_in": 24.0, "reach_in": 40.0},
         fixture={**d["fixture"], "clamp_zones_in": [[0.0, 0.0, 48.0, 1.25]]},
         nest={**d["nest"], "offcut_gap_in": 0.5, "offcut_min_in": 6.0}, offcuts=[]))   # defaults: older jobs still load
     assert load_job(json.loads(json.dumps(to_dict(job)))) == job

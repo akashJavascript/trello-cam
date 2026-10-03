@@ -16,7 +16,7 @@ DRY = PauseSpec(mist=False)
 SAFE_Z = 0.125 + 1.5 + 0.25
 GUARD = GuardSpec(
     clamp_zones_in=((0.0, 0.0, 48.0, 1.25), (0.0, 22.75, 48.0, 24.0)),
-    clamp_clear_z_in=SAFE_Z, tool_radius_in=0.0787, reach_x_in=40.0, mist=True,
+    clamp_clear_z_in=SAFE_Z, tool_radius_in=0.0787, reach_y_in=40.0, mist=True,
 )
 
 

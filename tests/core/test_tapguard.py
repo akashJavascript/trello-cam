@@ -14,7 +14,7 @@ SPEC = GuardSpec(
     clamp_zones_in=((0.0, 0.0, 48.0, 1.25), (0.0, 22.75, 48.0, 24.0)),
     clamp_clear_z_in=THICKNESS + 1.5 + 0.25,
     tool_radius_in=0.0787,
-    reach_x_in=40.0,
+    reach_y_in=40.0,
     mist=True,
     stock_top_in=THICKNESS,
 )
@@ -179,8 +179,8 @@ def test_park_without_retract_fails():
     assert any("park without a G53 Z" in p for p in report.problems)
 
 
-def test_x_beyond_reach_fails():
-    report = check(edit("G1 X16. F60.", "G1 X41. F60."))
+def test_y_beyond_reach_fails():
+    report = check(edit("G1 Y8.", "G1 Y41."))
     assert any("beyond the 40.0 in reach" in p for p in report.problems)
 
 

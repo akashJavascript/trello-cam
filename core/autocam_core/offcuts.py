@@ -2,10 +2,11 @@
 
 The sheet is kept whole. The cut parts leave a skeleton, but the clamped long edges are never cut, so it
 clamps and zeros like a new sheet. What's recorded is which stretches along its length are used, in the
-sheet's own coordinates: end A is the end that was at the zero corner (front left) when it was first cut.
+sheet's own coordinates: end A is the end that was at the front (by the operator) when it was first cut.
+Positions along the length are machine Y.
 
 The next nest goes in the longest free stretch the machine can reach. The sheet can be loaded as before
-or turned end for end (end B at the zero corner). Turning it brings the end that hung off the bed onto it,
+or turned end for end (end B at the front). Turning it brings the end that hung off the bed onto it,
 so a sheet with a short strip used at one end is nearly a whole new sheet the other way round. But spinning
 it is a chore, so the nest keeps it the way it was last cut unless spinning fits more parts or saves a new
 sheet (the pipeline decides; placement_for gives each way round).
@@ -19,8 +20,8 @@ Stretch = Tuple[float, float]         # along the sheet's length, inches
 
 @dataclass(frozen=True)
 class Placement:
-    turned: bool                      # end B at the zero corner
-    x0: float                         # the free stretch, in machine X (the sheet as loaded)
+    turned: bool                      # end B at the front
+    x0: float                         # the free stretch, in machine Y (the sheet as loaded)
     x1: float
 
     @property
@@ -29,7 +30,7 @@ class Placement:
 
 
 def as_loaded(used: Sequence[Stretch], sheet_length: float, turned: bool) -> List[Stretch]:
-    """The used stretches in machine X for a sheet loaded as before (turned=False) or end for end."""
+    """The used stretches in machine Y for a sheet loaded as before (turned=False) or end for end."""
     if not turned:
         return sorted((a, b) for a, b in used)
     return sorted((sheet_length - b, sheet_length - a) for a, b in used)
@@ -37,7 +38,7 @@ def as_loaded(used: Sequence[Stretch], sheet_length: float, turned: bool) -> Lis
 
 def free_stretch(used: Sequence[Stretch], sheet_length: float, turned: bool, lo: float, hi: float,
                  gap: float) -> Optional[Stretch]:
-    """The longest stretch of [lo, hi] (machine X) at least `gap` from anything used."""
+    """The longest stretch of [lo, hi] (machine Y) at least `gap` from anything used."""
     blocked = [(a - gap, b + gap) for a, b in as_loaded(used, sheet_length, turned)]
     best: Optional[Stretch] = None
     start = lo

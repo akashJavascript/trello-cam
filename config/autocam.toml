@@ -9,7 +9,7 @@
 schema = 1
 
 [assumed]
-"clamps.edges" = "decision 20: clamps on the front and back long edges only"
+"clamps.edges" = "decision 20: clamps on the two long edges only (left and right: the sheet's length runs front to back)"
 "clamps.reach_in" = "decision 20: clamp reach onto the plate"
 "clamps.clearance_in" = "decision 20: clearance added to the clamp reach"
 "clamps.height_in" = "decision 20: clamp height above the plate"
@@ -34,7 +34,8 @@ schema = 1
 "fusion.params.selections.pocket" = "pending: dump_params on a job with a 2D Adaptive op"
 
 [machine]
-reach_x_in = 40.0          # ShopSabre 23 cut length; the rest of the 48 in sheet hangs off the bed
+reach_y_in = 40.0          # ShopSabre 23: Y runs front to back, 40 in; the rest of the 48 in sheet hangs off the back
+                           # (X runs across the bed, 30 in; the sheet's 24 in width goes across)
 z_floor_in = 0.0           # no motion below this Z. Z0 = stock bottom. Must be >= 0.
 units = "in"               # programs post in inches (G20)
 spindle_rpm = 18000
@@ -50,7 +51,7 @@ width_in = 24.0
 
 [nest]
 edge_margin_in = 0.5       # margin on unclamped edges, including the zero-corner end
-reach_margin_in = 0.5      # stay this far short of reach_x_in
+reach_margin_in = 0.5      # stay this far short of reach_y_in
 part_spacing_in = 0.25     # must exceed the largest tool diameter
 max_sheets_per_group = 4   # per material + thickness group in one job
 rotation = "all"           # "all" | "none"
@@ -61,7 +62,7 @@ offcut_gap_in = 0.5        # a new nest on an offcut stays this far from what wa
 offcut_min_in = 6.0        # an offcut needs a free stretch this long (full width) to be kept or used
 
 [clamps]
-edges = ["front", "back"]  # any of "front", "back", "zero_end"; the far end overhangs the bed
+edges = ["left", "right"]  # any of "left", "right" (the long edges), "front" (the end by you); the back overhangs
 reach_in = 1.0
 clearance_in = 0.25
 height_in = 1.5

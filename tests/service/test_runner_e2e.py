@@ -128,7 +128,7 @@ def test_full_run(tmp_path):
     alu = sheets["6061 1/8in - 4 mm O-flute ALU - 2 parts - 15 min - r001 S1"]
     assert h.files_on(alu.id) == ["6061_0p125_r001_S1.tap", "6061_0p125_r001_S1.png"]
     assert alu.desc.startswith("LOAD\nStock: 6061 1/8in (0.125), 24 x 48\nCutter: 4 mm O-flute ALU (T1).")
-    assert "Clamps: front and back edges only. Mist: on." in alu.desc
+    assert "Clamps: left and right edges only. Mist: on." in alu.desc
     assert "It stops after each part but the last (1 stops)" in alu.desc and "Lowest Z 0.0000in" in alu.desc
     assert "CUT ORDER\n1. hood_gusset (1 of 2)\n2. hood_gusset (2 of 2)" in alu.desc
     assert "`" not in alu.desc and "**" not in alu.desc

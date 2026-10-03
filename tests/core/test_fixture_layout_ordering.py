@@ -4,22 +4,23 @@ from autocam_core import fixture
 from autocam_core.layout import Placed, plan_layout
 from autocam_core.ordering import order_outlines
 
-DEFAULTS = dict(sheet_length_in=48.0, sheet_width_in=24.0, reach_x_in=40.0, edge_margin_in=0.5,
-                reach_margin_in=0.5, clamp_edges=("front", "back"), clamp_reach_in=1.0,
+DEFAULTS = dict(sheet_length_in=48.0, sheet_width_in=24.0, reach_in=40.0, edge_margin_in=0.5,
+                reach_margin_in=0.5, clamp_edges=("left", "right"), clamp_reach_in=1.0,
                 clamp_clearance_in=0.25, clamp_height_in=1.5)
 
 
-def test_default_fixture_matches_the_brief():
+def test_default_fixture_matches_the_machine():
+    # X across the 24 in width (clamp strips on the left and right long edges), Y along the length to the 40 in reach.
     fx = fixture.build(**DEFAULTS)
-    assert fx.nest_region_in == (0.5, 1.25, 39.5, 22.75)
-    assert fx.clamp_zones_in == ((0.0, 0.0, 48.0, 1.25), (0.0, 22.75, 48.0, 24.0))
-    assert fx.nest_size_in == (39.0, 21.5)
+    assert fx.nest_region_in == (1.25, 0.5, 22.75, 39.5)
+    assert fx.clamp_zones_in == ((0.0, 0.0, 1.25, 48.0), (22.75, 0.0, 24.0, 48.0))
+    assert fx.nest_size_in == (21.5, 39.0)
 
 
-def test_clamped_zero_end_gets_a_strip():
-    fx = fixture.build(**{**DEFAULTS, "clamp_edges": ("front", "back", "zero_end")})
-    assert fx.nest_region_in[0] == 1.25
-    assert (0.0, 0.0, 1.25, 24.0) in fx.clamp_zones_in
+def test_clamped_front_end_gets_a_strip():
+    fx = fixture.build(**{**DEFAULTS, "clamp_edges": ("left", "right", "front")})
+    assert fx.nest_region_in[1] == 1.25
+    assert (0.0, 0.0, 24.0, 1.25) in fx.clamp_zones_in
 
 
 def test_no_room_or_unknown_edge_is_an_error():

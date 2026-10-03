@@ -241,7 +241,7 @@ class Runner:
     def _free_after(self, used) -> float:
         """The longest free stretch a sheet with these used stretches would offer the next run."""
         region = sheet_fixture(self.cfg).nest_region_in
-        return free_length(used, self.cfg.sheet.length_in, region[0], region[2], self.cfg.nest.offcut_gap_in)
+        return free_length(used, self.cfg.sheet.length_in, region[1], region[3], self.cfg.nest.offcut_gap_in)
 
     def _stock_label(self, material_key: str, thickness_in: float) -> str:
         return f"{text.material_label(self.cfg.materials[material_key])} {text.thickness_label(thickness_in)}"
@@ -277,11 +277,12 @@ class Runner:
 
     def _offcut_after_cut(self, card: Card, info: Dict) -> None:
         """A sheet card just went to Cut: update the offcut it was cut from, or keep the rest as a new one."""
-        if not info.get("job") or not info.get("used_x") or not info.get("cuttable") or info.get("offcut_done"):
+        used_along = info.get("used_along") or info.get("used_x")      # used_x: sheets published before 2026-10-03
+        if not info.get("job") or not used_along or not info.get("cuttable") or info.get("offcut_done"):
             return
         cfg, length = self.cfg, self.cfg.sheet.length_in
         label = info.get("label") or f"{info.get('run')} S{info.get('index')}"
-        cut, turned = tuple(info["used_x"]), bool(info.get("turned"))
+        cut, turned = tuple(used_along), bool(info.get("turned"))
         stock = self._stock_label(info["material"], info["thickness_in"])
         offcut_id = info.get("offcut_id")
         if offcut_id:
@@ -304,7 +305,7 @@ class Runner:
         keep = [c.done for c in card.checks if c.checklist == cfg.trello.offcut_checklist]
         if not any(keep):
             return                                    # no box (an older card), or someone unticked it
-        used = add_used((), cut, length, False)       # a new sheet: end A was at the zero corner
+        used = add_used((), cut, length, False)       # a new sheet: end A was at the front
         free = self._free_after(used)
         if free < cfg.nest.offcut_min_in:
             return
@@ -841,10 +842,10 @@ class Runner:
             counts["bad"] += 1
         sheet = vs.sheet
         extra = {"label": f"{run_id} S{sheet.index}", "offcut_id": sheet.offcut_id, "turned": sheet.offcut_turned,
-                 "used_x": list(sheet.used_x_in) if sheet.used_x_in else None}
-        if sheet.used_x_in:
+                 "used_along": list(sheet.used_y_in) if sheet.used_y_in else None}
+        if sheet.used_y_in:
             before = (self.offcuts.get(sheet.offcut_id) or {}).get("used", []) if sheet.offcut_id else []
-            extra["rest_in"] = round(self._free_after(add_used(before, sheet.used_x_in, cfg.sheet.length_in,
+            extra["rest_in"] = round(self._free_after(add_used(before, sheet.used_y_in, cfg.sheet.length_in,
                                                                sheet.offcut_turned)), 2)
         store.register_sheet(card_id, run_id, vs.cuttable,
                              [js.parts[p.part_key] for p in vs.sheet.parts if p.part_key in js.parts],
