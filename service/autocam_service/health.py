@@ -69,9 +69,17 @@ def _fusion(h: Health, stale_after_s: float) -> str:
     line = f"Fusion: running job {beat['job']}." if beat.get("job") else "Fusion: running, idle."
     core = beat.get("core_version")
     if core and core != h.service_core:
-        line += (f" The add-in runs older code ({core}; the service is {h.service_core}): in Fusion, Stop and Run "
-                 "autocam_addin.")
+        if _version(core) < _version(h.service_core):
+            line += (f" The add-in runs older code ({core}; the service is {h.service_core}): in Fusion, Stop and "
+                     "Run autocam_addin.")
+        else:
+            line += (f" The service runs older code ({h.service_core}; the add-in is {core}). It restarts into new "
+                     "code by itself within a few minutes; if this stays, restart the service window.")
     return line
+
+
+def _version(v: str) -> tuple:
+    return tuple(int(n) if n.isdigit() else 0 for n in str(v).split("."))
 
 
 def render(h: Health, stale_after_s: float, with_time: bool = True) -> str:

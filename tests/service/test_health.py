@@ -50,6 +50,9 @@ def test_old_add_in_latch_and_error():
                          latch={"ts": "2026-10-02T10:00:00Z", "reason": "402"}, last_error="3:00 PM: Trello 401"), 300)
     assert "The add-in runs older code (0.1.0; the service is 0.2.0)" in text
     assert "ONSHAPE CALLS ARE STOPPED" in text and "Last error: 3:00 PM: Trello 401" in text
+    # The other way round (the service hasn't restarted into new code yet): no telling anyone to restart Fusion.
+    newer = render(health(heartbeat={"ts": "2026-10-02T14:59:00Z", "job": None, "core_version": "0.10.0"}), 300)
+    assert "The service runs older code (0.2.0; the add-in is 0.10.0)" in newer and "Stop and Run" not in newer
 
 
 def test_without_time_only_changes_when_something_does():
