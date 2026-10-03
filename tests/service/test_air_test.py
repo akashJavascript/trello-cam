@@ -182,3 +182,13 @@ def test_an_air_test_made_the_old_way_is_remade(tmp_path):
     assert len(files) == 2 and old not in h.tracker.files
     assert b"OUTLINES ONLY AT 200 IPM" in files["6061_0p125_r001_S1_AIRTEST.tap"]
     assert h.store.sheet_cards()[s1.id]["options"]["air"] == "outlines@200"
+
+
+def test_sheet_use_line():
+    import types
+    from autocam_service.sheet_cards import sheet_use
+    s = types.SimpleNamespace(parts_area_in2=288.0, usable_area_in2=808.5, free_length_in=14.4)
+    assert sheet_use(s) == "Sheet use: 36% of the cutting area is parts, and the last 14 in are empty."
+    assert sheet_use(types.SimpleNamespace(parts_area_in2=500.0, usable_area_in2=808.5, free_length_in=0.3)) == \
+        "Sheet use: 62% of the cutting area is parts."
+    assert sheet_use(types.SimpleNamespace(parts_area_in2=None, usable_area_in2=None, free_length_in=None)) is None

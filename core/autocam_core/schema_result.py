@@ -98,6 +98,10 @@ class SheetResult:
     errors: Tuple[Issue, ...]
     warnings: Tuple[Issue, ...]
     notes: Tuple[str, ...]
+    # How full the sheet is (added 2026-10-02; absent in results from older workers):
+    parts_area_in2: Optional[float] = None    # the parts' material (top face areas)
+    usable_area_in2: Optional[float] = None   # where parts may go
+    free_length_in: Optional[float] = None    # empty strip at the far end of the usable area
 
 
 @dataclass(frozen=True)

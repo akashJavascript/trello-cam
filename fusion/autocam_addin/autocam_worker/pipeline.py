@@ -8,6 +8,10 @@
    leftovers go to the next sheet. If a part's copies don't all fit, none are cut this run (layout.py).
    Arrange packs parts against the envelope's edges, so each envelope is the nest region shrunk by the
    part spacing: an outline's tool path (tool radius + lead-in) then stays out of the clamp strips.
+   It's tried with the parts in a few orders (NEST_ORDERS), each on its own copies and sheets, and the best
+   nest is kept: most copies placed, then fewest sheets, then the shortest last sheet (the most room left for
+   parts that join it later). The other tries' copies are hidden like any other leftover; nothing that an
+   Arrange moved is ever arranged again or deleted.
 4. Per sheet: one tool, each part's feature plan with that tool, the cut order of the outlines.
 5. CAM per sheet: stock + setup, template (every op's tool GUID checked), selections, one outline op per
    part copy in cut order.
@@ -110,6 +114,7 @@ class _Sheet:
     thickness_in: float
     origin: Tuple[float, float]               # the sheet's (0, 0) in the design, inches
     instances: List[Tuple[str, Placed]]       # (instance id like p03-2, the copy and where it landed)
+    envelope: Optional[Rect] = None           # where Arrange could put parts, in the design
     index: int = 0
     name: str = ""
     tool_key: str = ""
@@ -216,6 +221,51 @@ def _envelope(job: Job, origin: Tuple[float, float]) -> Rect:
 
 # ------------------------------------------------------------------ 3. nesting
 
+NEST_ORDERS = ("as listed", "biggest first", "longest first")
+
+
+@dataclass
+class _Try:
+    order: str
+    copies: Dict[str, List[str]]                                  # part key -> this try's copies
+    envelopes: List[Tuple[Tuple[float, float], Rect]] = field(default_factory=list)
+    placed: List[Tuple[str, ...]] = field(default_factory=list)   # per envelope
+    remaining: List[str] = field(default_factory=list)
+    failed: Optional[str] = None
+    score: Tuple[int, int, float] = (0, 0, 0.0)
+
+
+def _plate_size(adapter: Adapter, part: _Part) -> Tuple[float, float]:
+    """The plate's two biggest dimensions, from the imported copy's box (before anything is arranged)."""
+    try:
+        b = adapter.box(part.copies[0])
+    except AdapterError:
+        return 0.0, 0.0
+    a, w, _ = sorted((b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0), reverse=True)
+    return a, w
+
+
+def _part_order(parts: Sequence[_Part], order: str, sizes: Dict[str, Tuple[float, float]]) -> List[str]:
+    keys = [p.key for p in parts]
+    if order == "biggest first":
+        return sorted(keys, key=lambda k: -(sizes[k][0] * sizes[k][1]))
+    if order == "longest first":
+        return sorted(keys, key=lambda k: -sizes[k][0])
+    return keys
+
+
+def _score(adapter: Adapter, t: _Try) -> Tuple[int, int, float]:
+    """Smaller is better: (-copies placed, sheets, how far the last sheet's parts reach along X)."""
+    placed = sum(len(p) for p in t.placed)
+    if not t.envelopes:
+        return (0, 0, 0.0)
+    env = t.envelopes[-1][1]
+    try:
+        reach = max(adapter.box(c).x1 for c in t.placed[-1]) - env[0]
+    except AdapterError:
+        reach = float("inf")
+    return (-placed, len(t.envelopes), round(reach, 3))
+
 def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part], x_start: float, slot: int,
                 log: Callable[[str], None], notes: List[str]) -> Tuple[List[_Sheet], int]:
     """Arrange one stock thickness onto as many sheets as it takes (up to the job's limit)."""
@@ -231,29 +281,79 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
                 by_key[key].errors.append(Issue(E.ARRANGE_FAILED, msg))
 
     up = {cid: p.analysis.up_face_id for p in parts for cid in p.copies}
-    remaining = [cid for p in parts for cid in p.copies]
-    envelopes: List[Tuple[Tuple[float, float], Rect]] = []
-    for _ in range(job.nest.max_sheets_per_group):
-        if not remaining:
-            break
-        origin = (x_start + slot * pitch, 0.0)
-        envelope = _envelope(job, origin)
+
+    # The orders to try, each on its own copies, made now while every copy still sits where it was imported.
+    sizes = {p.key: _plate_size(adapter, p) for p in parts}
+    tries = [_Try(NEST_ORDERS[0], {p.key: list(p.copies) for p in parts})]
+    seen = [_part_order(parts, NEST_ORDERS[0], sizes)]
+    for n, order in enumerate(NEST_ORDERS[1:], 2):
+        keys = _part_order(parts, order, sizes)
+        if keys in seen:
+            continue                                  # the same order as a try already planned
+        seen.append(keys)
+        made: Dict[str, List[str]] = {p.key: [] for p in parts}
         try:
-            got = adapter.arrange(remaining, envelope, job.nest.part_spacing_in, {c: up[c] for c in remaining})
+            for p in parts:
+                for cid in p.copies:
+                    copy = f"{cid}~{n}"
+                    adapter.add_copy(p.copies[0], copy)
+                    made[p.key].append(copy)
+                    up[copy] = up[cid]
         except AdapterError as e:
-            reject([key_of(c) for c in remaining], f"Arrange failed: {e}")
-            log(f"Arrange failed for a {thickness:g} in sheet: {e}")
-            break
-        for cid, why in got.refused.items():
-            reject([key_of(cid)], f"Arrange can't lay it flat: {why}")
-        placed = set(got.placed)
-        slot += 1
-        if placed:
-            envelopes.append((origin, envelope))
-        remaining = [c for c in remaining if c not in placed and by_key[key_of(c)].ok]
-        log(f"{thickness:g} in sheet at x={origin[0]:g}: placed {len(placed)}, {len(remaining)} left")
-        if not placed:
-            break
+            log(f"couldn't make copies to try '{order}': {e}")
+            _discard(adapter, [c for cs in made.values() for c in cs], log)
+            continue
+        tries.append(_Try(order, made))
+
+    for i, t in enumerate(tries):
+        remaining = [c for k in _part_order(parts, t.order, sizes) for c in t.copies[k] if by_key[k].ok]
+        for _ in range(job.nest.max_sheets_per_group):
+            if not remaining:
+                break
+            origin = (x_start + slot * pitch, 0.0)
+            envelope = _envelope(job, origin)
+            try:
+                got = adapter.arrange(remaining, envelope, job.nest.part_spacing_in, {c: up[c] for c in remaining})
+            except AdapterError as e:
+                t.failed = f"Arrange failed: {e}"
+                if i == 0:
+                    reject([key_of(c) for c in remaining], t.failed)
+                log(f"Arrange failed for a {thickness:g} in sheet ('{t.order}'): {e}")
+                break
+            if i == 0:
+                for cid, why in got.refused.items():
+                    reject([key_of(cid)], f"Arrange can't lay it flat: {why}")
+            placed = set(got.placed)
+            slot += 1
+            if placed:
+                t.envelopes.append((origin, envelope))
+                t.placed.append(tuple(c for c in remaining if c in placed))
+            remaining = [c for c in remaining if c not in placed and by_key[key_of(c)].ok]
+            log(f"{thickness:g} in sheet at x={origin[0]:g} ('{t.order}'): placed {len(placed)}, {len(remaining)} left")
+            if not placed:
+                break
+        t.remaining = remaining
+        t.score = _score(adapter, t)
+        if i == 0 and t.failed:
+            break                                     # the first try's failure rejected the parts; nothing to compare
+
+    usable = [t for t in tries if not t.failed] or tries[:1]
+    best = min(usable, key=lambda t: t.score)          # ties keep the earlier try
+    for t in tries:
+        if t is not best:
+            _discard(adapter, [c for cs in t.copies.values() for c in cs], log)
+    if len(tries) > 1:
+        def said(t: _Try) -> str:
+            return "failed" if t.failed else f"{-t.score[0]} placed on {t.score[1]} sheet(s), last {t.score[2]:.1f} in"
+        log(f"{thickness:g} in: kept '{best.order}' ({'; '.join(f'{t.order}: {said(t)}' for t in tries)})")
+        if best is not tries[0] and best.score < tries[0].score:
+            notes.append(f"{thickness:g} in: nesting the parts {best.order} beat the listed order "
+                         f"({said(best)} instead of {said(tries[0])})")
+    for p in parts:
+        p.copies = list(best.copies[p.key])
+    up = {c: up[c] for p in parts for c in p.copies}
+    envelopes = best.envelopes
+    remaining = best.remaining
 
     # Copies still left over: if a part doesn't fit even alone on an empty sheet, say so instead of
     # deferring it run after run.
@@ -321,11 +421,25 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
             p.copies = []
 
     origin_of = {env: origin for origin, env in envelopes}
-    sheets = [_Sheet(thickness, origin_of[s.envelope_in], list(s.instances)) for s in layout.sheets]
+    sheets = [_Sheet(thickness, origin_of[s.envelope_in], list(s.instances), envelope=s.envelope_in)
+              for s in layout.sheets]
     return sheets, slot
 
 
 # ------------------------------------------------------------------ 4. tool and features per sheet
+
+def _sheet_use(sheet: _Sheet, parts: Dict[str, _Part]) -> Dict[str, Optional[float]]:
+    """How full the sheet is: the parts' material area, the usable area, and the empty strip at the far end."""
+    if sheet.envelope is None or not sheet.instances:
+        return {}
+    x0, y0, x1, y1 = sheet.envelope
+    area = 0.0
+    for _, placed in sheet.instances:
+        a = parts[placed.part_key].analysis
+        area += a.geometry.face(a.up_face_id).area_in2
+    return {"parts_area_in2": round(area, 2), "usable_area_in2": round((x1 - x0) * (y1 - y0), 2),
+            "free_length_in": round(max(0.0, x1 - max(p.bbox_in[2] for _, p in sheet.instances)), 2)}
+
 
 def _missing_ops(plan: FeaturePlan, capabilities: frozenset) -> List[str]:
     used = ((DRILL, plan.drill), (BORE, plan.bore), (BEARING, plan.bearing), (POCKET, plan.pocket_floor_ids),
@@ -660,7 +774,8 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             machining_time_s=machining, preview_png=preview,
             parts=tuple(SheetPart(k, n) for k, n in sorted(sheet.counts().items())),
             outer_order=sheet.outer_order, tool_forced_by=tuple(ToolForce(k, r) for k, r in sheet.forced),
-            errors=_dedupe(sheet.errors), warnings=_dedupe(sheet.warnings), notes=tuple(sheet.notes)))
+            errors=_dedupe(sheet.errors), warnings=_dedupe(sheet.warnings), notes=tuple(sheet.notes),
+            **_sheet_use(sheet, parts)))
 
     f3d_name: Optional[str] = None
     f3d_bytes: Optional[int] = None

@@ -71,8 +71,10 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
 - **M5, on the shop PC:** run `ops\install-autostart.ps1`, tick the add-in's Run on Startup, then a reboot test
   (`docs/manual-tests.md` → M5).
 - **M6 tabs:** only if the no-tab trial fails.
-- **Later ideas** (not planned): part-in-part nesting, scrap/offcut sheets, a better nest by trying several
-  Arrange runs.
+- **Better nests** (2026-10-02): several Arrange tries per thickness, the best kept, and "Sheet use" on the
+  card. Untested in Fusion: needs the add-in restarted once and a run with 2+ kinds of parts
+  (manual tests M3 section 5b).
+- **Later ideas** (not planned): part-in-part nesting (needs per-part cut ordering first), scrap/offcut sheets.
 
 ## Not verified yet (don't rely on these until they are)
 

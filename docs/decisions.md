@@ -372,3 +372,26 @@ quick. On P-2011 (r005) it's 164 in of moves, under a minute, instead of 750 in 
 - Checked like before (guard, pauses, nothing below stock top + 0.5 in). Checked on the real r005 program.
 - An air test already on a card from the earlier version is remade (the options record which kind they made).
 
+## 2026-10-02: better nests
+
+- **Several tries, the best kept** (`pipeline.NEST_ORDERS`): each stock thickness is arranged with the parts as
+  listed, then biggest first, then longest first. Sizes come from the imported copy's box. A try whose order
+  is the same as an earlier one is skipped, so one kind of part is arranged once, as before.
+  - **How the best is picked:** most copies placed, then fewest sheets, then the shortest last sheet. The last
+    sheet is the open one that later parts fill, so the more room it leaves the better. Ties keep the listed
+    order.
+  - **Each try gets its own copies** (`add_copy`, made before anything is arranged, so they sit where the
+    parts were imported) and its own sheet positions. The losing tries' copies are hidden, like leftovers
+    always were. Nothing an Arrange moved is arranged again or deleted: that could make Fusion re-solve an
+    Arrange and move parts already nested. Only Fusion calls already seen working are used.
+  - **What it costs:** up to 3x the Arrange time, plus hidden copies in the saved file.
+  - **What we don't know yet:** whether Fusion's Arrange cares about the order. The worker log says which
+    order won and why ("kept 'biggest first' (...)"), and the result's notes say when an order beat the
+    listed one. If real jobs never show a difference, the tries can go.
+- **Sheet use on the card:** "Sheet use: N% of the cutting area is parts, and the last X in are empty". N is
+  the parts' top-face area over the usable area, so big cutouts count as empty. X is the empty strip at the
+  far end, the room for more parts.
+- **Part-in-part stays off:** our cut order (holes and cutouts for the whole sheet, then the outlines) would
+  cut the big part's cutout, and so free the slug, before the small part inside it is cut. It needs per-part
+  cut ordering first.
+

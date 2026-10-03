@@ -295,6 +295,15 @@ or set up an existing board instead with `--board <short link>`.
 4. When the add-in has finished the job, the next pass puts the sheet cards in **Sheet review**.
 5. Check `autocam ledger` (Onshape calls used) and the cards' comments.
 
+### 5b. Better nests (needs the add-in restarted once: Shift+S > Add-Ins > autocam_addin > Stop, Run)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Put 2+ different parts of one material in a run: `logs\fusion_worker.log` has a line like "0.125 in: kept 'as listed' (as listed: 6 placed on 1 sheet(s), last 21.3 in; biggest first: ...)" | |
+| 2 | The sheet's parts are where the preview shows them, with no extra copies in the setup (the hidden copies of the other tries don't get toolpaths) | |
+| 3 | The sheet card has a "Sheet use: N% ..." line | |
+| 4 | Note how long the job took compared with earlier runs (up to 3x the Arrange time) | |
+
 ### 6. The service picks up new code by itself
 
 | # | Check | Result |

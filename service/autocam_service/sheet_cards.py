@@ -95,6 +95,10 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         of = f" ({counts[part_key]} of {totals[part_key]})" if totals.get(part_key, 1) > 1 else ""
         lines.append(f"{i}. {name}{of}")
 
+    use = sheet_use(s)
+    if use:
+        lines += ["", use]
+
     if s.warnings:
         lines += ["", "CHECK"] + [f"- {w.msg}" for w in s.warnings]
 
@@ -107,6 +111,17 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
     if vs.cuttable and vs.check is not None:
         details.append(f"Lowest Z {vs.check.guard.min_z_in:.4f}in (Z0 = spoilboard). Run {job.run_id}.")
     return "\n".join(lines + ([""] + details if details else []))
+
+
+def sheet_use(s) -> Optional[str]:
+    """How full the sheet is, from the worker's numbers (None from workers older than 2026-10-02)."""
+    if not s.parts_area_in2 or not s.usable_area_in2:
+        return None
+    pct = round(100 * s.parts_area_in2 / s.usable_area_in2)
+    text = f"Sheet use: {pct}% of the cutting area is parts"
+    if s.free_length_in is not None and s.free_length_in >= 1:
+        text += f", and the last {s.free_length_in:.0f} in are empty"
+    return text + "."
 
 
 def part_nested_comment(run_id: str, part: PartResult, sheet_links: Sequence[Tuple[int, str]]) -> str:
