@@ -258,7 +258,8 @@ class Runner:
             reserved = piece.get("reserved_by")
             if piece["material"] != material or (reserved and reserved not in reopened):
                 continue
-            out.append(OffcutSpec(offcut_id, piece["thickness_in"], tuple(tuple(s) for s in piece["used"])))
+            out.append(OffcutSpec(offcut_id, piece["thickness_in"], tuple(tuple(s) for s in piece["used"]),
+                                  bool((piece.get("last") or {}).get("turned", False))))
         return out
 
     def _stock_line(self, vs: VerifiedSheet) -> Optional[str]:
@@ -272,7 +273,7 @@ class Runner:
         last = piece.get("last") or {}
         return load_line(self._stock_label(piece["material"], vs.sheet.thickness_in), piece.get("url", ""),
                          last.get("label", "its last sheet"), tuple(last.get("stretch", (0.0, 0.0))),
-                         vs.sheet.offcut_turned, self.cfg.sheet.length_in)
+                         vs.sheet.offcut_turned, self.cfg.sheet.length_in, bool(last.get("turned", False)))
 
     def _offcut_after_cut(self, card: Card, info: Dict) -> None:
         """A sheet card just went to Cut: update the offcut it was cut from, or keep the rest as a new one."""
@@ -295,7 +296,7 @@ class Runner:
                 self.offcuts.remove(offcut_id)
                 return
             piece.update(used=[list(s) for s in used], reserved_by=None,
-                         last={"label": label, "stretch": list(add_used((), cut, length, turned)[0])})
+                         last={"label": label, "stretch": list(add_used((), cut, length, turned)[0]), "turned": turned})
             self.offcuts.put(offcut_id, piece)
             self.t.update_card(offcut_id, *card_text(stock, free, used, label))
             self.t.comment(offcut_id, f"{label} was cut from it. {free:.0f} in free now.")
@@ -309,7 +310,8 @@ class Runner:
             return
         new = self.t.create_card("offcuts", *card_text(stock, free, used, label))
         self.offcuts.put(new.id, {"material": info["material"], "thickness_in": info["thickness_in"],
-                                  "used": [list(s) for s in used], "last": {"label": label, "stretch": list(used[0])},
+                                  "used": [list(s) for s in used],
+                                  "last": {"label": label, "stretch": list(used[0]), "turned": False},
                                   "reserved_by": None, "url": new.url})
         sheets = self.s.store.sheet_cards()
         sheets.get(card.id, {})["offcut_done"] = True

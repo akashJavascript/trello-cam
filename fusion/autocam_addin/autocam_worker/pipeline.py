@@ -8,10 +8,11 @@
    leftovers go to the next sheet. If a part's copies don't all fit, none are cut this run (layout.py).
    Arrange packs parts against the envelope's edges, so each envelope is the nest region shrunk by the
    part spacing: an outline's tool path (tool radius + lead-in) then stays out of the clamp strips.
-   Offcuts of that thickness (partly used sheets, offcuts.py) are filled first, each in its longest free
-   stretch, then new sheets. It's tried with the parts in a few orders (NEST_ORDERS), each on its own copies
-   and sheets, and the best nest is kept: most copies placed, then fewest new sheets, then fewest sheets, then
-   the shortest last sheet (the most room left for parts that join it later). The other tries' copies are hidden like any other leftover; nothing that an
+   Offcuts of that thickness (partly used sheets, offcuts.py) are filled first, loaded the same way round as
+   their last cut, then new sheets. It's tried with the parts in a few orders (NEST_ORDERS), each on its own
+   copies and sheets, plus once with offcuts spun round where that gives more room. The best nest is kept:
+   most copies placed, then fewest new sheets, then fewest offcuts spun round, then fewest sheets, then the
+   shortest last sheet (the most room left for parts that join it later). The other tries' copies are hidden like any other leftover; nothing that an
    Arrange moved is ever arranged again or deleted.
 4. Per sheet: one tool, each part's feature plan with that tool, the cut order of the outlines.
 5. CAM per sheet: stock + setup, template (every op's tool GUID checked), selections, one outline op per
@@ -38,7 +39,7 @@ from autocam_core.errors import Issue
 from autocam_core.holes import ToolProfile
 from autocam_core.hotfolder import write_atomic
 from autocam_core.layout import Placed, plan_layout
-from autocam_core.offcuts import Placement, best_placement
+from autocam_core.offcuts import Placement, placement_for
 from autocam_core.names import outer_op_name, program_name
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
@@ -226,17 +227,30 @@ def _envelope(job: Job, origin: Tuple[float, float], offcut: Optional[Placement]
             origin[0] + x1 - inset, origin[1] + region[3] - inset)
 
 
-def _offcut_places(job: Job, thickness: float) -> List[Tuple[str, Placement]]:
-    """The job's offcuts of this thickness that have a free stretch worth using, and how to load each."""
+def _offcut_places(job: Job, thickness: float) -> List[Tuple[str, Optional[Placement], Optional[Placement]]]:
+    """This thickness's offcuts with room: (id, loaded the same way round as its last cut, spun round), either
+    None when that way round leaves too little."""
     region = job.fixture.nest_region_in
     out = []
     for o in job.offcuts:
         if abs(o.thickness_in - thickness) > 1e-6:
             continue
-        place = best_placement(o.used_in, job.sheet.length_in, region[0], region[2], job.nest.offcut_gap_in,
-                               job.nest.offcut_min_in)
-        if place is not None:
-            out.append((o.id, place))
+        ways = [placement_for(o.used_in, job.sheet.length_in, region[0], region[2], job.nest.offcut_gap_in,
+                              job.nest.offcut_min_in, turned) for turned in (o.last_turned, not o.last_turned)]
+        if any(ways):
+            out.append((o.id, ways[0], ways[1]))
+    return out
+
+
+def _offcut_slots(offcuts, spin: bool) -> List[Tuple[str, Placement]]:
+    """Where each offcut takes parts: the same way round as before, unless that leaves too little; with spin,
+    whichever way gives more room."""
+    out = []
+    for offcut_id, same, spun in offcuts:
+        if spin and spun is not None and (same is None or spun.length > same.length + 1e-6):
+            out.append((offcut_id, spun))
+        else:
+            out.append((offcut_id, same or spun))
     return out
 
 
@@ -249,12 +263,17 @@ NEST_ORDERS = ("as listed", "biggest first", "longest first")
 class _Try:
     order: str
     copies: Dict[str, List[str]]                                  # part key -> this try's copies
+    spin: bool = False                                            # offcuts spun round where that gives more room
     envelopes: List[Tuple[Tuple[float, float], Rect]] = field(default_factory=list)
     placed: List[Tuple[str, ...]] = field(default_factory=list)   # per envelope
     stock: List[Tuple[Optional[str], Optional[Placement]]] = field(default_factory=list)   # per envelope: offcut
     remaining: List[str] = field(default_factory=list)
     failed: Optional[str] = None
-    score: Tuple[int, int, int, float] = (0, 0, 0, 0.0)
+    score: Tuple[int, int, int, int, float] = (0, 0, 0, 0, 0.0)
+
+    @property
+    def name(self) -> str:
+        return f"{self.order}, offcuts spun round" if self.spin else self.order
 
 
 def _plate_size(adapter: Adapter, part: _Part) -> Tuple[float, float]:
@@ -276,18 +295,20 @@ def _part_order(parts: Sequence[_Part], order: str, sizes: Dict[str, Tuple[float
     return keys
 
 
-def _score(adapter: Adapter, t: _Try) -> Tuple[int, int, int, float]:
-    """Smaller is better: (-copies placed, new sheets, sheets, how far the last sheet's parts reach along X)."""
+def _score(adapter: Adapter, t: _Try, last_turned: Dict[str, bool]) -> Tuple[int, int, int, int, float]:
+    """Smaller is better: (-copies placed, new sheets, offcuts spun round, sheets, how far the last sheet's parts
+    reach along X)."""
     placed = sum(len(p) for p in t.placed)
     if not t.envelopes:
-        return (0, 0, 0, 0.0)
+        return (0, 0, 0, 0, 0.0)
     env = t.envelopes[-1][1]
     try:
         reach = max(adapter.box(c).x1 for c in t.placed[-1]) - env[0]
     except AdapterError:
         reach = float("inf")
     fresh = sum(1 for offcut_id, _ in t.stock if offcut_id is None)
-    return (-placed, fresh, len(t.envelopes), round(reach, 3))
+    spins = sum(1 for offcut_id, place in t.stock if offcut_id and place.turned != last_turned[offcut_id])
+    return (-placed, fresh, spins, len(t.envelopes), round(reach, 3))
 
 def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part], x_start: float, slot: int,
                 log: Callable[[str], None], notes: List[str]) -> Tuple[List[_Sheet], int]:
@@ -307,11 +328,16 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
 
     # The orders to try, each on its own copies, made now while every copy still sits where it was imported.
     sizes = {p.key: _plate_size(adapter, p) for p in parts}
+    offcuts = _offcut_places(job, thickness)
+    last_turned = {o.id: o.last_turned for o in job.offcuts}
     tries = [_Try(NEST_ORDERS[0], {p.key: list(p.copies) for p in parts})]
     seen = [_part_order(parts, NEST_ORDERS[0], sizes)]
-    for n, order in enumerate(NEST_ORDERS[1:], 2):
+    plans = [(order, False) for order in NEST_ORDERS[1:]]
+    if _offcut_slots(offcuts, True) != _offcut_slots(offcuts, False):
+        plans.append((NEST_ORDERS[0], True))          # spinning an offcut would give more room: try that too
+    for n, (order, spin) in enumerate(plans, 2):
         keys = _part_order(parts, order, sizes)
-        if keys in seen:
+        if not spin and keys in seen:
             continue                                  # the same order as a try already planned
         seen.append(keys)
         made: Dict[str, List[str]] = {p.key: [] for p in parts}
@@ -326,12 +352,11 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
             log(f"couldn't make copies to try '{order}': {e}")
             _discard(adapter, [c for cs in made.values() for c in cs], log)
             continue
-        tries.append(_Try(order, made))
+        tries.append(_Try(order, made, spin))
 
-    offcuts = _offcut_places(job, thickness)
     for i, t in enumerate(tries):
         remaining = [c for k in _part_order(parts, t.order, sizes) for c in t.copies[k] if by_key[k].ok]
-        for offcut_id, offcut in offcuts + [(None, None)] * job.nest.max_sheets_per_group:
+        for offcut_id, offcut in _offcut_slots(offcuts, t.spin) + [(None, None)] * job.nest.max_sheets_per_group:
             if not remaining:
                 break
             origin = (x_start + slot * pitch, 0.0)
@@ -342,7 +367,7 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
                 t.failed = f"Arrange failed: {e}"
                 if i == 0:
                     reject([key_of(c) for c in remaining], t.failed)
-                log(f"Arrange failed for a {thickness:g} in sheet ('{t.order}'): {e}")
+                log(f"Arrange failed for a {thickness:g} in sheet ('{t.name}'): {e}")
                 break
             if i == 0:
                 for cid, why in got.refused.items():
@@ -355,11 +380,11 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
                 t.stock.append((offcut_id, offcut))
             remaining = [c for c in remaining if c not in placed and by_key[key_of(c)].ok]
             what = f"offcut {offcut_id}" if offcut_id else "sheet"
-            log(f"{thickness:g} in {what} at x={origin[0]:g} ('{t.order}'): placed {len(placed)}, {len(remaining)} left")
+            log(f"{thickness:g} in {what} at x={origin[0]:g} ('{t.name}'): placed {len(placed)}, {len(remaining)} left")
             if not placed and offcut_id is None:
                 break                                 # a new sheet that takes nothing: nothing more fits
         t.remaining = remaining
-        t.score = _score(adapter, t)
+        t.score = _score(adapter, t, last_turned)
         if i == 0 and t.failed:
             break                                     # the first try's failure rejected the parts; nothing to compare
 
@@ -370,10 +395,10 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
             _discard(adapter, [c for cs in t.copies.values() for c in cs], log)
     if len(tries) > 1:
         def said(t: _Try) -> str:
-            return "failed" if t.failed else f"{-t.score[0]} placed on {t.score[2]} sheet(s), last {t.score[3]:.1f} in"
-        log(f"{thickness:g} in: kept '{best.order}' ({'; '.join(f'{t.order}: {said(t)}' for t in tries)})")
+            return "failed" if t.failed else f"{-t.score[0]} placed on {t.score[3]} sheet(s), last {t.score[4]:.1f} in"
+        log(f"{thickness:g} in: kept '{best.name}' ({'; '.join(f'{t.name}: {said(t)}' for t in tries)})")
         if best is not tries[0] and best.score < tries[0].score:
-            notes.append(f"{thickness:g} in: nesting the parts {best.order} beat the listed order "
+            notes.append(f"{thickness:g} in: nesting the parts {best.name} beat the listed order "
                          f"({said(best)} instead of {said(tries[0])})")
     for p in parts:
         p.copies = list(best.copies[p.key])

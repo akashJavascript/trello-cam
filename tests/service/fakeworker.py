@@ -10,7 +10,7 @@ from autocam_core import CORE_VERSION
 from autocam_core.errors import Issue
 from autocam_core.hotfolder import Queue
 from autocam_core.names import instance_id, program_name
-from autocam_core.offcuts import best_placement
+from autocam_core.offcuts import placement_for
 from autocam_core.pauses import insert
 from autocam_core.schema_job import read_job
 from autocam_core.schema_result import (
@@ -60,13 +60,16 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
         (claim.out_dir / tap_name).write_bytes(data)
         (claim.out_dir / f"{name}.png").write_bytes(b"\x89PNG fake preview")
         g = check.guard
-        # Like the pipeline: the first offcut of this thickness with room goes before a new sheet. Each part
-        # takes about 4 in along X from the start of the free stretch.
+        # Like the pipeline: the first offcut of this thickness with room goes before a new sheet, the same way
+        # round as its last cut if that has room. Each part takes about 4 in along X from the start of the stretch.
         region = job.fixture.nest_region_in
         offcut, place = None, None
         for o in job.offcuts:
-            p = best_placement(o.used_in, job.sheet.length_in, region[0], region[2], job.nest.offcut_gap_in,
-                               job.nest.offcut_min_in) if abs(o.thickness_in - thickness) < 1e-6 else None
+            if abs(o.thickness_in - thickness) > 1e-6:
+                continue
+            ways = [placement_for(o.used_in, job.sheet.length_in, region[0], region[2], job.nest.offcut_gap_in,
+                                  job.nest.offcut_min_in, t) for t in (o.last_turned, not o.last_turned)]
+            p = ways[0] or ways[1]
             if p is not None:
                 offcut, place = o, p
                 break

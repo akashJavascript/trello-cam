@@ -437,3 +437,13 @@ the op's own retract height, then down), and the op's own retract after it. The 
 - On the real programs: P-2011 164 in -> 29.6 in (about 9 s at 200 in/min); r006 (4 parts) 80 in, about 24 s,
   stops kept. Air tests already on cards are remade.
 
+## 2026-10-03: offcuts go back on the same way round (the user's choice)
+
+Spinning a sheet round is a chore, so an offcut is planned **the same way round as its last cut** whenever
+that has room. Each offcut records how it was loaded for its last cut (`last.turned`; the job's
+`OffcutSpec.last_turned`, core 0.3.1). The pipeline's tries use that way round, plus one extra try with
+offcuts spun round where spinning gives more room. Spinning only wins if it places more parts or needs
+fewer new sheets: it ranks right after those in the score. The sheet card says either "Put it in the same
+way round as for r006 S1: ..." or "Spin it round from how it was for r006 S1 (flat, same side up, don't flip
+it over): ...". The offcut card's "N in free" is still the most room either way round.
+

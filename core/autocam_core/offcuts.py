@@ -6,7 +6,9 @@ sheet's own coordinates: end A is the end that was at the zero corner (front lef
 
 The next nest goes in the longest free stretch the machine can reach. The sheet can be loaded as before
 or turned end for end (end B at the zero corner). Turning it brings the end that hung off the bed onto it,
-so a sheet with a short strip used at one end is nearly a whole new sheet the other way round.
+so a sheet with a short strip used at one end is nearly a whole new sheet the other way round. But spinning
+it is a chore, so the nest keeps it the way it was last cut unless spinning fits more parts or saves a new
+sheet (the pipeline decides; placement_for gives each way round).
 """
 
 from dataclasses import dataclass
@@ -47,6 +49,13 @@ def free_stretch(used: Sequence[Stretch], sheet_length: float, turned: bool, lo:
         if start >= hi:
             break
     return best
+
+
+def placement_for(used: Sequence[Stretch], sheet_length: float, lo: float, hi: float, gap: float,
+                  min_length: float, turned: bool) -> Optional[Placement]:
+    """The free stretch with the sheet loaded one particular way round, or None if it's under min_length."""
+    s = free_stretch(used, sheet_length, turned, lo, hi, gap)
+    return Placement(turned, s[0], s[1]) if s is not None and s[1] - s[0] >= min_length else None
 
 
 def best_placement(used: Sequence[Stretch], sheet_length: float, lo: float, hi: float, gap: float,

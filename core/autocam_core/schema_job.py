@@ -150,6 +150,7 @@ class OffcutSpec:
     id: str                                            # the offcut card's id
     thickness_in: float
     used_in: Tuple[Tuple[float, float], ...]           # used stretches along it, in its own coordinates
+    last_turned: bool = False                          # which way round it was loaded for its last cut
 
 
 @dataclass(frozen=True)

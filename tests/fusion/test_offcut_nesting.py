@@ -10,18 +10,34 @@ def job_with(rig, parts, offcuts):
     return dataclasses.replace(rig.job(parts), offcuts=tuple(offcuts))
 
 
-def test_an_offcut_is_filled_turned_round_before_any_new_sheet(tmp_path):
+def stretches(rig):
+    """Each Arrange's area along X, relative to its sheet (the area starts 0.25 in in from the free stretch)."""
+    out = []
+    for x0, _, x1, _ in rig.fake.arrange_envelopes:
+        out.append((x0, x1))
+    return out
+
+
+def test_parts_that_fit_go_on_the_offcut_the_same_way_round_as_before(tmp_path):
     rig = Rig(tmp_path)
-    # 25 in used from end A: turned round, the free stretch is 0.5 to 22.5 in (gap 0.5 from the old cuts).
+    # Cut once with end A at the zero corner, 7.5 in used: the same way round, 8 to 39.5 in is free.
+    job = job_with(rig, [("plate", 4, plate(name="plate"), (10.0, 5.0))], [OffcutSpec("off1", 0.125, ((0.0, 7.5),))])
+    result = rig.run(job)
+    [sheet] = result.sheets
+    assert sheet.offcut_id == "off1" and not sheet.offcut_turned                    # no spinning the sheet round
+    assert sheet.used_x_in[0] >= 8.0
+
+
+def test_spinning_an_offcut_round_wins_only_when_it_saves_a_new_sheet(tmp_path):
+    rig = Rig(tmp_path)
+    # 25 in used from end A. The same way round: 25.5 to 39.5 in (4 of these fit). Spun round: 0.5 to 22.5 in (8 fit).
     job = job_with(rig, [("plate", 6, plate(name="plate"), (10.0, 5.0))], [OffcutSpec("off1", 0.125, ((0.0, 25.0),))])
     result = rig.run(job)
     [sheet] = result.sheets
-    assert sheet.offcut_id == "off1" and sheet.offcut_turned
-    x0, y0, x1, y1 = rig.fake.arrange_envelopes[0]
-    origin_x = x0 - 0.75
-    assert (round(x1 - origin_x, 3), round(x0 - origin_x, 3)) == (22.25, 0.75)     # free stretch less the spacing
-    assert sheet.used_x_in[0] >= 0.5 and sheet.used_x_in[1] <= 22.5
-    assert sheet.free_length_in is not None
+    assert sheet.offcut_id == "off1" and sheet.offcut_turned                        # all 6 on it, no new sheet
+    widths = sorted({round(x1 - x0, 2) for x0, x1 in stretches(rig)})
+    assert 13.5 in widths and 21.5 in widths                                        # both ways round were tried
+    assert any("offcuts spun round beat the listed order" in n for n in result.notes)
 
 
 def test_what_doesnt_fit_on_the_offcut_goes_on_a_new_sheet(tmp_path):
@@ -29,6 +45,7 @@ def test_what_doesnt_fit_on_the_offcut_goes_on_a_new_sheet(tmp_path):
     job = job_with(rig, [("plate", 12, plate(name="plate"), (10.0, 5.0))], [OffcutSpec("off1", 0.125, ((0.0, 25.0),))])
     result = rig.run(job)
     assert [s.offcut_id for s in result.sheets] == ["off1", None]
+    assert not result.sheets[0].offcut_turned          # a new sheet either way, so no point spinning the offcut
     assert sum(p.count for s in result.sheets for p in s.parts) == 12
 
 

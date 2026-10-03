@@ -9,7 +9,8 @@
 - An offcut card someone archives or moves out of the Offcuts list is forgotten: the sheet is gone.
 
     state/offcuts.json   {offcut card id: {"material", "thickness_in", "used": [[a, b], ...],
-                          "last": {"label": "r006 S1", "stretch": [a, b]}, "reserved_by": sheet card id or null}}
+                          "last": {"label": "r006 S1", "stretch": [a, b], "turned": false},
+                          "reserved_by": sheet card id or null}}
 """
 
 import json
@@ -76,12 +77,18 @@ def card_text(stock: str, free_in: float, used: Sequence[Stretch], last_label: s
     return title, desc
 
 
-def load_line(stock: str, url: str, last_label: str, last_stretch: Stretch, turned: bool, sheet_length: float) -> str:
-    """The sheet card's Stock line for a nest on an offcut: which end goes where."""
+def load_line(stock: str, url: str, last_label: str, last_stretch: Stretch, turned: bool, sheet_length: float,
+              last_turned: bool = False) -> str:
+    """The sheet card's Stock line for a nest on an offcut: the same way round as its last cut, or spun round."""
     middle = (last_stretch[0] + last_stretch[1]) / 2
     if turned:
         middle = sheet_length - middle
     end = "at the zero corner (front left, by you)" if middle < sheet_length / 2 else \
         "at the far end (hanging off the bed)"
-    return (f"Stock: the {stock} offcut, not a new sheet ({url}). Put it in with the end where {last_label}'s "
-            f"parts were cut {end}. Same side up: spin it round flat, don't flip it over. Clamps and zero as usual.")
+    head = f"Stock: the {stock} offcut, not a new sheet ({url})."
+    if turned == last_turned:
+        how = f"Put it in the same way round as for {last_label}: the end where its parts were cut {end}."
+    else:
+        how = (f"Spin it round from how it was for {last_label} (flat, same side up, don't flip it over): the end "
+               f"where its parts were cut goes {end}.")
+    return f"{head} {how} Clamps and zero as usual."

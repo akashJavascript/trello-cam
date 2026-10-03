@@ -54,14 +54,14 @@ def test_the_next_run_nests_onto_the_offcut_and_says_how_to_load_it(tmp_path):
     add(h, step_card("c2", "gusset"))
     h.runner.tick()
     job = read_job(next(h.queue.incoming.glob("*.json")))
-    assert [(o.id, o.used_in) for o in job.offcuts] == [(off.id, ((0.5, 8.5),))]
+    assert [(o.id, o.used_in, o.last_turned) for o in job.offcuts] == [(off.id, ((0.5, 8.5),), False)]
     run_fake_worker(h.queue)
     h.runner.tick()
     s2 = sheet(h)
     assert s2.name.startswith("6061 1/8in offcut - 4 mm O-flute ALU")
-    assert (f"Stock: the 6061 1/8in offcut, not a new sheet ({off.url}). Put it in with the end where r001 S1's "
-            "parts were cut at the far end (hanging off the bed).") in s2.desc
-    assert "Same side up: spin it round flat, don't flip it over." in s2.desc
+    assert (f"Stock: the 6061 1/8in offcut, not a new sheet ({off.url}). Put it in the same way round as for "
+            "r001 S1: the end where its parts were cut at the zero corner (front left, by you).") in s2.desc
+    assert "Spin" not in s2.desc
     assert json.loads(h.store.offcuts_file.read_text())[off.id]["reserved_by"] == s2.id
     # while that sheet holds it, another material's run can't, and a reviewed one keeps it
     h.tracker.checklists[(s2.id, "Review")][0][1] = True
@@ -103,10 +103,11 @@ def test_an_offcut_with_room_left_is_updated(tmp_path):
     run(h)
     cut(h, sheet(h).id)
     [after] = offcut_cards(h)
-    assert after.id == off.id and after.name == "6061 1/8in offcut - 30 in free"      # 9 to 39 in, between the cuts
+    assert after.id == off.id and after.name == "6061 1/8in offcut - 30 in free"      # spun round: 0.5 to 30.5 in
     assert h.tracker.comments_on(off.id)[-1] == "r002 S1 was cut from it. 30 in free now."
     piece = json.loads(h.store.offcuts_file.read_text())[off.id]
-    assert piece["used"] == [[0.5, 8.5], [39.5, 47.5]] and piece["reserved_by"] is None
+    assert piece["used"] == [[0.5, 8.5], [9.0, 17.0]] and piece["reserved_by"] is None   # same way round both times
+    assert piece["last"]["turned"] is False
 
 
 def test_an_open_sheet_on_an_offcut_keeps_it_when_rebuilt(tmp_path):
@@ -120,3 +121,12 @@ def test_an_open_sheet_on_an_offcut_keeps_it_when_rebuilt(tmp_path):
     run(h)
     assert sheet(h).id == s2.id and sheet(h).name.startswith("6061 1/8in offcut") and "r003 S1" in sheet(h).name
     assert json.loads(h.store.offcuts_file.read_text())[off.id]["reserved_by"] == s2.id
+
+
+def test_the_load_line_says_when_to_spin_it():
+    from autocam_service.offcuts import load_line
+    same = load_line("6061 3/16in", "u", "r006 S1", (0.5, 7.3), False, 48.0, last_turned=False)
+    assert "the same way round as for r006 S1: the end where its parts were cut at the zero corner" in same
+    spun = load_line("6061 3/16in", "u", "r006 S1", (0.5, 7.3), True, 48.0, last_turned=False)
+    assert ("Spin it round from how it was for r006 S1 (flat, same side up, don't flip it over): the end where its "
+            "parts were cut goes at the far end (hanging off the bed).") in spun
