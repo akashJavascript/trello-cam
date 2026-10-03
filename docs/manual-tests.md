@@ -192,6 +192,9 @@ Run on the machine with no material, work zero set as usual. Use `fusion/tests/p
 The add-in runs whatever the service puts in `C:\dev\frc-autocam\queue\incoming\`, one job at a time, with
 no dialogs. Until the service runs for real, queue jobs by hand from earlier `autocam_run` runs.
 
+**New code:** the add-in reloads itself while idle when `CORE_VERSION` changes or a `queue\reload_addin`
+file appears (checks 9-10). Stop/Run still works and is needed once to get the self-reload itself.
+
 **Start it:** Scripts and Add-Ins (`Shift+S`) → **Add-Ins** tab → "+" → `C:\dev\frc-autocam\fusion\autocam_addin`
 → Run. Leave "Run on Startup" off for now (that's M5).
 
@@ -214,6 +217,8 @@ To queue the same job again, first delete `queue\done\<id>` (or `queue\failed\<i
 | 6 | Edit a queued job's `"core_version"` to `"0.0.1"`: it goes to `failed\` with `CORE_VERSION_MISMATCH` | |
 | 7 | While the add-in is idle, Fusion stays usable (only a job run blocks it) | |
 | 8 | Stop the add-in, `git pull`, start it again: the new code runs (the log's start line) | |
+| 9 | Self-reload: while the add-in is idle, create an empty `queue\reload_addin` file. Within ~10 s the file is gone and `logs\fusion_worker.log` says `reloaded: core X -> X` | |
+| 10 | After a `git pull` that changes `CORE_VERSION`, the log says `reloaded: core <old> -> <new>` within ~10 s, and `queue\worker_heartbeat.json` shows the new `core_version`, with no Stop/Run | |
 
 ## M3: real board setup and the first supervised run
 
