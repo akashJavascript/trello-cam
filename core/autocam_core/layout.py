@@ -6,10 +6,13 @@ that contains the centre of its bounding box.
 
 Short quantity (config nest.short_qty = "defer_card"): if not every copy of a card's part fit,
 none of them are cut this run; the card stays queued for the next run.
+
+A sheet can have more than one envelope (an offcut's room beside earlier cuts, then its free stretch):
+`sheet_of` says which envelopes are the same sheet, and its parts are numbered across all of them.
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .fixture import Rect, contains
 from .names import instance_id
@@ -30,8 +33,9 @@ class Placed:
 @dataclass(frozen=True)
 class SheetLayout:
     index: int                                   # 1-based, after empty sheets are dropped
-    envelope_in: Rect
+    envelope_in: Rect                            # its last envelope with parts
     instances: Tuple[Tuple[str, Placed], ...]    # (instance id like p03-2, body)
+    areas: Tuple[Rect, ...] = ()                 # its envelopes with parts, in the order given
 
 
 @dataclass(frozen=True)
@@ -45,7 +49,8 @@ class Layout:
 
 
 def plan_layout(bodies: Sequence[Placed], envelopes: Sequence[Rect], qty: Mapping[str, int],
-                edge_tol_in: float = 1e-4) -> Layout:
+                edge_tol_in: float = 1e-4, sheet_of: Optional[Sequence[int]] = None) -> Layout:
+    """sheet_of[i]: the sheet envelope i is on (default: each envelope is a sheet of its own)."""
     per_env: List[List[Placed]] = [[] for _ in envelopes]
     unplaced: List[str] = []
     problems: List[str] = []
@@ -72,12 +77,17 @@ def plan_layout(bodies: Sequence[Placed], envelopes: Sequence[Rect], qty: Mappin
     deferred = tuple(sorted(k for k, q in qty.items() if counts.get(k, 0) < q))
 
     removed: List[str] = []
-    sheets: List[SheetLayout] = []
-    for env, env_bodies in zip(envelopes, per_env):
+    groups: Dict[int, List[Tuple[Rect, List[Placed]]]] = {}
+    for i, (env, env_bodies) in enumerate(zip(envelopes, per_env)):
         keep = [b for b in env_bodies if b.part_key not in deferred]
         removed += [b.body_id for b in env_bodies if b.part_key in deferred]
         if keep:
-            sheets.append(SheetLayout(len(sheets) + 1, env, _number_instances(keep)))
+            groups.setdefault(sheet_of[i] if sheet_of is not None else i, []).append((env, keep))
+    sheets: List[SheetLayout] = []
+    for areas in groups.values():
+        keep = [b for _, env_bodies in areas for b in env_bodies]
+        sheets.append(SheetLayout(len(sheets) + 1, areas[-1][0], _number_instances(keep),
+                                  tuple(env for env, _ in areas)))
     placed = {k: counts.get(k, 0) for k in qty if k not in deferred}
     return Layout(tuple(sheets), placed, deferred, tuple(removed), tuple(unplaced), tuple(problems))
 

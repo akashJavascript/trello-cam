@@ -314,6 +314,9 @@ or set up an existing board instead with `--board <short link>`.
 | 4 | Load the sheet as the card says and **air-test it first**: the cutter stays in the free stretch, clear of the earlier cut-outs | |
 | 5 | Cut it: the offcut card is updated with what's left, or archived when it's used up | |
 | 6 | Untick the Offcut box before moving a sheet to Cut: no offcut card | |
+| 7 | Cut a sheet with one small part: the offcut card says "+ room for small parts" and gives the room's size | |
+| 8 | The next small part of that stock goes beside the earlier cut (worker log: "placed N (N beside earlier cuts)"). **Air-test it first**: the cutter stays at least about 0.5 in clear of the earlier cut-outs | |
+| 9 | An offcut whose free stretch is used up but has room beside its cuts is kept ("small parts only"), not archived | |
 
 ### 6. The service picks up new code by itself
 

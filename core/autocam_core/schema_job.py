@@ -59,6 +59,7 @@ class NestSpec:
     short_qty: str
     offcut_gap_in: float = 0.5        # how far a new nest stays from the stretches of an offcut already cut
     offcut_min_in: float = 6.0        # a free stretch shorter than this isn't worth loading the offcut for
+    offcut_beside_min_in: float = 3.0   # room beside earlier cuts is kept and used when both its sides are this long
 
 
 @dataclass(frozen=True)
@@ -151,6 +152,7 @@ class OffcutSpec:
     thickness_in: float
     used_in: Tuple[Tuple[float, float], ...]           # used stretches along it, in its own coordinates
     last_turned: bool = False                          # which way round it was loaded for its last cut
+    beside_in: Tuple[Rect, ...] = ()                   # room beside earlier cuts, in its own coordinates (core 0.5.0)
 
 
 @dataclass(frozen=True)
@@ -214,6 +216,9 @@ class Job:
         for o in self.offcuts:
             if any(not 0 <= a < b <= self.sheet.length_in for a, b in o.used_in):
                 e.append(f"offcuts.{o.id}: used stretches must be inside the sheet")
+            if any(not (0 <= x0 < x1 <= self.sheet.width_in and 0 <= y0 < y1 <= self.sheet.length_in)
+                   for x0, y0, x1, y1 in o.beside_in):
+                e.append(f"offcuts.{o.id}: room beside cuts must be inside the sheet")
         if not self.parts:
             e.append("parts: empty")
         for p in self.parts:

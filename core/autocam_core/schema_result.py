@@ -106,6 +106,10 @@ class SheetResult:
     offcut_id: Optional[str] = None           # nested onto this offcut, not a new sheet
     offcut_turned: bool = False               # ...loaded end for end
     used_y_in: Optional[Tuple[float, float]] = None   # the stretch along the length (Y) it uses, sheet coordinates
+    # Room beside earlier cuts (core 0.5.0):
+    beside_used: Tuple[int, ...] = ()                 # which of its offcut's beside_in got parts
+    beside_left_in: Tuple[Tuple[float, float, float, float], ...] = ()   # room beside this sheet's parts once
+                                                      # it's cut, sheet coordinates as loaded (X across, Y along)
 
 
 @dataclass(frozen=True)

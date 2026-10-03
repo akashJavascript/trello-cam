@@ -93,7 +93,7 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
                             cfg.clamps.min_clear_above_stock_in),
         nest=NestSpec(cfg.nest.part_spacing_in, cfg.nest.max_sheets_per_group, cfg.nest.rotation,
                       cfg.nest.part_in_part, cfg.nest.envelope_spacing_in, cfg.nest.short_qty,
-                      cfg.nest.offcut_gap_in, cfg.nest.offcut_min_in),
+                      cfg.nest.offcut_gap_in, cfg.nest.offcut_min_in, cfg.nest.offcut_beside_min_in),
         tooling=ToolingSpec(default=default.key, small_features=small.key if small else None, tools=tools),
         holes=HoleRules(cfg.holes.drill_tol_in, cfg.holes.bore_min_in, cfg.holes.bore_min_tol_in,
                         cfg.holes.bore_max_in, tuple(cfg.holes.bearing_sizes_in), cfg.holes.bearing_tol_in),

@@ -7,8 +7,13 @@
   it and says how to load it. The reservation ends when that sheet is cut, rebuilt onto something else, or
   retired. An open sheet that's rebuilt can keep its offcut.
 - An offcut card someone archives or moves out of the Offcuts list is forgotten: the sheet is gone.
+- Besides the used stretches, an offcut keeps the room beside the parts cut from them ("beside": rectangles
+  in its own coordinates, core 0.5.0), which the next nest fills first. A sheet that used some of that room
+  replaces it with what's left of it. An offcut is used up when it has neither a free stretch worth loading
+  nor any room beside its cuts.
 
     state/offcuts.json   {offcut card id: {"material", "thickness_in", "used": [[a, b], ...],
+                          "beside": [[x0, y0, x1, y1], ...] (absent before core 0.5.0),
                           "last": {"label": "r006 S1", "stretch": [a, b], "turned": false},
                           "reserved_by": sheet card id or null}}
 """
@@ -65,16 +70,22 @@ class OffcutStore:
             self._write(pieces)
 
 
-def card_text(stock: str, free_in: float, used: Sequence[Stretch], last_label: str) -> Tuple[str, str]:
+def card_text(stock: str, free_in: float, used: Sequence[Stretch], last_label: str,
+              beside: Sequence[Sequence[float]] = (), min_free_in: float = 0.0) -> Tuple[str, str]:
     """stock: e.g. "6061 3/16in". The offcut card's title and description."""
-    title = f"{stock} offcut - {free_in:.0f} in free"
+    title = f"{stock} offcut - " + (f"{free_in:.0f} in free" if free_in >= min_free_in else "small parts only")
+    if beside and free_in >= min_free_in:
+        title += " + room for small parts"
     used_text = ", ".join(f"{a:.1f} to {b:.1f} in" for a, b in used)
-    desc = "\n".join([
+    lines = [
         f"A partly used {stock} sheet. Runs put {stock} parts on it before starting a new sheet.",
         f"Last cut: {last_label}. Used along its length: {used_text}.",
-        "Archive this card if the sheet is gone.",
-    ])
-    return title, desc
+    ]
+    if beside:
+        sizes = ", ".join(f"{x1 - x0:.1f} x {y1 - y0:.1f} in" for x0, y0, x1, y1 in beside)
+        lines.append(f"Room beside the parts already cut, filled first with parts that fit: {sizes}.")
+    lines.append("Archive this card if the sheet is gone.")
+    return title, "\n".join(lines)
 
 
 def load_line(stock: str, url: str, last_label: str, last_stretch: Stretch, turned: bool, sheet_length: float,

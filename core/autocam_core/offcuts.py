@@ -10,12 +10,19 @@ or turned end for end (end B at the front). Turning it brings the end that hung 
 so a sheet with a short strip used at one end is nearly a whole new sheet the other way round. But spinning
 it is a chore, so the nest keeps it the way it was last cut unless spinning fits more parts or saves a new
 sheet (the pipeline decides; placement_for gives each way round).
+
+A used stretch is the whole width, but its parts rarely are: Arrange packs from the left edge, so a single
+part leaves most of its band empty. That **room beside** the parts (room_beside: from their right edge to
+the edge of the nest region, as deep as the band) is kept too, as rectangles in the sheet's own coordinates,
+and the next nest fills it first with whatever fits. What a nest leaves of a rectangle it used (to the right
+of its new parts) is kept the same way.
 """
 
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
 Stretch = Tuple[float, float]         # along the sheet's length, inches
+Rect = Tuple[float, float, float, float]   # x0, y0, x1, y1: X across the sheet, Y along its length, inches
 
 
 @dataclass(frozen=True)
@@ -88,3 +95,41 @@ def free_length(used: Sequence[Stretch], sheet_length: float, lo: float, hi: flo
     """The longest reachable free stretch, either way round (0 if none)."""
     p = best_placement(used, sheet_length, lo, hi, gap, 0.0)
     return p.length if p else 0.0
+
+
+def turn_rect(r: Rect, width: float, length: float) -> Rect:
+    """A rectangle on the sheet, with the sheet turned end for end (spun round flat, not flipped over)."""
+    x0, y0, x1, y1 = r
+    return (round(width - x1, 3), round(length - y1, 3), round(width - x0, 3), round(length - y0, 3))
+
+
+def beside_as_loaded(beside: Sequence[Rect], width: float, length: float, turned: bool, region: Rect,
+                     min_side: float) -> List[Tuple[int, Rect]]:
+    """The room beside earlier cuts the machine can use with the sheet loaded as before (turned=False) or end for
+    end: (index in `beside`, the rectangle in machine X/Y cut down to the nest region), at least min_side both
+    ways."""
+    out = []
+    for i, r in enumerate(beside):
+        x0, y0, x1, y1 = turn_rect(r, width, length) if turned else tuple(r)
+        x0, y0, x1, y1 = max(x0, region[0]), max(y0, region[1]), min(x1, region[2]), min(y1, region[3])
+        if x1 - x0 >= min_side and y1 - y0 >= min_side:
+            out.append((i, (x0, y0, x1, y1)))
+    return out
+
+
+def room_beside(boxes: Sequence[Rect], band: Stretch, right: float, margin: float, gap: float,
+                min_side: float) -> Optional[Rect]:
+    """The room to the right of parts (boxes in sheet coordinates) in a band along the length: from their right
+    edge, plus `margin` for the cutter's path and `gap` for loading the sheet back a little off, to `right`
+    (the edge of the nest region or of the room they were nested in). None if it's under min_side either way."""
+    if not boxes:
+        return None
+    x0 = max(b[2] for b in boxes) + margin + gap
+    if right - x0 < min_side or band[1] - band[0] < min_side:
+        return None
+    return (round(x0, 3), round(band[0], 3), round(right, 3), round(band[1], 3))
+
+
+def to_own(r: Rect, width: float, length: float, turned: bool) -> Rect:
+    """A rectangle in machine X/Y back in the sheet's own coordinates (end A at the front)."""
+    return turn_rect(r, width, length) if turned else tuple(round(v, 3) for v in r)

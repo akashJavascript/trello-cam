@@ -151,3 +151,66 @@ def test_sheets_from_the_old_layout_are_retired_and_their_parts_sent_back(tmp_pa
     before = len(h.tracker.comments)
     h.runner.tick()
     assert len([c for c in h.tracker.comments if "turned 90" in c[1]]) == 1                # once
+
+
+# ---- room beside the parts cut (offcuts.py)
+
+def run_beside(h):
+    run(h, beside=True)
+    h.runner.tick()                                       # the boxes appear
+
+
+def test_the_room_beside_a_sheets_parts_is_kept_with_its_offcut(tmp_path):
+    h = harness(tmp_path, step_card("c1", "plate", qty=2))
+    run_beside(h)
+    s1 = sheet(h)
+    cut(h, s1.id)
+    [off] = offcut_cards(h)
+    assert off.name == "6061 1/8in offcut - 38 in free + room for small parts"
+    assert "Room beside the parts already cut, filled first with parts that fit: 15.0 x 8.0 in." in off.desc
+    piece = json.loads(h.store.offcuts_file.read_text())[off.id]
+    assert piece["beside"] == [[7.75, 0.5, 22.75, 8.5]]
+
+
+def test_the_next_run_fills_the_room_beside_the_cut_first(tmp_path):
+    h = harness(tmp_path, step_card("c1", "plate", qty=2))
+    run_beside(h)
+    cut(h, sheet(h).id)
+    [off] = offcut_cards(h)
+    add(h, step_card("c2", "gusset"))
+    h.runner.tick()
+    job = read_job(next(h.queue.incoming.glob("*.json")))
+    assert [(o.id, o.beside_in) for o in job.offcuts] == [(off.id, ((7.75, 0.5, 22.75, 8.5),))]
+    run_fake_worker(h.queue, beside=True)
+    h.runner.tick()
+    s2 = sheet(h)
+    assert "the end where its parts were cut at the front (by you)" in s2.desc        # loaded as before
+    cut(h, s2.id)
+    piece = json.loads(h.store.offcuts_file.read_text())[off.id]
+    assert piece["beside"] == [] and piece["used"] == [[0.5, 8.5]]                   # the stretch is untouched
+    assert piece["last"]["label"] == "r002 S1" and piece["reserved_by"] is None
+    assert h.tracker.comments_on(off.id)[-1] == "r002 S1 was cut from it. 38 in free now."
+    assert h.tracker.cards[off.id].name == "6061 1/8in offcut - 38 in free"
+
+
+def test_an_offcut_with_only_room_beside_its_cuts_is_kept(tmp_path):
+    h = harness(tmp_path, step_card("c1", "plate", qty=2))
+    run_beside(h)
+    cut(h, sheet(h).id)
+    [off] = offcut_cards(h)
+    piece = json.loads(h.store.offcuts_file.read_text())
+    piece[off.id]["beside"] = []                          # so the next nest goes in the free stretch
+    h.store.offcuts_file.write_text(json.dumps(piece))
+    add(h, step_card("c2", "gusset", qty=9))              # about 36 in of the 38.5 free
+    run_beside(h)
+    cut(h, sheet(h).id)
+    after = json.loads(h.store.offcuts_file.read_text())[off.id]                      # not used up: kept
+    assert after["beside"] == [[7.75, 9.0, 22.75, 45.0]] and off.id not in h.tracker.archived
+    assert h.tracker.cards[off.id].name == "6061 1/8in offcut - small parts only"
+    assert h.tracker.comments_on(off.id)[-1] == ("r002 S1 was cut from it. No free stretch now, plus room beside "
+                                                "the cuts for small parts.")
+    # the next run still gets it, for its room beside the cuts
+    add(h, step_card("c3", "tab"))
+    h.runner.tick()
+    job = read_job(next(h.queue.incoming.glob("r003*.json")))
+    assert [o.id for o in job.offcuts] == [off.id]

@@ -491,3 +491,25 @@ shortest area that holds them all is kept.
 - **The preview** is now framed on the whole sheet and saved upright (1000 x 1600) for an upright sheet, as
   seen from the front of the machine. The old framing assumed a sideways sheet and cut off the ends.
 
+## 2026-10-03: offcuts keep the room beside the parts cut (the user's choice)
+
+A used stretch is the whole width, but its parts rarely are: Fusion's Arrange packs from the left edge, so a
+one-off part marked a full-width band as used and the rest of the band's width was written off (a 6 x 3 in
+gusset cost about 85 sq in of an 18 sq in part). The metal is still there. So the offcut now also keeps the
+**room beside** the parts (`autocam_core/offcuts.py`, core 0.5.0):
+- **What's kept:** for each band cut along the length, the rectangle from the parts' right edge to the edge
+  of the nest region, as deep as the band. It starts 0.75 in right of the parts: 0.25 in for the cutter's
+  path and 0.5 in for loading the sheet back a little off, the same slack as between stretches. Both sides
+  must be at least 3 in (`nest.offcut_beside_min_in`).
+- **How it's used:** the next nest on that offcut arranges into each such rectangle first, one Arrange each,
+  then into the free stretch. It's all one sheet: one setup, one program, one card. A rectangle that got
+  parts is replaced by what's left of it (right of its new parts).
+- **Either way round:** rectangles are kept in the offcut's own coordinates and turned with the sheet; what
+  falls past the 40 in reach that way round is cut off (`beside_as_loaded`).
+- **Used up:** an offcut is archived only when it has neither a free stretch worth loading (6 in) nor any
+  room beside its cuts. An offcut with only room beside its cuts says "small parts only".
+- **The squeeze** on a last sheet that also has parts beside earlier cuts arranges those again in the same
+  rooms (fresh copies, made up front) along with the shorter stretch, so the sheet stays in one piece.
+- **Not kept:** room behind short parts within a band, and room left of them. Arrange packs left and the
+  squeeze packs to the front, so most of the free metal is to the right.
+

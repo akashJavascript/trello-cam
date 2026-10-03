@@ -98,6 +98,7 @@ class Nest:
     short_qty: str
     offcut_gap_in: float
     offcut_min_in: float
+    offcut_beside_min_in: float
 
 
 @dataclass(frozen=True)
@@ -488,6 +489,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         short_qty=t.string("short_qty", choices=("defer_card",)),
         offcut_gap_in=t.number("offcut_gap_in", minimum=0),
         offcut_min_in=t.number("offcut_min_in", positive=True),
+        offcut_beside_min_in=t.number("offcut_beside_min_in", positive=True),
     )
     t.finish()
 

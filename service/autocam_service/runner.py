@@ -38,7 +38,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 from autocam_core import CORE_VERSION
 from autocam_core.airtest import SUFFIX as AIR_SUFFIX, AirTestError, air_test_name, air_test_program, check_air_test
 from autocam_core.hotfolder import Queue, write_atomic
-from autocam_core.offcuts import add_used, free_length
+from autocam_core.offcuts import add_used, free_length, to_own
 from autocam_core.pauses import PauseError, remove as remove_pauses
 from autocam_core.sheetcheck import check_sheet_program, pause_spec
 from autocam_core.schema import SchemaError
@@ -272,7 +272,8 @@ class Runner:
             if piece["material"] != material or (reserved and reserved not in reopened):
                 continue
             out.append(OffcutSpec(offcut_id, piece["thickness_in"], tuple(tuple(s) for s in piece["used"]),
-                                  bool((piece.get("last") or {}).get("turned", False))))
+                                  bool((piece.get("last") or {}).get("turned", False)),
+                                  tuple(tuple(r) for r in piece.get("beside", []))))
         return out
 
     def _stock_line(self, vs: VerifiedSheet) -> Optional[str]:
@@ -289,43 +290,54 @@ class Runner:
                          vs.sheet.offcut_turned, self.cfg.sheet.length_in, bool(last.get("turned", False)))
 
     def _offcut_after_cut(self, card: Card, info: Dict) -> None:
-        """A sheet card just went to Cut: update the offcut it was cut from, or keep the rest as a new one."""
+        """A sheet card just went to Cut: update the offcut it was cut from, or keep the rest as a new one. The
+        rest is the free stretch along the length and the room beside the parts cut (offcuts.py); an offcut with
+        neither left is used up."""
         used_along = info.get("used_along") or info.get("used_x")      # used_x: sheets published before 2026-10-03
-        if not info.get("job") or not used_along or not info.get("cuttable") or info.get("offcut_done"):
+        beside_used = set(info.get("beside_used") or ())
+        if not info.get("job") or not (used_along or beside_used) or not info.get("cuttable") \
+                or info.get("offcut_done"):
             return
-        cfg, length = self.cfg, self.cfg.sheet.length_in
+        cfg, length, width = self.cfg, self.cfg.sheet.length_in, self.cfg.sheet.width_in
         label = info.get("label") or f"{info.get('run')} S{info.get('index')}"
-        cut, turned = tuple(used_along), bool(info.get("turned"))
+        turned = bool(info.get("turned"))
+        cut = add_used((), tuple(used_along), length, turned)[0] if used_along else None   # in its own coordinates
+        left = [list(to_own(tuple(r), width, length, turned)) for r in info.get("beside_left") or ()]
         stock = self._stock_label(info["material"], info["thickness_in"])
         offcut_id = info.get("offcut_id")
         if offcut_id:
             piece = self.offcuts.get(offcut_id)
             if piece is None:
                 return                                # its card was archived: the sheet is gone
-            used = add_used(piece["used"], cut, length, turned)
+            used = add_used(piece["used"], tuple(used_along), length, turned) if used_along else \
+                tuple(tuple(s) for s in piece["used"])
+            beside = [r for i, r in enumerate(piece.get("beside", [])) if i not in beside_used] + left
             free = self._free_after(used)
-            if free < cfg.nest.offcut_min_in:
+            if free < cfg.nest.offcut_min_in and not beside:
                 self.t.comment(offcut_id, f"Used up: {label} was cut from it.")
                 self.t.archive(offcut_id)
                 self.offcuts.remove(offcut_id)
                 return
-            piece.update(used=[list(s) for s in used], reserved_by=None,
-                         last={"label": label, "stretch": list(add_used((), cut, length, turned)[0]), "turned": turned})
+            stretch = list(cut) if cut else (piece.get("last") or {}).get("stretch", [0.0, 0.0])
+            piece.update(used=[list(s) for s in used], beside=beside, reserved_by=None,
+                         last={"label": label, "stretch": stretch, "turned": turned})
             self.offcuts.put(offcut_id, piece)
-            self.t.update_card(offcut_id, *card_text(stock, free, used, label))
-            self.t.comment(offcut_id, f"{label} was cut from it. {free:.0f} in free now.")
+            self.t.update_card(offcut_id, *card_text(stock, free, used, label, beside, cfg.nest.offcut_min_in))
+            self.t.comment(offcut_id, f"{label} was cut from it. "
+                           + (f"{free:.0f} in free now" if free >= cfg.nest.offcut_min_in else "No free stretch now")
+                           + (", plus room beside the cuts for small parts." if beside else "."))
             return
         keep = [c.done for c in card.checks if c.checklist == cfg.trello.offcut_checklist]
-        if not any(keep):
+        if not any(keep) or cut is None:
             return                                    # no box (an older card), or someone unticked it
-        used = add_used((), cut, length, False)       # a new sheet: end A was at the front
+        used = (cut,)                                 # a new sheet: end A was at the front
         free = self._free_after(used)
-        if free < cfg.nest.offcut_min_in:
+        if free < cfg.nest.offcut_min_in and not left:
             return
-        new = self.t.create_card("offcuts", *card_text(stock, free, used, label))
+        new = self.t.create_card("offcuts", *card_text(stock, free, used, label, left, cfg.nest.offcut_min_in))
         self.offcuts.put(new.id, {"material": info["material"], "thickness_in": info["thickness_in"],
-                                  "used": [list(s) for s in used],
-                                  "last": {"label": label, "stretch": list(used[0]), "turned": False},
+                                  "used": [list(s) for s in used], "beside": left,
+                                  "last": {"label": label, "stretch": list(cut), "turned": False},
                                   "reserved_by": None, "url": new.url})
         sheets = self.s.store.sheet_cards()
         sheets.get(card.id, {})["offcut_done"] = True
@@ -355,7 +367,7 @@ class Runner:
 
     def _options(self, card: Card, info: Dict) -> None:
         t = self.cfg.trello
-        if info.get("rest_in", 0) >= self.cfg.nest.offcut_min_in and \
+        if (info.get("rest_in", 0) >= self.cfg.nest.offcut_min_in or info.get("beside_left")) and \
                 not any(c.checklist == t.offcut_checklist for c in card.checks):
             self.t.add_checklist(card.id, t.offcut_checklist, [t.offcut_item], checked=True)
         if any(c.checklist == LEGACY_AIR_CHECKLIST for c in card.checks):
@@ -909,7 +921,8 @@ class Runner:
             counts["bad"] += 1
         sheet = vs.sheet
         extra = {"label": f"{run_id} S{sheet.index}", "offcut_id": sheet.offcut_id, "turned": sheet.offcut_turned,
-                 "used_along": list(sheet.used_y_in) if sheet.used_y_in else None}
+                 "used_along": list(sheet.used_y_in) if sheet.used_y_in else None,
+                 "beside_used": list(sheet.beside_used), "beside_left": [list(r) for r in sheet.beside_left_in]}
         if sheet.used_y_in:
             before = (self.offcuts.get(sheet.offcut_id) or {}).get("used", []) if sheet.offcut_id else []
             extra["rest_in"] = round(self._free_after(add_used(before, sheet.used_y_in, cfg.sheet.length_in,

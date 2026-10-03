@@ -9,11 +9,13 @@
    Arrange packs parts against the envelope's edges, so each envelope is the nest region shrunk by the
    part spacing: an outline's tool path (tool radius + lead-in) then stays out of the clamp strips.
    Offcuts of that thickness (partly used sheets, offcuts.py) are filled first, loaded the same way round as
-   their last cut, then new sheets. It's tried with the parts in a few orders (NEST_ORDERS), each on its own
-   copies and sheets, plus once with offcuts spun round where that gives more room. The best nest is kept:
-   most copies placed, then fewest new sheets, then fewest offcuts spun round, then fewest sheets, then the
-   shortest last sheet (the most room left for parts that join it later). The other tries' copies are hidden like any other leftover; nothing that an
-   Arrange moved is ever arranged again or deleted.
+   their last cut, then new sheets. On an offcut, the room beside earlier cuts is filled first (one Arrange per
+   rectangle), then its free stretch: one sheet, several Arranges. It's tried with the parts in a few orders
+   (NEST_ORDERS), each on its own copies and sheets, plus once with offcuts spun round where that gives more
+   room. The best nest is kept: most copies placed, then fewest new sheets, then fewest offcuts spun round,
+   then fewest sheets, then the shortest last sheet (the most room left for parts that join it later). The
+   other tries' copies are hidden like any other leftover; nothing that an Arrange moved is ever arranged again
+   or deleted.
 4. Per sheet: one tool, each part's feature plan with that tool, the cut order of the outlines.
 5. CAM per sheet: stock + setup, template (every op's tool GUID checked), selections, one outline op per
    part copy in cut order.
@@ -39,7 +41,7 @@ from autocam_core.errors import Issue
 from autocam_core.holes import ToolProfile
 from autocam_core.hotfolder import write_atomic
 from autocam_core.layout import Placed, plan_layout
-from autocam_core.offcuts import Placement, placement_for
+from autocam_core.offcuts import Placement, beside_as_loaded, placement_for, room_beside
 from autocam_core.names import outer_op_name, program_name
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
@@ -112,14 +114,30 @@ class _Part:
         return not self.errors and self.analysis is not None
 
 
+@dataclass(frozen=True)
+class _Way:
+    """One way of loading an offcut (as for its last cut, or turned end for end), in machine X/Y: its free
+    stretch along the length (None if it's too short) and the room beside earlier cuts the machine can reach
+    (index in the offcut's beside_in, rectangle)."""
+    turned: bool
+    stretch: Optional[Placement]
+    beside: Tuple[Tuple[int, Rect], ...] = ()
+
+    @property
+    def length(self) -> float:
+        return self.stretch.length if self.stretch else 0.0
+
+
 @dataclass
 class _Sheet:
     thickness_in: float
     origin: Tuple[float, float]               # the sheet's (0, 0) in the design, inches
     instances: List[Tuple[str, Placed]]       # (instance id like p03-2, the copy and where it landed)
-    envelope: Optional[Rect] = None           # where Arrange could put parts, in the design
+    envelope: Optional[Rect] = None           # where Arrange could put parts, in the design (its last area)
     offcut_id: Optional[str] = None           # nested onto this offcut instead of a new sheet
-    offcut: Optional[Placement] = None
+    offcut: Optional[_Way] = None
+    areas: Tuple[Tuple[Optional[int], Rect], ...] = ()   # each Arrange's area with parts: (index of the room beside
+                                                         # earlier cuts it filled, or None for the stretch, envelope)
     index: int = 0
     name: str = ""
     tool_key: str = ""
@@ -227,24 +245,36 @@ def _envelope(job: Job, origin: Tuple[float, float], offcut: Optional[Placement]
             origin[0] + region[2] - inset, origin[1] + y1 - inset)
 
 
-def _offcut_places(job: Job, thickness: float) -> List[Tuple[str, Optional[Placement], Optional[Placement]]]:
+def _beside_envelope(job: Job, origin: Tuple[float, float], r: Rect) -> Rect:
+    """Where Arrange may put parts in room beside earlier cuts (r, machine X/Y): shrunk by the part spacing, like
+    the nest region."""
+    inset = job.nest.part_spacing_in
+    return (origin[0] + r[0] + inset, origin[1] + r[1] + inset, origin[0] + r[2] - inset, origin[1] + r[3] - inset)
+
+
+def _offcut_places(job: Job, thickness: float) -> List[Tuple[str, Optional[_Way], Optional[_Way]]]:
     """This thickness's offcuts with room: (id, loaded the same way round as its last cut, spun round), either
-    None when that way round leaves too little."""
+    None when that way round leaves too little (no free stretch long enough and no room beside cuts)."""
     region = job.fixture.nest_region_in
     out = []
     for o in job.offcuts:
         if abs(o.thickness_in - thickness) > 1e-6:
             continue
-        ways = [placement_for(o.used_in, job.sheet.length_in, region[1], region[3], job.nest.offcut_gap_in,
-                              job.nest.offcut_min_in, turned) for turned in (o.last_turned, not o.last_turned)]
+        ways: List[Optional[_Way]] = []
+        for turned in (o.last_turned, not o.last_turned):
+            stretch = placement_for(o.used_in, job.sheet.length_in, region[1], region[3], job.nest.offcut_gap_in,
+                                    job.nest.offcut_min_in, turned)
+            beside = tuple(beside_as_loaded(o.beside_in, job.sheet.width_in, job.sheet.length_in, turned, region,
+                                            job.nest.offcut_beside_min_in))
+            ways.append(_Way(turned, stretch, beside) if stretch or beside else None)
         if any(ways):
             out.append((o.id, ways[0], ways[1]))
     return out
 
 
-def _offcut_slots(offcuts, spin: bool) -> List[Tuple[str, Placement]]:
+def _offcut_slots(offcuts, spin: bool) -> List[Tuple[str, _Way]]:
     """Where each offcut takes parts: the same way round as before, unless that leaves too little; with spin,
-    whichever way gives more room."""
+    whichever way gives the longer free stretch."""
     out = []
     for offcut_id, same, spun in offcuts:
         if spin and spun is not None and (same is None or spun.length > same.length + 1e-6):
@@ -268,7 +298,8 @@ class _Try:
     spin: bool = False                                            # offcuts spun round where that gives more room
     envelopes: List[Tuple[Tuple[float, float], Rect]] = field(default_factory=list)
     placed: List[Tuple[str, ...]] = field(default_factory=list)   # per envelope
-    stock: List[Tuple[Optional[str], Optional[Placement]]] = field(default_factory=list)   # per envelope: offcut
+    stock: List[Tuple[Optional[str], Optional[_Way]]] = field(default_factory=list)   # per envelope: offcut
+    areas: List[Optional[int]] = field(default_factory=list)      # per envelope: room beside cuts it filled
     remaining: List[str] = field(default_factory=list)
     failed: Optional[str] = None
     score: Tuple[int, int, int, int, float] = (0, 0, 0, 0, 0.0)
@@ -319,11 +350,13 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], s
     sheet (r009). Fit the last sheet's parts into full-width areas that get shorter, halving between the longest
     "shorter side" of its parts and what they take now, and keep the shortest that holds them all: a strip
     across the front, with the back of the sheet left free for parts that join it later or as an offcut.
-    Try k uses the copies in sets[k] (see _reserve); the caller hides the ones not kept. Returns the next free
-    sheet slot."""
-    if not best.envelopes or best.failed:
-        return slot
+    Each try is a whole new copy of the sheet at a new spot: its parts beside earlier cuts are arranged again in
+    the same rooms, then the rest in the shorter area. Try k uses the copies in sets[k] (see _reserve); the
+    caller hides the ones not kept. Returns the next free sheet slot."""
+    if not best.envelopes or best.failed or best.areas[-1] is not None:
+        return slot                                  # nothing nested, or no free stretch on the last sheet
     origin, env = best.envelopes[-1]
+    idx = [i for i, (o, _) in enumerate(best.envelopes) if o == origin]    # the last sheet's areas, in order
     last = list(best.placed[-1])
     try:
         reach = max(adapter.box(c).y1 for c in last) - env[1]
@@ -333,7 +366,7 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], s
     if reach - lo < SQUEEZE_MIN_GAIN_IN:
         log(f"{thickness:g} in: not squeezed: the last sheet's parts take {reach:.1f} in, at least {lo:.1f} in")
         return slot
-    hi, kept = reach, None                           # kept: (origin, full envelope, copies, reach)
+    hi, kept = reach, None                           # kept: (origin, envelope per area, copies per area, reach)
     for k in range(len(sets)):
         target = round((lo + hi) / 2, 3)
         if hi - target < 0.5:
@@ -341,34 +374,48 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], s
         o = (x_start + slot * pitch, 0.0)
         slot += 1
         dx, dy = o[0] - origin[0], o[1] - origin[1]
-        probe = (env[0] + dx, env[1] + dy, env[2] + dx, env[1] + dy + target)
+        moved = [(e[0] + dx, e[1] + dy, e[2] + dx, e[3] + dy) for e in (best.envelopes[i][1] for i in idx)]
+        probe = (moved[-1][0], moved[-1][1], moved[-1][2], moved[-1][1] + target)
+        areas = moved[:-1] + [probe]
         spare = {key: list(cs) for key, cs in sets[k].items()}
-        copies = [spare[c.rsplit(".", 1)[0]].pop(0) for c in last]
+        copies = [[spare[c.rsplit(".", 1)[0]].pop(0) for c in best.placed[i]] for i in idx]
+        done, refused = 0, None
         try:
-            got = adapter.arrange(copies, probe, job.nest.part_spacing_in, {c: up[c] for c in copies})
-            fits = set(got.placed) == set(copies)
-            r = max(adapter.box(c).y1 for c in copies) - probe[1] if fits else None
-            log(f"{thickness:g} in squeeze try {k + 1}: {target:.1f} in long: placed {len(got.placed)} of "
-                f"{len(copies)}" + (f", {r:.1f} in" if fits else "")
-                + (f"; refused: {next(iter(got.refused.values()))}" if got.refused else ""))
+            for area, cs in zip(areas, copies):
+                got = adapter.arrange(cs, area, job.nest.part_spacing_in, {c: up[c] for c in cs})
+                refused = refused or next(iter(got.refused.values()), None)
+                if set(got.placed) != set(cs):
+                    break
+                done += 1
+            fits = done == len(areas)
+            r = max(adapter.box(c).y1 for c in copies[-1]) - probe[1] if fits else None
+            log(f"{thickness:g} in squeeze try {k + 1}: {target:.1f} in long: "
+                + (f"all {sum(map(len, copies))} placed, {r:.1f} in" if fits else
+                   "the parts beside earlier cuts didn't all fit there again" if done < len(areas) - 1 else
+                   "not all placed")
+                + (f"; refused: {refused}" if refused else ""))
         except AdapterError as e:
             log(f"squeezing the last {thickness:g} in sheet stopped: {e}")
             break
         if fits:
-            kept = (o, (env[0] + dx, env[1] + dy, env[2] + dx, env[3] + dy), copies, r)
+            kept = (o, moved, copies, r)
             hi = r
+        elif done < len(areas) - 1:
+            break                                    # not about the shorter area: shorter still won't help
         else:
             lo = target
     if kept is None or kept[3] > reach - 0.5:
         log(f"{thickness:g} in: the last sheet stays {reach:.1f} in long (nothing shorter held all its parts)")
         return slot
-    o, full, copies, r = kept
-    _discard(adapter, last, log)
-    swap = dict(zip(last, copies))
+    o, envs, copies, r = kept
+    old = [c for i in idx for c in best.placed[i]]
+    _discard(adapter, old, log)
+    swap = dict(zip(old, [c for cs in copies for c in cs]))
     for p in parts:
         p.copies = [swap.get(c, c) for c in p.copies]
-    best.envelopes[-1] = (o, full)
-    best.placed[-1] = tuple(copies)
+    for n, i in enumerate(idx):
+        best.envelopes[i] = (o, envs[n])
+        best.placed[i] = tuple(copies[n])
     log(f"{thickness:g} in: last sheet squeezed toward the front: {reach:.1f} -> {r:.1f} in along its length")
     return slot
 
@@ -384,18 +431,21 @@ def _part_order(parts: Sequence[_Part], order: str, sizes: Dict[str, Tuple[float
 
 def _score(adapter: Adapter, t: _Try, last_turned: Dict[str, bool]) -> Tuple[int, int, int, int, float]:
     """Smaller is better: (-copies placed, new sheets, offcuts spun round, sheets, how far the last sheet's parts
-    reach along its length, Y)."""
+    reach along its free stretch, Y; 0 if it only has parts beside earlier cuts)."""
     placed = sum(len(p) for p in t.placed)
     if not t.envelopes:
         return (0, 0, 0, 0, 0.0)
-    env = t.envelopes[-1][1]
-    try:
-        reach = max(adapter.box(c).y1 for c in t.placed[-1]) - env[1]
-    except AdapterError:
-        reach = float("inf")
-    fresh = sum(1 for offcut_id, _ in t.stock if offcut_id is None)
-    spins = sum(1 for offcut_id, place in t.stock if offcut_id and place.turned != last_turned[offcut_id])
-    return (-placed, fresh, spins, len(t.envelopes), round(reach, 3))
+    stock = dict(zip((o for o, _ in t.envelopes), t.stock))          # sheet origin -> (offcut id, way)
+    reach = 0.0
+    if t.areas[-1] is None:
+        env = t.envelopes[-1][1]
+        try:
+            reach = max(adapter.box(c).y1 for c in t.placed[-1]) - env[1]
+        except AdapterError:
+            reach = float("inf")
+    fresh = sum(1 for offcut_id, _ in stock.values() if offcut_id is None)
+    spins = sum(1 for offcut_id, way in stock.values() if offcut_id and way.turned != last_turned[offcut_id])
+    return (-placed, fresh, spins, len(stock), round(reach, 3))
 
 def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part], x_start: float, slot: int,
                 log: Callable[[str], None], notes: List[str]) -> Tuple[List[_Sheet], int]:
@@ -445,32 +495,47 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
 
     for i, t in enumerate(tries):
         remaining = [c for k in _part_order(parts, t.order, sizes) for c in t.copies[k] if by_key[k].ok]
-        for offcut_id, offcut in _offcut_slots(offcuts, t.spin) + [(None, None)] * job.nest.max_sheets_per_group:
+        for offcut_id, way in _offcut_slots(offcuts, t.spin) + [(None, None)] * job.nest.max_sheets_per_group:
             if not remaining:
                 break
             origin = (x_start + slot * pitch, 0.0)
-            envelope = _envelope(job, origin, offcut)
-            try:
-                got = adapter.arrange(remaining, envelope, job.nest.part_spacing_in, {c: up[c] for c in remaining})
-            except AdapterError as e:
-                t.failed = f"Arrange failed: {e}"
-                if i == 0:
-                    reject([key_of(c) for c in remaining], t.failed)
-                log(f"Arrange failed for a {thickness:g} in sheet ('{t.name}'): {e}")
-                break
-            if i == 0:
-                for cid, why in got.refused.items():
-                    reject([key_of(cid)], f"Arrange can't lay it flat: {why}")
-            placed = set(got.placed)
             slot += 1
-            if placed:
-                t.envelopes.append((origin, envelope))
-                t.placed.append(tuple(c for c in remaining if c in placed))
-                t.stock.append((offcut_id, offcut))
-            remaining = [c for c in remaining if c not in placed and by_key[key_of(c)].ok]
+            # An offcut's room beside earlier cuts first, one Arrange each, then its free stretch: one sheet.
+            areas: List[Tuple[Optional[int], Rect]] = [(n, _beside_envelope(job, origin, r))
+                                                       for n, r in (way.beside if way else ())]
+            if way is None or way.stretch is not None:
+                areas.append((None, _envelope(job, origin, way.stretch if way else None)))
+            took, beside_took = 0, 0
+            for which, envelope in areas:
+                if not remaining:
+                    break
+                try:
+                    got = adapter.arrange(remaining, envelope, job.nest.part_spacing_in,
+                                          {c: up[c] for c in remaining})
+                except AdapterError as e:
+                    t.failed = f"Arrange failed: {e}"
+                    if i == 0:
+                        reject([key_of(c) for c in remaining], t.failed)
+                    log(f"Arrange failed for a {thickness:g} in sheet ('{t.name}'): {e}")
+                    break
+                if i == 0:
+                    for cid, why in got.refused.items():
+                        reject([key_of(cid)], f"Arrange can't lay it flat: {why}")
+                placed = set(got.placed)
+                if placed:
+                    t.envelopes.append((origin, envelope))
+                    t.placed.append(tuple(c for c in remaining if c in placed))
+                    t.stock.append((offcut_id, way))
+                    t.areas.append(which)
+                took += len(placed)
+                beside_took += len(placed) if which is not None else 0
+                remaining = [c for c in remaining if c not in placed and by_key[key_of(c)].ok]
+            if t.failed:
+                break
             what = f"offcut {offcut_id}" if offcut_id else "sheet"
-            log(f"{thickness:g} in {what} at x={origin[0]:g} ('{t.name}'): placed {len(placed)}, {len(remaining)} left")
-            if not placed and offcut_id is None:
+            log(f"{thickness:g} in {what} at x={origin[0]:g} ('{t.name}'): placed {took}"
+                + (f" ({beside_took} beside earlier cuts)" if beside_took else "") + f", {len(remaining)} left")
+            if not took and offcut_id is None:
                 break                                 # a new sheet that takes nothing: nothing more fits
         t.remaining = remaining
         t.score = _score(adapter, t, last_turned)
@@ -497,6 +562,8 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
     up = {c: up[c] for p in parts for c in p.copies}
     envelopes = best.envelopes
     stock_of = {env: st for (_, env), st in zip(best.envelopes, best.stock)}
+    area_of = {env: which for (_, env), which in zip(best.envelopes, best.areas)}
+    sheet_ids = {o: n for n, o in enumerate(dict.fromkeys(o for o, _ in envelopes))}   # areas at one origin: a sheet
     remaining = best.remaining
 
     # Copies still left over: if a part doesn't fit even alone on an empty sheet, say so instead of
@@ -543,7 +610,7 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
         good = [p for p in parts if p.ok]
         bodies = [b for b in bodies if by_key[b.part_key].ok]
         layout = plan_layout(bodies, [env for _, env in envelopes], {p.key: p.spec.qty for p in good},
-                             edge_tol_in=EDGE_TOL_IN)
+                             edge_tol_in=EDGE_TOL_IN, sheet_of=[sheet_ids[o] for o, _ in envelopes])
         bad = {msg.split(":", 1)[0] for msg in layout.problems}
         if not bad:
             break
@@ -566,7 +633,8 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
 
     origin_of = {env: origin for origin, env in envelopes}
     sheets = [_Sheet(thickness, origin_of[s.envelope_in], list(s.instances), envelope=s.envelope_in,
-                     offcut_id=stock_of[s.envelope_in][0], offcut=stock_of[s.envelope_in][1])
+                     offcut_id=stock_of[s.envelope_in][0], offcut=stock_of[s.envelope_in][1],
+                     areas=tuple((area_of[a], a) for a in s.areas))
               for s in layout.sheets]
     return sheets, slot
 
@@ -575,22 +643,46 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
 
 def _sheet_use(job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> Dict[str, Any]:
     """How full the sheet is (the parts' material area, the usable area, the empty strip at the back), which
-    offcut it's on, and the stretch along its length (Y) it uses (with the outlines' tool paths), in sheet
-    coordinates."""
-    if sheet.envelope is None or not sheet.instances:
+    offcut it's on, the stretch along its length (Y) its free-stretch parts use (with the outlines' tool paths),
+    which room beside earlier cuts it filled, and the room beside its own parts it leaves, in sheet coordinates."""
+    if not sheet.areas or not sheet.instances:
         return {}
-    x0, y0, x1, y1 = sheet.envelope
+    ox, oy = sheet.origin
+    boxes: Dict[Optional[int], List[Rect]] = {which: [] for which, _ in sheet.areas}
     area = 0.0
     for _, placed in sheet.instances:
         a = parts[placed.part_key].analysis
         area += a.geometry.face(a.up_face_id).area_in2
+        cx, cy = placed.center
+        which = next((w for w, e in sheet.areas if e[0] <= cx <= e[2] and e[1] <= cy <= e[3]), None)
+        b = placed.bbox_in
+        boxes.setdefault(which, []).append((b[0] - ox, b[1] - oy, b[2] - ox, b[3] - oy))
     margin = job.nest.part_spacing_in              # covers the outline's tool path around each part
-    used = (round(min(p.bbox_in[1] for _, p in sheet.instances) - sheet.origin[1] - margin, 3),
-            round(max(p.bbox_in[3] for _, p in sheet.instances) - sheet.origin[1] + margin, 3))
-    return {"parts_area_in2": round(area, 2), "usable_area_in2": round((x1 - x0) * (y1 - y0), 2),
-            "free_length_in": round(max(0.0, y1 - max(p.bbox_in[3] for _, p in sheet.instances)), 2),
-            "offcut_id": sheet.offcut_id, "offcut_turned": bool(sheet.offcut and sheet.offcut.turned),
-            "used_y_in": used}
+    gap, least = job.nest.offcut_gap_in, job.nest.offcut_beside_min_in
+    out: Dict[str, Any] = {
+        "parts_area_in2": round(area, 2),
+        "usable_area_in2": round(sum((e[2] - e[0]) * (e[3] - e[1]) for _, e in sheet.areas), 2),
+        "offcut_id": sheet.offcut_id, "offcut_turned": bool(sheet.offcut and sheet.offcut.turned)}
+    left: List[Rect] = []
+    beside = dict(sheet.offcut.beside) if sheet.offcut else {}
+    for which, bs in boxes.items():
+        if which is not None and bs:               # what's left of room beside cuts, to the right of its new parts
+            r = beside[which]
+            room = room_beside(bs, (r[1], r[3]), r[2], margin, gap, least)
+            if room:
+                left.append(room)
+    stretch = next((e for w, e in sheet.areas if w is None), None)
+    bs = boxes.get(None, [])
+    if stretch is not None and bs:
+        used = (round(min(b[1] for b in bs) - margin, 3), round(max(b[3] for b in bs) + margin, 3))
+        out["used_y_in"] = used
+        out["free_length_in"] = round(max(0.0, stretch[3] - oy - max(b[3] for b in bs)), 2)
+        room = room_beside(bs, used, job.fixture.nest_region_in[2], margin, gap, least)
+        if room:
+            left.append(room)
+    out["beside_used"] = tuple(sorted(w for w, bs in boxes.items() if w is not None and bs))
+    out["beside_left_in"] = tuple(left)
+    return out
 
 
 def _missing_ops(plan: FeaturePlan, capabilities: frozenset) -> List[str]:

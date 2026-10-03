@@ -78,8 +78,11 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   card. Then the last sheet is **squeezed** into a strip across the front, since Fusion's Arrange packs down
   the left edge. Both work in Fusion (r006: tries; r014: 4 parts went from 30.6 in down the left edge to a
   7.5 in strip). The squeeze's copies have to be made before the first Arrange (decisions, 2026-10-03).
-- **Offcuts** (2026-10-03): partly used sheets kept in an Offcuts list and filled before new sheets. Tested
-  offline; not seen on the machine yet (manual tests M3 section 5c: air-test the first offcut sheet).
+- **Offcuts** (2026-10-03): partly used sheets kept in an Offcuts list and filled before new sheets. Nesting
+  onto an offcut works in Fusion (r013 to r016); not cut on the machine yet (manual tests M3 section 5c:
+  air-test the first offcut sheet). Since core 0.5.0 an offcut also keeps the **room beside** the parts cut
+  (a one-off no longer writes off the whole width of its band), filled first by the next nest. Tested
+  offline; untested in Fusion and on the machine.
 - **Later ideas** (not planned): part-in-part nesting (needs per-part cut ordering first).
 
 ## Not verified yet (don't rely on these until they are)

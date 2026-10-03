@@ -60,6 +60,7 @@ envelope_spacing_in = 6.0  # gap between envelopes while nesting (layout only)
 short_qty = "defer_card"   # a card whose full qty doesn't fit is not cut this run
 offcut_gap_in = 0.5        # a new nest on an offcut stays this far from what was cut before (placement slack)
 offcut_min_in = 6.0        # an offcut needs a free stretch this long (full width) to be kept or used
+offcut_beside_min_in = 3.0 # room beside the parts cut is kept and filled when it's this big both ways
 
 [clamps]
 edges = ["left", "right"]  # any of "left", "right" (the long edges), "front" (the end by you); the back overhangs

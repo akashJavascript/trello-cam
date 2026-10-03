@@ -10,7 +10,7 @@ from autocam_core import CORE_VERSION
 from autocam_core.errors import Issue
 from autocam_core.hotfolder import Queue
 from autocam_core.names import instance_id, program_name
-from autocam_core.offcuts import placement_for
+from autocam_core.offcuts import beside_as_loaded, placement_for
 from autocam_core.pauses import insert
 from autocam_core.schema_job import read_job
 from autocam_core.schema_result import (
@@ -33,7 +33,9 @@ def make_program(name: str, instances: List[str], thickness: float, mist: bool) 
 
 def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optional[str] = None,
                     defer_part: Optional[str] = None, part_error: Optional[str] = None,
-                    shallow_outlines: bool = False) -> List[str]:
+                    shallow_outlines: bool = False, beside: bool = False) -> List[str]:
+    """beside: report room beside the parts cut and fill an offcut's room beside earlier cuts first, like the
+    real worker (off by default so the older tests' offcut cards keep their plain titles)."""
     processed = []
     for job_id in queue.pending():
         claim = queue.claim(job_id)
@@ -62,11 +64,18 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
         g = check.guard
         # Like the pipeline: the first offcut of this thickness with room goes before a new sheet, the same way
         # round as its last cut if that has room. Each part takes about 4 in along X from the start of the stretch.
+        # With beside: the parts (3 x 3 in, at X 4 to 7) all go in an offcut's first room beside earlier cuts if
+        # it has one, else the free stretch, which leaves the room right of them (7.75 in on) as deep as its band.
         region = job.fixture.nest_region_in
-        offcut, place = None, None
+        offcut, place, room = None, None, None
         for o in job.offcuts:
             if abs(o.thickness_in - thickness) > 1e-6:
                 continue
+            rooms = beside_as_loaded(o.beside_in, job.sheet.width_in, job.sheet.length_in, o.last_turned, region,
+                                     job.nest.offcut_beside_min_in) if beside else []
+            if rooms:
+                offcut, room = o, rooms[0]
+                break
             ways = [placement_for(o.used_in, job.sheet.length_in, region[1], region[3], job.nest.offcut_gap_in,
                                   job.nest.offcut_min_in, t) for t in (o.last_turned, not o.last_turned)]
             p = ways[0] or ways[1]
@@ -74,7 +83,10 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
                 offcut, place = o, p
                 break
         start = place.x0 if place else region[1]
-        used_x = (round(start, 3), round(start + 4.0 * len(instances), 3)) if instances else None
+        used_x = (round(start, 3), round(start + 4.0 * len(instances), 3)) if instances and not room else None
+        beside_used = (room[0],) if room else ()
+        beside_left = ((7.75, used_x[0], region[2], used_x[1]),) if beside and used_x else ()
+        turned = offcut.last_turned if room else bool(place and place.turned)
         sheet = SheetResult(
             index=1, name=name, stock_type=f"{job.material.key}-{thickness:g}", thickness_in=thickness, tool=tool,
             tool_guid=job.tooling.tools[tool].guid, cutter_label=job.tooling.tools[tool].cutter_label,
@@ -91,7 +103,7 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
             tool_forced_by=(),
             errors=tuple(Issue("TAP_REJECTED", msg) for msg in check.problems()),
             warnings=(), notes=(), offcut_id=offcut.id if offcut else None,
-            offcut_turned=bool(place and place.turned), used_y_in=used_x)
+            offcut_turned=turned, used_y_in=used_x, beside_used=beside_used, beside_left_in=beside_left)
         parts = []
         for p in job.parts:
             if p.part_key == part_error:

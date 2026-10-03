@@ -70,3 +70,69 @@ def test_offcuts_in_the_job_are_checked(tmp_path):
     bad = dataclasses.replace(job, offcuts=(OffcutSpec("o1", 0.125, ((0.0, 60.0),)), OffcutSpec("o1", 0.125, ())))
     problems = bad.validate()
     assert any("duplicate id" in e for e in problems) and any("inside the sheet" in e for e in problems)
+
+
+# ---- room beside earlier cuts
+
+BESIDE = (8.25, 0.5, 22.75, 4.0)        # what a 6 x 3 in part at the front left leaves (sheet coordinates)
+
+
+def test_a_single_part_leaves_the_room_beside_it(tmp_path):
+    rig = Rig(tmp_path)
+    result = rig.run(rig.job([("gusset", 1, plate(name="gusset"), (6.0, 3.0))]))
+    [sheet] = result.sheets
+    # At the front left of the nest area (1.5, 0.75): its band along the length, and the rest of the band's width.
+    assert sheet.used_y_in == (0.5, 4.0)
+    assert sheet.beside_left_in == (BESIDE,) and sheet.beside_used == ()
+
+
+def test_room_beside_earlier_cuts_is_filled_first_on_the_same_sheet(tmp_path):
+    rig = Rig(tmp_path)
+    offcut = OffcutSpec("off1", 0.125, ((0.5, 4.0),), beside_in=(BESIDE,))
+    job = job_with(rig, [("small", 2, plate(name="small"), (3.0, 3.0)), ("big", 1, plate(name="big"), (10.0, 5.0))],
+                   [offcut])
+    result = rig.run(job)
+    [sheet] = result.sheets                                          # one sheet: the offcut, two Arranges
+    assert sheet.offcut_id == "off1" and sorted((p.part_key, p.count) for p in sheet.parts) == [("p01", 2), ("p02", 1)]
+    x0, y0, x1, y1 = rig.fake.arrange_envelopes[0]                  # the first Arrange: the room beside the cut
+    assert (round(x1 - x0, 3), y0, y1) == (14.0, 0.75, 3.75)         # 8.25 to 22.75 in, less the part spacing
+    # The small plates went beside the old cut (3 in deep: the big one doesn't fit), the big one in the free stretch.
+    assert sheet.beside_used == (0,)
+    assert sheet.used_y_in == (4.5, 10.0)                            # only the free stretch's part: 4.75 to 9.75
+    # Left over: right of the two small plates in the old band, and right of the big plate in its new band.
+    assert sheet.beside_left_in == ((15.5, 0.5, 22.75, 4.0), (12.25, 4.5, 22.75, 10.0))
+    assert all(p.placed == p.qty for p in result.parts)
+
+
+def test_an_offcut_with_only_room_beside_cuts_still_takes_parts(tmp_path):
+    rig = Rig(tmp_path)
+    # The whole length is used (no free stretch either way round), but the room beside the first cut is free.
+    offcut = OffcutSpec("off1", 0.125, ((0.0, 48.0),), beside_in=((10.0, 0.5, 22.75, 8.0),))
+    result = rig.run(job_with(rig, [("tab", 1, plate(name="tab"), (4.0, 4.0))], [offcut]))
+    [sheet] = result.sheets
+    assert sheet.offcut_id == "off1" and not sheet.offcut_turned
+    assert sheet.beside_used == (0,) and sheet.used_y_in is None and sheet.free_length_in is None
+    assert sheet.beside_left_in == ((15.0, 0.5, 22.75, 8.0),)        # right of the tab: 10.25 + 4 + 0.75
+
+
+def test_room_beside_cuts_too_small_for_anything_is_skipped(tmp_path):
+    rig = Rig(tmp_path)
+    offcut = OffcutSpec("off1", 0.125, ((0.5, 4.0),), beside_in=(BESIDE,))
+    result = rig.run(job_with(rig, [("big", 1, plate(name="big"), (10.0, 5.0))], [offcut]))
+    [sheet] = result.sheets
+    assert sheet.offcut_id == "off1" and sheet.beside_used == () and sheet.used_y_in == (4.5, 10.0)
+
+
+def test_squeezing_a_sheet_with_parts_beside_cuts_keeps_it_one_sheet(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.columns = True                               # like Fusion: down the left edge first
+    offcut = OffcutSpec("off1", 0.125, ((0.5, 4.0),), beside_in=(BESIDE,))
+    job = job_with(rig, [("tab", 1, plate(name="tab"), (3.0, 3.0)), ("gusset", 4, plate(name="gusset"), (6.0, 4.0))],
+                   [offcut])
+    result = rig.run(job)
+    [sheet] = result.sheets
+    assert sheet.offcut_id == "off1" and sheet.beside_used == (0,)
+    assert sorted((p.part_key, p.count) for p in sheet.parts) == [("p01", 1), ("p02", 4)]
+    # The gussets ran 16.75 in down the free stretch; squeezed, two columns of two take 8.25 in.
+    assert sheet.used_y_in == (4.5, 4.75 + 8.25 + 0.25)
+    assert not rig.fake.late                              # every copy was made before the first Arrange

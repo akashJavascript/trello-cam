@@ -60,6 +60,18 @@ def test_bodies_are_binned_by_position_and_numbered():
     assert not lay.deferred and not lay.problems
 
 
+def test_envelopes_on_one_sheet_are_one_sheet():
+    # An offcut: room beside an earlier cut (ENV1's front right), then its free stretch (ENV1's back), one sheet.
+    beside, stretch = (115.0, 0.0, 139.0, 4.0), (100.0, 5.0, 139.0, 21.5)
+    bodies = [body(1, "p01", 120, 1), body(2, "p01", 101, 6), body(3, "p02", 150, 2)]
+    lay = plan_layout(bodies, [beside, stretch, ENV2], {"p01": 2, "p02": 1}, sheet_of=[0, 0, 1])
+    assert [s.index for s in lay.sheets] == [1, 2]
+    first = lay.sheets[0]
+    assert first.areas == (beside, stretch) and first.envelope_in == stretch
+    assert [(i, b.body_id) for i, b in first.instances] == [("p01-1", "b2"), ("p01-2", "b1")]   # numbered across both
+    assert lay.sheets[1].areas == (ENV2,)
+
+
 def test_short_quantity_defers_the_whole_card():
     bodies = [body(1, "p01", 105, 5), body(2, "p02", 110, 5), body(3, "p02", 300, 5)]  # one p02 didn't fit
     lay = plan_layout(bodies, [ENV1], {"p01": 1, "p02": 2})
