@@ -70,6 +70,7 @@ class Machine:
     spin_up_dwell_s: float
     park: str
     z_touchoff: str
+    air_test_gap_in: float
 
 
 @dataclass(frozen=True)
@@ -196,6 +197,8 @@ class Trello:
     start_delay_s: int
     nest_checklist: str
     nest_item: str
+    air_test_checklist: str
+    air_test_item: str
     checklist_name: str
     checklist: Tuple[str, ...]
     machine_checklist_name: str
@@ -451,6 +454,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         spin_up_dwell_s=t.number("spin_up_dwell_s", minimum=0),
         park=t.string("park", required=True),
         z_touchoff=t.string("z_touchoff", choices=("spoilboard",)),
+        air_test_gap_in=t.number("air_test_gap_in", positive=True),
     )
     t.finish()
 
@@ -589,6 +593,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         start_delay_s=t.integer("start_delay_s", minimum=0),
         nest_checklist=t.string("nest_checklist", required=True),
         nest_item=t.string("nest_item", required=True),
+        air_test_checklist=t.string("air_test_checklist", required=True),
+        air_test_item=t.string("air_test_item", required=True),
         checklist_name=t.string("checklist_name", required=True),
         checklist=t.strings("checklist"),
         machine_checklist_name=t.string("machine_checklist_name", required=True),

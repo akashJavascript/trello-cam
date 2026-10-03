@@ -108,6 +108,16 @@ class RunStore:
             sheets[card_id].update(job=job, material=material, thickness_in=thickness_in, index=index, url=url)
         self._write_sheets(sheets)
 
+    def set_air(self, card_id: str, air: Optional[Dict]) -> None:
+        """The sheet's air test: {"job", "index", "att"} (or "error"), None once it's removed."""
+        sheets = self.sheet_cards()
+        if card_id in sheets:
+            if air is None:
+                sheets[card_id].pop("air", None)
+            else:
+                sheets[card_id]["air"] = air
+            self._write_sheets(sheets)
+
     def retire_sheet(self, card_id: str) -> None:
         """An archived sheet card: holds no parts, can't be cut."""
         sheets = self.sheet_cards()

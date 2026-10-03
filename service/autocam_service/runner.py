@@ -35,6 +35,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
+from autocam_core.airtest import SUFFIX as AIR_SUFFIX, air_test_name, check_air_test, lift_program, note_for
 from autocam_core.hotfolder import Queue, write_atomic
 from autocam_core.schema_job import PartSpec, job_json, load_job
 
@@ -105,6 +106,7 @@ class Runner:
     def tick(self) -> None:
         self.check_ready_to_cut()
         self.follow_cut()
+        self.air_tests()
         waiting = self.ready_cards()
         state = self.s.store.active()
         if state is not None and state.dry_run != self.dry_run:
@@ -182,6 +184,74 @@ class Runner:
                     self.t.move(part_id, self.targets["part_cut"])
             except Exception as e:  # noqa: BLE001 - a deleted card mustn't stop the tick
                 log.warning("couldn't move part card %s to Cut: %s", part_id, e)
+
+    # ------------------------------------------------------------ air tests
+    def air_tests(self) -> None:
+        """The "Air test" box on sheet cards: ticked -> the sheet's air test program is on the card (its checked
+        program raised so the cutter stays machine.air_test_gap_in above the sheet, autocam_core/airtest.py);
+        unticked -> it's removed. Only cuttable sheets this service made, in Sheet review or Ready to cut.
+        Cards without the box get it, unticked. A rebuilt sheet's air test is remade from the new program."""
+        reg = self.s.store.sheet_cards()
+        for list_key in (self.targets["sheet_created"], "ready_to_cut"):
+            for card in self.t.list_cards(list_key):
+                info = reg.get(card.id)
+                if not info or not info.get("cuttable") or not info.get("job") or info.get("archived"):
+                    continue
+                try:
+                    self._air_test(card, info)
+                except Exception as e:  # noqa: BLE001 - one card mustn't stop the tick
+                    log.warning("air test on sheet card %s: %s", card.id, e)
+
+    def _air_test(self, card: Card, info: Dict) -> None:
+        t = self.cfg.trello
+        boxes = [c.done for c in card.checks if c.checklist == t.air_test_checklist]
+        if not boxes:
+            self.t.add_checklist(card.id, t.air_test_checklist, [t.air_test_item])
+            return
+        wanted = any(boxes)
+        air = info.get("air") or {}
+        source = {"job": info["job"], "index": info.get("index")}
+        same_program = {k: air.get(k) for k in source} == source
+        keep = air.get("att") if wanted and same_program else None
+        files = [a for a in card.attachments if a.name.endswith(f"{AIR_SUFFIX}.tap")]
+        for a in files:
+            if a.id != keep:          # stale (the sheet was rebuilt), unticked, or a duplicate after a crash
+                self.t.delete_attachment(card.id, a.id)
+        if not wanted:
+            if air:
+                self.s.store.set_air(card.id, None)
+            return
+        if keep and any(a.id == keep for a in files):
+            return                    # already there
+        if same_program and air.get("error"):
+            return                    # already said why it can't be made
+        made = self._air_program(info)
+        if isinstance(made, str):
+            self.s.store.set_air(card.id, {**source, "error": made})
+            self.t.comment(card.id, text.air_test_failed_comment(made))
+            return
+        name, data, report, lift = made
+        att = self.t.attach_program(card.id, name, data, report)
+        self.s.store.set_air(card.id, {**source, "att": att})
+        self.t.comment(card.id, text.air_test_comment(name, lift, self.cfg.machine.air_test_gap_in))
+
+    def _air_program(self, info: Dict):
+        """(file name, bytes, guard report, lift) made from the sheet's checked program, or why it can't be."""
+        job = self._job(info["job"])
+        if job is None:
+            return "the service has no record of this sheet's job"
+        ing = ingest(self.s.queue, info["job"], job)
+        vs = next((v for v in ing.sheets if v.sheet.index == info.get("index")), None)
+        if vs is None or not vs.cuttable:
+            return "this sheet's checked program isn't in the job folder any more"
+        gap = self.cfg.machine.air_test_gap_in
+        lift = vs.sheet.thickness_in + gap
+        data = lift_program(vs.tap_bytes.decode("ascii"), lift, note_for(lift, gap)).encode("ascii")
+        counts = {p.part_key: p.count for p in vs.sheet.parts}
+        check = check_air_test(data, job, vs.sheet.thickness_in, vs.sheet.tool, vs.sheet.outer_order, counts, gap)
+        if not check.passed:
+            return "it failed its check (" + "; ".join(check.problems()) + ")"
+        return air_test_name(vs.sheet.tap), data, check.guard, lift
 
     def _send_back(self, card_id: str, comment: str) -> None:
         self.t.move(card_id, self.targets["checklist_return"])

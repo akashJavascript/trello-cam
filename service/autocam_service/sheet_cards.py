@@ -137,6 +137,15 @@ def joined_sheet_failed(problems: Sequence[str]) -> str:
             "A mentor should look at it")
 
 
+def air_test_comment(name: str, lift_in: float, gap_in: float) -> str:
+    return (f"Air test added: {name}. It's this sheet's program raised {lift_in:g} in, so the cutter stays "
+            f"{gap_in:g} in above the sheet and cuts nothing. Run it before the real program.")
+
+
+def air_test_failed_comment(why: str) -> str:
+    return f"Couldn't make the air test: {why}."
+
+
 def sheet_rebuilt_comment(run_id: str) -> str:
     return f"Rebuilt with new parts (run {run_id}). The checklist was reset: check it again."
 

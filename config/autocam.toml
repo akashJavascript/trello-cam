@@ -16,6 +16,7 @@ schema = 1
 "clamps.min_clear_above_stock_in" = "decision 20: template clearance height above stock top"
 "machine.units" = "decision 20: programs post in inches"
 "machine.z_touchoff" = "decision 22: Z touched off on the spoilboard next to the sheet"
+"machine.air_test_gap_in" = "the raised program's highest point (clearance height + thickness + gap) must stay inside the Z travel"
 "nest.reach_margin_in" = "plan: margin kept short of the 40 in reach"
 "holes.drill_sizes_in.t12_eighth_alu" = "decision 7: drill sizes for the 1/8 in endmill"
 "holes.drill_sizes_in.eighth_poly" = "decision 7: assumed the same as the aluminum 1/8 in"
@@ -40,6 +41,7 @@ spindle_rpm = 18000
 spin_up_dwell_s = 4.0      # the post's G4 X4 after M3
 park = "G53 P10"           # park position, same as the post's program end
 z_touchoff = "spoilboard"
+air_test_gap_in = 0.5      # an air test program runs this far above the top of the sheet
 
 [sheet]
 length_in = 48.0
@@ -218,6 +220,8 @@ job_timeout_s = 3600            # service gives up waiting for a Fusion job afte
 start_delay_s = 120             # a run starts this long after the last card arrived in Ready for CAM
 nest_checklist = "Nest"         # part cards: one item, ticked by default; untick it and runs skip the card
 nest_item = "Nest this part"
+air_test_checklist = "Air test"  # sheet cards: tick it to get an air test program on the card, untick to remove it
+air_test_item = "Add an air test program (cuts nothing)"
 checklist_name = "Review"                  # all ticked before a sheet may sit in Ready to cut
 checklist = ["Simulated it in Fusion", "Parts and quantities look right"]
 machine_checklist_name = "At the machine"  # for the operator; not checked by the service

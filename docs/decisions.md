@@ -300,3 +300,20 @@ the edges, not the loop. Two changes:
   - The keep-or-rebuild choice is recorded once per run and thickness, and the open sheets are snapshotted when
     the run starts, so a service restart halfway through a rebuild finishes it the same way.
 
+## 2026-10-02: air test as a checkbox on the sheet card (the user's choice)
+
+- Every cuttable sheet card gets an **Air test** box, unticked. Tick it: within a minute the card gets
+  `<program>_AIRTEST.tap` and a comment. Untick it: the file is removed. Sheet review and Ready to cut both work.
+- **What it is:** the sheet's checked program with every Z and drill R raised by sheet thickness +
+  `machine.air_test_gap_in` (0.5 in), so its lowest point, a through cut at Z0, runs 0.5 in above the top of
+  the stock. Lines with G53 (machine coordinates) are untouched. Every move, feed, pause, spindle and mist
+  command is the real one, so it shows the paths, the clamps and the pauses with the sheet clamped in place.
+  A comment on line 2 says it's an air test.
+- **Checks:** the same guard and pause checks as the real program (so it goes through the same
+  `attach_program` gate), except "outlines reach the stock bottom", replaced by its opposite: nothing below
+  stock top + gap. Made from the bytes in the job folder, after the service checks them again against the job.
+- A rebuilt sheet's air test is remade from its new program; the box keeps its state. If the job folder is
+  gone, the card says it can't be made (once).
+- On the real r005 program: Z 0 to 2.49 in becomes 0.69 to 3.18 in above the spoilboard. The highest point must
+  stay inside the Z travel (`[assumed]`).
+

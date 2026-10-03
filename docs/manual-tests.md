@@ -172,14 +172,18 @@ The folder must already exist; the automation doesn't create folders.
 
 ## M1.6: pause air tests (decision 19). Required before any real cut.
 
-Run on the machine with no material, work zero set as usual. Use `fusion/tests/pause_air_test.tap`
-(no mist) and the generated `pause_air_test_mist.tap` (M1.6).
+Run on the machine, work zero set as usual. Easiest: a real sheet with 2 or more parts. Tick **Air test** on
+its card, and within a minute the card has `<program>_AIRTEST.tap`: the same program raised so the cutter
+stays 0.5 in above the sheet (it can run with the sheet clamped). Or use `fusion/tests/pause_air_test.tap`
+(no mist) and the generated `pause_air_test_mist.tap` (M1.6) with no material.
 
 - [ ] The machine stops at every pause, and nothing moves until start/continue is pressed.
 - [ ] The spindle actually stops at each pause and restarts after resume (4 s spin-up before moving).
 - [ ] Mist turns off at each pause and back on after resume (mist file only).
 - [ ] The first move after resume comes down from the top, not sideways at cutting depth.
 - [ ] Record the key/button that resumes (open question 9): ______  (never Esc: it aborts the job)
+- [ ] (Air test file) The cutter never comes closer than 0.5 in to the sheet, and its highest moves stay inside
+  the Z travel (no soft-limit error).
 
 ## Before the first real cut
 
