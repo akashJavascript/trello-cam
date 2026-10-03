@@ -154,9 +154,13 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
 
 ## Tabs (M6), names confirmed
 
-Since the tab counts (2026-10-03, untested in Fusion): `tabPositioning` = 'tabCount' with `tabsPerContour`
-(the template's own parameter, 1 there), on outline ops and on copies of the `[inner]` op
-(`fx_cam.copy_op`: `CAMTemplate.createFromOperations` + `createFromCAMTemplate2`, as for outlines).
+Since the tab counts (2026-10-03): `tabPositioning` = 'tabCount' with `tabsPerContour` (the template's own
+parameter, 1 there), on outline ops and on copies of the `[inner]` op (`fx_cam.copy_op`:
+`CAMTemplate.createFromOperations` + `createFromCAMTemplate2`, as for outlines). **Works** (hand-queued job
+`ttabs3-al6061`, r016's 4 parts all tabbed): ops "[inner] cutouts - 1 tab each" (3 cutouts) and "- 2 tabs
+each" (45), every cutout with its tabs, then the outlines with 6 each; the plain `[inner]` op was left empty and
+deleted; the program passed the sheet check. A job without `per_contour` in its params (`ttabs2`, built from an
+older job) failed at set-up and offered nothing: the name now falls back to `tabsPerContour`.
 
 Before that (`fx_cam.set_tabs`): `group_tabs` = true, `tabPositioning` = 'distance', `tabDistance`
 on each tabbed part's `[outer]` op; the team template's tab shape, width (`tool_diameter`) and height

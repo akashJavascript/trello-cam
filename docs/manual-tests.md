@@ -217,7 +217,7 @@ To queue the same job again, first delete `queue\done\<id>` (or `queue\failed\<i
 | 1 | Within ~10 s of starting the add-in, `queue\worker_heartbeat.json` exists and its `ts` keeps updating | |
 | 2 | A queued job ends up in `queue\done\<id>\` with `result.json`, the `.tap` and the `.png`; the document is closed afterwards | |
 | 3 | `logs\fusion_worker.log` shows the job's attempt and its status | |
-| 4 | Close Fusion (Task Manager) while a job runs; restart Fusion and the add-in: the job runs again (attempt 2) | |
+| 4 | Close Fusion (Task Manager) while a job runs; restart Fusion and the add-in: the job runs again (attempt 2) | **Passed** 2026-10-03 (by accident: signing out of Fusion closed it during `ttabs3-al6061`; the add-in had to be added again, then "start-up: re-queued", attempt 2 finished fine) |
 | 5 | Kill it again during attempt 2: on the next start the job goes to `queue\failed\<id>\` saying it was started 2 times | |
 | 6 | Edit a queued job's `"core_version"` to `"0.0.1"`: it goes to `failed\` with `CORE_VERSION_MISMATCH` | |
 | 7 | While the add-in is idle, Fusion stays usable (only a job run blocks it) | |
