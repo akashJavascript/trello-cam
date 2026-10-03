@@ -37,6 +37,8 @@ class FakeAdapter(Adapter):
         self.copies: Dict[str, str] = {}               # copy id -> STEP path
         self.boxes: Dict[str, Box] = {}
         self.columns = False          # True: pack like Fusion did in r009 (down the left edge first)
+        self.arranged = False                          # an Arrange has run
+        self.late: Set[str] = set()                    # copies made after an Arrange: refused, like r012/r013
         self.sheets: Dict[str, dict] = {}
         self.calls: List[str] = []
         self.upside_down: Set[str] = set()             # part keys Arrange turns over
@@ -69,6 +71,7 @@ class FakeAdapter(Adapter):
 
     def begin(self, job_id):
         self.calls.append(f"begin {job_id}")
+        self.arranged = False                          # each job is a new Fusion document
 
     def import_step(self, copy_id, path):
         if path in self.fail_import or path not in self.parts:
@@ -83,16 +86,23 @@ class FakeAdapter(Adapter):
     def add_copy(self, source_id, copy_id):
         self.copies[copy_id] = self.copies[source_id]
         self.boxes[copy_id] = self.boxes[source_id]
+        if self.arranged:
+            self.late.add(copy_id)
 
     def arrange(self, copy_ids, envelope, spacing_in, up_faces):
         self.arrange_envelopes.append(envelope)
         if self.arrange_error:
             raise AdapterError(self.arrange_error)
+        self.arranged = True
+        refused = {c: "upDirection (-1.0, 0.0, 0.0) is across the top face (-0.0, 0.0, 1.0)"
+                   for c in copy_ids if c in self.late}
+        copy_ids = [c for c in copy_ids if c not in refused]
         x0, y0, x1, y1 = envelope
         if self.columns:
-            return self._arrange_columns(copy_ids, envelope, spacing_in)
+            got = self._arrange_columns(copy_ids, envelope, spacing_in)
+            return Arranged(got.placed, refused)
         x, y, row = x0, y0, 0.0
-        placed, refused = [], {}
+        placed = []
         for cid in copy_ids:
             if cid.rsplit(".", 1)[0] in self.refuse:
                 refused[cid] = "upDirection (0, 1, 0) is across the top face"

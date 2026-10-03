@@ -64,3 +64,6 @@ def test_parts_run_down_the_left_edge_are_squeezed_into_a_strip_across_the_front
     assert sheet.free_length_in == 38.5 - 8.25 and sheet.used_y_in[1] < 0.5 + 0.25 + 8.25 + 0.25 + 1e-6
     assert all(p.placed == p.qty for p in result.parts)
     assert len({c for c in rig.fake.copies}) == 4 and all("~s" in c for c in rig.fake.copies)   # the squeezed copies
+    # Every copy was made before the first Arrange: Fusion refuses copies made after one (r012, r013).
+    assert not rig.fake.late
+

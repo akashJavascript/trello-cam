@@ -288,14 +288,39 @@ def _plate_size(adapter: Adapter, part: _Part) -> Tuple[float, float]:
     return a, w
 
 
+def _reserve(adapter: Adapter, parts: Sequence[_Part], up: Dict[str, int],
+             log: Callable[[str], None]) -> List[Dict[str, List[str]]]:
+    """The squeeze's copies: SQUEEZE_TRIES sets, each with a copy of every copy of every part. They're made
+    before anything is arranged, like the tries' copies: Fusion's Arrange refused every copy made after an
+    Arrange had run, even ones put back where the part was imported (r012, r013: "upDirection (-1.0, 0.0, 0.0)
+    is across the top face"). The ones the squeeze doesn't keep are hidden."""
+    sets: List[Dict[str, List[str]]] = []
+    for k in range(SQUEEZE_TRIES):
+        made: Dict[str, List[str]] = {p.key: [] for p in parts}
+        try:
+            for p in parts:
+                for cid in p.copies:
+                    copy = f"{cid}~s{k}"
+                    adapter.add_copy(p.copies[0], copy)
+                    made[p.key].append(copy)
+                    up[copy] = up[cid]
+        except AdapterError as e:
+            log(f"couldn't make copies to squeeze the last sheet: {e}")
+            _discard(adapter, [c for cs in made.values() for c in cs], log)
+            break
+        sets.append(made)
+    return sets
+
+
 def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], sizes: Dict[str, Tuple[float, float]],
              up: Dict[str, int], x_start: float, slot: int, pitch: float, thickness: float,
-             log: Callable[[str], None]) -> int:
+             sets: Sequence[Dict[str, List[str]]], log: Callable[[str], None]) -> int:
     """Fusion's Arrange packs against the left edge, so a few parts can run down the whole length of the last
     sheet (r009). Fit the last sheet's parts into full-width areas that get shorter, halving between the longest
     "shorter side" of its parts and what they take now, and keep the shortest that holds them all: a strip
     across the front, with the back of the sheet left free for parts that join it later or as an offcut.
-    Each try has its own copies; the ones not kept are hidden. Returns the next free sheet slot."""
+    Try k uses the copies in sets[k] (see _reserve); the caller hides the ones not kept. Returns the next free
+    sheet slot."""
     if not best.envelopes or best.failed:
         return slot
     origin, env = best.envelopes[-1]
@@ -308,9 +333,8 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], s
     if reach - lo < SQUEEZE_MIN_GAIN_IN:
         log(f"{thickness:g} in: not squeezed: the last sheet's parts take {reach:.1f} in, at least {lo:.1f} in")
         return slot
-    source = {p.key: p.copies[0] for p in parts if p.copies}
     hi, kept = reach, None                           # kept: (origin, full envelope, copies, reach)
-    for k in range(SQUEEZE_TRIES):
+    for k in range(len(sets)):
         target = round((lo + hi) / 2, 3)
         if hi - target < 0.5:
             break
@@ -318,33 +342,24 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], s
         slot += 1
         dx, dy = o[0] - origin[0], o[1] - origin[1]
         probe = (env[0] + dx, env[1] + dy, env[2] + dx, env[1] + dy + target)
-        copies: List[str] = []
+        spare = {key: list(cs) for key, cs in sets[k].items()}
+        copies = [spare[c.rsplit(".", 1)[0]].pop(0) for c in last]
         try:
-            for c in last:
-                copy = f"{c}~s{k}"
-                adapter.add_copy(source[c.rsplit(".", 1)[0]], copy)
-                up[copy] = up[c]
-                copies.append(copy)
             got = adapter.arrange(copies, probe, job.nest.part_spacing_in, {c: up[c] for c in copies})
             fits = set(got.placed) == set(copies)
             r = max(adapter.box(c).y1 for c in copies) - probe[1] if fits else None
             log(f"{thickness:g} in squeeze try {k + 1}: {target:.1f} in long: placed {len(got.placed)} of "
-                f"{len(copies)}" + (f", {r:.1f} in" if fits else ""))
+                f"{len(copies)}" + (f", {r:.1f} in" if fits else "")
+                + (f"; refused: {next(iter(got.refused.values()))}" if got.refused else ""))
         except AdapterError as e:
             log(f"squeezing the last {thickness:g} in sheet stopped: {e}")
-            _discard(adapter, copies, log)
             break
         if fits:
-            if kept:
-                _discard(adapter, kept[2], log)
             kept = (o, (env[0] + dx, env[1] + dy, env[2] + dx, env[3] + dy), copies, r)
             hi = r
         else:
-            _discard(adapter, copies, log)
             lo = target
     if kept is None or kept[3] > reach - 0.5:
-        if kept:
-            _discard(adapter, kept[2], log)
         log(f"{thickness:g} in: the last sheet stays {reach:.1f} in long (nothing shorter held all its parts)")
         return slot
     o, full, copies, r = kept
@@ -398,7 +413,8 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
 
     up = {cid: p.analysis.up_face_id for p in parts for cid in p.copies}
 
-    # The orders to try, each on its own copies, made now while every copy still sits where it was imported.
+    # The orders to try, each on its own copies, made now while every copy still sits where it was imported,
+    # and the squeeze's copies too: Fusion refuses copies made after an Arrange (see _reserve).
     sizes = {p.key: _plate_size(adapter, p) for p in parts}
     offcuts = _offcut_places(job, thickness)
     last_turned = {o.id: o.last_turned for o in job.offcuts}
@@ -425,6 +441,7 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
             _discard(adapter, [c for cs in made.values() for c in cs], log)
             continue
         tries.append(_Try(order, made, spin))
+    reserve = _reserve(adapter, parts, up, log)
 
     for i, t in enumerate(tries):
         remaining = [c for k in _part_order(parts, t.order, sizes) for c in t.copies[k] if by_key[k].ok]
@@ -474,7 +491,9 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
                          f"({said(best)} instead of {said(tries[0])})")
     for p in parts:
         p.copies = list(best.copies[p.key])
-    slot = _squeeze(adapter, job, best, parts, sizes, up, x_start, slot, pitch, thickness, log)
+    slot = _squeeze(adapter, job, best, parts, sizes, up, x_start, slot, pitch, thickness, reserve, log)
+    kept = {c for p in parts for c in p.copies}
+    _discard(adapter, [c for cs in reserve for k in cs.values() for c in k if c not in kept], log)
     up = {c: up[c] for p in parts for c in p.copies}
     envelopes = best.envelopes
     stock_of = {env: st for (_, env), st in zip(best.envelopes, best.stock)}

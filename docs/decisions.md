@@ -481,7 +481,11 @@ shortest area that holds them all is kept.
 - **What it leaves:** the parts in a strip across the front, and the back of the sheet free, for parts that
   join it later or as an offcut.
 - **How it's done:** each try has its own copies, and the copies not kept are hidden, so nothing an Arrange
-  placed is moved or deleted.
+  placed is moved or deleted. The copies are all made up front, with the ordering tries' copies, before any
+  Arrange runs (`pipeline._reserve`): r012 and r013 showed Fusion's Arrange refuses copies made after an
+  Arrange has run, even ones put back where the part was imported ("upDirection (-1.0, 0.0, 0.0) is across
+  the top face (-0.0, 0.0, 1.0)"). The tries' copies, made before any Arrange, were fine even when they were
+  arranged after another try's Arrange. So every job makes 4 more sets of copies; the unused ones are hidden.
 - **When it's skipped:** if the last sheet couldn't get at least 2 in shorter.
 - **Cost:** up to 4 Arranges (a few seconds each).
 - **The preview** is now framed on the whole sheet and saved upright (1000 x 1600) for an upright sheet, as

@@ -131,6 +131,8 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
 | Add-in | the add-in's handler re-entered by `adsk.doEvents()` during a job (guarded by `busy` and a per-process flag) | autocam_addin | none |
 | Arrange | several tries per thickness, each on its own copies (`add_copy` before any Arrange) and sheet slots; the losers hidden | pipeline (`NEST_ORDERS`) | **works** (r006, 5 parts: 3 tries, the same layout each time, about 5 s extra) | set `NEST_ORDERS` to the first entry only |
 | Arrange | offcuts: the envelope limited to the offcut's free stretch along X (same calls) | pipeline | untested in Fusion | - |
+| Arrange | a copy made (`addExistingComponent`) **after** an Arrange has run, at the arranged copy's transform (r012) or at the transform the part had right after its import (r013) | — | **refused**: its `ArrangeComponent.upDirection` comes back (-1, 0, 0), across the top face, so `fx_design.arrange` takes it out; every squeeze try placed 0 parts | make every copy before the first Arrange (`pipeline._reserve`) |
+| Arrange | the squeeze: the last sheet's parts arranged again into shorter full-width areas, on copies made before any Arrange | pipeline (`_squeeze`) | untested in Fusion | the last sheet stays as the best try left it |
 | Add-in | self-reload while idle: purge the autocam_* modules and rebuild the worker from the event handler (on a new `CORE_VERSION` or `queue/reload_addin`) | autocam_addin | **works** (2026-10-02 23:42: `queue/reload_addin` -> "reloaded: core 0.2.0 -> 0.2.0", then r006 ran on the new code) |
 
 ## What this changes in the pipeline (M1.2)
