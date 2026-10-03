@@ -298,8 +298,8 @@ or set up an existing board instead with `--board <short link>`.
 
 | # | Check | Result |
 |---|---|---|
-| 1 | `autocam run --verbose` prints "the service restarts by itself..." and then the usual log | |
-| 2 | Create an empty `C:\dev\frc-autocam\state\restart_service`: within ~1 min the window says "restarting the service with the new code" and the log shows "service started" again; the file is gone | |
+| 1 | `autocam run --verbose` prints "the service restarts by itself..." and then the usual log | **Passed** 2026-10-02 |
+| 2 | Create an empty `C:\dev\frc-autocam\state\restart_service`: within ~1 min the window says "restarting the service with the new code" and the log shows "service started" again; the file is gone | **Passed** 2026-10-02: flag made 21:17:38, restarted 21:18:14 into a new child under the same supervisor |
 | 3 | After a `git pull` (or a commit pushed from the dev machine onto this checkout), the same happens within ~2 min | |
 | 4 | Ctrl+C stops it (no restart afterwards) | |
 
