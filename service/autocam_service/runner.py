@@ -30,13 +30,15 @@ run and a real run never finishes a dry one.
 import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from autocam_core.airtest import SUFFIX as AIR_SUFFIX, air_test_name, check_air_test, lift_program, note_for
 from autocam_core.hotfolder import Queue, write_atomic
+from autocam_core.pauses import PauseError, remove as remove_pauses
+from autocam_core.sheetcheck import check_sheet_program, pause_spec
 from autocam_core.schema_job import PartSpec, job_json, load_job
 
 from . import sheet_cards as text
@@ -69,6 +71,8 @@ def onshape_problem(e: OnshapeError) -> str:
     said = m.group(1) if m else str(e).split(": ", 1)[-1][:200]
     return (f"Onshape couldn't read that link ({e.status}: {said}). Check that the link opens a **Part Studio** "
             "tab (not an Assembly or Drawing) at a **version**, and that the part is in it")
+NO_STOP_SUFFIX = "_NOSTOP"
+LEGACY_AIR_CHECKLIST = "Air test"   # the first version's own box (on r005's card), now an item in Options
 WRITE_ATTEMPTS = 3   # a Trello write that fails on this many ticks is given up (logged), so no run is stuck forever
 
 
@@ -106,7 +110,7 @@ class Runner:
     def tick(self) -> None:
         self.check_ready_to_cut()
         self.follow_cut()
-        self.air_tests()
+        self.sheet_options()
         waiting = self.ready_cards()
         state = self.s.store.active()
         if state is not None and state.dry_run != self.dry_run:
@@ -185,12 +189,16 @@ class Runner:
             except Exception as e:  # noqa: BLE001 - a deleted card mustn't stop the tick
                 log.warning("couldn't move part card %s to Cut: %s", part_id, e)
 
-    # ------------------------------------------------------------ air tests
-    def air_tests(self) -> None:
-        """The "Air test" box on sheet cards: ticked -> the sheet's air test program is on the card (its checked
-        program raised so the cutter stays machine.air_test_gap_in above the sheet, autocam_core/airtest.py);
-        unticked -> it's removed. Only cuttable sheets this service made, in Sheet review or Ready to cut.
-        Cards without the box get it, unticked. A rebuilt sheet's air test is remade from the new program."""
+    # ------------------------------------------------------------ sheet options
+    def sheet_options(self) -> None:
+        """The Options checklist on sheet cards (both unticked to start), applied within a minute:
+        - "Cut the whole sheet without stopping": the card's program is the posted program without the stop
+          after each part (pauses.remove, which proves nothing else changed), named <program>_NOSTOP.tap,
+          checked again with pauses off, and the description says it doesn't stop.
+        - "Add an air test program": the card also gets <its program>_AIRTEST.tap, raised so it cuts nothing
+          (autocam_core/airtest.py).
+        Unticking undoes it. Only cuttable sheets this service made, in Sheet review or Ready to cut. A rebuilt
+        sheet gets the ticked options applied to its new program."""
         reg = self.s.store.sheet_cards()
         for list_key in (self.targets["sheet_created"], "ready_to_cut"):
             for card in self.t.list_cards(list_key):
@@ -198,45 +206,63 @@ class Runner:
                 if not info or not info.get("cuttable") or not info.get("job") or info.get("archived"):
                     continue
                 try:
-                    self._air_test(card, info)
+                    self._options(card, info)
                 except Exception as e:  # noqa: BLE001 - one card mustn't stop the tick
-                    log.warning("air test on sheet card %s: %s", card.id, e)
+                    log.warning("options on sheet card %s: %s", card.id, e)
 
-    def _air_test(self, card: Card, info: Dict) -> None:
+    def _options(self, card: Card, info: Dict) -> None:
         t = self.cfg.trello
-        boxes = [c.done for c in card.checks if c.checklist == t.air_test_checklist]
-        if not boxes:
-            self.t.add_checklist(card.id, t.air_test_checklist, [t.air_test_item])
+        if any(c.checklist == LEGACY_AIR_CHECKLIST for c in card.checks):
+            self.t.remove_checklists(card.id, LEGACY_AIR_CHECKLIST)
+        items = {c.item: c.done for c in card.checks if c.checklist == t.options_checklist}
+        if not items:
+            self.t.add_checklist(card.id, t.options_checklist, [t.no_stop_item, t.air_test_item])
             return
-        wanted = any(boxes)
-        air = info.get("air") or {}
-        source = {"job": info["job"], "index": info.get("index")}
-        same_program = {k: air.get(k) for k in source} == source
-        keep = air.get("att") if wanted and same_program else None
-        files = [a for a in card.attachments if a.name.endswith(f"{AIR_SUFFIX}.tap")]
-        for a in files:
-            if a.id != keep:          # stale (the sheet was rebuilt), unticked, or a duplicate after a crash
-                self.t.delete_attachment(card.id, a.id)
-        if not wanted:
-            if air:
-                self.s.store.set_air(card.id, None)
-            return
-        if keep and any(a.id == keep for a in files):
-            return                    # already there
-        if same_program and air.get("error"):
-            return                    # already said why it can't be made
-        made = self._air_program(info)
+        want = {"job": info["job"], "index": info.get("index"),
+                "nostop": items.get(t.no_stop_item, False), "air": items.get(t.air_test_item, False)}
+        had = info.get("options") or {"job": info["job"], "index": info.get("index"), "nostop": False, "air": False}
+        same = all(had.get(k) == v for k, v in want.items())
+        if same and had.get("error"):
+            return                                    # already said why it can't be done
+        if same:
+            files = had.get("files")
+            if files is None:                         # nothing applied since publishing: only the posted program
+                extras = [a for a in card.attachments
+                          if a.name.endswith((f"{AIR_SUFFIX}.tap", f"{NO_STOP_SUFFIX}.tap"))]
+                if not extras:
+                    return
+            elif all(att in {a.id for a in card.attachments} for att in files.values()):
+                return                                # up to date
+        made = self._programs(info, want["nostop"], want["air"])
         if isinstance(made, str):
-            self.s.store.set_air(card.id, {**source, "error": made})
-            self.t.comment(card.id, text.air_test_failed_comment(made))
+            self.s.store.set_options(card.id, {**want, "error": made})
+            self.t.comment(card.id, text.options_failed_comment(made))
             return
-        name, data, report, lift = made
-        att = self.t.attach_program(card.id, name, data, report)
-        self.s.store.set_air(card.id, {**source, "att": att})
-        self.t.comment(card.id, text.air_test_comment(name, lift, self.cfg.machine.air_test_gap_in))
+        programs, stem, desc, lift, stops = made
+        files: Dict[str, str] = {}
+        for a in card.attachments:                    # this sheet's programs: keep the wanted ones, once each
+            if a.name.startswith(stem) and a.name.lower().endswith(".tap"):
+                if a.name in programs and a.name not in files:
+                    files[a.name] = a.id
+                else:
+                    self.t.delete_attachment(card.id, a.id)
+        for name, (data, report) in programs.items():
+            if name not in files:
+                files[name] = self.t.attach_program(card.id, name, data, report)
+        if desc != card.desc:
+            self.t.update_card(card.id, card.name, desc)
+        self.s.store.set_options(card.id, {**want, "files": files})
+        main = next(iter(programs))
+        if want["nostop"] != had.get("nostop", False) and stops:
+            self.t.comment(card.id, text.no_stop_comment(main, want["nostop"]))
+        if want["air"] and not (had.get("air") and same):
+            name = next(n for n in programs if n.endswith(f"{AIR_SUFFIX}.tap"))
+            self.t.comment(card.id, text.air_test_comment(name, lift, self.cfg.machine.air_test_gap_in))
 
-    def _air_program(self, info: Dict):
-        """(file name, bytes, guard report, lift) made from the sheet's checked program, or why it can't be."""
+    def _programs(self, info: Dict, nostop: bool, air: bool):
+        """({file name: (bytes, guard report)} with the card's program first, the sheet's program stem, the
+        description that goes with it, the air test lift, whether the program has stops at all), or why it
+        can't be done."""
         job = self._job(info["job"])
         if job is None:
             return "the service has no record of this sheet's job"
@@ -244,14 +270,34 @@ class Runner:
         vs = next((v for v in ing.sheets if v.sheet.index == info.get("index")), None)
         if vs is None or not vs.cuttable:
             return "this sheet's checked program isn't in the job folder any more"
+        sheet = vs.sheet
+        stem = Path(sheet.tap).stem
+        counts = {p.part_key: p.count for p in sheet.parts}
+        data, report, main, run_job, stops = vs.tap_bytes, vs.check.guard, sheet.tap, job, True
+        if nostop and vs.pause_count:
+            try:
+                plain = remove_pauses(data.decode("ascii"), sheet.outer_order, pause_spec(job), job.pauses.after_last_part)
+            except PauseError as e:
+                return f"the stops couldn't be taken out ({e})"
+            run_job = replace(job, pauses=replace(job.pauses, enabled=False))
+            data = plain.encode("ascii")
+            check = check_sheet_program(data, run_job, sheet.thickness_in, sheet.tool, sheet.outer_order, counts)
+            if not check.passed:
+                return "the program without stops failed its check (" + "; ".join(check.problems()) + ")"
+            report, main, stops = check.guard, f"{stem}{NO_STOP_SUFFIX}.tap", False
+        programs = {main: (data, report)}
         gap = self.cfg.machine.air_test_gap_in
-        lift = vs.sheet.thickness_in + gap
-        data = lift_program(vs.tap_bytes.decode("ascii"), lift, note_for(lift, gap)).encode("ascii")
-        counts = {p.part_key: p.count for p in vs.sheet.parts}
-        check = check_air_test(data, job, vs.sheet.thickness_in, vs.sheet.tool, vs.sheet.outer_order, counts, gap)
-        if not check.passed:
-            return "it failed its check (" + "; ".join(check.problems()) + ")"
-        return air_test_name(vs.sheet.tap), data, check.guard, lift
+        lift = sheet.thickness_in + gap
+        if air:
+            air_data = lift_program(data.decode("ascii"), lift, note_for(lift, gap)).encode("ascii")
+            check = check_air_test(air_data, run_job, sheet.thickness_in, sheet.tool, sheet.outer_order, counts, gap)
+            if not check.passed:
+                return "the air test failed its check (" + "; ".join(check.problems()) + ")"
+            programs[air_test_name(main)] = (air_data, check.guard)
+        part_cards = {p.part_key: (p.name, p.card_url) for p in job.parts}
+        desc = text.sheet_description(job, ing, vs, resume_key=self.cfg.pauses.resume_key, part_cards=part_cards,
+                                      program=main, stops=stops)
+        return programs, stem, desc, lift, vs.pause_count > 0
 
     def _send_back(self, card_id: str, comment: str) -> None:
         self.t.move(card_id, self.targets["checklist_return"])

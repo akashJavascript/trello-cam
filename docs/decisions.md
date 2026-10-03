@@ -300,10 +300,18 @@ the edges, not the loop. Two changes:
   - The keep-or-rebuild choice is recorded once per run and thickness, and the open sheets are snapshotted when
     the run starts, so a service restart halfway through a rebuild finishes it the same way.
 
-## 2026-10-02: air test as a checkbox on the sheet card (the user's choice)
+## 2026-10-02: sheet options: cut without stopping, air test (the user's choices)
 
-- Every cuttable sheet card gets an **Air test** box, unticked. Tick it: within a minute the card gets
-  `<program>_AIRTEST.tap` and a comment. Untick it: the file is removed. Sheet review and Ready to cut both work.
+Every cuttable sheet card gets an **Options** checklist with two boxes, both unticked. The service applies them
+within a minute (Sheet review or Ready to cut), unticking undoes them, and a rebuilt sheet gets them again.
+
+- **Cut the whole sheet without stopping:** the card's program becomes `<program>_NOSTOP.tap`, the posted
+  program without the stop after each part. `pauses.remove` takes out exactly the blocks `pauses.insert` put
+  in, and proves it by putting them back and comparing the bytes. The result is checked again with pauses off
+  (no M0 allowed), and the description's RUN section says it doesn't stop. Only one real program is on the card
+  at a time. A one-part sheet never stops anyway, so nothing changes. Without stops or tabs, cut parts sit
+  loose in the sheet until the end.
+- **Add an air test program:** `<the card's program>_AIRTEST.tap` (with no stops if that box is ticked too):
 - **What it is:** the sheet's checked program with every Z and drill R raised by sheet thickness +
   `machine.air_test_gap_in` (0.5 in), so its lowest point, a through cut at Z0, runs 0.5 in above the top of
   the stock. Lines with G53 (machine coordinates) are untouched. Every move, feed, pause, spindle and mist

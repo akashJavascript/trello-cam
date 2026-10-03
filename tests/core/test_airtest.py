@@ -69,3 +69,18 @@ def test_never_lowered_and_names():
     with pytest.raises(ValueError):
         lift_program("G1 Z0.", 0)
     assert air_test_name("6061_0p1875_r005_S1.tap") == "6061_0p1875_r005_S1_AIRTEST.tap"
+
+
+def test_taking_the_pauses_out_gives_back_the_posted_program():
+    from autocam_core.pauses import PauseError, remove
+    order = ["p01-1", "p02-1", "p02-2"]
+    spec = PauseSpec(mist=True)
+    posted = text("sheet_mist.tap")
+    for after_last in (False, True):
+        paused = insert(posted, order, spec, after_last)
+        assert remove(paused, order, spec, after_last) == posted
+    paused = insert(posted, order, spec)
+    with pytest.raises(PauseError):
+        remove(paused.replace("G53 P10\r\n[REMOVE PART", "G53 P11\r\n[REMOVE PART", 1), order, spec)
+    with pytest.raises(PauseError):
+        remove(posted, order, spec)                        # nothing to take out

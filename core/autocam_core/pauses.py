@@ -123,6 +123,34 @@ def insert(text: str, outer_order: Sequence[str], spec: PauseSpec,
     return newline.join(lines)
 
 
+def remove(text: str, outer_order: Sequence[str], spec: PauseSpec,
+           after_last_part: bool = False) -> str:
+    """The exact inverse of `insert`: the program as it was before the pauses went in (a sheet that runs
+    straight through). Raises PauseError unless every block is exactly where and what `insert` makes, and
+    putting the pauses back gives the same text, so nothing else can have changed."""
+    lines, newline = _split(text)
+    anchors = _find_outer_comments(lines, outer_order)
+    cuts: List[Tuple[int, int]] = []
+    for k in range(1, len(anchors)):
+        block = pause_block(k, spec)
+        start = anchors[k] - len(block)
+        if start < 0 or lines[start:anchors[k]] != block:
+            raise PauseError(f"no pause block right before part {outer_order[k]}")
+        cuts.append((start, anchors[k]))
+    if after_last_part and anchors:
+        block = pause_block(len(anchors), spec, restart=False)
+        hits = [i for i in range(anchors[-1], len(lines)) if lines[i:i + len(block)] == block]
+        if len(hits) != 1:
+            raise PauseError("no pause block after the last part")
+        cuts.append((hits[0], hits[0] + len(block)))
+    for start, stop in sorted(cuts, reverse=True):
+        del lines[start:stop]
+    out = newline.join(lines)
+    if insert(out, outer_order, spec, after_last_part) != text:
+        raise PauseError("taking the pauses out would change more than the pauses")
+    return out
+
+
 def verify(text: str, outer_order: Sequence[str], spec: PauseSpec, *,
            after_last_part: bool = False, safe_z_in: Optional[float] = None) -> PauseCheck:
     """Check every pause on the final program text, whichever way it got there.

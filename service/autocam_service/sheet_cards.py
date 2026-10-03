@@ -53,8 +53,10 @@ def sheet_title(job: Job, vs: VerifiedSheet) -> str:
 
 
 def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_key: str,
-                      part_cards: Mapping[str, Tuple[str, str]]) -> str:
-    """part_cards: part_key -> (part name, card url)."""
+                      part_cards: Mapping[str, Tuple[str, str]], program: Optional[str] = None,
+                      stops: bool = True) -> str:
+    """part_cards: part_key -> (part name, card url). program/stops: the version on the card when the
+    "without stopping" option is on."""
     s = vs.sheet
     tool = job.tooling.tools[s.tool]
     m = job.material
@@ -74,11 +76,14 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
     if vs.cuttable:
         n = vs.pause_count
         key = resume_key or "the continue key"
-        run = f"Program: {s.tap}" + (f" (about {_minutes(s.machining_time_s)})" if s.machining_time_s else "")
+        run = f"Program: {program or s.tap}" + (f" (about {_minutes(s.machining_time_s)})" if s.machining_time_s else "")
         lines += ["", "RUN", run]
-        if n:
+        if n and stops:
             lines.append(f"It stops after each part but the last ({n} stops), spindle off. Take the part out, "
                          f"then press {key}. Never press Esc at a stop: it ends the program.")
+        elif n:
+            lines.append("It cuts the whole sheet without stopping: cut parts stay loose in the sheet until it's "
+                         "done. Keep hands off until the spindle stops at the end.")
 
     lines += ["", "CUT ORDER"]
     counts = {}
@@ -144,6 +149,15 @@ def air_test_comment(name: str, lift_in: float, gap_in: float) -> str:
 
 def air_test_failed_comment(why: str) -> str:
     return f"Couldn't make the air test: {why}."
+
+
+def options_failed_comment(why: str) -> str:
+    return f"Couldn't apply the options: {why}."
+
+
+def no_stop_comment(name: str, on: bool) -> str:
+    return (f"Now cuts the whole sheet without stopping: {name}." if on
+            else f"Back to stopping after each part: {name}.")
 
 
 def sheet_rebuilt_comment(run_id: str) -> str:

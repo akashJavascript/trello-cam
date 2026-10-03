@@ -197,7 +197,8 @@ class Trello:
     start_delay_s: int
     nest_checklist: str
     nest_item: str
-    air_test_checklist: str
+    options_checklist: str
+    no_stop_item: str
     air_test_item: str
     checklist_name: str
     checklist: Tuple[str, ...]
@@ -593,7 +594,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         start_delay_s=t.integer("start_delay_s", minimum=0),
         nest_checklist=t.string("nest_checklist", required=True),
         nest_item=t.string("nest_item", required=True),
-        air_test_checklist=t.string("air_test_checklist", required=True),
+        options_checklist=t.string("options_checklist", required=True),
+        no_stop_item=t.string("no_stop_item", required=True),
         air_test_item=t.string("air_test_item", required=True),
         checklist_name=t.string("checklist_name", required=True),
         checklist=t.strings("checklist"),

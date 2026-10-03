@@ -106,16 +106,16 @@ class RunStore:
         sheets[card_id] = {**sheets.get(card_id, {}), "run": run_id, "cuttable": cuttable, "parts": list(parts)}
         if job:
             sheets[card_id].update(job=job, material=material, thickness_in=thickness_in, index=index, url=url)
+            sheets[card_id].pop("options", None)          # a new program: the options are applied to it again
+            sheets[card_id].pop("air", None)
         self._write_sheets(sheets)
 
-    def set_air(self, card_id: str, air: Optional[Dict]) -> None:
-        """The sheet's air test: {"job", "index", "att"} (or "error"), None once it's removed."""
+    def set_options(self, card_id: str, options: Dict) -> None:
+        """What the Options checklist last made of this sheet: {"job", "index", "nostop", "air", "files"
+        (name -> attachment id)} or {..., "error"}."""
         sheets = self.sheet_cards()
         if card_id in sheets:
-            if air is None:
-                sheets[card_id].pop("air", None)
-            else:
-                sheets[card_id]["air"] = air
+            sheets[card_id]["options"] = options
             self._write_sheets(sheets)
 
     def retire_sheet(self, card_id: str) -> None:
