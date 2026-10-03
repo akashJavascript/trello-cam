@@ -231,6 +231,10 @@ no_stop_item = "Cut the whole sheet without stopping"   # the program without th
 air_test_item = "Add an air test program (cuts nothing)"  # the program raised machine.air_test_gap_in above the sheet
 offcut_checklist = "Offcut"     # sheet cards with room left: ticked = when it's cut, keep the rest for the next run
 offcut_item = "Keep the rest of the sheet for the next run"
+stock_checklist = "Stock"       # sheet cards on an offcut: tick the item if the offcut can't be found
+not_found_item = "The offcut isn't on the rack"
+renest_item = "Re-nest it on other stock (a new run and a new review)"   # offered when no other offcut fits
+new_sheet_item = "Cut it on a new sheet (the same program)"
 checklist_name = "Review"                  # all ticked before a sheet may sit in Ready to cut
 checklist = ["Simulated it in Fusion", "Parts and quantities look right"]
 machine_checklist_name = "At the machine"  # for the operator; not checked by the service

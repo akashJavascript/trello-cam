@@ -65,3 +65,6 @@ class DryRunTracker(Tracker):
 
     def _set_cover(self, card_id, attachment_id):
         self.intended.append(("set_cover", card_id, attachment_id))
+
+    def _add_label(self, card_id, name):
+        self.intended.append(("add_label", card_id, name))

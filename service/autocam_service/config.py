@@ -221,6 +221,10 @@ class Trello:
     lists: Mapping[str, str]
     targets: Mapping[str, str]
     cards: Mapping[str, str]
+    stock_checklist: str = "Stock"
+    not_found_item: str = "The offcut isn't on the rack"
+    renest_item: str = "Re-nest it on other stock (a new run and a new review)"
+    new_sheet_item: str = "Cut it on a new sheet (the same program)"
 
 
 @dataclass(frozen=True)
@@ -626,6 +630,10 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         lists=MappingProxyType(t.string_map("lists", keys=TRELLO_LISTS, value_pattern=TRELLO_ID_RE)),
         targets=MappingProxyType(t.string_map("targets", keys=TRELLO_TARGETS)),
         cards=MappingProxyType(t.string_map("cards", keys=TRELLO_CARDS, value_pattern=TRELLO_ID_RE)),
+        stock_checklist=t.string("stock_checklist", default="Stock"),
+        not_found_item=t.string("not_found_item", default="The offcut isn't on the rack"),
+        renest_item=t.string("renest_item", default="Re-nest it on other stock (a new run and a new review)"),
+        new_sheet_item=t.string("new_sheet_item", default="Cut it on a new sheet (the same program)"),
     )
     t.finish()
 

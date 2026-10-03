@@ -262,13 +262,13 @@ def _offcut_places(job: Job, thickness: float) -> List[Tuple[str, Optional[_Way]
     for o in job.offcuts:
         if abs(o.thickness_in - thickness) > 1e-6:
             continue
-        ways: List[Optional[_Way]] = []
-        for turned in (o.last_turned, not o.last_turned):
+        ways: List[Optional[_Way]] = [None, None]
+        for n, turned in enumerate((o.last_turned, not o.last_turned) if o.can_turn else (o.last_turned,)):
             stretch = placement_for(o.used_in, job.sheet.length_in, region[1], region[3], job.nest.offcut_gap_in,
                                     job.nest.offcut_min_in, turned)
             beside = tuple(beside_as_loaded(o.beside_in, job.sheet.width_in, job.sheet.length_in, turned, region,
                                             job.nest.offcut_beside_min_in))
-            ways.append(_Way(turned, stretch, beside) if stretch or beside else None)
+            ways[n] = _Way(turned, stretch, beside) if stretch or beside else None
         if any(ways):
             out.append((o.id, ways[0], ways[1]))
 

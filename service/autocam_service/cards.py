@@ -39,6 +39,11 @@ Need one part now? Add the {rush} label before moving it: it's nested at once (w
 already going), on its own: an offcut or a new sheet, not a sheet waiting in Sheet review.
 Labels, if needed: {smoked} for smoked polycarbonate, {tool} to force the 1/8 in endmill.
 No Onshape? Attach a .step file and add a line like Material: 6061 (or 5052, PC).
+
+Offcuts: each one has a number (#4); write it on the piece when it goes on the rack. If a sheet card names an
+offcut that isn't there, tick "The offcut isn't on the rack" under Stock on that card. To add a full-width
+piece the system doesn't know about, make a card in Offcuts with lines like Material: 6061, Thickness: 3/16
+and Length: 20.
 If something is wrong, the card comes back in Needs fixing with a comment saying what to fix."""
 
 

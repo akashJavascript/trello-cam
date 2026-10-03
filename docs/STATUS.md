@@ -86,6 +86,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 - **Extras** (2026-10-03, tested offline): a **Rush** label (nested at once, on its own); an offcut is freed
   when its sheet card is archived or deleted without being cut; offcuts are filled smallest room first; the
   System card tallies the season's stock ("Stock since Sep 1: ..."). Manual tests M3 section 8.
+- **Finding offcuts** (2026-10-03, tested offline): numbered offcuts; "The offcut isn't on the rack" on sheet
+  cards (switches to another offcut the same program fits, or offers a re-nest with Rush or a new sheet);
+  scraps added by hand as cards in Offcuts (never turned round, core 0.6.0). Manual tests M3 section 9.
 - **Later ideas** (not planned): part-in-part nesting (needs per-part cut ordering first).
 
 ## Not verified yet (don't rely on these until they are)

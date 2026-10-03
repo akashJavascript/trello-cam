@@ -533,3 +533,25 @@ gusset cost about 85 sq in of an 18 sq in part). The metal is still there. So th
   sheets' area (it grows as the offcuts on the shelf get used). Cut time and parts area are now recorded
   with each sheet; older sheets get their area from their job's result.json.
 
+## 2026-10-03: finding offcuts at the machine (the user's choice)
+
+The operator has to find the piece a sheet card names. What happens when it isn't there:
+- **Numbers:** every offcut gets a number that's never reused (`state/offcut_numbers.json`). The offcut card's
+  title starts with it, the comment when a sheet's rest becomes an offcut says to write it on the piece, and
+  the sheet card's title and Stock line name it. Offcuts from before get one on the next pass.
+- **"The offcut isn't on the rack"** (a Stock checklist on every sheet card nested on an offcut). Ticked:
+  - **The missing offcut:** its card is archived, but it's kept on record ("missing"). Sending the card back to
+    Offcuts makes it usable again.
+  - **Another offcut the same program fits:** the card switches to it, with no new run and no new review.
+    Fits: its used stretches are 0.5 in clear of every band the program cuts in (the free-stretch band and
+    the bands of any rooms beside earlier cuts it used, recorded at publish as `bands`). It prefers the same
+    way round, then the one with least room. When that sheet is cut, the bands are recorded on the new offcut.
+  - **No fit:** the card offers "Re-nest it on other stock" (the card is emptied and archived, its part cards
+    go back to Ready for CAM with the Rush label) or "Cut it on a new sheet" (the same program: offcut
+    programs stay inside a whole sheet's nest area, so they're safe on one; its Stock line says where the
+    parts are, and the rest becomes an offcut).
+- **Scraps:** a card someone makes in Offcuts with Material, Thickness and Length lines becomes an offcut: a
+  full-width piece with the missing length counted as used. It's never turned round (`OffcutSpec.can_turn`,
+  core 0.6.0): turned, it would sit past its own front edge, with nothing to zero on. A card that's missing
+  something gets one reply, and another only when it changes.
+

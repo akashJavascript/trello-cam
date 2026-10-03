@@ -147,3 +147,16 @@ def test_get_card_says_archived_and_deleted_apart_from_trello_trouble():
         tr.get_card("C2")                                       # deleted
     with pytest.raises(TrelloError):
         tr.get_card("C3")                                       # anything else is not "gone"
+
+
+def test_add_label_uses_the_boards_label_and_makes_it_only_if_missing():
+    tr, t = tracker((200, {"idBoard": "B1", "idLabels": []}), (200, [{"id": "LR", "name": "rush"}]), (200, {}),
+                    (200, {"idBoard": "B1", "idLabels": []}), (200, [{"id": "LS", "name": "Smoked"}]),
+                    (200, {"id": "LN"}), (200, {}))
+    tr.add_label("C1", "Rush")                                  # matched whatever its case
+    tr.add_label("C2", "Rush")                                  # this board has none: made, then added
+    paths = [(m, u.split("/1", 1)[1]) for m, u, *_ in t.calls]
+    assert paths == [("GET", "/cards/C1"), ("GET", "/boards/B1/labels"), ("POST", "/cards/C1/idLabels"),
+                     ("GET", "/cards/C2"), ("GET", "/boards/B1/labels"), ("POST", "/labels"),
+                     ("POST", "/cards/C2/idLabels")]
+    assert t.calls[2][2]["value"] == "LR" and t.calls[6][2]["value"] == "LN"

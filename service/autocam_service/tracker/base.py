@@ -132,6 +132,10 @@ class Tracker(abc.ABC):
     def archive(self, card_id: str) -> None:
         self._archive(card_id)
 
+    def add_label(self, card_id: str, name: str) -> None:
+        """Put the board's label with this name on the card (made if the board doesn't have it)."""
+        self._add_label(card_id, name)
+
     def set_cover(self, card_id: str, attachment_id: str) -> None:
         """Show an attached image on the card's front (the nest preview on sheet cards)."""
         self._set_cover(card_id, attachment_id)
@@ -179,3 +183,6 @@ class Tracker(abc.ABC):
 
     @abc.abstractmethod
     def _set_cover(self, card_id: str, attachment_id: str) -> None: ...
+
+    @abc.abstractmethod
+    def _add_label(self, card_id: str, name: str) -> None: ...

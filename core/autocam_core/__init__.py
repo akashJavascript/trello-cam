@@ -6,4 +6,4 @@ Fusion 2705.1.15 bundles Python 3.14 (api_probe, 2026-10-01); CI tests this pack
 
 # job.json and result.json carry this. The Fusion worker refuses a job built by a
 # different version, so a long-lived Fusion process can't run stale code.
-CORE_VERSION = "0.5.0"   # 0.5.0: room beside cuts on offcuts; 0.4.0: X across the sheet, Y along its length
+CORE_VERSION = "0.6.0"   # 0.6.0: scraps (offcuts never turned); 0.5.0: room beside cuts; 0.4.0: machine axes

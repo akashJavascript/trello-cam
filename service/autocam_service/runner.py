@@ -38,7 +38,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 from autocam_core import CORE_VERSION
 from autocam_core.airtest import SUFFIX as AIR_SUFFIX, AirTestError, air_test_name, air_test_program, check_air_test
 from autocam_core.hotfolder import Queue, write_atomic
-from autocam_core.offcuts import add_used, free_length, to_own
+from autocam_core.offcuts import add_used, as_loaded, free_length, to_own, turn_rect
 from autocam_core.pauses import PauseError, remove as remove_pauses
 from autocam_core.sheetcheck import check_sheet_program, pause_spec
 from autocam_core.schema import SchemaError
@@ -46,13 +46,13 @@ from autocam_core.schema_job import OffcutSpec, PartSpec, job_json, load_job
 
 from . import health, tally
 from . import sheet_cards as text
-from .autostart import ReadyWatch, wants_nest
+from .autostart import ReadyWatch, signature, wants_nest
 from .batching import ReadyPart, make_batches
 from .cards import README_CARD, CardProblem, PartRequest, parse_card
 from .config import Config
 from .jobs import JobBuildError, build_job, sheet_fixture
 from .materials import resolve_material
-from .offcuts import OffcutStore, card_text, load_line
+from .offcuts import SCRAP_HELP, OffcutStore, card_text, load_line, parse_scrap
 from .onshape.budget import REFUSE, WARN, decide, estimate_calls
 from .onshape.cache import sha256_file
 from .onshape.client import BudgetExceeded, OnshapeError, QuotaExhausted, RateLimited
@@ -136,6 +136,7 @@ class Runner:
         self.check_ready_to_cut()
         self.follow_cut()
         self.free_offcuts()
+        self.scan_offcuts()
         self.retire_old_layout()
         self.sheet_options()
         waiting = self.ready_cards()
@@ -345,51 +346,75 @@ class Runner:
         out = []
         for offcut_id, piece in self.offcuts.all().items():
             if offcut_id not in on_board:
-                self.offcuts.remove(offcut_id)
+                if not piece.get("missing"):          # a missing one is kept on record in case it turns up
+                    self.offcuts.remove(offcut_id)
                 continue
             reserved = piece.get("reserved_by")
-            if piece["material"] != material or (reserved and reserved not in reopened):
+            if piece["material"] != material or (reserved and reserved not in reopened) or piece.get("missing"):
                 continue
             out.append(OffcutSpec(offcut_id, piece["thickness_in"], tuple(tuple(s) for s in piece["used"]),
                                   bool((piece.get("last") or {}).get("turned", False)),
-                                  tuple(tuple(r) for r in piece.get("beside", []))))
+                                  tuple(tuple(r) for r in piece.get("beside", [])), not piece.get("scrap")))
         return out
 
-    def _stock_line(self, vs: VerifiedSheet) -> Optional[str]:
-        """The sheet card's Stock line when the sheet is an offcut: which offcut, and which end goes where."""
-        offcut_id = vs.sheet.offcut_id
-        if not offcut_id:
+    def _stock_line(self, vs: VerifiedSheet, info: Optional[Dict] = None) -> Optional[str]:
+        """The sheet card's Stock line when the sheet isn't a plain new sheet: which offcut and which end goes
+        where, or (info: its stock was changed at the machine) the offcut or new sheet it changed to."""
+        if info and info.get("converted"):
+            return self._stock_text(info.get("offcut_id"), info["material"], info["thickness_in"],
+                                    bool(info.get("turned")), info.get("bands") or [], info.get("instead_of"), True)
+        if not vs.sheet.offcut_id:
             return None
+        return self._stock_text(vs.sheet.offcut_id, "", vs.sheet.thickness_in, vs.sheet.offcut_turned)
+
+    def _stock_text(self, offcut_id: Optional[str], material: str, thickness: float, turned: bool,
+                    bands: Sequence[Sequence[float]] = (), instead_of: Optional[int] = None,
+                    changed: bool = False) -> str:
+        missing = f"offcut #{instead_of}" if instead_of else "the offcut it was made for"
+        if not offcut_id:
+            a, b = min(x for x, _ in bands), max(y for _, y in bands)
+            return (f"Stock: a new {self._stock_label(material, thickness)} sheet, {self.cfg.sheet.width_in:g} x "
+                    f"{self.cfg.sheet.length_in:g} ({missing} wasn't on the rack; the program is the same). The parts "
+                    f"are cut {a:.0f} to {b:.0f} in from the front; the rest of the sheet becomes an offcut.")
         piece = self.offcuts.get(offcut_id)
         if piece is None:
             return "Stock: an offcut that's no longer in the Offcuts list. Check with whoever archived it."
         last = piece.get("last") or {}
-        return load_line(self._stock_label(piece["material"], vs.sheet.thickness_in), piece.get("url", ""),
-                         last.get("label", "its last sheet"), tuple(last.get("stretch", (0.0, 0.0))),
-                         vs.sheet.offcut_turned, self.cfg.sheet.length_in, bool(last.get("turned", False)))
+        line = load_line(self._stock_label(piece["material"], thickness), piece.get("url", ""),
+                         last.get("label", "its last sheet"), tuple(last.get("stretch", (0.0, 0.0))), turned,
+                         self.cfg.sheet.length_in, bool(last.get("turned", False)), piece.get("number"),
+                         piece.get("length_in") if piece.get("scrap") else None)
+        return line + (f" ({missing[0].upper() + missing[1:]} wasn't on the rack; this one fits the same program.)"
+                       if changed else "")
 
     def _offcut_after_cut(self, card: Card, info: Dict) -> None:
         """A sheet card just went to Cut: update the offcut it was cut from, or keep the rest as a new one. The
         rest is the free stretch along the length and the room beside the parts cut (offcuts.py); an offcut with
         neither left is used up."""
         used_along = info.get("used_along") or info.get("used_x")      # used_x: sheets published before 2026-10-03
-        beside_used = set(info.get("beside_used") or ())
-        if not info.get("job") or not (used_along or beside_used) or not info.get("cuttable") \
+        if info.get("converted"):                     # its stock was changed at the machine: the same program cut
+            bands = [tuple(b) for b in info.get("bands") or []]     # these bands, nothing beside earlier cuts
+            beside_used: Set[int] = set()
+        else:
+            bands = [tuple(used_along)] if used_along else []
+            beside_used = set(info.get("beside_used") or ())
+        if not info.get("job") or not (bands or beside_used) or not info.get("cuttable") \
                 or info.get("offcut_done"):
             return
         cfg, length, width = self.cfg, self.cfg.sheet.length_in, self.cfg.sheet.width_in
         label = info.get("label") or f"{info.get('run')} S{info.get('index')}"
         turned = bool(info.get("turned"))
-        cut = add_used((), tuple(used_along), length, turned)[0] if used_along else None   # in its own coordinates
+        own = [add_used((), b, length, turned)[0] for b in bands]          # in its own coordinates
+        cut = (min(a for a, _ in own), max(b for _, b in own)) if own else None
         left = [list(to_own(tuple(r), width, length, turned)) for r in info.get("beside_left") or ()]
-        stock = self._stock_label(info["material"], info["thickness_in"])
         offcut_id = info.get("offcut_id")
         if offcut_id:
             piece = self.offcuts.get(offcut_id)
             if piece is None:
                 return                                # its card was archived: the sheet is gone
-            used = add_used(piece["used"], tuple(used_along), length, turned) if used_along else \
-                tuple(tuple(s) for s in piece["used"])
+            used = tuple(tuple(s) for s in piece["used"])
+            for b in bands:
+                used = add_used(used, b, length, turned)
             beside = [r for i, r in enumerate(piece.get("beside", [])) if i not in beside_used] + left
             free = self._free_after(used)
             if free < cfg.nest.offcut_min_in and not beside:
@@ -401,7 +426,7 @@ class Runner:
             piece.update(used=[list(s) for s in used], beside=beside, reserved_by=None,
                          last={"label": label, "stretch": stretch, "turned": turned})
             self.offcuts.put(offcut_id, piece)
-            self.t.update_card(offcut_id, *card_text(stock, free, used, label, beside, cfg.nest.offcut_min_in))
+            self.t.update_card(offcut_id, *self._offcut_card_text(piece))
             self.t.comment(offcut_id, f"{label} was cut from it. "
                            + (f"{free:.0f} in free now" if free >= cfg.nest.offcut_min_in else "No free stretch now")
                            + (", plus room beside the cuts for small parts." if beside else "."))
@@ -409,19 +434,227 @@ class Runner:
         keep = [c.done for c in card.checks if c.checklist == cfg.trello.offcut_checklist]
         if not any(keep) or cut is None:
             return                                    # no box (an older card), or someone unticked it
-        used = (cut,)                                 # a new sheet: end A was at the front
+        used: Tuple = ()                              # a new sheet: end A was at the front
+        for b in bands:
+            used = add_used(used, b, length, False)
         free = self._free_after(used)
         if free < cfg.nest.offcut_min_in and not left:
             return
-        new = self.t.create_card("offcuts", *card_text(stock, free, used, label, left, cfg.nest.offcut_min_in))
-        self.offcuts.put(new.id, {"material": info["material"], "thickness_in": info["thickness_in"],
-                                  "used": [list(s) for s in used], "beside": left,
-                                  "last": {"label": label, "stretch": list(cut), "turned": False},
-                                  "reserved_by": None, "url": new.url})
+        piece = {"material": info["material"], "thickness_in": info["thickness_in"], "used": [list(s) for s in used],
+                 "beside": left, "last": {"label": label, "stretch": list(cut), "turned": False},
+                 "reserved_by": None, "number": self.offcuts.next_number()}
+        new = self.t.create_card("offcuts", *self._offcut_card_text(piece))
+        piece["url"] = new.url
+        self.offcuts.put(new.id, piece)
         sheets = self.s.store.sheet_cards()
         sheets.get(card.id, {})["offcut_done"] = True
         self.s.store._write_sheets(sheets)
-        self.t.comment(card.id, f"The rest of the sheet is in Offcuts: {new.url}")
+        n = piece["number"]
+        self.t.comment(card.id, f"The rest of the sheet is offcut #{n}: {new.url}. Write #{n} on it before it goes "
+                                "on the rack.")
+
+    def _offcut_card_text(self, piece: Dict) -> Tuple[str, str]:
+        used = [tuple(s) for s in piece["used"]]
+        return card_text(self._stock_label(piece["material"], piece["thickness_in"]), self._free_after(used), used,
+                         (piece.get("last") or {}).get("label", ""), piece.get("beside", []),
+                         self.cfg.nest.offcut_min_in, piece.get("number"),
+                         piece.get("length_in") if piece.get("scrap") else None)
+
+    def scan_offcuts(self) -> None:
+        """The Offcuts list each pass: offcuts without a number get one (their card says it), a missing offcut
+        whose card is back gets offered again, and a card someone made there is a scrap to add (parse_scrap)."""
+        if self.dry_run:
+            return
+        cards = self.t.list_cards("offcuts")
+        on_board = {c.id for c in cards}
+        for offcut_id, piece in self.offcuts.all().items():
+            if piece.get("missing") and offcut_id in on_board:
+                piece["missing"] = False
+                self.offcuts.put(offcut_id, piece)
+                self.t.comment(offcut_id, "Back on the rack: runs can use it again.")
+        pieces = self.offcuts.all()
+        for card in cards:
+            piece = pieces.get(card.id)
+            try:
+                if piece is None:
+                    self._scrap_card(card)
+                elif not piece.get("number"):
+                    piece["number"] = self.offcuts.next_number()
+                    self.offcuts.put(card.id, piece)
+                    self.t.update_card(card.id, *self._offcut_card_text(piece))
+                    self.t.comment(card.id, f"This is offcut #{piece['number']}: write #{piece['number']} on it.")
+            except Exception as e:  # noqa: BLE001 - one card mustn't stop the tick
+                log.warning("offcut card %s: %s", card.id, e)
+
+    def _scrap_card(self, card: Card) -> None:
+        """A card someone made in Offcuts: a full-width piece of stock to add, or one reply saying what's
+        missing (again only once the card changes)."""
+        said = signature(card)
+        if self.offcuts.replies().get(card.id) == said:
+            return
+        cfg = self.cfg
+
+        def resolve(hint: str):
+            choice = resolve_material(None, hint, False, cfg.onshape.material_map, cfg.materials)
+            return choice.key, choice.problem or ""
+        parsed = parse_scrap(f"{card.name}\n{card.desc}", cfg.materials, cfg.sheet.length_in, resolve)
+        if isinstance(parsed, str):
+            self.t.comment(card.id, f"Not added as an offcut yet: {parsed}\n\n{SCRAP_HELP}")
+            self.offcuts.set_reply(card.id, said)
+            return
+        material, thickness, length = parsed
+        used = [[round(length, 3), cfg.sheet.length_in]] if length < cfg.sheet.length_in - 1e-6 else []
+        if self._free_after([tuple(u) for u in used]) < cfg.nest.offcut_min_in:
+            self.t.comment(card.id, f"Not added as an offcut: a {length:g} in piece is too short to nest on (it "
+                                    f"needs about {cfg.nest.offcut_min_in + 2 * cfg.nest.offcut_gap_in + 0.5:g} in).")
+            self.offcuts.set_reply(card.id, said)
+            return
+        piece = {"material": material, "thickness_in": thickness, "used": used, "beside": [],
+                 "last": {"label": "", "stretch": [0.0, 0.0], "turned": False}, "reserved_by": None,
+                 "url": card.url, "number": self.offcuts.next_number(), "scrap": True, "length_in": round(length, 3)}
+        self.offcuts.put(card.id, piece)
+        self.t.update_card(card.id, *self._offcut_card_text(piece))
+        n = piece["number"]
+        self.t.comment(card.id, f"Added as offcut #{n}. Write #{n} on it. Runs put "
+                                f"{self._stock_label(material, thickness)} parts on it before starting a new sheet.")
+        log.info("added scrap %s as offcut #%s", card.id, n)
+
+    def _bands(self, used_along, beside_used: Sequence[int], offcut_id: Optional[str],
+               turned: bool) -> List[List[float]]:
+        """Where along the length (machine Y, as loaded) a sheet's program cuts: its free-stretch band and the
+        bands of the rooms beside earlier cuts it used. Another piece of stock takes the same program if
+        these are clear on it."""
+        bands = [list(used_along)] if used_along else []
+        rooms = (self.offcuts.get(offcut_id) or {}).get("beside", []) if offcut_id else []
+        for i in beside_used:
+            if 0 <= i < len(rooms):
+                r = turn_rect(tuple(rooms[i]), self.cfg.sheet.width_in, self.cfg.sheet.length_in) if turned \
+                    else tuple(rooms[i])
+                bands.append([r[1], r[3]])
+        return bands
+
+    def _fitting_offcut(self, material: str, thickness: float, bands: Sequence[Sequence[float]],
+                        skip: str) -> Optional[Tuple[str, bool]]:
+        """An offcut on the rack that the same program fits as it is (its used stretches clear of every band by
+        the loading slack), and which way round: not spun if it can be helped, then the one with least room."""
+        on_board = {c.id for c in self.t.list_cards("offcuts")}
+        gap, length = self.cfg.nest.offcut_gap_in, self.cfg.sheet.length_in
+        best = None
+        for offcut_id, piece in self.offcuts.all().items():
+            if (offcut_id == skip or offcut_id not in on_board or piece.get("missing") or piece.get("reserved_by")
+                    or piece["material"] != material or abs(piece["thickness_in"] - thickness) > 1e-6):
+                continue
+            last = bool((piece.get("last") or {}).get("turned"))
+            for turned in ((last,) if piece.get("scrap") else (last, not last)):
+                used = as_loaded([tuple(s) for s in piece["used"]], length, turned)
+                if all(b <= u0 - gap or a >= u1 + gap for a, b in bands for u0, u1 in used):
+                    rank = (turned != last, self._free_after([tuple(s) for s in piece["used"]]))
+                    if best is None or rank < best[0]:
+                        best = (rank, offcut_id, turned)
+                    break
+        return (best[1], best[2]) if best else None
+
+    def _stock(self, card: Card, info: Dict) -> bool:
+        """The Stock checklist on a sheet card nested onto an offcut: "the offcut isn't on the rack". Ticked,
+        the missing offcut is archived (kept on record) and the card switches to another offcut the same
+        program fits, or asks: re-nest on other stock, or cut it on a new sheet. True if the card changed."""
+        t = self.cfg.trello
+        if not info.get("offcut_id") or info.get("cut"):
+            return False
+        items = {c.item: c.done for c in card.checks if c.checklist == t.stock_checklist}
+        if not items:
+            self.t.add_checklist(card.id, t.stock_checklist, [t.not_found_item])
+            return False
+        if items.get(t.renest_item):
+            self._renest(card, info)
+            return True
+        if items.get(t.new_sheet_item):
+            self._change_stock(card, info, None, False)
+            self.t.comment(card.id, "Cut it on a new sheet: the program is the same, so it doesn't need another "
+                                    "review. The Stock line says where on the sheet the parts are. The rest of the "
+                                    "sheet becomes an offcut when this card goes to Cut.")
+            return True
+        if not items.get(t.not_found_item) or info.get("asked"):
+            return False
+        missing = info["offcut_id"]
+        piece = self.offcuts.get(missing) or {}
+        n = piece.get("number")
+        name = f"Offcut #{n}" if n else "The offcut"
+        if piece and not piece.get("missing"):
+            piece["missing"] = True
+            self.offcuts.put(missing, piece)
+            self.t.comment(missing, f"Not found at the machine for {info.get('label') or 'a sheet'}. Archived; if it "
+                                    "turns up, send this card back to Offcuts and runs use it again.")
+            self.t.archive(missing)
+        bands = info.get("bands") or self._bands(info.get("used_along"), info.get("beside_used") or (), missing,
+                                                 bool(info.get("turned")))
+        fit = self._fitting_offcut(info["material"], info["thickness_in"], bands, missing) if bands else None
+        if fit is not None:
+            self._change_stock(card, info, *fit)
+            m = (self.offcuts.get(fit[0]) or {}).get("number")
+            self.t.comment(card.id, f"{name} isn't on the rack, but this program fits offcut #{m} as it is: no "
+                                    "new run, no new review. The Stock line says how to load it.")
+            return True
+        reg = self.s.store.sheet_cards()
+        reg[card.id]["asked"] = True
+        self.s.store._write_sheets(reg)
+        self.t.add_checklist(card.id, t.stock_checklist, [t.renest_item, t.new_sheet_item])
+        self.t.comment(card.id, f"{name} isn't on the rack, and no other offcut fits this program as it is. Tick "
+                                f"one under {t.stock_checklist}: \"{t.renest_item}\" (its parts go back to Ready "
+                                "for CAM with the Rush label and land on whatever stock there is) or "
+                                f"\"{t.new_sheet_item}\".")
+        return True
+
+    def _change_stock(self, card: Card, info: Dict, offcut_id: Optional[str], turned: bool) -> None:
+        """The same program, cut on another offcut (offcut_id, loaded `turned`) or a new sheet (None)."""
+        old = (self.offcuts.get(info["offcut_id"]) or {}) if info.get("offcut_id") else {}
+        bands = info.get("bands") or self._bands(info.get("used_along"), info.get("beside_used") or (),
+                                                 info.get("offcut_id"), bool(info.get("turned")))
+        self.offcuts.release_all([card.id])
+        if offcut_id:
+            self.offcuts.reserve(offcut_id, card.id)
+        reg = self.s.store.sheet_cards()
+        entry = reg[card.id]
+        entry.update(offcut_id=offcut_id, turned=turned, converted=True, bands=bands, used_along=None,
+                     beside_used=[], asked=False, instead_of=old.get("number"))
+        if offcut_id is None:
+            used: Tuple = ()
+            for b in bands:
+                used = add_used(used, tuple(b), self.cfg.sheet.length_in, False)
+            entry["rest_in"] = round(self._free_after(used), 2)
+        self.s.store._write_sheets(reg)
+        number = (self.offcuts.get(offcut_id) or {}).get("number") if offcut_id else None
+        title = re.sub(r" offcut( #\d+)?", f" offcut #{number}" if offcut_id else "", card.name, count=1)
+        lines = card.desc.split("\n")
+        line = self._stock_line(None, entry)
+        at = next((i for i, l in enumerate(lines) if l.startswith("Stock:")), None)
+        if at is None:
+            lines.insert(1 if lines and lines[0] == "LOAD" else 0, line)
+        else:
+            lines[at] = line
+        self.t.update_card(card.id, title, "\n".join(lines))
+        self.t.remove_checklists(card.id, self.cfg.trello.stock_checklist)
+
+    def _renest(self, card: Card, info: Dict) -> None:
+        """Give up on this sheet: its card is emptied and archived, and its parts go back to Ready for CAM with
+        the Rush label, so they're nested at once on whatever stock there is."""
+        n = (self.offcuts.get(info["offcut_id"]) or {}).get("number")
+        label = info.get("label") or "its sheet"
+        self.offcuts.release_all([card.id])
+        self._clear_sheet(card.id)
+        self.t.comment(card.id, "Re-nested on other stock: this card is archived, and its parts are back in Ready "
+                                "for CAM with the Rush label.")
+        self.t.archive(card.id)
+        parts = info.get("parts", [])
+        self.s.store.retire_sheet(card.id)
+        nested = {c.id for c in self.t.list_cards(self.targets["part_nested"])}
+        for part in parts:
+            if part not in nested:
+                continue
+            self.t.move(part, self.targets["part_deferred"])
+            self.t.add_label(part, self.cfg.labels.rush)
+            self.t.comment(part, f"Back for a re-nest: {f'offcut #{n}' if n else 'the offcut'} for {label} wasn't on "
+                                 "the rack. It has the Rush label, so it's nested again within a minute.")
 
     # ------------------------------------------------------------ sheet options
     def sheet_options(self) -> None:
@@ -440,6 +673,8 @@ class Runner:
                 if not info or not info.get("cuttable") or not info.get("job") or info.get("archived"):
                     continue
                 try:
+                    if self._stock(card, info):
+                        continue                      # the card changed (or is gone): the rest next pass
                     self._options(card, info)
                 except Exception as e:  # noqa: BLE001 - one card mustn't stop the tick
                     log.warning("options on sheet card %s: %s", card.id, e)
@@ -542,7 +777,7 @@ class Runner:
             programs[air_test_name(main)] = (air_data, check.guard)
         part_cards = {p.part_key: (p.name, p.card_url) for p in job.parts}
         desc = text.sheet_description(job, ing, vs, resume_key=self.cfg.pauses.resume_key, part_cards=part_cards,
-                                      program=main, stops=stops, stock=self._stock_line(vs))
+                                      program=main, stops=stops, stock=self._stock_line(vs, info))
         return programs, stem, desc, lift, vs.pause_count > 0
 
     def _send_back(self, card_id: str, comment: str) -> None:
@@ -980,7 +1215,8 @@ class Runner:
         store, cfg = self.s.store, self.cfg
         run_id, job_id = state.run_id, ing.job_id
         key = f"{job_id}:S{vs.sheet.index}"
-        title = ("RUSH - " if state.rush else "") + text.sheet_title(ing.job, vs)
+        number = (self.offcuts.get(vs.sheet.offcut_id) or {}).get("number") if vs.sheet.offcut_id else None
+        title = ("RUSH - " if state.rush else "") + text.sheet_title(ing.job, vs, number)
         desc = text.sheet_description(ing.job, ing, vs, resume_key=cfg.pauses.resume_key, part_cards=part_cards,
                                       stock=self._stock_line(vs))
         card_id = url = None
@@ -1012,7 +1248,9 @@ class Runner:
         extra = {"label": f"{run_id} S{sheet.index}", "offcut_id": sheet.offcut_id, "turned": sheet.offcut_turned,
                  "used_along": list(sheet.used_y_in) if sheet.used_y_in else None,
                  "beside_used": list(sheet.beside_used), "beside_left": [list(r) for r in sheet.beside_left_in],
-                 "rush": state.rush, "parts_area_in2": sheet.parts_area_in2}
+                 "rush": state.rush, "parts_area_in2": sheet.parts_area_in2,
+                 "bands": self._bands(sheet.used_y_in, sheet.beside_used, sheet.offcut_id, sheet.offcut_turned),
+                 "converted": False, "asked": False, "instead_of": None}
         if sheet.used_y_in:
             before = (self.offcuts.get(sheet.offcut_id) or {}).get("used", []) if sheet.offcut_id else []
             extra["rest_in"] = round(self._free_after(add_used(before, sheet.used_y_in, cfg.sheet.length_in,

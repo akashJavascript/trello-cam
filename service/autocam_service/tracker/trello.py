@@ -178,6 +178,17 @@ class TrelloTracker(Tracker):
     def _set_cover(self, card_id: str, attachment_id: str) -> None:
         self.http.call("PUT", f"/cards/{card_id}", {"idAttachmentCover": attachment_id})
 
+    def _add_label(self, card_id: str, name: str) -> None:
+        def norm(s: str) -> str:
+            return " ".join(s.lower().split())
+        board = self.http.call("GET", f"/cards/{card_id}", {"fields": "idBoard,idLabels"})
+        found = [l for l in self.http.call("GET", f"/boards/{board['idBoard']}/labels", {"fields": "name"})
+                 if norm(l.get("name") or "") == norm(name)]
+        label = found[0]["id"] if found else self.http.call(
+            "POST", "/labels", {"name": name, "color": "red", "idBoard": board["idBoard"]})["id"]
+        if label not in (board.get("idLabels") or []):
+            self.http.call("POST", f"/cards/{card_id}/idLabels", {"value": label})
+
     # setup helpers
     def board_lists(self, board_id: str) -> List[Tuple[str, str]]:
         return [(l["id"], l["name"]) for l in self.http.call("GET", f"/boards/{board_id}/lists", {"fields": "name"})]

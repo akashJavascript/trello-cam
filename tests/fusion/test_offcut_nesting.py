@@ -152,3 +152,13 @@ def test_parts_too_big_for_the_scrap_go_on_the_bigger_offcut(tmp_path):
     offcuts = [OffcutSpec("big", 0.125, ((0.0, 7.5),)), OffcutSpec("scrap", 0.125, ((0.0, 30.0),))]
     result = rig.run(job_with(rig, [("long", 1, plate(name="long"), (10.0, 20.0))], offcuts))
     assert [s.offcut_id for s in result.sheets] == ["big"]
+
+
+def test_a_scrap_is_never_turned_round(tmp_path):
+    rig = Rig(tmp_path)
+    # A 20 in piece (the rest of the length is missing). Turned round it would sit at the back, past its own
+    # front edge, so only the way it's loaded counts, even though turned round would hold more.
+    scrap = OffcutSpec("scrap", 0.125, ((20.0, 48.0),), can_turn=False)
+    result = rig.run(job_with(rig, [("plate", 4, plate(name="plate"), (10.0, 5.0))], [scrap]))
+    assert [(s.offcut_id, s.offcut_turned) for s in result.sheets] == [("scrap", False)]
+    assert max(y1 for _, _, _, y1 in rig.fake.arrange_envelopes) <= 19.25 + 1e-6    # only ever its front 19.5 in

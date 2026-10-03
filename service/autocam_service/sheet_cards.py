@@ -44,10 +44,11 @@ def _clamp_edges(job: Job) -> str:
     return " and ".join(dict.fromkeys(edges)) + " edges only" if edges else "none"
 
 
-def sheet_title(job: Job, vs: VerifiedSheet) -> str:
+def sheet_title(job: Job, vs: VerifiedSheet, offcut_number: Optional[int] = None) -> str:
     s = vs.sheet
     n = sum(p.count for p in s.parts)
-    stock = f"{material_label(job.material)} {thickness_label(s.thickness_in)}" + (" offcut" if s.offcut_id else "")
+    stock = f"{material_label(job.material)} {thickness_label(s.thickness_in)}" + (
+        (f" offcut #{offcut_number}" if offcut_number else " offcut") if s.offcut_id else "")
     bits = [stock, s.cutter_label,
             f"{n} part{'s' if n != 1 else ''}", _minutes(s.machining_time_s), f"{job.run_id} S{s.index}"]
     title = " - ".join(b for b in bits if b)

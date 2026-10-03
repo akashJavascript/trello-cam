@@ -153,6 +153,8 @@ class OffcutSpec:
     used_in: Tuple[Tuple[float, float], ...]           # used stretches along it, in its own coordinates
     last_turned: bool = False                          # which way round it was loaded for its last cut
     beside_in: Tuple[Rect, ...] = ()                   # room beside earlier cuts, in its own coordinates (core 0.5.0)
+    can_turn: bool = True                              # False: a piece shorter than a sheet, always loaded at the
+                                                       # front the same way round (core 0.6.0)
 
 
 @dataclass(frozen=True)

@@ -349,6 +349,20 @@ First run `autocam trello-setup` once (it adds the **Rush** label and the new li
 | 3 | Archive a sheet card that's on an offcut, without cutting it: within a minute the offcut card says "Free again: ..." and the next run can use the offcut | |
 | 4 | Move a sheet card to Cut: the System card's "Stock since ..." line counts it (new sheet or offcut) | |
 
+### 9. Finding offcuts (2026-10-03)
+
+Run `autocam trello-setup` once (the read-me card's new Offcuts paragraph).
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Every offcut card's title starts with its number ("#1 - ..."); a sheet cut on a new sheet says "The rest of the sheet is offcut #N ... Write #N on it" | |
+| 2 | A sheet card on an offcut has a **Stock** checklist with "The offcut isn't on the rack". Tick it with another offcut on the rack that's clear where the program cuts: the card switches to that offcut (title, Stock line), the missing one is archived | |
+| 3 | Tick it when nothing fits: the card offers "Re-nest it on other stock" and "Cut it on a new sheet". New sheet: the Stock line says a new sheet and where the parts are; cut it, and the rest becomes an offcut | |
+| 4 | Re-nest: the sheet card is archived, its part cards go back to Ready for CAM with the Rush label, and a run starts within a minute | |
+| 5 | Unarchive the missing offcut's card (send it back to Offcuts): "Back on the rack", and runs use it again | |
+| 6 | Make a card in Offcuts with Material, Thickness and Length lines: it becomes "#N - ... offcut"; a sheet nested on it says to push it against the front stop. A card missing a line gets one reply saying what's needed | |
+| 7 | **Air-test** the first sheet switched to another offcut, and the first one on a scrap | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

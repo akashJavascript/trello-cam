@@ -110,6 +110,12 @@ class FakeTracker(Tracker):
         self.covers[card_id] = attachment_id
         self.log.append(("cover", card_id, attachment_id))
 
+    def _add_label(self, card_id: str, name: str) -> None:
+        c = self.cards[card_id]
+        if name not in c.labels:
+            self.cards[card_id] = replace(c, labels=c.labels + (name,))
+        self.log.append(("label", card_id, name))
+
     # test helpers
     def tick_all(self, card_id: str, name: str, done: bool = True) -> None:
         for item in self.checklists[(card_id, name)]:
