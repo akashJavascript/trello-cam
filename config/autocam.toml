@@ -215,6 +215,9 @@ board_id = "6ac00269a17b9c9e14cca924"   # https://trello.com/b/fsuTYbO3/5940-aut
 poll_interval_s = 60
 attachment_limit_mb = 10        # Trello Free plan limit
 job_timeout_s = 3600            # service gives up waiting for a Fusion job after this
+start_delay_s = 120             # a run starts this long after the last card arrived in Ready for CAM
+nest_checklist = "Nest"         # part cards: one item, ticked by default; untick it and runs skip the card
+nest_item = "Nest this part"
 checklist_name = "Review"                  # all ticked before a sheet may sit in Ready to cut
 checklist = ["Simulated it in Fusion", "Parts and quantities look right"]
 machine_checklist_name = "At the machine"  # for the operator; not checked by the service
@@ -229,7 +232,6 @@ sheet_review = "6ac0026b744b6964194f359f"
 ready_to_cut = "6ac0026c4442c15e984f34a9"
 cut = "6ac0026c1d0c81e2cdf15ac0"
 control = "6ac0026cfe5942cefb71f3b9"
-run_nest = "6ac0026dcb97beec4d14f79d"
 
 [trello.targets]                # where automation moves cards; "ready_to_cut" is never allowed
 part_nested = "nested"
@@ -238,10 +240,8 @@ part_deferred = "ready_for_cam"
 part_cut = "cut"                # a part card follows its sheet(s) to Cut
 sheet_created = "sheet_review"
 checklist_return = "sheet_review"
-control_return = "control"
 
 [trello.cards]
-run_nest_control = "6ac0026df4db9bd12416eb1f"
 system = "6ac0026e5a5b72b5f5331c88"
 
 [fusion]

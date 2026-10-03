@@ -1,9 +1,10 @@
 """`autocam trello-setup`: build or update the board the service expects.
 
-- **Lists:** Drafts, Ready for CAM, Needs fixing, On a sheet, Sheet review, Ready to cut, Cut, Control, Run nest.
+- **Lists:** Drafts, Ready for CAM, Needs fixing, On a sheet, Sheet review, Ready to cut, Cut, Control.
   Lists with an older name (Inbox, Nested) are renamed in place, so their IDs and the config stay the same.
-- **Cards:** the `Run nest` control card and the `System` status card (in Control), the "How to add a part"
-  card and the "New part" card template (in Drafts). Their text is brought up to date.
+  The old `Run nest` list and its control card are archived (runs start from Ready for CAM now).
+- **Cards:** the `System` status card (in Control), the "How to add a part" card and the "New part" card
+  template (in Drafts, with the "Nest this part" box ticked). Their text is brought up to date.
 - **Labels:** `Smoked` and `Tool 1/8`.
 
 Only what's missing or out of date is written, so running it again is safe. It prints the `[trello]` config
@@ -13,7 +14,7 @@ automation, no custom fields (Trello Free).
 
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from .cards import FORMAT_HELP, README_CARD
 from .config import TRELLO_LISTS
@@ -21,13 +22,13 @@ from .config import TRELLO_LISTS
 LIST_NAMES = {
     "inbox": "Drafts", "ready_for_cam": "Ready for CAM", "needs_fixing": "Needs fixing", "nested": "On a sheet",
     "sheet_review": "Sheet review", "ready_to_cut": "Ready to cut", "cut": "Cut", "control": "Control",
-    "run_nest": "Run nest",
 }
+RETIRED_LISTS = ("Run nest",)       # archived (with the cards in them) if they're still there
 OLD_NAMES = {"inbox": ("Inbox",), "nested": ("Nested",)}     # renamed in place
 assert tuple(LIST_NAMES) == TRELLO_LISTS
 
-RUN_NEST_DESC = "Drag this card into Run nest to CAM everything in Ready for CAM. It comes back here with a summary."
-SYSTEM_DESC = "Status of the auto-CAM service. The service updates this card."
+RETIRED_CARDS = ("Run nest",)
+SYSTEM_DESC = "The auto-CAM service writes here when a run starts and finishes."
 README_TITLE = README_CARD
 TEMPLATE_TITLE = "New part"
 TEMPLATE_DESC = "Paste the Part Studio link here\nQty: "
@@ -49,13 +50,13 @@ class BoardSetup:
     def config_block(self) -> str:
         lines = ["[trello]", f'board_id = "{self.board_id}"   # {self.url}', "", "[trello.lists]"]
         lines += [f'{key} = "{self.lists[key]}"' for key in LIST_NAMES]
-        lines += ["", "[trello.cards]", f'run_nest_control = "{self.cards["run_nest_control"]}"',
-                  f'system = "{self.cards["system"]}"']
+        lines += ["", "[trello.cards]", f'system = "{self.cards["system"]}"']
         return "\n".join(lines)
 
 
 def setup_board(http, *, board: Optional[str] = None, create: Optional[str] = None,
-                labels: Optional[Dict[str, str]] = None, workspace: Optional[str] = None) -> BoardSetup:
+                labels: Optional[Dict[str, str]] = None, workspace: Optional[str] = None,
+                nest_box: Tuple[str, str] = ("Nest", "Nest this part")) -> BoardSetup:
     """http: TrelloHttp. Either an existing board (id or short link) or a new board's name (in `workspace`)."""
     created: List[str] = []
     if create:
@@ -82,7 +83,16 @@ def setup_board(http, *, board: Optional[str] = None, create: Optional[str] = No
             http.call("PUT", f"/lists/{found[0]}", {"name": name})
             created.append(f"renamed list {found[1]} to {name}")
 
+    for list_id, list_name in have.values():
+        if _norm(list_name) in {_norm(n) for n in RETIRED_LISTS}:
+            http.call("PUT", f"/lists/{list_id}/closed", {"value": "true"})
+            created.append(f"archived list {list_name}")
+
     cards = http.call("GET", f"/boards/{board_id}/cards", {"fields": "name,idList,desc,isTemplate"})
+    for c in cards:
+        if _norm(c["name"]) in {_norm(n) for n in RETIRED_CARDS}:
+            http.call("PUT", f"/cards/{c['id']}", {"closed": "true"})
+            created.append(f"archived card {c['name']}")
 
     def card(title: str, list_key: str, desc: str, template: bool = False) -> str:
         for c in cards:
@@ -98,13 +108,16 @@ def setup_board(http, *, board: Optional[str] = None, create: Optional[str] = No
         return http.call("POST", "/cards", params)["id"]
 
     labels = labels or {}
-    found = {
-        "run_nest_control": card("Run nest", "control", RUN_NEST_DESC),
-        "system": card("System", "control", SYSTEM_DESC),
-    }
+    found = {"system": card("System", "control", SYSTEM_DESC)}
     card(README_TITLE, "inbox", FORMAT_HELP.format(smoked=labels.get("smoked", "Smoked"),
                                                    tool=labels.get("tool_eighth", "Tool 1/8")))
-    card(TEMPLATE_TITLE, "inbox", TEMPLATE_DESC, template=True)
+    template = card(TEMPLATE_TITLE, "inbox", TEMPLATE_DESC, template=True)
+    box, item = nest_box
+    checklists = http.call("GET", f"/cards/{template}/checklists", {"fields": "name", "checkItem_fields": "name,state"})
+    if not any(cl.get("name") == box for cl in checklists):
+        cl = http.call("POST", f"/cards/{template}/checklists", {"name": box})
+        http.call("POST", f"/checklists/{cl['id']}/checkItems", {"name": item, "checked": "true"})
+        created.append(f"{box} box on {TEMPLATE_TITLE}")
 
     have_labels = {_norm(l.get("name") or "") for l in http.call("GET", f"/boards/{board_id}/labels", {"fields": "name"})}
     for key, color in LABEL_COLORS.items():

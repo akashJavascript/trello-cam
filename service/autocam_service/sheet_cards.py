@@ -122,6 +122,29 @@ def part_deferred_comment(run_id: str, part: PartResult) -> str:
             "It stays in Ready for CAM for the next run.")
 
 
+def part_bumped_comment(run_id: str) -> str:
+    """A part that was on an open sheet and no longer fits once new parts joined it."""
+    return f"Didn't fit with the new parts (run {run_id}), so it's back in Ready for CAM. The next run nests it again."
+
+
+def part_waiting_comment(run_id: str) -> str:
+    return "Waiting for the next run: someone started reviewing the sheet it was going on."
+
+
+def joined_sheet_failed(problems: Sequence[str]) -> str:
+    why = "; ".join(dict.fromkeys(problems)) or "no reason given"
+    return (f"With this part added, the sheet failed the safety checks ({why}). The sheet was left as it was. "
+            "A mentor should look at it")
+
+
+def sheet_rebuilt_comment(run_id: str) -> str:
+    return f"Rebuilt with new parts (run {run_id}). The checklist was reset: check it again."
+
+
+def sheet_retired_comment(run_id: str) -> str:
+    return f"Not needed any more: its parts were nested again in run {run_id}."
+
+
 def part_bad_sheet_comment(run_id: str, sheet_links: Sequence[Tuple[int, str]]) -> str:
     return "Its sheet failed the safety checks, so it won't be cut. A mentor will look at the sheet card."
 
@@ -130,34 +153,48 @@ def job_failed_comment(job_id: str, failure: str, n_parts: int) -> str:
     return f"{job_id} failed in Fusion: {failure}. Its {n_parts} card(s) stay in Ready for CAM."
 
 
+def part_job_failed_comment(failure: str) -> str:
+    return f"CAM failed this run ({failure}). The card stays in Ready for CAM: move it out and back to try again."
+
+
+def _n(count: int, word: str) -> str:
+    return f"{count} {word}{'s' if count != 1 else ''}"
+
+
 def run_started_comment(run_id: str, jobs: Mapping[str, int], rejected: int, untouched: int,
-                        stop_reason: Optional[str]) -> str:
+                        stop_reason: Optional[str], carried: int = 0, later: int = 0) -> str:
     n = sum(jobs.values())
-    lines = [f"Run {run_id} started: {n} part{'s' if n != 1 else ''}."]
+    head = f"Run {run_id} started: {_n(n, 'part')}"
+    lines = [head + (f", added to open sheets with {carried} already there." if carried else ".")]
     if rejected:
         lines.append(f"{rejected} went to Needs fixing.")
+    if later:
+        lines.append(f"{later} wait for the next run (Onshape calls per run are limited).")
     if untouched:
-        lines.append(f"{untouched} left in Ready for CAM for the next run.")
+        lines.append(f"{untouched} left in Ready for CAM.")
     if stop_reason:
         lines.append(f"Stopped early: {stop_reason}")
     return "\n".join(lines)
 
 
-def run_summary_comment(run_id: str, ingested: Sequence[IngestedJob]) -> str:
-    sheets, rejected, deferred, failed = [], 0, 0, []
+def run_summary_comment(run_id: str, ingested: Sequence[IngestedJob],
+                        sheet_counts: Sequence[Mapping[str, int]] = ()) -> str:
+    """sheet_counts: per job, how many sheet cards publishing made ("new"), rebuilt ("updated") and how many
+    of those can't be cut ("bad")."""
+    rejected, deferred, failed = 0, 0, []
     for ing in ingested:
         if ing.failure:
             failed.append(f"{ing.job_id} failed: {ing.failure}")
             continue
-        sheets += [vs for vs in ing.sheets]
         if ing.result:
             rejected += sum(1 for p in ing.result.parts if p.errors)
             deferred += sum(1 for p in ing.result.parts if p.deferred)
-    good = sum(1 for vs in sheets if vs.cuttable)
-    lines = [f"Run {run_id} done: {good} sheet{'s' if good != 1 else ''} in Sheet review."]
-    bad = len(sheets) - good
+    new, updated, bad = (sum(c.get(k, 0) for c in sheet_counts) for k in ("new", "updated", "bad"))
+    made = [x for x in (_n(new, "new sheet") if new else "", f"{_n(updated, 'sheet')} updated" if updated else "") if x]
+    lines = [f"Run {run_id} done: {' and '.join(made)} in Sheet review." if made else
+             f"Run {run_id} done: no sheet changed."]
     if bad:
-        lines.append(f"{bad} sheet{'s' if bad != 1 else ''} NOT CUTTABLE (see the card).")
+        lines.append(f"{_n(bad, 'sheet')} NOT CUTTABLE (see the card).")
     if rejected:
         lines.append(f"{rejected} part{'s' if rejected != 1 else ''} went to Needs fixing.")
     if deferred:

@@ -264,3 +264,37 @@ the edges, not the loop. Two changes:
 - **Parts follow their sheets to Cut:** once every sheet a part is on is in Cut, its card moves there, but only
   from On a sheet, so a card someone moved by hand is left alone.
 - **No "In CAM" list:** the user wanted the fewest lists.
+
+## 2026-10-02: runs start by themselves, and new parts fill open sheets (the user's choices)
+
+- **Trigger:** a card arriving in Ready for CAM. A run starts 2 minutes (`trello.start_delay_s`) after the last
+  card arrived, so dragging several cards makes one run. The Run nest list and card are archived. Run comments
+  go on the System card. `autocam tick --now` and `dry-run` don't wait.
+  - A run takes every card in Ready for CAM whose box is ticked, including ones left from earlier runs.
+  - A card the run took doesn't start another run until it changes (text, labels, attachments) or leaves Ready
+    for CAM and comes back. Comments don't count, so a part that didn't fit doesn't restart runs every 2 minutes.
+  - Cards past the per-run Onshape limit wait and start the next run as soon as this one is done. That's
+    needed now that nobody chooses what goes in a run (15 calls is about 2 uncached parts).
+- **"Nest this part" box:** a checklist named `Nest` with one item, ticked by default. It's in the New part
+  template, and the service adds it, ticked, to any part card in Drafts or Ready for CAM without one. An unticked
+  card stays in Ready for CAM and runs skip it; ticking it counts as a change. No box at all means nest.
+- **Open sheets get the new parts:** a sheet card is open while it's in Sheet review, cuttable, and nobody has
+  ticked a Review item (the user's choice; once someone starts reviewing, the sheet is frozen).
+  - A run nests the open sheets of a material again together with that material's new parts. The parts already
+    on them come from the job that made the sheet (cached STEP: no Onshape calls) and keep their card and quantity.
+  - The sheet card is updated in place (same card, same link): files deleted first, then the new title,
+    description, program and preview, fresh checklists, and a "Rebuilt with new parts" comment. A card the new
+    nest doesn't need is emptied and archived.
+  - Only these cases change a card. Otherwise it's left exactly as it was:
+    - Nothing new joined that thickness: the card keeps its program.
+    - Someone ticked a Review item, or moved the card, while the run was going: the new parts going on it wait
+      for the next run.
+    - The rebuilt sheet failed the checks: the new parts go to Needs fixing, and the parts already on it stay.
+  - A part pushed off its sheet by new parts goes back to Ready for CAM and is nested by the next run.
+  - A part dragged back to Ready for CAM while its sheet is open (edited in Onshape) rebuilds that sheet with
+    the new version instead of leaving a stale copy.
+  - A sheet is only reopened if every part on it can move with it: all its parts in On a sheet (or in this
+    run), none of them also on a sheet that isn't open, and their STEP files still in the cache.
+  - The keep-or-rebuild choice is recorded once per run and thickness, and the open sheets are snapshotted when
+    the run starts, so a service restart halfway through a rebuild finishes it the same way.
+

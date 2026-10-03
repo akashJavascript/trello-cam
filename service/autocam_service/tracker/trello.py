@@ -8,7 +8,7 @@ import time
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import urlsplit
 
-from .base import Attachment, Card, ChecklistState, Tracker
+from .base import Attachment, Card, Check, ChecklistState, Tracker
 
 API = "https://api.trello.com/1"
 TEXT_LIMIT = 16000          # Trello caps comments and descriptions at 16384 characters
@@ -82,8 +82,9 @@ class TrelloHttp:
 
 
 class TrelloTracker(Tracker):
-    CARD_PARAMS = {"fields": "id,name,desc,idList,labels,shortUrl", "attachments": "true",
-                   "attachment_fields": "id,name,url,mimeType,bytes,isUpload"}
+    CARD_PARAMS = {"fields": "id,name,desc,idList,labels,shortUrl,isTemplate", "attachments": "true",
+                   "attachment_fields": "id,name,url,mimeType,bytes,isUpload",
+                   "checklists": "all", "checklist_fields": "name", "checkItem_fields": "name,state"}
 
     def __init__(self, http: TrelloHttp, lists: Mapping[str, str], attachment_limit_mb: float = 10.0):
         super().__init__(attachment_limit_mb)
@@ -101,9 +102,12 @@ class TrelloTracker(Tracker):
         atts = tuple(Attachment(a["id"], a.get("name") or "", a.get("url") or "", a.get("mimeType") or "",
                                 int(a.get("bytes") or 0), bool(a.get("isUpload", True)))
                      for a in c.get("attachments") or [])
+        checks = tuple(Check(cl.get("name") or "", i.get("name") or "", i.get("state") == "complete")
+                       for cl in c.get("checklists") or [] for i in cl.get("checkItems") or [])
         return Card(id=c["id"], name=c.get("name") or "", desc=c.get("desc") or "",
                     list_key=self.list_keys.get(c.get("idList")), url=c.get("shortUrl") or "",
-                    labels=tuple(l.get("name") or "" for l in c.get("labels") or []), attachments=atts)
+                    labels=tuple(l.get("name") or "" for l in c.get("labels") or []), attachments=atts,
+                    checks=checks, is_template=bool(c.get("isTemplate")))
 
     # reads
     def list_cards(self, list_key: str) -> List[Card]:
@@ -145,11 +149,26 @@ class TrelloTracker(Tracker):
     def _attach_link(self, card_id: str, url: str, name: str) -> str:
         return self.http.call("POST", f"/cards/{card_id}/attachments", {"url": url, "name": name})["id"]
 
-    def _add_checklist(self, card_id: str, name: str, items: List[str]) -> str:
+    def _add_checklist(self, card_id: str, name: str, items: List[str], checked: bool) -> str:
         cl = self.http.call("POST", f"/cards/{card_id}/checklists", {"name": name})
         for item in items:
-            self.http.call("POST", f"/checklists/{cl['id']}/checkItems", {"name": item})
+            self.http.call("POST", f"/checklists/{cl['id']}/checkItems",
+                           {"name": item, "checked": "true" if checked else "false"})
         return cl["id"]
+
+    def _remove_checklists(self, card_id: str, name: str) -> None:
+        for cl in self.http.call("GET", f"/cards/{card_id}/checklists", {"fields": "name"}):
+            if cl.get("name") == name:
+                self.http.call("DELETE", f"/checklists/{cl['id']}")
+
+    def _update_card(self, card_id: str, title: str, desc: str) -> None:
+        self.http.call("PUT", f"/cards/{card_id}", {"name": title[:TEXT_LIMIT], "desc": desc[:TEXT_LIMIT]})
+
+    def _delete_attachment(self, card_id: str, attachment_id: str) -> None:
+        self.http.call("DELETE", f"/cards/{card_id}/attachments/{attachment_id}")
+
+    def _archive(self, card_id: str) -> None:
+        self.http.call("PUT", f"/cards/{card_id}", {"closed": "true"})
 
     def _set_cover(self, card_id: str, attachment_id: str) -> None:
         self.http.call("PUT", f"/cards/{card_id}", {"idAttachmentCover": attachment_id})

@@ -3,8 +3,9 @@
 import copy
 import os
 import re
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from autocam_core import CORE_VERSION, fixture
 from autocam_core.holes import HoleRules
@@ -43,7 +44,9 @@ def _tool_spec(cfg: Config, tool: Tool) -> Optional[ToolSpec]:
                     template_key=template.key, template_path=fusion_path(template.file))
 
 
-def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str) -> Job:
+def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried: Sequence[PartSpec] = ()) -> Job:
+    """carried: parts already on open sheets of this material (from the jobs that made them), nested again
+    with the new ones; they keep everything but get part keys after the new parts'."""
     m = cfg.materials[batch.material_key]
     family = cfg.tooling[m.family]
     default = _tool_spec(cfg, cfg.tools[family.default])
@@ -71,6 +74,8 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str) -> Job:
             onshape=OnshapeRef(link.did, link.vid, link.eid, ready.onshape_part_id or "", link.url,
                                ready.onshape_microversion) if link else None,
             force_small_tool=req.force_small_tool))
+    for n, spec in enumerate(carried, len(parts) + 1):
+        parts.append(replace(spec, part_key=f"p{n:02d}"))
 
     job = Job(
         schema=JOB_SCHEMA, core_version=CORE_VERSION, job_id=f"{run_id}-{batch.material_key}", run_id=run_id,

@@ -107,3 +107,33 @@ def test_download_only_sends_credentials_to_trello():
     with pytest.raises(TrelloError, match="refusing"):
         tr.http.download("https://evil.example.com/x")
     assert "TOKEN" not in repr(tr.http)
+
+
+def test_cards_come_with_their_checklist_items_and_template_flag():
+    card = {**CARD, "isTemplate": True, "checklists": [
+        {"name": "Nest", "checkItems": [{"name": "Nest this part", "state": "complete"}]},
+        {"name": "Review", "checkItems": [{"name": "Simulated", "state": "incomplete"}]}]}
+    tr, t = tracker((200, [card]))
+    [c] = tr.list_cards("ready_for_cam")
+    assert [(x.checklist, x.item, x.done) for x in c.checks] == [("Nest", "Nest this part", True),
+                                                                ("Review", "Simulated", False)]
+    assert c.is_template
+    params = t.calls[0][2]
+    assert params["checklists"] == "all" and "isTemplate" in params["fields"]
+
+
+def test_rebuild_writes():
+    tr, t = tracker((200, {}), (200, {}), (200, {}),
+                    (200, [{"id": "K1", "name": "Review"}, {"id": "K2", "name": "At the machine"}]), (200, {}),
+                    (200, {"id": "CL1"}), (200, {}))
+    tr.update_card("C1", "new title", "new desc")
+    tr.delete_attachment("C1", "A1")
+    tr.archive("C1")
+    tr.remove_checklists("C1", "Review")
+    tr.add_checklist("C1", "Nest", ["Nest this part"], checked=True)
+    calls = [(m, url.split("/1", 1)[1]) for m, url, *_ in t.calls]
+    assert calls == [("PUT", "/cards/C1"), ("DELETE", "/cards/C1/attachments/A1"), ("PUT", "/cards/C1"),
+                     ("GET", "/cards/C1/checklists"), ("DELETE", "/checklists/K1"),
+                     ("POST", "/cards/C1/checklists"), ("POST", "/checklists/CL1/checkItems")]
+    assert t.calls[0][2]["name"] == "new title" and t.calls[2][2]["closed"] == "true"
+    assert t.calls[6][2]["checked"] == "true"

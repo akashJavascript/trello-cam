@@ -68,18 +68,19 @@ def test_trello_discover_prints_a_config_block(tmp_path, capsys, monkeypatch):
     out = capsys.readouterr().out
     assert 'ready_for_cam = "L2"   # Ready for CAM' in out
     assert 'ready_to_cut = ""   # no list named like' in out
-    assert 'run_nest_control = "K1"' in out and 'system = "K2"' in out
+    assert 'system = "K2"' in out and "run_nest" not in out
 
 
 def test_dry_run_writes_nothing_to_trello(tmp_path):
     h = Harness(tmp_path)
     dry = DryRunTracker(h.tracker)
-    h.runner = Runner(h.runner.s.__class__(**{**h.runner.s.__dict__, "tracker": dry}))
+    h.runner = Runner(h.runner.s.__class__(**{**h.runner.s.__dict__, "tracker": dry}), start_delay_s=0)
     h.runner.tick()
     assert sorted(h.queue.pending()) == ["r001-al5052", "r001-al6061", "r001-pc_smoked"]
-    assert h.tracker.comments == [] and h.list_of("cc") == "ready_for_cam" and h.list_of("ctl") == "run_nest"
+    assert h.tracker.comments == [] and h.list_of("cc") == "ready_for_cam"
+    assert h.tracker.checklists == {}                        # no Nest boxes added either
     kinds = [w[0] for w in dry.intended]
-    assert kinds.count("move") == 2 and "comment" in kinds
+    assert kinds.count("move") == 1 and "comment" in kinds and "add_checklist" in kinds
     assert h.store.load("r001").dry_run
 
 

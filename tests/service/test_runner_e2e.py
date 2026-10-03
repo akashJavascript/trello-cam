@@ -28,6 +28,7 @@ from fakeworker import run_fake_worker
 
 RAW = tomllib.loads(DEFAULT_CONFIG.read_text(encoding="utf-8"))
 D, V, W, E = "a" * 24, "b" * 24, "c" * 24, "d" * 24
+SYS = "5" * 24          # the System card: run comments go here
 STUDIO = f"https://cad.onshape.com/documents/{D}/v/{V}/e/{E}"
 NOW = datetime(2026, 10, 1, 22, 0, tzinfo=timezone.utc)
 PARTS = [{"name": "hood_gusset", "partId": "JHD", "bodyType": "solid", "material": {"displayName": "Aluminum - 6061"}},
@@ -47,7 +48,7 @@ def onshape_routes():
 
 def cards():
     return [
-        Card("ctl", "Run nest", "", "run_nest", "https://trello.example/c/ctl"),
+        Card(SYS, "System", "", "control", "https://trello.example/c/sys"),
         Card("ca", "hood_gusset", f"Qty: 2\n{STUDIO}", "ready_for_cam", "https://trello.example/c/ca"),
         Card("cb", "window", f"Qty: 1\n{STUDIO}", "ready_for_cam", "https://trello.example/c/cb", ("Smoked",)),
         Card("cc", "bracket", f"Qty: 1\nhttps://cad.onshape.com/documents/{D}/m/{W}/e/{E}", "ready_for_cam",
@@ -58,7 +59,7 @@ def cards():
 
 
 class Harness:
-    def __init__(self, tmp_path, transport=None, card_list=None, online=True, **cfg):
+    def __init__(self, tmp_path, transport=None, card_list=None, online=True, delay=0, **cfg):
         data = copy.deepcopy(RAW)
         for key in ("alu_4mm", "alu_eighth", "poly_4mm"):
             f = tmp_path / "templates" / f"{key}.f3dhsm-template"
@@ -66,7 +67,7 @@ class Harness:
             f.write_bytes(b"template")
             data["templates"][key]["file"] = str(f)
         data["paths"] = {k: str(tmp_path / k) for k in ("queue", "cache", "state", "logs")}
-        data["trello"]["cards"] = {"run_nest_control": "", "system": ""}   # the fake board, not the real one
+        data["trello"]["cards"] = {"system": SYS}   # the fake board, not the real one
         for dotted, value in cfg.items():
             node = data
             *path, last = dotted.split("__")
@@ -82,8 +83,13 @@ class Harness:
         self.ledger = Ledger(self.cfg.paths.state / "onshape_ledger.jsonl", clock=lambda: self.now)
         self.transport = transport or onshape_routes()
         self.online = online
-        self.runner = Runner(Services(self.cfg, self.tracker, self.queue, self.store, self.ledger,
-                                      exporter_for=self.exporter, clock=lambda: self.now))
+        self.delay = delay
+        self.runner = self.make_runner(self.tracker)
+
+    def make_runner(self, tracker):
+        self.tracker = tracker
+        return Runner(Services(self.cfg, tracker, self.queue, self.store, self.ledger,
+                               exporter_for=self.exporter, clock=lambda: self.now), start_delay_s=self.delay)
 
     def exporter(self, run_id):
         o = self.cfg.onshape
@@ -108,8 +114,7 @@ def test_full_run(tmp_path):
     h.runner.tick()
     assert sorted(h.queue.pending()) == ["r001-al5052", "r001-al6061", "r001-pc_smoked"]
     assert h.list_of("cc") == "needs_fixing" and "microversion" in h.tracker.comments_on("cc")[0]
-    assert h.list_of("ctl") == "control"
-    assert h.tracker.comments_on("ctl")[0].startswith("Run r001 started: 3 parts.")
+    assert h.tracker.comments_on(SYS)[0].startswith("Run r001 started: 3 parts.")
     assert h.ledger.month_count() == 7   # one parts list + 2 x (translation, poll, download)
     assert all(h.list_of(c) == "ready_for_cam" for c in ("ca", "cb", "cd"))
 
@@ -135,7 +140,7 @@ def test_full_run(tmp_path):
         assert h.list_of(c) == "nested"
         assert h.tracker.comments_on(c)[-1] == "On sheet S1 (run r001)."
     assert [url for cid, url, _ in h.tracker.links if cid == "ca"] == [alu.url]
-    assert h.tracker.comments_on("ctl")[-1].startswith("Run r001 done: 3 sheets in Sheet review.")
+    assert h.tracker.comments_on(SYS)[-1].startswith("Run r001 done: 3 new sheets in Sheet review.")
     assert h.store.active() is None
     assert not any(e[0] == "move" and e[2] == "ready_to_cut" for e in h.tracker.log)
 
@@ -191,7 +196,6 @@ def test_second_run_uses_the_cache(tmp_path):
     used = h.ledger.month_count()
     for cid in ("ca", "cb"):
         h.tracker.move(cid, "ready_for_cam")
-    h.tracker.move("ctl", "run_nest")
     h.runner.tick()
     assert sorted(h.queue.pending()) == ["r002-al6061", "r002-pc_smoked"]
     assert h.ledger.month_count() == used    # no Onshape calls at all
@@ -214,9 +218,7 @@ def test_crash_mid_publish_resumes_without_duplicates(tmp_path):
     h = Harness(tmp_path)
     flaky = FlakyTracker(cards())
     flaky.downloads["att-d"] = b"ISO-10303-21; spacer"
-    h.tracker = flaky
-    h.runner.t = flaky
-    h.runner.s.tracker = flaky
+    h.runner = h.make_runner(flaky)
     h.runner.tick()
     run_fake_worker(h.queue)
     with pytest.raises(ConnectionError):
@@ -269,7 +271,7 @@ def test_failed_deferred_and_rejected_parts(tmp_path):
     run_fake_worker(h.queue, fail_job="r001-pc_smoked", defer_part="p01", part_error=None)
     h.runner.tick()
     assert h.list_of("cb") == "ready_for_cam" and "failed" in h.tracker.comments_on("cb")[-1]
-    assert any("r001-pc_smoked failed in Fusion" in t for t in h.tracker.comments_on("ctl"))
+    assert any("r001-pc_smoked failed in Fusion" in t for t in h.tracker.comments_on(SYS))
     assert h.list_of("ca") == "ready_for_cam" and "Didn't fit this run" in h.tracker.comments_on("ca")[-1]
 
 
@@ -303,22 +305,19 @@ def test_budget_refusal_spends_nothing(tmp_path):
     h = Harness(tmp_path, onshape__per_run_max_calls=3)
     h.runner.tick()
     assert h.queue.pending() == [] and h.ledger.month_count() == 0
-    assert "Run not started" in h.tracker.comments_on("ctl")[0]
-    assert h.list_of("ca") == "ready_for_cam" and h.list_of("ctl") == "control"
+    assert "Run not started" in h.tracker.comments_on(SYS)[0]
+    assert h.list_of("ca") == "ready_for_cam"
     assert h.list_of("cc") == "needs_fixing"     # card format problems are still reported
 
 
-def test_trigger_during_a_run_and_job_timeout(tmp_path):
+def test_job_timeout(tmp_path):
     h = Harness(tmp_path)
     h.runner.tick()
-    h.tracker.move("ctl", "run_nest")
     h.now = NOW + timedelta(hours=2)
     h.runner.tick()
-    assert any("Run r001 is still going" in t for t in h.tracker.comments_on("ctl"))
-    assert h.list_of("ctl") == "control"
-    assert sum("hasn't finished" in t for t in h.tracker.comments_on("ctl")) == 3   # one per queued job
+    assert sum("hasn't finished" in t for t in h.tracker.comments_on(SYS)) == 3   # one per queued job
     h.runner.tick()
-    assert sum("hasn't finished" in t for t in h.tracker.comments_on("ctl")) == 3   # reported once each
+    assert sum("hasn't finished" in t for t in h.tracker.comments_on(SYS)) == 3   # reported once each
 
 
 def test_offline_leaves_uncached_cards_queued(tmp_path):
@@ -326,7 +325,7 @@ def test_offline_leaves_uncached_cards_queued(tmp_path):
     h.runner.tick()
     assert h.queue.pending() == ["r001-al5052"]           # only the .step card could be prepared
     assert h.list_of("ca") == "ready_for_cam" and h.list_of("cb") == "ready_for_cam"
-    assert "2 left in Ready for CAM" in h.tracker.comments_on("ctl")[0]
+    assert "2 left in Ready for CAM" in h.tracker.comments_on(SYS)[0]
 
 
 def test_missing_template_keeps_cards_queued(tmp_path):
@@ -335,7 +334,7 @@ def test_missing_template_keeps_cards_queued(tmp_path):
     h.runner.tick()
     assert sorted(h.queue.pending()) == ["r001-al5052", "r001-al6061"]
     assert h.list_of("cb") == "ready_for_cam"
-    assert any("Can't CAM pc_smoked parts yet" in t for t in h.tracker.comments_on("ctl"))
+    assert any("Can't CAM pc_smoked parts yet" in t for t in h.tracker.comments_on(SYS))
 
 
 def test_onshape_refusing_one_link_rejects_those_cards_and_the_run_goes_on(tmp_path):
@@ -350,7 +349,6 @@ def test_onshape_refusing_one_link_rejects_those_cards_and_the_run_goes_on(tmp_p
         assert "Error retrieving Part Metadata" in h.tracker.comments_on(c)[-1]
         assert "Part Studio" in h.tracker.comments_on(c)[-1]
     assert h.queue.pending() == ["r001-al5052"]          # the .step attachment card still went through
-    assert h.list_of("ctl") == "control"
     h.runner.tick()                                        # nothing is retried
     assert len(bad.sent) == 2
 
@@ -359,7 +357,7 @@ def test_onshape_refusing_the_keys_stops_the_run_and_leaves_the_cards(tmp_path):
     h = Harness(tmp_path, transport=FakeTransport([("GET", "/parts/", [resp(401, body={"message": "Unauthorized"})])]))
     h.runner.tick()
     assert h.list_of("ca") == "ready_for_cam" and h.list_of("cb") == "ready_for_cam"
-    assert any("refused the API keys" in c for c in h.tracker.comments_on("ctl"))
+    assert any("refused the API keys" in c for c in h.tracker.comments_on(SYS))
 
 
 def test_parts_follow_their_sheet_to_cut(tmp_path):

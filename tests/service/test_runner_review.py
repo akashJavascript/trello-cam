@@ -9,25 +9,24 @@ from autocam_service.runner import Runner
 from autocam_service.tracker.dryrun import DryRunTracker
 from autocam_service.tracker.fake import FakeTracker
 from fakeworker import run_fake_worker
-from test_runner_e2e import Harness, cards
+from test_runner_e2e import SYS, Harness, cards
 
 
 def use_tracker(h, tracker):
     if isinstance(tracker, FakeTracker):
         tracker.downloads["att-d"] = b"ISO-10303-21; spacer"
-    h.tracker = tracker
-    h.runner = Runner(h.runner.s.__class__(**{**h.runner.s.__dict__, "tracker": tracker}))
+    h.runner = h.make_runner(tracker)
 
 
 class FailingOnce(FakeTracker):
-    """Fails the first comment on the control card (Trello hiccup right after jobs were queued)."""
+    """Fails the first comment on the System card (Trello hiccup right after jobs were queued)."""
 
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
         self.failed = False
 
     def _comment(self, card_id, text):
-        if card_id == "ctl" and not self.failed:
+        if card_id == SYS and not self.failed:
             self.failed = True
             raise ConnectionError("Trello went away")
         super()._comment(card_id, text)
@@ -44,8 +43,8 @@ def test_trello_failure_after_queueing_resumes_the_same_run(tmp_path):
     assert h.store.run_ids() == ["r001"]
     assert h.ledger.month_count() == spent                       # nothing exported twice
     assert sorted(h.queue.pending()) == ["r001-al5052", "r001-al6061", "r001-pc_smoked"]
-    started = [t for t in h.tracker.comments_on("ctl") if t.startswith("Run r001 started")]
-    assert len(started) == 1 and h.list_of("ctl") == "control"
+    started = [t for t in h.tracker.comments_on(SYS) if t.startswith("Run r001 started")]
+    assert len(started) == 1
 
 
 def test_crash_between_recording_and_submitting_a_job(tmp_path, monkeypatch):
@@ -66,7 +65,7 @@ def test_crash_between_recording_and_submitting_a_job(tmp_path, monkeypatch):
     h.runner.tick()                                               # resumes the interrupted start
     assert h.store.run_ids() == ["r001"] and h.ledger.month_count() == spent
     assert sorted(h.queue.pending()) == ["r001-al5052", "r001-al6061"]   # recorded job resubmitted
-    assert any("interrupted while starting" in t for t in h.tracker.comments_on("ctl"))
+    assert any("interrupted while starting" in t for t in h.tracker.comments_on(SYS))
     assert h.list_of("cb") == "ready_for_cam"                     # never reached: stays queued
 
 
@@ -164,7 +163,7 @@ def test_checklist_with_items_removed_does_not_count(tmp_path):
 
 def test_cards_the_service_did_not_make_are_left_alone(tmp_path):
     h = Harness(tmp_path)
-    h.tracker.cards["manual"] = h.tracker.cards["ctl"].__class__("manual", "hand-made job", "", "ready_to_cut", "u")
+    h.tracker.cards["manual"] = h.tracker.cards[SYS].__class__("manual", "hand-made job", "", "ready_to_cut", "u")
     h.runner.tick()
     assert h.list_of("manual") == "ready_to_cut"
 
@@ -180,7 +179,6 @@ def test_wiped_state_never_reuses_a_queued_run_id(tmp_path):
     shutil.rmtree(h.cfg.paths.state / "runs")
     shutil.rmtree(h.cfg.paths.state / "jobs")
     h.tracker.move("ca", "ready_for_cam")
-    h.tracker.move("ctl", "run_nest")
     before = len(h.sheet_cards())
     h.runner.tick()
     assert h.store.run_ids() == ["r002"]
@@ -189,20 +187,20 @@ def test_wiped_state_never_reuses_a_queued_run_id(tmp_path):
     assert len(h.sheet_cards()) == before        # r001's old output was not re-published
 
 
-class DeletedControlCard(FakeTracker):
+class DeletedSystemCard(FakeTracker):
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
         self.deleted = False
 
     def _comment(self, card_id, text):
-        if card_id == "ctl" and self.deleted:
+        if card_id == SYS and self.deleted:
             raise ConnectionError("404 card not found")
         super()._comment(card_id, text)
 
 
-def test_a_broken_control_card_cannot_keep_a_run_active_forever(tmp_path):
+def test_a_broken_system_card_cannot_keep_a_run_active_forever(tmp_path):
     h = Harness(tmp_path)
-    use_tracker(h, DeletedControlCard(cards()))
+    use_tracker(h, DeletedSystemCard(cards()))
     h.runner.tick()
     h.tracker.deleted = True
     run_fake_worker(h.queue)
@@ -216,14 +214,13 @@ def test_a_broken_control_card_cannot_keep_a_run_active_forever(tmp_path):
     assert any("gave up on summary" in n for n in h.store.load("r001").notes)
 
 
-def test_zero_job_run_retries_its_control_card_comment(tmp_path):
-    only_bad = [c for c in cards() if c.id in ("ctl", "cc")]
+def test_zero_job_run_retries_its_system_card_comment(tmp_path):
+    only_bad = [c for c in cards() if c.id in (SYS, "cc")]
     h = Harness(tmp_path, card_list=only_bad)
     use_tracker(h, FailingOnce(only_bad))
     with pytest.raises(ConnectionError):
         h.runner.tick()
     h.runner.tick()
     assert h.store.run_ids() == ["r001"] and h.store.active() is None
-    assert h.list_of("ctl") == "control" and h.list_of("cc") == "needs_fixing"
-    assert [t for t in h.tracker.comments_on("ctl") if t.startswith("Run r001 started")]
-    assert not any("Nothing in Ready for CAM" in t for t in h.tracker.comments_on("ctl"))
+    assert h.list_of("cc") == "needs_fixing"
+    assert [t for t in h.tracker.comments_on(SYS) if t.startswith("Run r001 started")]

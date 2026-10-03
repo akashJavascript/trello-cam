@@ -15,7 +15,8 @@ Full context and decisions: `docs/BRIEF.md`. Read it before planning or changing
 - **Inside Fusion: standard library only** (no pip packages in Fusion's bundled Python). Fusion API calls
   happen only on Fusion's main thread (background threads hand work over via custom events).
 - **Units:** Fusion's API is centimeters internally. Config files and job files are inches. Convert at the edge.
-- **Versioned Onshape links only.** Workspace links get rejected back to the card with a comment.
+- **Onshape links:** version links, or workspace links pinned to their current microversion when a run reads
+  them (the user's choice, 2026-10-02). Microversion links get rejected back to the card with a comment.
 - **Tools are identified by GUID only.** The GUIDs live in `config/autocam.toml` and must match
   `fusion/tools/5940_Tool_Library.tools` (the brief's tool table has older GUIDs). Never select by diameter or tool number.
 - **Never edit `fusion/posts/*.cps`.** It's the shop's machine-proven post. Configure it through post properties only.

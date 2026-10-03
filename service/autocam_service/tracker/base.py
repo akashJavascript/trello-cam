@@ -35,6 +35,13 @@ class Attachment:
 
 
 @dataclass(frozen=True)
+class Check:
+    checklist: str
+    item: str
+    done: bool
+
+
+@dataclass(frozen=True)
 class Card:
     id: str
     name: str
@@ -43,6 +50,8 @@ class Card:
     url: str
     labels: Tuple[str, ...] = ()
     attachments: Tuple[Attachment, ...] = ()
+    checks: Tuple[Check, ...] = ()   # every checklist item on the card
+    is_template: bool = False
 
 
 @dataclass(frozen=True)
@@ -102,8 +111,21 @@ class Tracker(abc.ABC):
     def attach_link(self, card_id: str, url: str, name: str) -> str:
         return self._attach_link(card_id, url, name)
 
-    def add_checklist(self, card_id: str, name: str, items: Sequence[str]) -> str:
-        return self._add_checklist(card_id, name, list(items))
+    def add_checklist(self, card_id: str, name: str, items: Sequence[str], checked: bool = False) -> str:
+        return self._add_checklist(card_id, name, list(items), checked)
+
+    def remove_checklists(self, card_id: str, name: str) -> None:
+        """Delete every checklist with this name (a rebuilt sheet gets fresh, unticked ones)."""
+        self._remove_checklists(card_id, name)
+
+    def update_card(self, card_id: str, title: str, desc: str) -> None:
+        self._update_card(card_id, title, desc)
+
+    def delete_attachment(self, card_id: str, attachment_id: str) -> None:
+        self._delete_attachment(card_id, attachment_id)
+
+    def archive(self, card_id: str) -> None:
+        self._archive(card_id)
 
     def set_cover(self, card_id: str, attachment_id: str) -> None:
         """Show an attached image on the card's front (the nest preview on sheet cards)."""
@@ -136,7 +158,19 @@ class Tracker(abc.ABC):
     def _attach_link(self, card_id: str, url: str, name: str) -> str: ...
 
     @abc.abstractmethod
-    def _add_checklist(self, card_id: str, name: str, items: List[str]) -> str: ...
+    def _add_checklist(self, card_id: str, name: str, items: List[str], checked: bool) -> str: ...
+
+    @abc.abstractmethod
+    def _remove_checklists(self, card_id: str, name: str) -> None: ...
+
+    @abc.abstractmethod
+    def _update_card(self, card_id: str, title: str, desc: str) -> None: ...
+
+    @abc.abstractmethod
+    def _delete_attachment(self, card_id: str, attachment_id: str) -> None: ...
+
+    @abc.abstractmethod
+    def _archive(self, card_id: str) -> None: ...
 
     @abc.abstractmethod
     def _set_cover(self, card_id: str, attachment_id: str) -> None: ...

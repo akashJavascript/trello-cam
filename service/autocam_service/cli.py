@@ -1,7 +1,8 @@
 """Command line: `python -m autocam_service <command>`.
 
     config-check      validate config/autocam.toml; list ASSUMED values and empty placeholders
-    tick              one service pass (poll Trello, collect finished jobs, start a run if triggered)
+    tick              one service pass (poll Trello, collect finished jobs, start a run if cards waited long
+                      enough; `--now` doesn't wait)
     run               the service loop (tick every trello.poll_interval_s)
     dry-run           one pass that reads the real board but writes nothing to Trello (prints the writes)
     make-job          build a job.json from local STEP files (no Trello, no Onshape) for manual Fusion runs
@@ -35,6 +36,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         p = sub.add_parser(name, help=help_text)
         p.add_argument("--offline", action="store_true", help="no Onshape calls (cache and .step attachments only)")
         p.add_argument("--verbose", action="store_true")
+        if name == "tick":
+            p.add_argument("--now", action="store_true", help="start a run for waiting cards without the usual delay")
     mj = sub.add_parser("make-job", help="job.json from local STEP files (for manual Fusion runs)")
     mj.add_argument("--material", required=True, help="material key from config, e.g. al6061")
     mj.add_argument("--part", action="append", required=True, metavar="NAME=PATH[:QTY]")
@@ -62,7 +65,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     env_file = args.env_file or cfg.root / ".env"
     try:
         if args.command in ("tick", "run", "dry-run"):
-            return service(cfg, env_file, args.command, args.offline, args.verbose)
+            return service(cfg, env_file, args.command, args.offline, args.verbose, getattr(args, "now", False))
         if args.command == "make-job":
             return make_job(cfg, args.material, args.part, args.run_id, args.submit)
         if args.command == "ledger":
@@ -108,12 +111,12 @@ def config_check(path: Path, env_file: Optional[Path]) -> int:
     return 0
 
 
-def service(cfg, env_file: Path, command: str, offline: bool, verbose: bool) -> int:
+def service(cfg, env_file: Path, command: str, offline: bool, verbose: bool, now: bool = False) -> int:
     from .app import build_services, run_forever, setup_logging
     from .runner import Runner
     setup_logging(cfg, verbose)
     services = build_services(cfg, env_file=env_file, dry_run=command == "dry-run", offline=offline)
-    runner = Runner(services)
+    runner = Runner(services, start_delay_s=0 if now or command == "dry-run" else None)
     if command == "run":
         try:
             run_forever(runner, cfg.trello.poll_interval_s)
@@ -228,7 +231,8 @@ def trello_setup(cfg, env_file: Path, board: Optional[str], create: Optional[str
     from .trello_setup import setup_board
     tracker = trello_tracker(cfg, env_file)
     result = setup_board(tracker.http, board=board, create=create, workspace=workspace,
-                         labels={"smoked": cfg.labels.smoked, "tool_eighth": cfg.labels.tool_eighth})
+                         labels={"smoked": cfg.labels.smoked, "tool_eighth": cfg.labels.tool_eighth},
+                         nest_box=(cfg.trello.nest_checklist, cfg.trello.nest_item))
     print(f"Board: {result.url}")
     print("Created: " + (", ".join(result.created) or "nothing (everything was already there)"))
     print("\nPaste this into config/autocam.toml (IDs aren't secrets):\n")
@@ -253,9 +257,7 @@ def trello_discover(cfg, env_file: Path, board: Optional[str]) -> int:
     for lid, name in lists:
         print(f"#   {lid}  {name}")
     cards = tracker.board_cards(board)
-    control = [c for c in cards if _norm(c[1]) == "runnest"]
     system = [c for c in cards if _norm(c[1]) == "system"]
     print("\n[trello.cards]")
-    print(f'run_nest_control = "{control[0][0] if control else ""}"')
     print(f'system = "{system[0][0] if system else ""}"')
     return 0

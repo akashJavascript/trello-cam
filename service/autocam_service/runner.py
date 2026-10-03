@@ -1,18 +1,27 @@
-"""One service tick: guard Ready to cut, collect finished jobs, or start a run when triggered.
+"""One service tick: guard Ready to cut, collect finished jobs, or start a run when cards are waiting.
 
-Trigger (decision 9): the control card is dragged into the `Run nest` list. The service moves it
-back to `Control` and comments what it did. One run at a time.
+Trigger: cards arriving in Ready for CAM (autostart.py). A run starts `trello.start_delay_s` after the last
+one arrived, takes every card there whose "Nest this part" box is ticked, and comments on the System card.
+One run at a time; cards that arrive meanwhile start the next one.
+
+Open sheets: a sheet card still in Sheet review that nobody has ticked a Review item on is "open". A run
+nests the parts on the open sheets of a material again together with the new parts of that material, so
+new parts fill the space left on them. The open sheet cards are then updated in place: the old program and
+preview are deleted first, then the new ones attached and the checklists reset. Parts already on them cost
+no Onshape calls (their STEP files are cached). If someone starts reviewing an open sheet while the run is
+going, that sheet is left as it was, and the new parts that were going on it wait for the next run.
 
 Start: the run is saved first (phase "starting"), so a crash anywhere later resumes the same run
-instead of starting a new one and paying for Onshape exports again. Then: parse every card in
-Ready for CAM (problems -> Needs fixing, before any Onshape call), check the Onshape budget, export
-STEP (cached by version), resolve materials, batch by material, and write one job per batch into
-the hot folder, recording each job before submitting it.
+instead of starting a new one and paying for Onshape exports again. Then: parse every waiting card
+(problems -> Needs fixing, before any Onshape call), take as many as fit the per-run Onshape limit
+(the rest start the next run), export STEP (cached by version), resolve materials, batch by material,
+and write one job per batch into the hot folder, recording each job before submitting it.
 
-Collect: for each finished job, re-check every program (results.py), create one sheet card per
-sheet in Sheet review with the .tap (only if it passed), the preview and the checklist, then
-comment on and move each part card. Every Trello write is recorded in the run state the first
-time it succeeds, so a restart resumes without duplicates. Nothing is ever moved to Ready to cut.
+Collect: for each finished job, re-check every program (results.py), put each sheet on a sheet card
+in Sheet review (a new card, or an open one updated in place) with the .tap (only if it passed), the
+preview and the checklists, then comment on and move each part card. Every Trello write is recorded
+in the run state the first time it succeeds, so a restart resumes without duplicates. Nothing is ever
+moved to Ready to cut.
 
 A dry run (DryRunTracker) keeps its own run state and "d" run ids, so it never touches a real
 run and a real run never finishes a dry one.
@@ -24,14 +33,15 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from autocam_core.hotfolder import Queue, write_atomic
-from autocam_core.schema_job import job_json, load_job
+from autocam_core.schema_job import PartSpec, job_json, load_job
 
 from . import sheet_cards as text
+from .autostart import ReadyWatch, wants_nest
 from .batching import ReadyPart, make_batches
-from .cards import CardProblem, PartRequest, parse_card
+from .cards import README_CARD, CardProblem, PartRequest, parse_card
 from .config import Config
 from .jobs import JobBuildError, build_job
 from .materials import resolve_material
@@ -40,7 +50,7 @@ from .onshape.cache import sha256_file
 from .onshape.client import BudgetExceeded, OnshapeError, QuotaExhausted, RateLimited
 from .onshape.export import Exporter, ExportError, TryAgainLater
 from .onshape.ledger import Ledger, utc_now
-from .results import IngestedJob, ingest
+from .results import IngestedJob, VerifiedSheet, ingest
 from .run_state import (
     COLLECTING, FAILED, GAVE_UP, PUBLISHED, QUEUED, STARTING, JobState, RunState, RunStore, once,
 )
@@ -76,43 +86,58 @@ class Services:
     clock: Callable[[], datetime] = utc_now
 
 
+def _thickness(value: float) -> float:
+    return round(float(value), 4)
+
+
 class Runner:
-    def __init__(self, s: Services):
+    def __init__(self, s: Services, start_delay_s: Optional[float] = None):
+        """start_delay_s: overrides trello.start_delay_s (0 for one-off passes: `tick --now`, `dry-run`)."""
         self.s = s
         self.cfg = s.cfg
         self.t = s.tracker
         self.targets = s.cfg.trello.targets
         self.dry_run = isinstance(s.tracker, DryRunTracker)
+        delay = s.cfg.trello.start_delay_s if start_delay_s is None else start_delay_s
+        self.watch = ReadyWatch(s.store.watch_file, delay)
 
     # ------------------------------------------------------------ tick
     def tick(self) -> None:
         self.check_ready_to_cut()
         self.follow_cut()
+        waiting = self.ready_cards()
         state = self.s.store.active()
         if state is not None and state.dry_run != self.dry_run:
             log.warning("active run %s is a %s run; this %s tick leaves it alone", state.run_id,
                         "dry" if state.dry_run else "real", "dry" if self.dry_run else "real")
             return
+        start = self.watch.observe(waiting, self.s.clock())
         if state is None:
-            trigger = self.trigger_card()
-            if trigger is not None:
-                self.start_run(trigger)
+            if start:
+                self.start_run(waiting)
             return
         if state.phase == STARTING:
             self.resume_start(state)
         self.finish_start(state)
-        trigger = self.trigger_card()
-        if trigger is not None:
-            self.t.comment(trigger.id, f"Run {state.run_id} is still going. Try again when it's done.")
-            self.t.move(trigger.id, self.targets["control_return"])
         self.collect(state)
 
-    def trigger_card(self) -> Optional[Card]:
-        wanted = self.cfg.trello.cards.get("run_nest_control")
-        for c in self.t.list_cards("run_nest"):
-            if not wanted or c.id == wanted:
-                return c
-        return None
+    def ready_cards(self) -> List[Card]:
+        """The cards in Ready for CAM whose "Nest this part" box is ticked. Part cards in Drafts and Ready for
+        CAM that have no box get one, ticked (cards made from the New part template already have it)."""
+        t = self.cfg.trello
+        ready: List[Card] = []
+        for list_key in ("inbox", "ready_for_cam"):
+            for card in self.t.list_cards(list_key):
+                if card.is_template or card.name.strip() == README_CARD:
+                    continue
+                if not any(c.checklist == t.nest_checklist for c in card.checks):
+                    try:
+                        self.t.add_checklist(card.id, t.nest_checklist, [t.nest_item], checked=True)
+                    except Exception as e:  # noqa: BLE001 - a missing box mustn't stop the tick (no box = nest)
+                        log.warning("couldn't add the %s box to %s: %s", t.nest_checklist, card.id, e)
+                if list_key == "ready_for_cam" and wants_nest(card, t.nest_checklist, t.nest_item):
+                    ready.append(card)
+        return ready
 
     # ------------------------------------------------------------ guard
     def check_ready_to_cut(self) -> None:
@@ -163,18 +188,17 @@ class Runner:
         self.t.comment(card_id, comment)
 
     # ------------------------------------------------------------ start
-    def start_run(self, trigger: Card) -> Optional[RunState]:
+    def start_run(self, cards: Sequence[Card]) -> Optional[RunState]:
+        """cards: what's in Ready for CAM with the box ticked (a run takes them all, not only the new ones)."""
         store, cfg = self.s.store, self.cfg
-        cards = self.t.list_cards("ready_for_cam")
         if not cards:
-            self.t.comment(trigger.id, "Nothing in Ready for CAM.")
-            self.t.move(trigger.id, self.targets["control_return"])
             return None
-        state = RunState(run_id=self._new_run_id(), started_utc=_iso(self.s.clock()), trigger_card=trigger.id,
-                         dry_run=self.dry_run, phase=STARTING)
+        state = RunState(run_id=self._new_run_id(), started_utc=_iso(self.s.clock()),
+                         trigger_card=cfg.trello.cards.get("system", ""), dry_run=self.dry_run, phase=STARTING)
         store.save(state)   # reserve the run before any Onshape call or Trello write
+        self.watch.took(cards)
         run_id = state.run_id
-        summary = {"queued": {}, "rejected": 0, "untouched": 0, "stop_reason": None}
+        summary = {"queued": {}, "rejected": 0, "untouched": 0, "stop_reason": None, "carried": 0, "later": 0}
 
         requests: List[PartRequest] = []
         for card in cards:
@@ -186,13 +210,8 @@ class Runner:
                 requests.append(parsed)
 
         exporter = self.s.exporter_for(run_id)
-        linked = [r for r in requests if r.link is not None]
-        studios = {r.link.studio: r.link for r in linked}
-        # Workspace links aren't pinned yet: count their pin call and assume nothing is cached.
-        uncached_studios = sum(1 for link in studios.values() if link.is_workspace or exporter.cache.parts(link) is None)
-        pins = sum(1 for link in studios.values() if link.is_workspace)
-        uncached_parts = sum(1 for r in linked if not exporter.is_cached(r.link, r.name))
-        estimate = estimate_calls(uncached_parts, uncached_studios, cfg.onshape.calls_per_part_estimate) + pins
+        requests, later = self._fit_budget(requests, exporter)
+        estimate = self._estimate(requests, exporter)
         decision = decide(estimate, month_used=self.s.ledger.month_count(),
                           year_used=self.s.ledger.year_count(cfg.onshape.budget_year_start),
                           latched=self.s.ledger.latched() is not None, per_run_max=cfg.onshape.per_run_max_calls,
@@ -202,9 +221,11 @@ class Runner:
             self._end_start(state, summary, refused=True)
             return None
         if decision.action == WARN:
-            once(store, state, "start:warn", lambda: self.t.comment(
-                cfg.trello.cards.get("system") or trigger.id, f"Onshape budget warning: {decision.reason}."),
-                WRITE_ATTEMPTS)
+            self._notice(state, "start:warn", lambda: f"Onshape budget warning: {decision.reason}.")
+        if later:
+            # they start the next run as soon as this one is done (not after a refusal: that would repeat it)
+            self.watch.forget(r.card.id for r in later)
+            summary["later"] = len(later)
 
         ready: List[ReadyPart] = []
         for req in requests:
@@ -236,9 +257,12 @@ class Runner:
             else:
                 ready.append(prepared)
 
+        open_sheets = self.open_sheets({p.request.card.id for p in ready}) if ready else {}
         for batch in make_batches(ready):
+            reopened = open_sheets.get(batch.material_key, [])
+            carried = list({p.card_id: p for _, _, specs in reopened for p in specs}.values())   # dedupe
             try:
-                job = build_job(cfg, batch, run_id, _iso(self.s.clock()))
+                job = build_job(cfg, batch, run_id, _iso(self.s.clock()), carried)
             except JobBuildError as e:
                 summary["untouched"] += len(batch.parts)
                 state.notes.append(f"Can't CAM {batch.material_key} parts yet: {e}. They stay in Ready for CAM.")
@@ -246,10 +270,14 @@ class Runner:
             job_text = job_json(job)
             store.save_job(job.job_id, job_text)
             state.jobs[job.job_id] = JobState(material=batch.material_key,
-                                              parts={k: p.request.card.id for k, p in batch.parts},
-                                              queued_utc=_iso(self.s.clock()))
-            for _, p in batch.parts:
-                state.cards[p.request.card.id] = {"name": p.request.name, "url": p.request.card.url}
+                                              parts={p.part_key: p.card_id for p in job.parts},
+                                              queued_utc=_iso(self.s.clock()),
+                                              carried=[p.part_key for p in job.parts[len(batch.parts):]],
+                                              reopened={card_id: {k: info.get(k) for k in ("thickness_in", "parts", "url")}
+                                                        for card_id, info, _ in reopened})
+            for p in job.parts:
+                state.cards[p.card_id] = {"name": p.name, "url": p.card_url}
+            summary["carried"] += len(carried)
             store.save(state)                                     # recorded before it's submitted
             self.s.queue.submit(job.job_id, job_text)             # a fresh run never reuses a queued job id
             summary["queued"][job.job_id] = len(batch.parts)
@@ -257,6 +285,69 @@ class Runner:
         self._end_start(state, summary)
         log.info("run %s started: %s", run_id, summary["queued"])
         return state if state.jobs else None
+
+    def _estimate(self, requests: Sequence[PartRequest], exporter: Exporter) -> int:
+        linked = [r for r in requests if r.link is not None]
+        studios = {r.link.studio: r.link for r in linked}
+        # Workspace links aren't pinned yet: count their pin call and assume nothing is cached.
+        uncached_studios = sum(1 for link in studios.values() if link.is_workspace or exporter.cache.parts(link) is None)
+        pins = sum(1 for link in studios.values() if link.is_workspace)
+        uncached_parts = sum(1 for r in linked if not exporter.is_cached(r.link, r.name))
+        return estimate_calls(uncached_parts, uncached_studios, self.cfg.onshape.calls_per_part_estimate) + pins
+
+    def _fit_budget(self, requests: List[PartRequest], exporter: Exporter) -> Tuple[List[PartRequest], List[PartRequest]]:
+        """As many cards (in board order) as fit the per-run Onshape limit; the rest wait for the next run.
+        A first card that alone needs more than the limit is still taken, so the budget check reports it."""
+        taken: List[PartRequest] = []
+        later: List[PartRequest] = []
+        for req in requests:
+            if not taken or self._estimate(taken + [req], exporter) <= self.cfg.onshape.per_run_max_calls:
+                taken.append(req)
+            else:
+                later.append(req)
+        return taken, later
+
+    def open_sheets(self, renesting: Set[str] = frozenset()) -> Dict[str, List[Tuple[str, Dict, List[PartSpec]]]]:
+        """Material -> the open sheet cards a run may nest again, with the parts to carry over from them (from
+        the jobs that made them). Open: made by this service with everything a re-nest needs, cuttable, still
+        in Sheet review, no Review item ticked, none of its parts also on a sheet that isn't open (a part's
+        copies always move together), and every part on it either in On a sheet (carried over; its STEP file
+        must still be there) or back in Ready for CAM and in this run (`renesting`: someone changed it, so the
+        sheet is rebuilt with the new version)."""
+        reg = self.s.store.sheet_cards()
+        in_review = {c.id: c for c in self.t.list_cards(self.targets["sheet_created"])}
+        nested = {c.id for c in self.t.list_cards(self.targets["part_nested"])}
+        review = self.cfg.trello.checklist_name
+        found: Dict[str, Tuple[Dict, List[PartSpec]]] = {}
+        for card_id, info in reg.items():
+            card = in_review.get(card_id)
+            if (card is None or not info.get("job") or not info.get("cuttable") or info.get("cut")
+                    or info.get("archived") or not info.get("parts")):
+                continue
+            if any(c.done for c in card.checks if c.checklist == review):
+                continue
+            if not all(p in nested or p in renesting for p in info["parts"]):
+                continue
+            job = self._job(info["job"])
+            specs = [p for p in (job.parts if job else ()) if p.card_id in info["parts"]]
+            if {p.card_id for p in specs} != set(info["parts"]):
+                continue
+            specs = [p for p in specs if p.card_id not in renesting]
+            if not all(Path(p.step).is_file() for p in specs):
+                continue
+            found[card_id] = (info, specs)
+        while True:
+            elsewhere = {p for card_id, info in reg.items() if card_id not in found for p in info.get("parts", [])}
+            closed = [card_id for card_id, (info, _) in found.items() if elsewhere & set(info["parts"])]
+            if not closed:
+                break
+            for card_id in closed:
+                del found[card_id]
+        out: Dict[str, List[Tuple[str, Dict, List[PartSpec]]]] = {}
+        order = sorted(found.items(), key=lambda kv: (kv[1][0]["thickness_in"], kv[1][0]["run"], kv[1][0].get("index", 0)))
+        for card_id, (info, specs) in order:
+            out.setdefault(info["material"], []).append((card_id, info, specs))
+        return out
 
     def _new_run_id(self) -> str:
         """Next run id that neither the run store nor the hot folder has seen (state/ may have been wiped)."""
@@ -270,7 +361,8 @@ class Runner:
     def _end_start(self, state: RunState, summary: Dict, refused: bool = False) -> None:
         if not refused:
             state.notes.insert(0, text.run_started_comment(state.run_id, summary["queued"], summary["rejected"],
-                                                           summary["untouched"], summary["stop_reason"]))
+                                                           summary["untouched"], summary["stop_reason"],
+                                                           summary["carried"], summary["later"]))
         state.phase = COLLECTING
         self.s.store.save(state)
         self.finish_start(state)          # if this fails, the next tick retries it (the run is still active)
@@ -289,13 +381,19 @@ class Runner:
         state.phase = COLLECTING
         self.s.store.save(state)
 
+    def _notice(self, state: RunState, key: str, message: Callable[[], str]) -> None:
+        """A run-level comment on the System card (at most once per run and key; logged if there's no card)."""
+        if not state.trigger_card:
+            if key not in state.writes:
+                log.info("%s: %s", state.run_id, message())
+                state.writes[key] = ""
+                self.s.store.save(state)
+            return
+        once(self.s.store, state, key, lambda: self.t.comment(state.trigger_card, message()), WRITE_ATTEMPTS)
+
     def finish_start(self, state: RunState) -> None:
-        """Comment on and return the control card (each at most once per run)."""
-        store = self.s.store
-        once(store, state, "start:comment", lambda: self.t.comment(state.trigger_card, "\n".join(state.notes)),
-             WRITE_ATTEMPTS)
-        once(store, state, "start:move", lambda: self.t.move(state.trigger_card, self.targets["control_return"]),
-             WRITE_ATTEMPTS)
+        """Say on the System card what the run started with (at most once per run)."""
+        self._notice(state, "start:comment", lambda: "\n".join(state.notes))
 
     def _prepare(self, req: PartRequest, exporter: Exporter):
         """ReadyPart, or a problem string for the card."""
@@ -353,102 +451,253 @@ class Runner:
                 queued = datetime.strptime(js.queued_utc, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=now.tzinfo)
                 if (now - queued).total_seconds() > self.cfg.trello.job_timeout_s:
                     minutes = self.cfg.trello.job_timeout_s // 60
-                    once(store, state, f"{job_id}:timeout", lambda: self.t.comment(
-                        state.trigger_card, f"Fusion hasn't finished {job_id} after {minutes} min. Check that "
-                                            "Fusion and the auto-CAM add-in are running on the shop PC."), WRITE_ATTEMPTS)
+                    self._notice(state, f"{job_id}:timeout", lambda: (
+                        f"Fusion hasn't finished {job_id} after {minutes} min. Check that Fusion and the "
+                        "auto-CAM add-in are running on the shop PC."))
                     js.timeout_reported = True
                     store.save(state)
         if all(js.status != QUEUED for js in state.jobs.values()):
             ingested = [ingest(self.s.queue, job_id, self._job(job_id)) for job_id in state.jobs]
             if state.jobs:
-                once(store, state, "summary", lambda: self.t.comment(
-                    state.trigger_card, text.run_summary_comment(state.run_id, ingested)), WRITE_ATTEMPTS)
+                self._notice(state, "summary", lambda: text.run_summary_comment(
+                    state.run_id, ingested, [js.sheets for js in state.jobs.values()]))
             state.done = True
             store.save(state)
             log.info("run %s finished", state.run_id)
 
     # ------------------------------------------------------------ publish
     def publish(self, state: RunState, js: JobState, ing: IngestedJob) -> None:
-        store, cfg = self.s.store, self.cfg
-        run_id, job_id = state.run_id, ing.job_id
+        store = self.s.store
+        job_id = ing.job_id
+        new_parts = {k: c for k, c in js.parts.items() if k not in js.carried}
         if ing.failure or ing.result is None:
-            once(store, state, f"{job_id}:failed", lambda: self.t.comment(
-                state.trigger_card, text.job_failed_comment(job_id, ing.failure or "no result", len(js.parts))),
-                WRITE_ATTEMPTS)
-            for key, card_id in js.parts.items():
+            # parts carried from open sheets stay on them, untouched
+            self._notice(state, f"{job_id}:failed", lambda: text.job_failed_comment(
+                job_id, ing.failure or "no result", len(new_parts)))
+            for key, card_id in new_parts.items():
                 once(store, state, f"{job_id}:{key}:failed", lambda c=card_id: self.t.comment(
-                    c, f"CAM failed this run ({ing.failure}). The card stays in Ready for CAM."),
-                    WRITE_ATTEMPTS)
+                    c, text.part_job_failed_comment(ing.failure or "no result")), WRITE_ATTEMPTS)
             return
 
+        old_sheets = js.reopened                   # as they were when the run started (never re-read: a resumed
         part_cards = {key: (state.cards.get(cid, {}).get("name", key), state.cards.get(cid, {}).get("url", ""))
-                      for key, cid in js.parts.items()}
-        sheet_urls: Dict[int, str] = {}
+                      for key, cid in js.parts.items()}          # publish has already changed the live registry)
+        carried_cards = {js.parts[k] for k in js.carried}
+        old_by_t: Dict[float, List[str]] = {}
+        for card_id, info in old_sheets.items():
+            old_by_t.setdefault(_thickness(info["thickness_in"]), []).append(card_id)
+        new_by_t: Dict[float, List[VerifiedSheet]] = {}
+        for vs in sorted(ing.sheets, key=lambda v: v.sheet.index):
+            new_by_t.setdefault(_thickness(vs.sheet.thickness_in), []).append(vs)
+        in_review = {c.id: c for c in self.t.list_cards(self.targets["sheet_created"])} if js.reopened else {}
+
+        on_card: Dict[int, Tuple[str, str]] = {}    # sheet index -> (card id, url), for sheets put on a card
         cuttable: Dict[int, bool] = {}
-        team = ing.result.fusion_team
-        f3d = None if team and team.url else ing.file(ing.result.f3d)     # the Fusion Team link replaces it
-        for vs in ing.sheets:
-            key = f"{job_id}:S{vs.sheet.index}"
-            desc = text.sheet_description(ing.job, ing, vs, resume_key=cfg.pauses.resume_key, part_cards=part_cards)
+        left_alone: Set[str] = set()                # carried parts whose open sheets were kept as they were
+        waiting: Set[str] = set()                   # new parts whose sheet someone started reviewing
+        failed: Dict[str, List[str]] = {}           # new parts whose rebuilt sheet failed the checks -> why
+        counts = {"new": 0, "updated": 0, "kept": 0, "bad": 0}
+        for t in sorted(set(old_by_t) | set(new_by_t)):
+            old, new = old_by_t.get(t, []), new_by_t.get(t, [])
+            old_parts = {p for card_id in old for p in old_sheets[card_id]["parts"]}
+            in_group = {js.parts.get(p.part_key) for vs in new for p in vs.sheet.parts}
+            # Decided once per thickness and recorded, so a resumed publish carries on the same way.
+            plan = once(store, state, f"{job_id}:plan:{t:g}", lambda: (
+                "rebuild" if not old else "review" if self._being_reviewed(old, in_review)
+                else "same" if in_group <= carried_cards and in_group == old_parts
+                else "bad" if any(not vs.cuttable for vs in new) else "rebuild"))
+            if plan != "rebuild":
+                left_alone |= old_parts & carried_cards     # the open sheets stay exactly as they were
+                counts["kept"] += len(old)
+            if plan == "review":                # someone started on these sheets; the new parts wait for the next run
+                waiting |= in_group - carried_cards
+                continue
+            if plan == "bad":                   # adding the new parts broke the sheet: it isn't changed, and
+                why = [p for vs in new if not vs.cuttable for p in vs.problems]  # they go to Needs fixing
+                for card_id in in_group - carried_cards:
+                    failed[card_id] = why
+                continue
+            if plan == "same":                  # nothing new joined these sheets: keep the programs they have
+                continue
+            for i, vs in enumerate(new):
+                placed = self._publish_sheet(state, js, ing, vs, old[i] if i < len(old) else None,
+                                             part_cards, counts)
+                cuttable[vs.sheet.index] = placed is not None and vs.cuttable
+                if placed is not None:
+                    on_card[vs.sheet.index] = placed
+            for card_id in old[len(new):]:
+                self._retire(state, job_id, card_id)
+
+        js.sheets = counts
+        if waiting:
+            self.watch.forget(waiting)
+        for part_key, card_id in js.parts.items():
+            if card_id in left_alone:
+                continue
+            self._publish_part(state, js, ing, part_key, card_id, on_card, cuttable, card_id in waiting,
+                               failed.get(card_id))
+
+    def _being_reviewed(self, card_ids: Sequence[str], in_review: Dict[str, Card]) -> bool:
+        """Did someone move one of these open sheets, or tick a Review item on it, while the run was going?"""
+        review = self.cfg.trello.checklist_name
+        return any(card_id not in in_review or any(c.done for c in in_review[card_id].checks if c.checklist == review)
+                   for card_id in card_ids)
+
+    def _publish_sheet(self, state: RunState, js: JobState, ing: IngestedJob, vs: VerifiedSheet,
+                       target: Optional[str], part_cards, counts) -> Optional[Tuple[str, str]]:
+        """Put one sheet on a card: a new card, or `target` (an open sheet card) updated in place.
+        Returns (card id, url), or None if no card could be made."""
+        store, cfg = self.s.store, self.cfg
+        run_id, job_id = state.run_id, ing.job_id
+        key = f"{job_id}:S{vs.sheet.index}"
+        title = text.sheet_title(ing.job, vs)
+        desc = text.sheet_description(ing.job, ing, vs, resume_key=cfg.pauses.resume_key, part_cards=part_cards)
+        card_id = url = None
+        if target is not None:
+            # From here until the new program is attached, the card offers nothing to cut.
+            store.register_sheet(target, run_id, False, js.reopened[target]["parts"])
+            cleared = once(store, state, f"{key}:clear", lambda: self._clear_sheet(target), WRITE_ATTEMPTS)
+            if cleared == GAVE_UP:
+                # The old program couldn't be taken off: retire the card and use a new one.
+                self._retire(state, job_id, target)
+            else:
+                card_id, url = target, js.reopened[target].get("url") or ""
+                once(store, state, f"{key}:text", lambda: self.t.update_card(card_id, title, desc), WRITE_ATTEMPTS)
+                once(store, state, f"{key}:reset", lambda: self._reset_checklists(card_id), WRITE_ATTEMPTS)
+                once(store, state, f"{key}:rebuilt", lambda: self.t.comment(card_id, text.sheet_rebuilt_comment(run_id)),
+                     WRITE_ATTEMPTS)
+                counts["updated"] += 1
+        if card_id is None:
             card_ref = once(store, state, f"{key}:card", lambda: self._new_card(
-                self.targets["sheet_created"], text.sheet_title(ing.job, vs), desc), WRITE_ATTEMPTS)
+                self.targets["sheet_created"], title, desc), WRITE_ATTEMPTS)
             if card_ref == GAVE_UP:
                 log.error("%s: gave up creating the sheet card; its program was not offered", key)
-                cuttable[vs.sheet.index] = False
-                continue
+                return None
             card_id, url = card_ref.split(" ", 1)
-            store.register_sheet(card_id, run_id, vs.cuttable,
-                                 [js.parts[p.part_key] for p in vs.sheet.parts if p.part_key in js.parts])
-            sheet_urls[vs.sheet.index] = url
-            cuttable[vs.sheet.index] = vs.cuttable
-            if vs.cuttable:
-                once(store, state, f"{key}:tap", lambda: self.t.attach_program(
-                    card_id, vs.sheet.tap, vs.tap_bytes, vs.check.guard), WRITE_ATTEMPTS)
-                once(store, state, f"{key}:checklist", lambda: self.t.add_checklist(
-                    card_id, cfg.trello.checklist_name, cfg.trello.checklist), WRITE_ATTEMPTS)
-                once(store, state, f"{key}:machine", lambda: self.t.add_checklist(
-                    card_id, cfg.trello.machine_checklist_name, cfg.trello.machine_checklist), WRITE_ATTEMPTS)
-            png = ing.file(vs.sheet.preview_png)
-            if png is not None:
-                png_id = once(store, state, f"{key}:png", lambda: self.t.attach_file(
-                    card_id, png.name, png.read_bytes(), "image/png"), WRITE_ATTEMPTS)
-                if png_id != GAVE_UP:
-                    once(store, state, f"{key}:cover", lambda: self.t.set_cover(card_id, png_id) or png_id,
-                         WRITE_ATTEMPTS)
-            if f3d is not None and f3d.stat().st_size <= self.t.attachment_limit_bytes:
-                once(store, state, f"{key}:f3d", lambda: self.t.attach_file(
-                    card_id, f3d.name, f3d.read_bytes(), "application/octet-stream"), WRITE_ATTEMPTS)
+            counts["new"] += 1
+        if not vs.cuttable:
+            counts["bad"] += 1
+        store.register_sheet(card_id, run_id, vs.cuttable,
+                             [js.parts[p.part_key] for p in vs.sheet.parts if p.part_key in js.parts],
+                             job=job_id, material=js.material, thickness_in=vs.sheet.thickness_in,
+                             index=vs.sheet.index, url=url)
+        if vs.cuttable:
+            once(store, state, f"{key}:tap", lambda: self.t.attach_program(
+                card_id, vs.sheet.tap, vs.tap_bytes, vs.check.guard), WRITE_ATTEMPTS)
+            once(store, state, f"{key}:checklist", lambda: self.t.add_checklist(
+                card_id, cfg.trello.checklist_name, cfg.trello.checklist), WRITE_ATTEMPTS)
+            once(store, state, f"{key}:machine", lambda: self.t.add_checklist(
+                card_id, cfg.trello.machine_checklist_name, cfg.trello.machine_checklist), WRITE_ATTEMPTS)
+        png = ing.file(vs.sheet.preview_png)
+        if png is not None:
+            png_id = once(store, state, f"{key}:png", lambda: self.t.attach_file(
+                card_id, png.name, png.read_bytes(), "image/png"), WRITE_ATTEMPTS)
+            if png_id != GAVE_UP:
+                once(store, state, f"{key}:cover", lambda: self.t.set_cover(card_id, png_id) or png_id,
+                     WRITE_ATTEMPTS)
+        team = ing.result.fusion_team
+        f3d = None if team and team.url else ing.file(ing.result.f3d)     # the Fusion Team link replaces it
+        if f3d is not None and f3d.stat().st_size <= self.t.attachment_limit_bytes:
+            once(store, state, f"{key}:f3d", lambda: self.t.attach_file(
+                card_id, f3d.name, f3d.read_bytes(), "application/octet-stream"), WRITE_ATTEMPTS)
+        return card_id, url
 
-        for part_key, card_id in js.parts.items():
-            part = next((p for p in ing.result.parts if p.part_key == part_key), None)
-            key = f"{job_id}:{part_key}"
-            inconsistent = ing.part_problems.get(part_key)
-            if part is None or inconsistent:
-                reasons = list(inconsistent or ("Fusion reported nothing for this part",))
-                once(store, state, f"{key}:comment", lambda: self.t.comment(card_id, text.part_problem_comment(
-                    run_id, [f"The CAM result doesn't add up ({'; '.join(reasons)}). A mentor should check "
-                             f"run {run_id}."])), WRITE_ATTEMPTS)
-                once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]), WRITE_ATTEMPTS)
-                continue
-            links = [(i, sheet_urls[i]) for i in part.sheets if i in sheet_urls]
-            if part.errors:
+    def _clear_sheet(self, card_id: str) -> str:
+        """Delete every file on a sheet card (program, preview, Fusion file) before it's rebuilt."""
+        for a in self.t.get_card(card_id).attachments:
+            if a.is_upload:
+                self.t.delete_attachment(card_id, a.id)
+        return ""
+
+    def _reset_checklists(self, card_id: str) -> str:
+        self.t.remove_checklists(card_id, self.cfg.trello.checklist_name)
+        self.t.remove_checklists(card_id, self.cfg.trello.machine_checklist_name)
+        return ""
+
+    def _retire(self, state: RunState, job_id: str, card_id: str) -> None:
+        """An open sheet card that isn't needed any more (its parts fit on fewer sheets): empty and archive it."""
+        store = self.s.store
+        key = f"{job_id}:retire:{card_id}"
+        store.register_sheet(card_id, state.run_id, False, store.sheet_cards().get(card_id, {}).get("parts", []))
+        once(store, state, f"{key}:clear", lambda: self._clear_sheet(card_id), WRITE_ATTEMPTS)
+        once(store, state, f"{key}:comment", lambda: self.t.comment(card_id, text.sheet_retired_comment(state.run_id)),
+             WRITE_ATTEMPTS)
+        once(store, state, f"{key}:archive", lambda: self.t.archive(card_id), WRITE_ATTEMPTS)
+        store.retire_sheet(card_id)
+
+    def _publish_part(self, state: RunState, js: JobState, ing: IngestedJob, part_key: str, card_id: str,
+                      on_card: Dict[int, Tuple[str, str]], cuttable: Dict[int, bool], waiting: bool,
+                      sheet_failed: Optional[List[str]] = None) -> None:
+        store = self.s.store
+        run_id, job_id = state.run_id, ing.job_id
+        key = f"{job_id}:{part_key}"
+        carried = part_key in js.carried
+        if waiting:
+            once(store, state, f"{key}:comment", lambda: self.t.comment(card_id, text.part_waiting_comment(run_id)),
+                 WRITE_ATTEMPTS)
+            return
+        if sheet_failed is not None:
+            self._sync_links(state, key, card_id, [])
+            once(store, state, f"{key}:comment", lambda: self.t.comment(card_id, text.part_problem_comment(
+                run_id, [text.joined_sheet_failed(sheet_failed)])), WRITE_ATTEMPTS)
+            once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]), WRITE_ATTEMPTS)
+            return
+        part = next((p for p in ing.result.parts if p.part_key == part_key), None)
+        inconsistent = ing.part_problems.get(part_key)
+        sheets = [i for i in (part.sheets if part else ()) if i in on_card]
+        placed = part is not None and not inconsistent and not part.errors and not part.deferred
+        self._sync_links(state, key, card_id, [(i, on_card[i][1]) for i in sheets] if placed else [])
+        if part is None or inconsistent:
+            reasons = list(inconsistent or ("Fusion reported nothing for this part",))
+            once(store, state, f"{key}:comment", lambda: self.t.comment(card_id, text.part_problem_comment(
+                run_id, [f"The CAM result doesn't add up ({'; '.join(reasons)}). A mentor should check "
+                         f"run {run_id}."])), WRITE_ATTEMPTS)
+            once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]), WRITE_ATTEMPTS)
+            return
+        links = [(i, on_card[i][1]) for i in sheets]
+        if part.errors:
+            once(store, state, f"{key}:comment", lambda: self.t.comment(
+                card_id, text.part_problem_comment(run_id, [e.msg for e in part.errors])), WRITE_ATTEMPTS)
+            once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]), WRITE_ATTEMPTS)
+        elif part.deferred and carried:
+            once(store, state, f"{key}:comment", lambda: self.t.comment(card_id, text.part_bumped_comment(run_id)),
+                 WRITE_ATTEMPTS)
+            once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_deferred"]), WRITE_ATTEMPTS)
+        elif part.deferred:
+            once(store, state, f"{key}:comment", lambda: self.t.comment(
+                card_id, text.part_deferred_comment(run_id, part)), WRITE_ATTEMPTS)
+        elif part.sheets and all(cuttable.get(i, False) for i in part.sheets):
+            was_on = {cid for cid, info in js.reopened.items() if card_id in info["parts"]}
+            if not carried or was_on != {on_card[i][0] for i in sheets}:
                 once(store, state, f"{key}:comment", lambda: self.t.comment(
-                    card_id, text.part_problem_comment(run_id, [e.msg for e in part.errors])), WRITE_ATTEMPTS)
-                once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]), WRITE_ATTEMPTS)
-            elif part.deferred:
-                once(store, state, f"{key}:comment", lambda: self.t.comment(
-                    card_id, text.part_deferred_comment(run_id, part)), WRITE_ATTEMPTS)
-            else:
-                for i, url in links:
-                    once(store, state, f"{key}:link:S{i}", lambda: self.t.attach_link(card_id, url, f"Sheet S{i} ({run_id})"), WRITE_ATTEMPTS)
-                if part.sheets and all(cuttable.get(i, False) for i in part.sheets):
-                    once(store, state, f"{key}:comment", lambda: self.t.comment(
-                        card_id, text.part_nested_comment(run_id, part, links)), WRITE_ATTEMPTS)
-                    once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_nested"]), WRITE_ATTEMPTS)
-                else:
-                    once(store, state, f"{key}:comment", lambda: self.t.comment(
-                        card_id, text.part_bad_sheet_comment(run_id, links)), WRITE_ATTEMPTS)
-                    once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]), WRITE_ATTEMPTS)
+                    card_id, text.part_nested_comment(run_id, part, links)), WRITE_ATTEMPTS)
+            if not carried:
+                once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_nested"]), WRITE_ATTEMPTS)
+        else:
+            once(store, state, f"{key}:comment", lambda: self.t.comment(
+                card_id, text.part_bad_sheet_comment(run_id, links)), WRITE_ATTEMPTS)
+            once(store, state, f"{key}:move", lambda: self.t.move(card_id, self.targets["part_rejected"]), WRITE_ATTEMPTS)
+
+    def _sync_links(self, state: RunState, key: str, card_id: str, wanted: Sequence[Tuple[int, str]]) -> None:
+        """A part card's links to sheet cards: drop the ones to sheets it's no longer on (by the sheet registry,
+        already updated for this job's sheets), add the new ones."""
+        store = self.s.store
+        ours = {info.get("url") for info in store.sheet_cards().values()
+                if info.get("url") and card_id not in info.get("parts", [])}
+        try:
+            have = {a.url: a.id for a in self.t.get_card(card_id).attachments if not a.is_upload}
+        except Exception as e:  # noqa: BLE001 - a deleted part card mustn't stop the publish
+            log.warning("couldn't read part card %s: %s", card_id, e)
+            return
+        urls = {url for _, url in wanted}
+        for url, att_id in have.items():
+            if url in ours and url not in urls:
+                once(store, state, f"{key}:unlink:{att_id}", lambda a=att_id: self.t.delete_attachment(card_id, a),
+                     WRITE_ATTEMPTS)
+        for i, url in wanted:
+            if url not in have:
+                once(store, state, f"{key}:link:S{i}", lambda u=url, n=i: self.t.attach_link(
+                    card_id, u, f"Sheet S{n} ({state.run_id})"), WRITE_ATTEMPTS)
 
     def _new_card(self, list_key: str, title: str, desc: str) -> str:
         card = self.t.create_card(list_key, title, desc)

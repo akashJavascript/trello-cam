@@ -6,7 +6,8 @@ recorded. A crash between the write and the record can repeat at most that one w
 
     state/runs/r017.json          the run
     state/jobs/r017-al6061.json   the service's own copy of each job it submitted
-    state/sheet_cards.json        every sheet card the service made: cuttable or not, its part cards, cut yet
+    state/sheet_cards.json        every sheet card the service made: cuttable or not, its part cards, cut yet,
+                                  and what a later run needs to nest it again (job, material, thickness)
 
 A run is saved before anything else happens (phase "starting"), so a crash while starting resumes
 the same run instead of starting a new one and paying for its Onshape exports again.
@@ -26,17 +27,21 @@ STARTING, COLLECTING = "starting", "collecting"
 @dataclass
 class JobState:
     material: str
-    parts: Dict[str, str]                 # part_key -> card_id
+    parts: Dict[str, str]                 # part_key -> card_id (new parts and parts carried from open sheets)
     status: str = QUEUED
     queued_utc: str = ""
     timeout_reported: bool = False
+    carried: List[str] = field(default_factory=list)      # part keys already on an open sheet
+    reopened: Dict[str, Dict] = field(default_factory=dict)   # open sheet card -> {thickness_in, parts, url}
+                                                              # as they were when the run started
+    sheets: Dict[str, int] = field(default_factory=dict)  # what publishing did: new / updated / kept / bad
 
 
 @dataclass
 class RunState:
     run_id: str
     started_utc: str
-    trigger_card: str
+    trigger_card: str                     # where run comments go: the System card ("" = nowhere)
     dry_run: bool = False
     phase: str = STARTING
     done: bool = False
@@ -62,6 +67,7 @@ class RunStore:
         self.dir = Path(state_dir) / "runs"
         self.jobs_dir = Path(state_dir) / "jobs"
         self.sheets_file = Path(state_dir) / "sheet_cards.json"
+        self.watch_file = Path(state_dir) / "ready_watch.json"
         self.prefix = prefix
 
     def _path(self, run_id: str) -> Path:
@@ -91,11 +97,23 @@ class RunStore:
         path = self.jobs_dir / f"{job_id}.json"
         return path.read_text(encoding="utf-8") if path.exists() else None
 
-    def register_sheet(self, card_id: str, run_id: str, cuttable: bool, parts: Sequence[str] = ()) -> None:
-        """parts: the part card ids on this sheet (they follow it to Cut)."""
+    def register_sheet(self, card_id: str, run_id: str, cuttable: bool, parts: Sequence[str] = (), *,
+                       job: str = "", material: str = "", thickness_in: float = 0.0, index: int = 0,
+                       url: str = "") -> None:
+        """parts: the part card ids on this sheet (they follow it to Cut). job, material and thickness let a
+        later run nest the sheet again with new parts while nobody has started reviewing it."""
         sheets = self.sheet_cards()
         sheets[card_id] = {**sheets.get(card_id, {}), "run": run_id, "cuttable": cuttable, "parts": list(parts)}
+        if job:
+            sheets[card_id].update(job=job, material=material, thickness_in=thickness_in, index=index, url=url)
         self._write_sheets(sheets)
+
+    def retire_sheet(self, card_id: str) -> None:
+        """An archived sheet card: holds no parts, can't be cut."""
+        sheets = self.sheet_cards()
+        if card_id in sheets:
+            sheets[card_id].update(cuttable=False, parts=[], archived=True)
+            self._write_sheets(sheets)
 
     def mark_sheet_cut(self, card_id: str) -> None:
         sheets = self.sheet_cards()

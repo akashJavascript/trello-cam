@@ -254,10 +254,12 @@ notepad .env
 C:\dev\venvs\frc-autocam\Scripts\autocam trello-setup --create "5940 AutoCAM"
 ```
 It creates:
-- the 9 lists;
-- the `Run nest` and `System` cards in Control;
-- a "How to add a part" card in Inbox;
+- the 8 lists;
+- the `System` card in Control (run comments go there);
+- a "How to add a part" card and the "New part" template (with the "Nest this part" box) in Drafts;
 - the `Smoked` and `Tool 1/8` labels.
+
+On an older board it also archives the `Run nest` list and card.
 
 It prints a `[trello]` block. Send that block over to be committed to `config/autocam.toml` (IDs aren't secrets),
 or set up an existing board instead with `--board <short link>`.
@@ -282,12 +284,22 @@ or set up an existing board instead with `--board <short link>`.
    ```powershell
    C:\dev\venvs\frc-autocam\Scripts\autocam dry-run --offline --verbose
    ```
-3. With Fusion and the add-in running, drag `Run nest` into the **Run nest** list, then run one pass:
-   ```powershell
-   C:\dev\venvs\frc-autocam\Scripts\autocam tick --verbose
-   ```
-4. When the add-in has finished the job, run `autocam tick` again. Sheet cards appear in **Sheet review**.
+3. With Fusion and the add-in running, start the service (`autocam run --verbose`). About 2 minutes after the
+   last card landed in Ready for CAM, the System card says "Run r00N started". (`autocam tick --now` runs one
+   pass without the wait.)
+4. When the add-in has finished the job, the next pass puts the sheet cards in **Sheet review**.
 5. Check `autocam ledger` (Onshape calls used) and the cards' comments.
+
+### 6. New parts filling an open sheet (the 2026-10-02 flow)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | A card made from the New part template has the "Nest this part" box, ticked. A card made by hand gets one within a minute | |
+| 2 | Drag two cards into Ready for CAM 1 minute apart: one run starts, about 2 minutes after the second | |
+| 3 | Untick "Nest this part" on a card in Ready for CAM: it stays there and no run takes it. Tick it again: a run starts | |
+| 4 | With a sheet in Sheet review and nothing ticked, add a part of the same material: the **same** sheet card is rebuilt (new run number in the title, a "Rebuilt" comment, one `.tap`, checklists unticked), and the new part's card links to it | |
+| 5 | Tick a Review item on that sheet, add another part: it gets a new sheet card; the ticked one doesn't change | |
+| 6 | Open the rebuilt sheet's Fusion file: the old parts and the new one are all there, and the toolpaths look right | |
 
 ## M5: reboot test on the shop PC
 

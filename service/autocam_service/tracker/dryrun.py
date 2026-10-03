@@ -47,9 +47,21 @@ class DryRunTracker(Tracker):
         self.intended.append(("attach_link", card_id, url))
         return self._fake_id("att")
 
-    def _add_checklist(self, card_id, name, items):
-        self.intended.append(("add_checklist", card_id, name, tuple(items)))
+    def _add_checklist(self, card_id, name, items, checked):
+        self.intended.append(("add_checklist", card_id, name, tuple(items), checked))
         return self._fake_id("cl")
+
+    def _remove_checklists(self, card_id, name):
+        self.intended.append(("remove_checklists", card_id, name))
+
+    def _update_card(self, card_id, title, desc):
+        self.intended.append(("update_card", card_id, title))
+
+    def _delete_attachment(self, card_id, attachment_id):
+        self.intended.append(("delete_attachment", card_id, attachment_id))
+
+    def _archive(self, card_id):
+        self.intended.append(("archive", card_id))
 
     def _set_cover(self, card_id, attachment_id):
         self.intended.append(("set_cover", card_id, attachment_id))

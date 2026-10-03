@@ -31,8 +31,10 @@ FORMAT_HELP = """1. In Onshape, open the Part Studio with your part and copy the
 2. Make a card in Drafts (or use the New part template).
    Title: the part's name.
    Description: the link, and a line like Qty: 2
-3. Move the card to Ready for CAM.
+3. Move the card to Ready for CAM. About 2 minutes later it's nested, together with whatever else is waiting
+   and any sheet still in Sheet review that has room.
 
+Untick "Nest this part" to keep a card in Ready for CAM without nesting it.
 Labels, if needed: {smoked} for smoked polycarbonate, {tool} to force the 1/8 in endmill.
 No Onshape? Attach a .step file and add a line like Material: 6061 (or 5052, PC).
 If something is wrong, the card comes back in Needs fixing with a comment saying what to fix."""
