@@ -294,7 +294,16 @@ or set up an existing board instead with `--board <short link>`.
 4. When the add-in has finished the job, the next pass puts the sheet cards in **Sheet review**.
 5. Check `autocam ledger` (Onshape calls used) and the cards' comments.
 
-### 6. New parts filling an open sheet (the 2026-10-02 flow)
+### 6. The service picks up new code by itself
+
+| # | Check | Result |
+|---|---|---|
+| 1 | `autocam run --verbose` prints "the service restarts by itself..." and then the usual log | |
+| 2 | Create an empty `C:\dev\frc-autocam\state\restart_service`: within ~1 min the window says "restarting the service with the new code" and the log shows "service started" again; the file is gone | |
+| 3 | After a `git pull` (or a commit pushed from the dev machine onto this checkout), the same happens within ~2 min | |
+| 4 | Ctrl+C stops it (no restart afterwards) | |
+
+### 7. New parts filling an open sheet (the 2026-10-02 flow)
 
 | # | Check | Result |
 |---|---|---|

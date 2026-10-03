@@ -11,6 +11,7 @@ from autocam_core.hotfolder import Queue
 
 from .config import Config
 from .credentials import load_credentials
+from .restart import EXIT_RESTART, CodeWatch
 from .onshape.cache import OnshapeCache
 from .onshape.client import OnshapeClient, RequestsTransport
 from .onshape.export import Exporter, PollSchedule
@@ -93,7 +94,9 @@ def disable_quick_edit() -> None:
         log.debug("couldn't turn off QuickEdit: %s", e)
 
 
-def run_forever(runner: Runner, interval_s: float) -> None:
+def run_forever(runner: Runner, interval_s: float, code: Optional[CodeWatch] = None,
+                sleep=time.sleep) -> int:
+    """Tick every interval_s. Returns EXIT_RESTART when `code` says new code or config is ready to run."""
     disable_quick_edit()
     log.info("service started; polling every %s s", interval_s)
     while True:
@@ -103,4 +106,6 @@ def run_forever(runner: Runner, interval_s: float) -> None:
             raise
         except Exception:  # noqa: BLE001 - keep polling; the error is logged with its traceback
             log.exception("tick failed")
-        time.sleep(interval_s)
+        sleep(interval_s)
+        if code is not None and code.should_restart():
+            return EXIT_RESTART

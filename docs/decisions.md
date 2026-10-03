@@ -317,3 +317,18 @@ the edges, not the loop. Two changes:
 - On the real r005 program: Z 0 to 2.49 in becomes 0.69 to 3.18 in above the spoilboard. The highest point must
   stay inside the Z travel (`[assumed]`).
 
+## 2026-10-02: the service restarts itself into new code (the user's choice)
+
+`autocam run` is now a small supervisor that runs the service loop in a child process (`restart.py`).
+- **When it restarts:** between passes, the loop looks at the service and core code, the config and `.env`.
+  Once a change has stayed the same for one more pass, so a `git pull` isn't caught half-written, it checks
+  in a separate Python that the new code imports and the config loads. Only then does it exit for the
+  supervisor to start it again. An empty `state/restart_service` file asks for a restart now.
+- **Broken updates:** if the check fails, the old code keeps running and the error is logged; that version
+  isn't tried again.
+- **Crashes:** if the loop crashes at start, the supervisor tries again every minute. Ctrl+C stops both.
+- **Why it's safe:** runs and Trello writes are recorded as they happen, so a restart between passes resumes
+  cleanly, even mid-run.
+- **What still needs a manual restart:** a change to `restart.py` itself (the supervisor is loaded once), or
+  a new dependency (that needs `pip install -e .` first).
+

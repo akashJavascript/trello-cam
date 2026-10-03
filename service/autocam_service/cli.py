@@ -38,6 +38,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         p.add_argument("--verbose", action="store_true")
         if name == "tick":
             p.add_argument("--now", action="store_true", help="start a run for waiting cards without the usual delay")
+        if name == "run":
+            p.add_argument("--child", action="store_true", help=argparse.SUPPRESS)   # the loop under the supervisor
     mj = sub.add_parser("make-job", help="job.json from local STEP files (for manual Fusion runs)")
     mj.add_argument("--material", required=True, help="material key from config, e.g. al6061")
     mj.add_argument("--part", action="append", required=True, metavar="NAME=PATH[:QTY]")
@@ -53,6 +55,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     where.add_argument("--create", metavar="NAME", help="make a new board with this name")
     where.add_argument("--board", help="set up an existing board (ID or short link from its URL)")
     ts.add_argument("--workspace", help="workspace (organization) ID for a new board")
+    argv = list(sys.argv[1:] if argv is None else argv)
     args = parser.parse_args(argv)
 
     if args.command == "config-check":
@@ -64,8 +67,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
     env_file = args.env_file or cfg.root / ".env"
     try:
+        if args.command == "run" and not args.child:
+            from .restart import supervise
+            print("autocam: the service restarts by itself when its code or config changes. Ctrl+C to stop.")
+            return supervise([sys.executable, "-m", "autocam_service", *argv, "--child"])
         if args.command in ("tick", "run", "dry-run"):
-            return service(cfg, env_file, args.command, args.offline, args.verbose, getattr(args, "now", False))
+            return service(cfg, env_file, args.command, args.offline, args.verbose, getattr(args, "now", False),
+                           config_path=args.config, env_arg=args.env_file)
         if args.command == "make-job":
             return make_job(cfg, args.material, args.part, args.run_id, args.submit)
         if args.command == "ledger":
@@ -111,15 +119,20 @@ def config_check(path: Path, env_file: Optional[Path]) -> int:
     return 0
 
 
-def service(cfg, env_file: Path, command: str, offline: bool, verbose: bool, now: bool = False) -> int:
+def service(cfg, env_file: Path, command: str, offline: bool, verbose: bool, now: bool = False,
+            config_path: Optional[Path] = None, env_arg: Optional[Path] = None) -> int:
     from .app import build_services, run_forever, setup_logging
+    from .restart import CodeWatch, new_code_loads
     from .runner import Runner
     setup_logging(cfg, verbose)
     services = build_services(cfg, env_file=env_file, dry_run=command == "dry-run", offline=offline)
     runner = Runner(services, start_delay_s=0 if now or command == "dry-run" else None)
     if command == "run":
+        config_path = config_path or DEFAULT_CONFIG
+        code = CodeWatch(cfg.root, cfg.paths.state / "restart_service", extra=[Path(config_path), env_file],
+                         validate=lambda: new_code_loads(config_path, env_arg))
         try:
-            run_forever(runner, cfg.trello.poll_interval_s)
+            return run_forever(runner, cfg.trello.poll_interval_s, code)
         except KeyboardInterrupt:
             print("stopped")
         return 0
