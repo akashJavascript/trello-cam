@@ -75,7 +75,7 @@ def onshape_problem(e: OnshapeError) -> str:
     m = re.search(r'"message"\s*:\s*"([^"]*)"', str(e))
     said = m.group(1) if m else str(e).split(": ", 1)[-1][:200]
     return (f"Onshape couldn't read that link ({e.status}: {said}). Check that the link opens a **Part Studio** "
-            "tab (not an Assembly or Drawing) at a **version**, and that the part is in it")
+            "tab (not an Assembly or Drawing), and that the part is in it")
 NO_STOP_SUFFIX = "_NOSTOP"
 LAYOUT_CORE = (0, 4, 0)   # jobs before this laid the sheet's length along X; the machine's X runs across the bed
 
