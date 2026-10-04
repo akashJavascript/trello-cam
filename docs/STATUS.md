@@ -45,7 +45,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 ## What's left (2026-10-03, evening)
 
 ### Before the first real cut
-1. **Z touch-off on the spoilboard** (decision 22): the programs' Z0 is the spoilboard, not the sheet top.
+1. **Z with the probe** (the user has a Z height probe): set it on the spoilboard next to the sheet, not on
+   the sheet. Every program's Z0 is the spoilboard (decision 22); probed on top of the sheet, nothing would cut
+   through.
 2. **Tabs trial:** cut a sheet with tabbed parts (triangular, 0.157 in wide, 1 mm high) and check the parts
    and slugs stay put and the tabs break out cleanly (tape alone didn't hold parts in the team's trials).
 3. **Pause test** on a sheet with 2+ parts: tick "Add an air test program" under Options and run it
