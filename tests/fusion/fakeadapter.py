@@ -16,6 +16,7 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from autocam_core.geometry import PartGeometry
 from autocam_core.names import comment_line
+from autocam_core.tabs import Seg
 
 from autocam_worker.adapter import (
     BEARING, BORE, DRILL, INNER, OUTER, TAGS, Adapter, AdapterError, Arranged, Box, OpFill, OpState, TemplateOp,
@@ -58,6 +59,7 @@ class FakeAdapter(Adapter):
         self.saved_to_team: List[Tuple[str, str, str]] = []
         self.arrange_envelopes: List[Tuple[float, float, float, float]] = []
         self.finished: Optional[bool] = None
+        self.fail_tab_points = False                   # set_tab_points refuses (like Fusion without the choice)
 
     def register(self, step: Path, geometry: PartGeometry, size: Tuple[float, float]) -> None:
         self.parts[str(step)] = (geometry, size)
@@ -160,7 +162,7 @@ class FakeAdapter(Adapter):
             raise AdapterError("setups.add: RuntimeError: 3 : something broke")
         self.sheets[sheet] = {"origin": origin, "size": (size_x_in, size_y_in), "t": thickness_in,
                               "copies": list(copy_ids), "ops": [], "fills": {}, "outer": [], "deleted": [],
-                              "tabs": {}}
+                              "tabs": {}, "tab_points": {}, "tab_shape": {}}
 
     def apply_template(self, sheet, template_path):
         ops = [TemplateOp(name, guid) for name, guid in json.loads(Path(template_path).read_text())]
@@ -176,9 +178,28 @@ class FakeAdapter(Adapter):
         s["ops"] += [name for name, _, _ in outlines]
         s["outer"] = list(outlines)
 
-    def set_tabs(self, sheet, op_name, per_contour):
+    def set_tabs(self, sheet, op_name, per_contour, shape):
         assert op_name in self.sheets[sheet]["ops"], op_name
         self.sheets[sheet]["tabs"][op_name] = per_contour
+        self.sheets[sheet]["tab_shape"][op_name] = shape
+
+    def loop_segments(self, copy_id, face_id, loop_index):
+        """The copy's box as its outline; inner loop k: a 0.5 in square inside it, k in from the corner."""
+        b = self.boxes[copy_id]
+        if loop_index is None:
+            pts = [(b.x0, b.y0), (b.x1, b.y0), (b.x1, b.y1), (b.x0, b.y1)]
+        else:
+            x, y = b.x0 + 0.5 + 0.6 * loop_index, b.y0 + 0.5
+            pts = [(x, y), (x + 0.5, y), (x + 0.5, y + 0.5), (x, y + 0.5)]
+        pts.append(pts[0])
+        return [Seg("line", (a, c)) for a, c in zip(pts, pts[1:])]
+
+    def set_tab_points(self, sheet, op_name, points, shape):
+        assert op_name in self.sheets[sheet]["ops"], op_name
+        if self.fail_tab_points:
+            raise AdapterError(f"tabPositioning has no choice like 'point' (it has distance, tabCount)")
+        self.sheets[sheet]["tab_points"][op_name] = list(points)
+        self.sheets[sheet]["tab_shape"][op_name] = shape
 
     def copy_op(self, sheet, op_name, new_name):
         s = self.sheets[sheet]
@@ -219,7 +240,7 @@ class FakeAdapter(Adapter):
                 o = OUTLINE_OFFSET_IN
                 xa, ya, xb, yb = b.x0 - ox - o, b.y0 - oy - o, b.x1 - ox + o, b.y1 - oy + o
                 lines += [f"G0 X{xa:.4f} Y{ya:.4f}", f"Z{retract:g}", "G1 Z0. F20."]
-                if op in s["tabs"]:                   # a tab halfway along the first side: up 0.04 in and back
+                if op in s["tabs"] or op in s["tab_points"]:   # a tab halfway along the first side, up and back
                     mid = (xa + xb) / 2
                     lines += [f"G1 X{mid:.4f} F60.", "G1 Z0.04", f"G1 X{mid + 0.157:.4f}", "G1 Z0."]
                 lines += [f"G1 X{xb:.4f} F60.", f"G1 Y{yb:.4f}", f"G1 X{xa:.4f}", f"G1 Y{ya:.4f}", f"G0 Z{clear:g}"]

@@ -154,6 +154,12 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
 
 ## Tabs (M6), names confirmed
 
+Tabs at points and the shape (2026-10-03, untested in Fusion): `tabShape` and `tabPositioning` set from
+their `ChoiceParameterValue.getChoices()` (the value containing 'trian' / 'point'), `tabPositions` (a
+`CadObjectParameterValue`) set to sketch points in a root sketch `TABS <sheet>` on the X/Y plane at Z0;
+loop edges read with `BRepLoop.coEdges` (`isOpposedToEdge` for direction), lines from their vertices, curves
+from `edge.evaluator.getStrokes`. If any of it fails, the op falls back to 'tabCount' (below).
+
 Since the tab counts (2026-10-03): `tabPositioning` = 'tabCount' with `tabsPerContour` (the template's own
 parameter, 1 there), on outline ops and on copies of the `[inner]` op (`fx_cam.copy_op`:
 `CAMTemplate.createFromOperations` + `createFromCAMTemplate2`, as for outlines). **Works** (hand-queued job

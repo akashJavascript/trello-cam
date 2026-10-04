@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from autocam_core.geometry import PartGeometry
+from autocam_core.tabs import Seg
 
 Rect = Tuple[float, float, float, float]   # x0, y0, x1, y1
 
@@ -141,9 +142,19 @@ class Adapter:
         each cutting to stock bottom; then delete the template op."""
         raise NotImplementedError
 
-    def set_tabs(self, sheet: str, op_name: str, per_contour: int) -> None:
-        """Turn on the contour op's tabs (the template's shape, width and height), this many on each of its
+    def set_tabs(self, sheet: str, op_name: str, per_contour: int, shape: str) -> None:
+        """Turn on the contour op's tabs (`shape`, the template's width and height), this many on each of its
         contours, spread evenly."""
+        raise NotImplementedError
+
+    def loop_segments(self, copy_id: str, face_id: int, loop_index: Optional[int]) -> List[Seg]:
+        """A loop of a face of a copy as it is now, in the design's X/Y (inches): the outer loop (loop_index
+        None) or that inner loop, as straight lines and curves (polylines) in loop order."""
+        raise NotImplementedError
+
+    def set_tab_points(self, sheet: str, op_name: str, points: Sequence[Tuple[float, float]], shape: str) -> None:
+        """Turn on the contour op's tabs (`shape`, the template's width and height) at these points (design X/Y,
+        inches; on its contours)."""
         raise NotImplementedError
 
     def copy_op(self, sheet: str, op_name: str, new_name: str) -> None:

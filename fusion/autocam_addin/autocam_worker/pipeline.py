@@ -18,9 +18,9 @@
    arranged again or deleted.
 4. Per sheet: one tool, each part's feature plan with that tool, the cut order of the outlines.
 5. CAM per sheet: stock + setup, template (every op's tool GUID checked), selections, one outline op per
-   part copy in cut order. Parts that ask for tabs (PartSpec.tabs) get the template's tabs on their outline
-   and their cutouts, a count per contour from its length (tabs.py); cutouts go in copies of the [inner] op,
-   one per count.
+   part copy in cut order. Parts that ask for tabs (PartSpec.tabs) get tabs on their outline and their
+   cutouts: a count per contour from its length, placed by tabs.place_tabs (straight edges clear of corners
+   first) and given to Fusion as points; cutouts go in copies of the [inner] op, one per count.
 6. Post, insert the pauses, and check the final bytes with the check the service repeats
    (sheetcheck.py). Failures are kept as *.REJECTED.tap.
 7. Preview, .f3d, result.json.
@@ -48,7 +48,7 @@ from autocam_core.names import outer_op_name, program_name
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
 from autocam_core.plate import PlateAnalysis, analyze
-from autocam_core.tabs import outline_length, tab_count, walls_length
+from autocam_core.tabs import outline_length, place_tabs, tab_count, walls_length
 from autocam_core.schema_job import Job, PartSpec, ToolSpec
 from autocam_core.schema_result import (
     RESULT_SCHEMA, FusionTeamResult, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary,
@@ -751,6 +751,30 @@ def _op_tag(name: str) -> Optional[str]:
     return found[0] if len(found) == 1 else None
 
 
+def _tab_op(adapter: Adapter, job: Job, sheet: _Sheet, op_name: str,
+            contours: Sequence[Tuple[str, int, Optional[int]]], per_contour: int, tool_d: float) -> None:
+    """Tabs on one contour op: `per_contour` on each of its contours (copy id, face id, inner loop index or None
+    for the outer loop), placed by tabs.place_tabs and given to Fusion as points; if that fails, Fusion spreads
+    the same number evenly (and the sheet card says so)."""
+    if job.tabs.at_points:
+        try:
+            points = []
+            on_lines = clear = 0
+            for cid, fid, index in contours:
+                placed = place_tabs(adapter.loop_segments(cid, fid, index), per_contour, tool_d, tool_d)
+                points += [(p.x, p.y) for p in placed]
+                on_lines += sum(p.on_line for p in placed)
+                clear += sum(p.clear_of_corners for p in placed)
+            adapter.set_tab_points(sheet.name, op_name, points, job.tabs.shape)
+            sheet.notes.append(f"{op_name}: {len(points)} tabs at points, {on_lines} on straight edges, {clear} clear "
+                               "of corners")
+            return
+        except AdapterError as e:
+            sheet.notes.append(f"{op_name}: tabs at points didn't work ({e}); {per_contour} per contour, spread "
+                               "evenly by Fusion instead")
+    adapter.set_tabs(sheet.name, op_name, per_contour, job.tabs.shape)
+
+
 def _tabs_for(job: Job, part: _Part, length_in: float, tool_d: float) -> int:
     return tab_count(length_in, job.tabs.distance_in, tool_d, job.tabs.min_per_contour, job.tabs.max_per_contour)
 
@@ -836,7 +860,7 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
                 name = f"{names[0]} - {n} tab{'s' if n != 1 else ''} each"
                 adapter.copy_op(sheet.name, names[0], name)
                 adapter.fill(sheet.name, name, OpFill(INNER, loops=tuple(group)))
-                adapter.set_tabs(sheet.name, name, n)
+                _tab_op(adapter, job, sheet, name, [(cid, fid, idx) for cid, fid, idx in group], n, tool_d)
         fill = fills[tag]
         if fill.holes or fill.loops or fill.floors:
             adapter.fill(sheet.name, names[0], fill)
@@ -856,7 +880,8 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
             inner = {w for loop in part.analysis.through_loops for w in loop.wall_face_ids}
             n = _tabs_for(job, part, outline_length(g, inner), tool_d)
             if n:
-                adapter.set_tabs(sheet.name, outer_op_name(inst), n)
+                _tab_op(adapter, job, sheet, outer_op_name(inst),
+                        [(by_instance[inst].body_id, part.analysis.up_face_id, None)], n, tool_d)
             else:
                 sheet.warnings.append(Issue(E.OP_WARNING, f"{part.spec.name} is too small for tabs: it's cut free"))
     sheet.built = True

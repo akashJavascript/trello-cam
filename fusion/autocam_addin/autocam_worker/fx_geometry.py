@@ -11,6 +11,7 @@ import adsk.core
 import adsk.fusion
 
 from autocam_core.geometry import CYLINDER, PLANE, Face, PartGeometry
+from autocam_core.tabs import Seg
 
 from .fx_util import IN, items, normal, to_in
 
@@ -99,6 +100,33 @@ def _sharp_inside_corners(body, axis) -> int:
 
 def inner_loops(face):
     return [lp for lp in items(face.loops) if not lp.isOuter]
+
+
+STROKE_CM = 0.005          # a curve as a polyline within 0.05 mm
+
+
+def loop_segments(face, index=None):
+    """The face's outer loop (index None) or inner loop `index`, as Segs in X/Y (inches) in loop order: a
+    straight edge as its two ends, anything else as a polyline from its evaluator."""
+    loop = next(lp for lp in items(face.loops) if lp.isOuter) if index is None else inner_loops(face)[index]
+    segs = []
+    for co in items(loop.coEdges):
+        edge = co.edge
+        if edge.geometry.curveType == adsk.core.Curve3DTypes.Line3DCurveType:
+            pts = [edge.startVertex.geometry, edge.endVertex.geometry]
+            kind = "line"
+        else:
+            ev = edge.evaluator
+            ok, p0, p1 = ev.getParameterExtents()
+            ok2, pts = ev.getStrokes(p0, p1, STROKE_CM) if ok else (False, [])
+            if not ok2 or len(pts) < 2:
+                pts = [edge.startVertex.geometry, edge.endVertex.geometry]
+            kind = "curve"
+        xy = [(to_in(p.x), to_in(p.y)) for p in pts]
+        if co.isOpposedToEdge:
+            xy.reverse()
+        segs.append(Seg(kind, tuple(xy)))
+    return segs
 
 
 def extract(name: str, occ) -> PartGeometry:

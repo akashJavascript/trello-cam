@@ -108,6 +108,7 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
         fusion_team=FusionTeamSpec(cfg.fusion_team.project, cfg.fusion_team.folder),
         parts=tuple(parts),
         offcuts=tuple(offcuts),
-        tabs=TabSpec(cfg.tabs.distance_in, cfg.tabs.min_per_contour, cfg.tabs.max_per_contour),
+        tabs=TabSpec(cfg.tabs.distance_in, cfg.tabs.min_per_contour, cfg.tabs.max_per_contour, cfg.tabs.shape,
+                     cfg.tabs.at_points),
     )
     return load_job(to_dict(job))  # same validation Fusion will apply

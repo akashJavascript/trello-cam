@@ -574,8 +574,18 @@ built off by default, then switched on by default the same day ("make tabs on by
   spreads them evenly (`tabPositioning = 'tabCount'`, `tabsPerContour`). Lengths come from the wall faces'
   areas over the plate thickness. A cutout op holds one count for all its contours, so a tabbed part's
   cutouts go in copies of the `[inner]` op, one per count ("[inner] cutouts - 2 tabs each"), made before
-  it's filled and placed after it, before the outlines. Tabs can still land on arcs: the brief's own
-  placement (straight segments, away from corners, at points) is still possible later.
+  it's filled and placed after it, before the outlines.
+- **Where** (the brief's placement, as the user set it later the same day: "put them on lines when you can
+  but if you have to put them on arc it's fine ... one tool diameter from any corner when it is possible"):
+  `tabs.place_tabs` takes each contour as straight lines and curves (read from the copy's top face in
+  Fusion, `fx_geometry.loop_segments`), spreads its tabs evenly, and snaps each to the best spot nearby:
+  a straight edge with the whole tab a cutter diameter from any corner, then a straight edge nearer a corner,
+  then a curve, and only then across a corner. A line spot wins unless it's more than about half the spacing
+  further off. Tabs stay a tab width plus two cutter diameters apart, and the even pattern is turned to
+  whichever start snaps least (so 2 tabs end up roughly opposite). Fusion gets them as sketch points in a
+  `TABS <sheet>` sketch (`tabPositioning` = its "points" choice, `tabPositions`). If that fails, the op falls
+  back to the same count spread evenly by Fusion, and the sheet's notes say so.
+- **Shape:** triangular (`[tabs] shape`), set on each op; width and height stay the template's.
 - **Sheet cards** say to break tabbed parts out once the program is done (at the stops they stay held):
   once if every part has tabs, else with each tabbed part marked in the cut order.
 - **The air test** follows the outline through tab lifts: the lap at the final depth may rise up to 0.25 in

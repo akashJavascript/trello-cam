@@ -30,6 +30,7 @@ class FusionAdapter(Adapter):
         self.doc = self.design = self.cam = None
         self.tokens: Dict[str, str] = {}       # copy id -> occurrence entity token
         self.setups: Dict[str, object] = {}     # sheet -> setup
+        self.tab_sketch: Dict[str, object] = {}  # sheet -> the sketch holding its tab points
         self.sheet_info: Dict[str, tuple] = {}  # sheet -> (origin, thickness, copy ids)
         self.used: List[str] = []
         self.run_notes: List[str] = []
@@ -151,10 +152,24 @@ class FusionAdapter(Adapter):
         fx_cam.outline_copies(setup, fx_cam.op_by_name(setup, template_op), faces,
                               self.job.fusion_params["selections"]["contour"])
 
-    def set_tabs(self, sheet, op_name, per_contour):
+    def set_tabs(self, sheet, op_name, per_contour, shape):
         self._used("tabs")
         call(f"{op_name}: tabs", fx_cam.set_tabs, fx_cam.op_by_name(self._setup(sheet), op_name),
-             self.job.fusion_params["tabs"], per_contour)
+             self.job.fusion_params["tabs"], per_contour, shape)
+
+    def loop_segments(self, copy_id, face_id, loop_index):
+        return call("loop edges", fx_geometry.loop_segments, fx_design.face_by_id(self._occ(copy_id), face_id),
+                    loop_index)
+
+    def set_tab_points(self, sheet, op_name, points, shape):
+        self._used("tab_points")
+        if sheet not in self.tab_sketch:
+            root = self.design.rootComponent
+            sk = call("tab points sketch", root.sketches.add, root.xYConstructionPlane)
+            sk.name = f"TABS {sheet}"
+            self.tab_sketch[sheet] = sk
+        call(f"{op_name}: tabs at points", fx_cam.set_tab_points, fx_cam.op_by_name(self._setup(sheet), op_name),
+             self.tab_sketch[sheet], self.job.fusion_params["tabs"], points, shape)
 
     def copy_op(self, sheet, op_name, new_name):
         self._used("op_copy")

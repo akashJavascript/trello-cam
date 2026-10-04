@@ -317,6 +317,7 @@ width = "tabWidth"
 height = "tabHeight"
 distance = "tabDistance"
 per_contour = "tabsPerContour"
+shape = "tabShape"
 
 [tapguard]
 allowed_g = [0, 1, 2, 3, 4, 20, 53, 80, 81, 90]
@@ -338,6 +339,9 @@ distance_in = 2.5               # about one tab per this much contour (outline o
                                 # height are the template's
 min_per_contour = 2             # every tabbed outline and cutout gets at least this many (fewer only if they
 max_per_contour = 6             # don't fit: a tiny cutout gets none)
+shape = "triangular"            # or "rectangular"; width and height are the template's
+at_points = true                # placed on straight edges clear of corners where possible (tabs.place_tabs);
+                                # false: Fusion spreads them evenly
 
 [paths]                         # relative to the repo root
 queue = "queue"

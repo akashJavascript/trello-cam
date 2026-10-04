@@ -24,7 +24,9 @@ def test_only_the_parts_that_ask_get_tabs(tmp_path):
     [sheet] = result.sheets
     assert sheet.tap and not sheet.errors
     [fake] = rig.fake.sheets.values()
-    assert fake["tabs"] == {"[outer] p01-1": 4, "[outer] p01-2": 4}                 # 32 in / 8 in; not p02's
+    # 32 in / 8 in = 4 each, at points, triangular; not p02's
+    assert {op: len(pts) for op, pts in fake["tab_points"].items()} == {"[outer] p01-1": 4, "[outer] p01-2": 4}
+    assert set(fake["tab_shape"].values()) == {"triangular"} and fake["tabs"] == {}
     program = (rig.out / sheet.tap).read_text()
     assert program.count("G1 Z0.04") == 2                                          # the program passed its checks
 
@@ -34,7 +36,7 @@ def test_no_tabs_without_the_box(tmp_path):
     result = rig.run(rig.job([("small", 2, plate(name="small"), (3.0, 3.0))]))
     assert result.sheets[0].tap
     [fake] = rig.fake.sheets.values()
-    assert fake["tabs"] == {}
+    assert fake["tabs"] == {} and fake["tab_points"] == {}
 
 
 def test_every_cutout_gets_tabs_by_its_length_however_short(tmp_path):
@@ -52,9 +54,40 @@ def test_every_cutout_gets_tabs_by_its_length_however_short(tmp_path):
     inner = [op for op in fake["ops"] if op.startswith("[inner]")]
     assert inner == ["[inner] cutouts", "[inner] cutouts - 2 tabs each", "[inner] cutouts - 6 tabs each"]
     assert fake["ops"].index(inner[-1]) < min(i for i, op in enumerate(fake["ops"]) if op.startswith("[outer]"))
-    assert fake["tabs"]["[inner] cutouts - 6 tabs each"] == 6 and fake["tabs"]["[inner] cutouts - 2 tabs each"] == 2
+    points = {op: len(pts) for op, pts in fake["tab_points"].items()}
+    assert points["[inner] cutouts - 6 tabs each"] == 6 and points["[inner] cutouts - 2 tabs each"] == 2 * 3
     lengths = {op: len(fake["fills"][op].loops) for op in inner}
     # 20 in -> 6; 5 in -> 2; 2 in -> 3 fit but 1 wanted -> 2 (the minimum); 1.6 in -> 2 fit -> 2;
     # 0.5 in: none fit, so it's cut with the spacer's cutout, without tabs.
     assert lengths == {"[inner] cutouts": 2, "[inner] cutouts - 2 tabs each": 3, "[inner] cutouts - 6 tabs each": 1}
-    assert fake["tabs"]["[outer] p01-1"] == 6 and "[outer] p02-1" not in fake["tabs"]
+    assert points["[outer] p01-1"] == 6 and "[outer] p02-1" not in points
+
+
+def test_tab_points_on_the_outline_are_on_its_sides_clear_of_the_corners(tmp_path):
+    rig = Rig(tmp_path)
+    job = rig.job([("bracket", 1, with_cutouts("bracket", []), (8.0, 6.0))])
+    job = dataclasses.replace(job, parts=(dataclasses.replace(job.parts[0], tabs=True),))
+    result = rig.run(job)
+    [fake] = rig.fake.sheets.values()
+    [box] = [rig.fake.boxes[c] for c in fake["copies"]]
+    pts = fake["tab_points"]["[outer] p01-1"]
+    corners = [(box.x0, box.y0), (box.x1, box.y0), (box.x1, box.y1), (box.x0, box.y1)]
+    on_edge = [min(abs(x - box.x0), abs(x - box.x1)) < 1e-3 or min(abs(y - box.y0), abs(y - box.y1)) < 1e-3
+               for x, y in pts]
+    assert len(pts) == 6 and all(on_edge)
+    assert all(min(((x - cx) ** 2 + (y - cy) ** 2) ** 0.5 for cx, cy in corners) > 4 / 25.4 for x, y in pts)
+    assert any("6 tabs at points, 6 on straight edges, 6 clear of corners" in n for n in result.sheets[0].notes)
+
+
+def test_if_fusion_wont_take_points_it_spreads_the_same_number_evenly(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.fail_tab_points = True
+    tabbed = with_cutouts("bracket", [5.0])
+    job = rig.job([("bracket", 1, tabbed, (8.0, 6.0))])
+    job = dataclasses.replace(job, parts=(dataclasses.replace(job.parts[0], tabs=True),))
+    result = rig.run(job)
+    [sheet] = result.sheets
+    assert sheet.tap and not sheet.errors
+    [fake] = rig.fake.sheets.values()
+    assert fake["tabs"] == {"[inner] cutouts - 2 tabs each": 2, "[outer] p01-1": 6} and fake["tab_points"] == {}
+    assert any("tabs at points didn't work" in n and "spread evenly by Fusion instead" in n for n in sheet.notes)

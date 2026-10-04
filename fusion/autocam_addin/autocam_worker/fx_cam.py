@@ -31,7 +31,8 @@ UNCONFIRMED = {
     "chain_direction": "ChainSelection.isReverted so the chain runs against the loop's way (cut side follows direction)",
     "gouge_check": "BRepBody.pointContainment on the posted program's cutting points",
     "team_save": "Document.saveAs into the Fusion Team folder, wait for Application.dataFileComplete, then DataFile.fusionWebURL",
-    "tabs": "contour op tabs: group_tabs, tabPositioning = 'tabCount', tabsPerContour",
+    "tabs": "contour op tabs: group_tabs, tabShape (a choice), tabPositioning = 'tabCount', tabsPerContour",
+    "tab_points": "contour op tabs at points: tabPositioning = the 'point' choice, tabPositions = sketch points",
     "op_copy": "a copy of the template's [inner] op (CAMTemplate.createFromOperations) for tabbed cutouts",
 }
 
@@ -82,12 +83,47 @@ def apply_template(setup, path: str):
     return [TemplateOp(o.name, tool_guid(o)) for o in ops(setup)]
 
 
-def set_tabs(op, names, per_contour: int) -> None:
-    """The op's tabs on, this many on each contour, spread evenly ('tabCount'); the template keeps their shape,
-    width and height. A spacing by distance left contours shorter than the distance without any."""
+def _choice(op, name: str, want: str) -> str:
+    """The value of choice parameter `name` whose value or label contains `want` (Fusion's own spelling)."""
+    p = param(op, name)
+    v = adsk.cam.ChoiceParameterValue.cast(p.value)
+    if v is None:
+        raise AdapterError(f"{name} isn't a choice parameter")
+    ok, labels, values = v.getChoices()
+    for label, value in zip(labels, values):
+        if want in value.lower() or want in label.lower():
+            return value
+    raise AdapterError(f"{name} has no choice like {want!r} (it has {', '.join(values)})")
+
+
+def _tabs_on(op, names, shape: str) -> None:
     set_expr(op, names["enabled"], "true")
+    key = names.get("shape", "tabShape")
+    set_expr(op, key, f"'{_choice(op, key, shape.lower()[:5])}'")      # 'trian...' / 'recta...'
+
+
+def set_tabs(op, names, per_contour: int, shape: str) -> None:
+    """The op's tabs on (`shape`; the template keeps their width and height), this many on each contour,
+    spread evenly ('tabCount')."""
+    _tabs_on(op, names, shape)
     set_expr(op, names["positioning"], "'tabCount'")
     set_expr(op, names.get("per_contour", "tabsPerContour"), str(int(per_contour)))   # jobs from before 0.8.0
+
+
+def set_tab_points(op, sketch, names, points_in, shape: str) -> list:
+    """The op's tabs on (`shape`), at sketch points made in `sketch` (on the root's X/Y plane) at points_in.
+    Returns the sketch points (for the log)."""
+    _tabs_on(op, names, shape)
+    key = names["positioning"]
+    set_expr(op, key, f"'{_choice(op, key, 'point')}'")
+    made = [sketch.sketchPoints.add(adsk.core.Point3D.create(to_cm(x), to_cm(y), 0)) for x, y in points_in]
+    value = adsk.cam.CadObjectParameterValue.cast(param(op, names.get("manual_positions", "tabPositions")).value)
+    if value is None:
+        raise AdapterError(f"{names.get('manual_positions', 'tabPositions')} isn't a selection parameter")
+    value.value = made
+    if len(list(value.value)) != len(made):
+        raise AdapterError(f"tab positions took {len(list(value.value))} of {len(made)} points")
+    return made
 
 
 def copy_op(setup, op, name: str) -> None:
