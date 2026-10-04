@@ -152,29 +152,24 @@ class FusionAdapter(Adapter):
         fx_cam.outline_copies(setup, fx_cam.op_by_name(setup, template_op), faces,
                               self.job.fusion_params["selections"]["contour"])
 
-    def set_tabs(self, sheet, op_name, per_contour, shape):
+    def set_tabs(self, sheet, op_name, per_contour):
         self._used("tabs")
-        self._note(call(f"{op_name}: tabs", fx_cam.set_tabs, fx_cam.op_by_name(self._setup(sheet), op_name),
-                        self.job.fusion_params["tabs"], per_contour, shape))
+        call(f"{op_name}: tabs", fx_cam.set_tabs, fx_cam.op_by_name(self._setup(sheet), op_name),
+             self.job.fusion_params["tabs"], per_contour)
 
     def loop_segments(self, copy_id, face_id, loop_index):
         return call("loop edges", fx_geometry.loop_segments, fx_design.face_by_id(self._occ(copy_id), face_id),
                     loop_index)
 
-    def set_tab_points(self, sheet, op_name, points, shape):
+    def set_tab_points(self, sheet, op_name, points):
         self._used("tab_points")
         if sheet not in self.tab_sketch:
             root = self.design.rootComponent
             sk = call("tab points sketch", root.sketches.add, root.xYConstructionPlane)
             sk.name = f"TABS {sheet}"
             self.tab_sketch[sheet] = sk
-        self._note(call(f"{op_name}: tabs at points", fx_cam.set_tab_points,
-                        fx_cam.op_by_name(self._setup(sheet), op_name), self.tab_sketch[sheet],
-                        self.job.fusion_params["tabs"], points, shape))
-
-    def _note(self, note):
-        if note and note not in self.run_notes:
-            self.run_notes.append(note)
+        call(f"{op_name}: tabs at points", fx_cam.set_tab_points, fx_cam.op_by_name(self._setup(sheet), op_name),
+             self.tab_sketch[sheet], self.job.fusion_params["tabs"], points)
 
     def copy_op(self, sheet, op_name, new_name):
         self._used("op_copy")

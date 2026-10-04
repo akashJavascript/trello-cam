@@ -162,7 +162,7 @@ class FakeAdapter(Adapter):
             raise AdapterError("setups.add: RuntimeError: 3 : something broke")
         self.sheets[sheet] = {"origin": origin, "size": (size_x_in, size_y_in), "t": thickness_in,
                               "copies": list(copy_ids), "ops": [], "fills": {}, "outer": [], "deleted": [],
-                              "tabs": {}, "tab_points": {}, "tab_shape": {}}
+                              "tabs": {}, "tab_points": {}}
 
     def apply_template(self, sheet, template_path):
         ops = [TemplateOp(name, guid) for name, guid in json.loads(Path(template_path).read_text())]
@@ -178,10 +178,9 @@ class FakeAdapter(Adapter):
         s["ops"] += [name for name, _, _ in outlines]
         s["outer"] = list(outlines)
 
-    def set_tabs(self, sheet, op_name, per_contour, shape):
+    def set_tabs(self, sheet, op_name, per_contour):
         assert op_name in self.sheets[sheet]["ops"], op_name
         self.sheets[sheet]["tabs"][op_name] = per_contour
-        self.sheets[sheet]["tab_shape"][op_name] = shape
 
     def loop_segments(self, copy_id, face_id, loop_index):
         """The copy's box as its outline; inner loop k: a 0.5 in square inside it, k in from the corner."""
@@ -194,12 +193,11 @@ class FakeAdapter(Adapter):
         pts.append(pts[0])
         return [Seg("line", (a, c)) for a, c in zip(pts, pts[1:])]
 
-    def set_tab_points(self, sheet, op_name, points, shape):
+    def set_tab_points(self, sheet, op_name, points):
         assert op_name in self.sheets[sheet]["ops"], op_name
         if self.fail_tab_points:
             raise AdapterError(f"tabPositioning has no choice like 'point' (it has distance, tabCount)")
         self.sheets[sheet]["tab_points"][op_name] = list(points)
-        self.sheets[sheet]["tab_shape"][op_name] = shape
 
     def copy_op(self, sheet, op_name, new_name):
         s = self.sheets[sheet]

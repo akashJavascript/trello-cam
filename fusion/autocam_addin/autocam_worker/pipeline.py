@@ -767,7 +767,7 @@ def _tab_op(adapter: Adapter, job: Job, sheet: _Sheet, op_name: str,
                 points += [(p.x, p.y) for p in placed]
                 on_lines += sum(p.on_line for p in placed)
                 clear += sum(p.clear_of_corners for p in placed)
-            adapter.set_tab_points(sheet.name, op_name, points, job.tabs.shape)
+            adapter.set_tab_points(sheet.name, op_name, points)
             sheet.tab_points[op_name] = [(round(x - sheet.origin[0], 4), round(y - sheet.origin[1], 4))
                                          for x, y in points]
             sheet.notes.append(f"{op_name}: {len(points)} tabs at points, {on_lines} on straight edges, {clear} clear "
@@ -776,7 +776,7 @@ def _tab_op(adapter: Adapter, job: Job, sheet: _Sheet, op_name: str,
         except AdapterError as e:
             sheet.notes.append(f"{op_name}: tabs at points didn't work ({e}); {per_contour} per contour, spread "
                                "evenly by Fusion instead")
-    adapter.set_tabs(sheet.name, op_name, per_contour, job.tabs.shape)
+    adapter.set_tabs(sheet.name, op_name, per_contour)
 
 
 def _tabs_for(job: Job, part: _Part, length_in: float, tool_d: float) -> int:

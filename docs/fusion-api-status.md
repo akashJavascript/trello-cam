@@ -154,11 +154,18 @@ Each run lists the ones it used in `result.json` (`worker.untested_steps`) and t
 
 ## Tabs (M6), names confirmed
 
-Tabs at points and the shape (2026-10-03, untested in Fusion): `tabShape` and `tabPositioning` set from
-their `ChoiceParameterValue.getChoices()` (the value containing 'trian' / 'point'), `tabPositions` (a
-`CadObjectParameterValue`) set to sketch points in a root sketch `TABS <sheet>` on the X/Y plane at Z0;
-loop edges read with `BRepLoop.coEdges` (`isOpposedToEdge` for direction), lines from their vertices, curves
-from `edge.evaluator.getStrokes`. If any of it fails, the op falls back to 'tabCount' (below).
+Tabs at points and the shape (2026-10-03, test jobs `tpts1`-`tpts4`, `ttri1`):
+- `tabPositioning` choices (`ChoiceParameterValue.getChoices()`): only By distance='distance' and Number of
+  tabs='tabCount'; no "at points".
+- **Works:** `tabPositions` (a `CadObjectParameterValue`) set to sketch points in a root sketch `TABS <sheet>`
+  on the X/Y plane at Z0, with `tabPositioning` = 'distance' and `tabDistance` = 1000 in: the posted outlines
+  have exactly the tabs asked for, each 0.079 in (the 4 mm cutter's radius) from its point.
+- **Loop edges:** `BRepLoop.coEdges` (`isOpposedToEdge` for direction), lines from their vertices, curves from
+  `edge.evaluator.getStrokes`: works (the points land on the edges).
+- **`tabShape` can't be set** by the API: choices Rectangular='rectangular', Triangular='triangular', but any
+  value, as an expression or through `ChoiceParameterValue.value`, with tabs on or off, is "3 : Invalid
+  enumeration value" (even setting 'rectangular' on a template that has 'triangular'). From the template it
+  works: triangular tabs ramp up and down along the cut. So the shape is the template's.
 
 Since the tab counts (2026-10-03): `tabPositioning` = 'tabCount' with `tabsPerContour` (the template's own
 parameter, 1 there), on outline ops and on copies of the `[inner]` op (`fx_cam.copy_op`:

@@ -80,7 +80,6 @@ class Tabs:
     distance_in: float = 2.5     # about this far apart along a contour
     min_per_contour: int = 2
     max_per_contour: int = 6
-    shape: str = "triangular"
     at_points: bool = True
 
 
@@ -690,7 +689,6 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
     tabs = Tabs(default=t.boolean("default"), distance_in=t.number("distance_in", positive=True, default=2.5),
                 min_per_contour=t.integer("min_per_contour", minimum=1, default=2),
                 max_per_contour=t.integer("max_per_contour", minimum=1, default=6),
-                shape=t.string("shape", choices=("triangular", "rectangular"), default="triangular"),
                 at_points=t.boolean("at_points")) if t else Tabs()
     if t:
         t.finish()

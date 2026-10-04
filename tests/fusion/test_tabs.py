@@ -24,9 +24,9 @@ def test_only_the_parts_that_ask_get_tabs(tmp_path):
     [sheet] = result.sheets
     assert sheet.tap and not sheet.errors
     [fake] = rig.fake.sheets.values()
-    # 32 in / 8 in = 4 each, at points, triangular; not p02's
+    # 32 in / 8 in = 4 each, at points; not p02's
     assert {op: len(pts) for op, pts in fake["tab_points"].items()} == {"[outer] p01-1": 4, "[outer] p01-2": 4}
-    assert set(fake["tab_shape"].values()) == {"triangular"} and fake["tabs"] == {}
+    assert fake["tabs"] == {}
     program = (rig.out / sheet.tap).read_text()
     assert program.count("G1 Z0.04") == 2                                          # the program passed its checks
 

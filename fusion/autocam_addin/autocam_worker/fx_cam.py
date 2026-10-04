@@ -31,8 +31,8 @@ UNCONFIRMED = {
     "chain_direction": "ChainSelection.isReverted so the chain runs against the loop's way (cut side follows direction)",
     "gouge_check": "BRepBody.pointContainment on the posted program's cutting points",
     "team_save": "Document.saveAs into the Fusion Team folder, wait for Application.dataFileComplete, then DataFile.fusionWebURL",
-    "tabs": "contour op tabs: group_tabs, tabShape (a choice), tabPositioning = 'tabCount', tabsPerContour",
-    "tab_points": "contour op tabs at points: tabPositioning = the 'point' choice, tabPositions = sketch points",
+    "tabs": "contour op tabs: group_tabs, tabPositioning = 'tabCount', tabsPerContour",
+    "tab_points": "contour op tabs at points: tabPositioning 'distance' 1000 in, tabPositions = sketch points",
     "op_copy": "a copy of the template's [inner] op (CAMTemplate.createFromOperations) for tabbed cutouts",
 }
 
@@ -123,41 +123,18 @@ def _set_choice(op, name: str, wants) -> str:
     raise AdapterError(f"{name}: nothing like {'/'.join(wants)} took (choices: {listed}; tried: {'; '.join(tried) or 'none'})")
 
 
-SHAPES = {"triangular": ("triangular", "triangle", "trian"), "rectangular": ("rectangular", "rectangle", "recta")}
-
-
-def _tabs_on(op, names, shape: str):
-    """Tabs on, in `shape` if Fusion takes it (tried with tabs on, then with them off first). Returns why not
-    (the template's shape stays), else None."""
-    key = names.get("shape", "tabShape")
+def set_tabs(op, names, per_contour: int) -> None:
+    """The op's tabs on (the template's shape, width and height: the API can't set tabShape, any value is an
+    'Invalid enumeration value'), this many on each contour, spread evenly ('tabCount')."""
     set_expr(op, names["enabled"], "true")
-    try:
-        _set_choice(op, key, SHAPES.get(shape, (shape,)))
-        return None
-    except AdapterError as first:
-        try:
-            set_expr(op, names["enabled"], "false")
-            _set_choice(op, key, SHAPES.get(shape, (shape,)))
-            return f"{op.name}: the tab shape took with tabs off first"
-        except AdapterError:
-            return f"{op.name}: tab shape left as the template's ({first})"
-        finally:
-            set_expr(op, names["enabled"], "true")
-
-
-def set_tabs(op, names, per_contour: int, shape: str):
-    """The op's tabs on (`shape`; the template keeps their width and height), this many on each contour,
-    spread evenly ('tabCount'). Returns a note if the shape didn't take."""
-    note = _tabs_on(op, names, shape)
     set_expr(op, names["positioning"], "'tabCount'")
     set_expr(op, names.get("per_contour", "tabsPerContour"), str(int(per_contour)))   # jobs from before 0.8.0
-    return note
 
 
-def set_tab_points(op, sketch, names, points_in, shape: str):
-    """The op's tabs on (`shape`), at sketch points made in `sketch` (on the root's X/Y plane) at points_in.
-    Returns a note if the shape didn't take."""
-    note = _tabs_on(op, names, shape)
+def set_tab_points(op, sketch, names, points_in) -> None:
+    """The op's tabs on (the template's shape, width and height), at sketch points made in `sketch` (on the
+    root's X/Y plane) at points_in."""
+    set_expr(op, names["enabled"], "true")
     labels, values = _choices(op, names["positioning"])
     if labels is not None and any("point" in v.lower() or "point" in lab.lower() for lab, v in zip(labels, values)):
         _set_choice(op, names["positioning"], ("points", "point"))
@@ -175,7 +152,6 @@ def set_tab_points(op, sketch, names, points_in, shape: str):
     value.value = made
     if len(list(value.value)) != len(made):
         raise AdapterError(f"tab positions took {len(list(value.value))} of {len(made)} points")
-    return note
 
 
 def copy_op(setup, op, name: str) -> None:

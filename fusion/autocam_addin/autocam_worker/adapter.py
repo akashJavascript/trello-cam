@@ -142,8 +142,8 @@ class Adapter:
         each cutting to stock bottom; then delete the template op."""
         raise NotImplementedError
 
-    def set_tabs(self, sheet: str, op_name: str, per_contour: int, shape: str) -> None:
-        """Turn on the contour op's tabs (`shape`, the template's width and height), this many on each of its
+    def set_tabs(self, sheet: str, op_name: str, per_contour: int) -> None:
+        """Turn on the contour op's tabs (the template's shape, width and height), this many on each of its
         contours, spread evenly."""
         raise NotImplementedError
 
@@ -152,8 +152,8 @@ class Adapter:
         None) or that inner loop, as straight lines and curves (polylines) in loop order."""
         raise NotImplementedError
 
-    def set_tab_points(self, sheet: str, op_name: str, points: Sequence[Tuple[float, float]], shape: str) -> None:
-        """Turn on the contour op's tabs (`shape`, the template's width and height) at these points (design X/Y,
+    def set_tab_points(self, sheet: str, op_name: str, points: Sequence[Tuple[float, float]]) -> None:
+        """Turn on the contour op's tabs (the template's shape, width and height) at these points (design X/Y,
         inches; on its contours)."""
         raise NotImplementedError
 

@@ -153,8 +153,8 @@ class TabSpec:
     distance_in: float = 2.5
     min_per_contour: int = 2
     max_per_contour: int = 6
-    shape: str = "triangular"                          # "triangular" or "rectangular" (core 0.9.0)
     at_points: bool = True                             # placed by tabs.place_tabs, else spread evenly by Fusion
+                                                       # (their shape, width and height are the template's)
 
 
 @dataclass(frozen=True)
@@ -238,8 +238,6 @@ class Job:
             e.append("tabs.distance_in: must be > 0")
         if not 1 <= self.tabs.min_per_contour <= self.tabs.max_per_contour:
             e.append("tabs: need 1 <= min_per_contour <= max_per_contour")
-        if self.tabs.shape not in ("triangular", "rectangular"):
-            e.append(f"tabs.shape: {self.tabs.shape!r} is not triangular or rectangular")
         if not self.parts:
             e.append("parts: empty")
         for p in self.parts:

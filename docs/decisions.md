@@ -583,9 +583,14 @@ built off by default, then switched on by default the same day ("make tabs on by
   then a curve, and only then across a corner. A line spot wins unless it's more than about half the spacing
   further off. Tabs stay a tab width plus two cutter diameters apart, and the even pattern is turned to
   whichever start snaps least (so 2 tabs end up roughly opposite). Fusion gets them as sketch points in a
-  `TABS <sheet>` sketch (`tabPositioning` = its "points" choice, `tabPositions`). If that fails, the op falls
-  back to the same count spread evenly by Fusion, and the sheet's notes say so.
-- **Shape:** triangular (`[tabs] shape`), set on each op; width and height stay the template's.
+  `TABS <sheet>` sketch, in the op's `tabPositions`. Fusion 2705 has no "at points" positioning (only By
+  distance and Number of tabs), so positioning is By distance at 1000 in, which adds none of Fusion's own:
+  the tabs land on the points (checked in a test job: every outline tab 0.079 in, the cutter's radius, from its
+  point). If any of it fails, the op falls back to the same count spread evenly by Fusion, and the sheet's
+  notes say so. Each sheet's points are saved next to its program (`<sheet>.tabs.json`, sheet X/Y).
+- **Shape:** triangular, set in the template (`alu_4mm`: `tabShape` on `[inner]` and `[outer]`). Fusion's API
+  refuses every `tabShape` value ("Invalid enumeration value", even the one already set), but takes it from
+  the template: the cutter ramps up onto each tab and back down. Width and height stay the template's.
 - **Sheet cards** say to break tabbed parts out once the program is done (at the stops they stay held):
   once if every part has tabs, else with each tabbed part marked in the cut order.
 - **The air test** follows the outline through tab lifts: the lap at the final depth may rise up to 0.25 in

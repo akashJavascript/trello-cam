@@ -1116,7 +1116,7 @@
       </CadContours2D>
     </parameter>
     <parameter expression="false" name="group_tabs"/>
-    <parameter expression="'rectangular'" name="tabShape"/>
+    <parameter expression="'triangular'" name="tabShape"/>
     <parameter expression="tool_diameter" name="tabWidth"/>
     <parameter expression="tool_diameter * 0.25" name="tabHeight"/>
     <parameter expression="'distance'" name="tabPositioning"/>
@@ -1532,7 +1532,7 @@
       </CadContours2D>
     </parameter>
     <parameter expression="false" name="group_tabs"/>
-    <parameter expression="'rectangular'" name="tabShape"/>
+    <parameter expression="'triangular'" name="tabShape"/>
     <parameter expression="tool_diameter" name="tabWidth"/>
     <parameter expression="tool_diameter * 0.25" name="tabHeight"/>
     <parameter expression="'distance'" name="tabPositioning"/>

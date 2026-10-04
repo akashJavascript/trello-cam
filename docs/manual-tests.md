@@ -371,7 +371,7 @@ Run `autocam trello-setup` once (the read-me card's line about tabs).
 |---|---|---|
 | 1 | Part cards get a **Tabs** box, "Hold it in with tabs", ticked | |
 | 2 | Untick it on one of two parts and nest them: the sheet card's cut order says "- tabs" for the other, and the description says to break tabbed parts out at the end (with every part tabbed, it says so once) | |
-| 3 | Open the Fusion file: that part's `[outer]` op has triangular Tabs on, at points (a `TABS <sheet>` sketch holds them): on straight edges, clear of corners where there's room; its cutouts are in "[inner] cutouts - N tabs each" ops (after the plain `[inner]` op, before the outlines), every one with tabs, even small ones; the other parts' don't. The sheet's notes in result.json say how many landed on straight edges. Simulate it | |
+| 3 | Open the Fusion file: that part's `[outer]` op has triangular Tabs on, By distance 1000 in with Tab positions from a `TABS <sheet>` sketch: on straight edges, clear of corners where there's room; its cutouts are in "[inner] cutouts - N tabs each" ops (after the plain `[inner]` op, before the outlines), every one with tabs, even small ones; the other parts' don't. The sheet's notes in result.json say how many landed on straight edges. Simulate it | |
 | 4 | Tick "Add an air test program": the air test traces the whole outline, tabs included (small bumps up) | |
 | 5 | Cut it: the tabs hold the part through the cut and break out cleanly. If they're too weak or too strong, change the template's tab width/height (or `[tabs] distance_in`) | |
 
