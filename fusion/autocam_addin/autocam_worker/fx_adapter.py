@@ -154,8 +154,8 @@ class FusionAdapter(Adapter):
 
     def set_tabs(self, sheet, op_name, per_contour, shape):
         self._used("tabs")
-        call(f"{op_name}: tabs", fx_cam.set_tabs, fx_cam.op_by_name(self._setup(sheet), op_name),
-             self.job.fusion_params["tabs"], per_contour, shape)
+        self._note(call(f"{op_name}: tabs", fx_cam.set_tabs, fx_cam.op_by_name(self._setup(sheet), op_name),
+                        self.job.fusion_params["tabs"], per_contour, shape))
 
     def loop_segments(self, copy_id, face_id, loop_index):
         return call("loop edges", fx_geometry.loop_segments, fx_design.face_by_id(self._occ(copy_id), face_id),
@@ -168,8 +168,13 @@ class FusionAdapter(Adapter):
             sk = call("tab points sketch", root.sketches.add, root.xYConstructionPlane)
             sk.name = f"TABS {sheet}"
             self.tab_sketch[sheet] = sk
-        call(f"{op_name}: tabs at points", fx_cam.set_tab_points, fx_cam.op_by_name(self._setup(sheet), op_name),
-             self.tab_sketch[sheet], self.job.fusion_params["tabs"], points, shape)
+        self._note(call(f"{op_name}: tabs at points", fx_cam.set_tab_points,
+                        fx_cam.op_by_name(self._setup(sheet), op_name), self.tab_sketch[sheet],
+                        self.job.fusion_params["tabs"], points, shape))
+
+    def _note(self, note):
+        if note and note not in self.run_notes:
+            self.run_notes.append(note)
 
     def copy_op(self, sheet, op_name, new_name):
         self._used("op_copy")

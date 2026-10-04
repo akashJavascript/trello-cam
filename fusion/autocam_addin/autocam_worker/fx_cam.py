@@ -83,39 +83,65 @@ def apply_template(setup, path: str):
     return [TemplateOp(o.name, tool_guid(o)) for o in ops(setup)]
 
 
-def _choice(op, name: str, want: str) -> str:
-    """The value of choice parameter `name` whose value or label contains `want` (Fusion's own spelling)."""
-    p = param(op, name)
-    v = adsk.cam.ChoiceParameterValue.cast(p.value)
-    if v is None:
-        raise AdapterError(f"{name} isn't a choice parameter")
-    ok, labels, values = v.getChoices()
-    for label, value in zip(labels, values):
-        if want in value.lower() or want in label.lower():
+def _choices(op, name: str):
+    """(labels, values) Fusion lists for a choice parameter, or (None, why not)."""
+    try:
+        v = adsk.cam.ChoiceParameterValue.cast(param(op, name).value)
+        if v is None:
+            return None, "not a choice parameter"
+        listed = v.getChoices()
+        ok, labels, values = listed if len(listed) == 3 else (True,) + tuple(listed)
+        return list(labels), list(values)
+    except Exception as e:  # noqa: BLE001 - only for the message
+        return None, f"getChoices: {e}"
+
+
+def _set_choice(op, name: str, wants) -> str:
+    """Set choice parameter `name` to the first of its values (or labels) containing one of `wants`; if Fusion
+    won't list them, try each of `wants` as the value. Raises AdapterError saying what was listed and tried."""
+    labels, values = _choices(op, name)
+    if labels is not None:
+        candidates = [v for w in wants for lab, v in zip(labels, values) if w in v.lower() or w in lab.lower()]
+    else:
+        candidates = list(wants)
+    tried = []
+    for value in dict.fromkeys(candidates):
+        try:
+            set_expr(op, name, f"'{value}'")
             return value
-    raise AdapterError(f"{name} has no choice like {want!r} (it has {', '.join(values)})")
+        except Exception as e:  # noqa: BLE001 - try the next
+            tried.append(f"{value!r}: {e}")
+    listed = (f"{', '.join(f'{lab}={v}' for lab, v in zip(labels, values))}" if labels is not None else values)
+    raise AdapterError(f"{name}: nothing like {'/'.join(wants)} took (choices: {listed}; tried: {'; '.join(tried) or 'none'})")
 
 
-def _tabs_on(op, names, shape: str) -> None:
+SHAPES = {"triangular": ("triangular", "triangle", "trian"), "rectangular": ("rectangular", "rectangle", "recta")}
+
+
+def _tabs_on(op, names, shape: str):
+    """Tabs on, in `shape` if Fusion takes it. Returns why not (the template's shape stays), else None."""
     set_expr(op, names["enabled"], "true")
-    key = names.get("shape", "tabShape")
-    set_expr(op, key, f"'{_choice(op, key, shape.lower()[:5])}'")      # 'trian...' / 'recta...'
+    try:
+        _set_choice(op, names.get("shape", "tabShape"), SHAPES.get(shape, (shape,)))
+        return None
+    except AdapterError as e:
+        return f"{op.name}: tab shape left as the template's ({e})"
 
 
-def set_tabs(op, names, per_contour: int, shape: str) -> None:
+def set_tabs(op, names, per_contour: int, shape: str):
     """The op's tabs on (`shape`; the template keeps their width and height), this many on each contour,
-    spread evenly ('tabCount')."""
-    _tabs_on(op, names, shape)
+    spread evenly ('tabCount'). Returns a note if the shape didn't take."""
+    note = _tabs_on(op, names, shape)
     set_expr(op, names["positioning"], "'tabCount'")
     set_expr(op, names.get("per_contour", "tabsPerContour"), str(int(per_contour)))   # jobs from before 0.8.0
+    return note
 
 
-def set_tab_points(op, sketch, names, points_in, shape: str) -> list:
+def set_tab_points(op, sketch, names, points_in, shape: str):
     """The op's tabs on (`shape`), at sketch points made in `sketch` (on the root's X/Y plane) at points_in.
-    Returns the sketch points (for the log)."""
-    _tabs_on(op, names, shape)
-    key = names["positioning"]
-    set_expr(op, key, f"'{_choice(op, key, 'point')}'")
+    Returns a note if the shape didn't take."""
+    note = _tabs_on(op, names, shape)
+    _set_choice(op, names["positioning"], ("points", "point", "manual"))
     made = [sketch.sketchPoints.add(adsk.core.Point3D.create(to_cm(x), to_cm(y), 0)) for x, y in points_in]
     value = adsk.cam.CadObjectParameterValue.cast(param(op, names.get("manual_positions", "tabPositions")).value)
     if value is None:
@@ -123,7 +149,7 @@ def set_tab_points(op, sketch, names, points_in, shape: str) -> list:
     value.value = made
     if len(list(value.value)) != len(made):
         raise AdapterError(f"tab positions took {len(list(value.value))} of {len(made)} points")
-    return made
+    return note
 
 
 def copy_op(setup, op, name: str) -> None:
