@@ -75,3 +75,24 @@ def test_tabs_stay_apart_and_none_means_none():
     assert len(tabs) == 6 and all(math.hypot(a[0] - b[0], a[1] - b[1]) >= TAB + 2 * CUTTER - 1e-6
                                   for i, a in enumerate(pts) for b in pts[i + 1:])
     assert place_tabs(lines((0, 0), (1, 0), (1, 1)), 0, CUTTER, TAB) == []
+
+
+def test_a_wide_tab_stays_off_small_fillets():
+    # A plate with 0.1 in fillets at its corners (each quarter arc 0.16 in long) and 0.3 in tabs: every tab sits
+    # wholly on a straight side, never across a fillet.
+    r, w, h = 0.1, 3.0, 2.0
+    segs = []
+    corners = [((w - r, 0), (w, r), (w - r, r), -math.pi / 2), ((w, h - r), (w - r, h), (w - r, h - r), 0.0),
+               ((r, h), (0, h - r), (r, h - r), math.pi / 2), ((0, r), (r, 0), (r, r), math.pi)]
+    start = (r, 0)
+    for a, b, centre, a0 in corners:
+        segs.append(Seg("line", (start, a)))
+        segs.append(arc(centre[0], centre[1], r, a0, a0 + math.pi / 2, 6))
+        start = b
+    tabs = place_tabs(segs, 6, CUTTER, 0.3)
+    assert len(tabs) == 6 and all(t.on_line for t in tabs)
+    for t in tabs:                                       # 0.15 in (half a tab) clear of every fillet
+        assert min(abs(t.x - r), abs(t.x - (w - r)), abs(t.y - r), abs(t.y - (h - r))) >= 0.15 - 1e-6 or \
+            (r + 0.15 <= t.x <= w - r - 0.15 and r + 0.15 <= t.y <= h - r - 0.15) or \
+            (t.y in (0.0, h) and r + 0.15 - 1e-6 <= t.x <= w - r - 0.15 + 1e-6) or \
+            (t.x in (0.0, w) and r + 0.15 - 1e-6 <= t.y <= h - r - 0.15 + 1e-6)

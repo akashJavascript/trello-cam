@@ -42,12 +42,12 @@ def test_no_tabs_without_the_box(tmp_path):
 def test_every_cutout_gets_tabs_by_its_length_however_short(tmp_path):
     rig = Rig(tmp_path)
     # Cutouts 20, 5, 2 and 1.6 in around, and one of 0.5 in: one per 2.5 in, 2 to 6, as many as fit. With the
-    # config's 0.3 in tabs and the 4 mm cutter, each tab needs 2 x (0.3 + 0.157) = 0.91 in of contour.
+    # 0.3 in tabs and the 4 mm cutter, each tab needs 2 x (0.3 + 0.157) = 0.91 in of contour.
     tabbed = with_cutouts("bracket", [20.0, 5.0, 2.0, 1.6, 0.5])
     plain = with_cutouts("spacer", [5.0])
     job = rig.job([("bracket", 1, tabbed, (8.0, 6.0)), ("spacer", 1, plain, (4.0, 4.0))])
-    assert (job.tabs.width_in, job.tabs.height_in) == (0.3, 0.0394)
-    job = dataclasses.replace(job, parts=(dataclasses.replace(job.parts[0], tabs=True), job.parts[1]))
+    job = dataclasses.replace(job, parts=(dataclasses.replace(job.parts[0], tabs=True), job.parts[1]),
+                              tabs=dataclasses.replace(job.tabs, width_in=0.3, height_in=0.0394))
     result = rig.run(job)
     [sheet] = result.sheets
     assert sheet.tap and not sheet.errors

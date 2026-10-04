@@ -591,9 +591,11 @@ built off by default, then switched on by default the same day ("make tabs on by
 - **Shape:** triangular, set in the template (`alu_4mm`: `tabShape` on `[inner]` and `[outer]`). Fusion's API
   refuses every `tabShape` value ("Invalid enumeration value", even the one already set), but takes it from
   the template: the cutter ramps up onto each tab and back down.
-- **Size** (`[tabs] width_in`, `height_in`, set on each tabbed op; 0 keeps the template's): 0.3 in wide, twice
-  the 4 mm cutter, because a triangular tab only reaches full height in its middle; 1 mm high (the template's
-  height). The placement and the count use the same width: each tab needs about twice its width plus a cutter
+- **Size** (`[tabs] width_in`, `height_in`, set on each tabbed op; 0 keeps the template's): 1 mm high. The user
+  chose 0.3 in wide (twice the cutter, since a triangular tab only reaches full height in its middle), but
+  with it Fusion crashed in its stock simulation on an arc move, on both attempts of test job `tsize1`; the
+  0.157 in tabs never did. Most likely a 0.3 in tab ramped over a small fillet, so placement now keeps every
+  tab on one edge when it can, and the width is back to the template's until 0.3 in passes a test job. The placement and the count use the same width: each tab needs about twice its width plus a cutter
   diameter of contour, so with 0.3 in tabs a cutout under about 0.9 in around gets none.
 - **Sheet cards** say to break tabbed parts out once the program is done (at the stops they stay held):
   once if every part has tabs, else with each tabbed part marked in the cut order.

@@ -11,10 +11,12 @@ thickness, so a loop's length is the sum of its walls' areas over their height.
 Where they go (place_tabs, the brief's rules, as the user set them on 2026-10-03): spread evenly around the
 contour, each snapped to the best spot near its even position. Best is, in order: on a straight edge with the
 whole tab at least one cutter diameter from any corner; on a straight edge nearer a corner (when there isn't
-room, or not enough tabs fit otherwise); on a curve; and only when nothing else is left, across a corner.
-Tabs stay at least a tab width plus two cutter diameters apart. The pattern is turned round the contour to
-whichever start gives the least snapping, which keeps them roughly opposite each other. Fusion gets the points
-("at points" tab positions).
+room, or not enough tabs fit otherwise); on one curve long enough for the whole tab; across a smooth join (a
+tab wider than a small fillet); and only when nothing else is left, across a corner. So a tab stays on one
+edge whenever it can: Fusion's stock simulation crashed on 0.3 in triangular tabs (job tsize1, twice), most
+likely where one ramped over a small fillet. Tabs stay at least a tab width plus two cutter diameters apart.
+The pattern is turned round the contour to whichever start gives the least snapping, which keeps them
+roughly opposite each other. Fusion gets the points (its tab positions).
 """
 
 import math
@@ -162,15 +164,18 @@ def place_tabs(segs: Sequence[Seg], count: int, tool_diameter: float, tab_width:
         _, i = c.at(s)
         seg_start, seg_end = c.seg_span[i]
         to_corner = min((_around(s, x, L) for x in c.corners), default=L)
-        if c.segs[i].kind == "line" and min(s - seg_start, seg_end - s) >= half - 1e-9:
+        whole = min(s - seg_start, seg_end - s) >= half - 1e-9         # the whole tab on this one edge
+        if c.segs[i].kind == "line" and whole:
             tier = 0 if to_corner >= clear - 1e-9 else 1
+        elif whole:
+            tier = 2                               # on one curve that's long enough
         elif to_corner >= half - 1e-9:
-            tier = 2
-        else:
-            tier = 3
+            tier = 3                               # across a smooth join (a small fillet): Fusion crashed on wide
+        else:                                      # triangular tabs somewhere like that (tsize1, twice)
+            tier = 4
         spots.append((s, tier))
     spacing = L / count
-    weight = (0.0, 0.5, 1.0, 3.0)                 # times half the spacing: a line spot wins unless it's far off
+    weight = (0.0, 0.5, 1.0, 3.0, 4.0)            # times half the spacing: a line spot wins unless it's far off
     gap = min(tab_width + 2 * tool_diameter, spacing * 0.6)
     best = None
     for turn in range(turns):

@@ -166,8 +166,11 @@ Tabs at points and the shape (2026-10-03, test jobs `tpts1`-`tpts4`, `ttri1`):
   value, as an expression or through `ChoiceParameterValue.value`, with tabs on or off, is "3 : Invalid
   enumeration value" (even setting 'rectangular' on a template that has 'triangular'). From the template it
   works: triangular tabs ramp up and down along the cut. So the shape is the template's.
-- `tabWidth` / `tabHeight` set as lengths (`"0.3 in"`, checked by value) on each tabbed op (`fx_cam.set_tab_size`,
-  untested in Fusion; a failure leaves the template's and warns on the sheet card).
+- `tabWidth` / `tabHeight` set as lengths (`"0.3 in"`, checked by value) on each tabbed op (`fx_cam.set_tab_size`):
+  the calls work, but with 0.3 in triangular tabs Fusion **crashed** (CER report) after generating, in its stock
+  simulation (`SubtractiveStockGenerator` -> `ToolpathToNCStreamBinder::onCircularMove` ->
+  `ToolSpaceGeometrySimulator::onLinear`), on both attempts of `tsize1`. 0.157 in never did. Placement now
+  keeps tabs on one edge; 0.3 in is untested since.
 
 Since the tab counts (2026-10-03): `tabPositioning` = 'tabCount' with `tabsPerContour` (the template's own
 parameter, 1 there), on outline ops and on copies of the `[inner]` op (`fx_cam.copy_op`:

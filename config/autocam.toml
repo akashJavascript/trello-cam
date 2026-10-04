@@ -336,7 +336,8 @@ season_start = "09-01"          # the stock tally counts sheets cut since this d
 default = true                  # the box starts ticked on new part cards (the user's choice, 2026-10-03)
 distance_in = 2.5               # about one tab per this much contour (outline or cutout); their shape
                                 # (triangular) is the template's: the API can't set the shape
-width_in = 0.3                  # along the cut (2x the 4 mm cutter: a triangular tab only peaks in the middle)
+width_in = 0                    # 0: the template's (one cutter, 0.157 in). 0.3 in crashed Fusion (job tsize1,
+                                # twice, before tabs were kept on one edge): try it on a test job before using it
 height_in = 0.0394              # above the bottom: 1 mm, what the template had (0 for either: the template's)
 min_per_contour = 2             # every tabbed outline and cutout gets at least this many (fewer only if they
 max_per_contour = 6             # don't fit: a tiny cutout gets none)
