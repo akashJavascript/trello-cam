@@ -29,6 +29,7 @@ Pure Python: everything Fusion does goes through the Adapter (adapter.py).
 """
 
 import hashlib
+import json
 import shutil
 import sys
 from collections import Counter
@@ -151,6 +152,7 @@ class _Sheet:
     errors: List[Issue] = field(default_factory=list)
     warnings: List[Issue] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    tab_points: Dict[str, List[Tuple[float, float]]] = field(default_factory=dict)   # op -> points, sheet X/Y
     result: Optional[SheetResult] = None
 
     def counts(self) -> Dict[str, int]:
@@ -766,6 +768,8 @@ def _tab_op(adapter: Adapter, job: Job, sheet: _Sheet, op_name: str,
                 on_lines += sum(p.on_line for p in placed)
                 clear += sum(p.clear_of_corners for p in placed)
             adapter.set_tab_points(sheet.name, op_name, points, job.tabs.shape)
+            sheet.tab_points[op_name] = [(round(x - sheet.origin[0], 4), round(y - sheet.origin[1], 4))
+                                         for x, y in points]
             sheet.notes.append(f"{op_name}: {len(points)} tabs at points, {on_lines} on straight edges, {clear} clear "
                                "of corners")
             return
@@ -894,6 +898,9 @@ def _post_sheet(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> Non
     if raw_dir.exists():
         shutil.rmtree(raw_dir)
     raw_dir.mkdir(parents=True)
+    if sheet.tab_points:                              # where its tabs were asked for (sheet X/Y), for checking
+        write_atomic(out_dir / f"{sheet.name}.tabs.json",
+                     (json.dumps(sheet.tab_points, indent=1) + "\n").encode("utf-8"))
     try:
         posted = adapter.post(sheet.name, sheet.name, raw_dir, job.post.path, job.post.properties)
     except AdapterError as e:

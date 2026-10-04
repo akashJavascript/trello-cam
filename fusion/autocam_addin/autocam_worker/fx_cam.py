@@ -127,13 +127,22 @@ SHAPES = {"triangular": ("triangular", "triangle", "trian"), "rectangular": ("re
 
 
 def _tabs_on(op, names, shape: str):
-    """Tabs on, in `shape` if Fusion takes it. Returns why not (the template's shape stays), else None."""
+    """Tabs on, in `shape` if Fusion takes it (tried with tabs on, then with them off first). Returns why not
+    (the template's shape stays), else None."""
+    key = names.get("shape", "tabShape")
     set_expr(op, names["enabled"], "true")
     try:
-        _set_choice(op, names.get("shape", "tabShape"), SHAPES.get(shape, (shape,)))
+        _set_choice(op, key, SHAPES.get(shape, (shape,)))
         return None
-    except AdapterError as e:
-        return f"{op.name}: tab shape left as the template's ({e})"
+    except AdapterError as first:
+        try:
+            set_expr(op, names["enabled"], "false")
+            _set_choice(op, key, SHAPES.get(shape, (shape,)))
+            return f"{op.name}: the tab shape took with tabs off first"
+        except AdapterError:
+            return f"{op.name}: tab shape left as the template's ({first})"
+        finally:
+            set_expr(op, names["enabled"], "true")
 
 
 def set_tabs(op, names, per_contour: int, shape: str):
