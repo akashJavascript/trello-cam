@@ -78,7 +78,7 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
             source="onshape" if link else ("local" if req.card.id.startswith("local-") else "trello_attachment"),
             onshape=OnshapeRef(link.did, link.vid, link.eid, ready.onshape_part_id or "", link.url,
                                ready.onshape_microversion) if link else None,
-            force_small_tool=req.force_small_tool, tabs=req.tabs))
+            force_small_tool=req.force_small_tool, tabs=req.tabs, by_hand=req.by_hand))
     for n, spec in enumerate(carried, len(parts) + 1):
         parts.append(replace(spec, part_key=f"p{n:02d}"))
 

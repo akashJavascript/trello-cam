@@ -144,6 +144,7 @@ class PartSpec:
     onshape: Optional[OnshapeRef]
     force_small_tool: bool
     tabs: bool = False                                 # hold it in with tabs (core 0.7.0)
+    by_hand: bool = False                              # not nested: one copy alone, placed by hand (core 0.12.0)
 
 
 @dataclass(frozen=True)

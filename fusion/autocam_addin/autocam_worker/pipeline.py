@@ -45,7 +45,7 @@ from autocam_core.holes import ToolProfile
 from autocam_core.hotfolder import write_atomic
 from autocam_core.layout import Placed, plan_layout
 from autocam_core.offcuts import Placement, beside_as_loaded, placement_for, room_beside
-from autocam_core.names import outer_op_name, program_name
+from autocam_core.names import instance_id, outer_op_name, program_name
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
 from autocam_core.plate import PlateAnalysis, analyze
@@ -140,6 +140,9 @@ class _Sheet:
     envelope: Optional[Rect] = None           # where Arrange could put parts, in the design (its last area)
     offcut_id: Optional[str] = None           # nested onto this offcut instead of a new sheet
     offcut: Optional[_Way] = None
+    by_hand: bool = False                     # a part placed by hand: the "sheet" is its own box (origin = its
+    size: Optional[Tuple[float, float]] = None   # front-left corner, the program's zero); run it `repeat` times
+    repeat: int = 1
     areas: Tuple[Tuple[Optional[int], Rect], ...] = ()   # each Arrange's area with parts: (index of the room beside
                                                          # earlier cuts it filled, or None for the stretch, envelope)
     index: int = 0
@@ -318,6 +321,44 @@ class _Try:
     @property
     def name(self) -> str:
         return f"{self.order}, offcuts spun round" if self.spin else self.order
+
+
+def _by_hand_sheet(adapter: Adapter, job: Job, part: _Part, x_start: float, slot: int,
+                   log: Callable[[str], None]) -> Tuple[List["_Sheet"], int]:
+    """A part placed by hand: its one copy laid flat by an Arrange of its own, in an area just long enough for its
+    longest side along X and its shorter side along Y, so it lands that way round. Its "sheet" is its own box:
+    the stock, and the program's zero at the box's front-left corner (bottom). Returns ([the sheet] or [], slot)."""
+    cid = part.copies[0]
+    long_side, short_side = _plate_size(adapter, part)
+    pitch = job.sheet.width_in + job.nest.envelope_spacing_in
+    ox = x_start + slot * pitch
+    slot += 1
+    envelope = (ox, 0.0, ox + long_side + 0.5, short_side + 0.05)
+    try:
+        got = adapter.arrange([cid], envelope, job.nest.part_spacing_in, {cid: part.analysis.up_face_id})
+    except AdapterError as e:
+        part.errors.append(Issue(E.ARRANGE_FAILED, f"laying it flat failed: {e}"))
+        return [], slot
+    if cid not in got.placed:
+        why = next(iter(got.refused.values()), "Arrange didn't place it")
+        part.errors.append(Issue(E.ARRANGE_FAILED, f"couldn't lay it flat with its long side along X: {why}"))
+        return [], slot
+    try:
+        box = adapter.box(cid)
+        upright = adapter.faces_up(cid, part.analysis.up_face_id)
+    except AdapterError as e:
+        part.errors.append(Issue(E.ARRANGE_FAILED, f"couldn't read where it is: {e}"))
+        return [], slot
+    tol = job.material.thickness_tol_in + Z_TOL_IN
+    if abs(box.z0) > Z_TOL_IN or abs(box.z1 - part.analysis.stock_thickness_in) > tol or not upright:
+        part.errors.append(Issue(E.ARRANGE_FAILED, "Arrange didn't lay it flat, top face up"))
+        return [], slot
+    size = (round(box.x1 - box.x0, 4), round(box.y1 - box.y0, 4))
+    log(f"{part.key}: placed by hand, {size[0]:.2f} x {size[1]:.2f} in, run {part.spec.qty} time(s)")
+    placed = Placed(cid, part.key, box.xy)
+    sheet = _Sheet(part.analysis.stock_thickness_in, (box.x0, box.y0), [(instance_id(part.key, 1), placed)],
+                   envelope=envelope, by_hand=True, size=size, repeat=part.spec.qty, areas=((None, envelope),))
+    return [sheet], slot
 
 
 def _plate_size(adapter: Adapter, part: _Part) -> Tuple[float, float]:
@@ -802,7 +843,8 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     if moved:
         sheet.errors.append(Issue(E.ARRANGE_FAILED, f"parts moved after nesting: {'; '.join(moved)}"))
         return
-    adapter.make_sheet(sheet.name, sheet.origin, job.sheet.width_in, job.sheet.length_in, sheet.thickness_in, copy_ids)
+    size_x, size_y = sheet.size or (job.sheet.width_in, job.sheet.length_in)
+    adapter.make_sheet(sheet.name, sheet.origin, size_x, size_y, sheet.thickness_in, copy_ids)
     ops = adapter.apply_template(sheet.name, tool.template_path)
 
     wrong = [o.name for o in ops if o.tool_guid != tool.guid]
@@ -922,7 +964,8 @@ def _post_sheet(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> Non
             return
     data = text.encode("ascii", errors="surrogateescape")
     counts = sheet.counts()
-    check = check_sheet_program(data, job, sheet.thickness_in, sheet.tool_key, sheet.outer_order, counts)
+    check = check_sheet_program(data, job, sheet.thickness_in, sheet.tool_key, sheet.outer_order, counts,
+                                sheet.by_hand)
     if check.passed:
         # The tool center must never be inside a part: catches a cutout or outline cut on the wrong side.
         try:
@@ -1006,8 +1049,8 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
         if not part.ok:
             continue
         try:
-            for n in range(2, part.spec.qty + 1):
-                cid = f"{part.key}.{n}"
+            for n in range(2, 1 + (1 if part.spec.by_hand else part.spec.qty)):   # placed by hand: one copy, run
+                cid = f"{part.key}.{n}"                                          # qty times
                 adapter.add_copy(part.copies[0], cid)
                 part.copies.append(cid)
         except AdapterError as e:
@@ -1029,9 +1072,13 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
         slot = 0
         groups: Dict[float, List[_Part]] = {}
         for p in good:
-            groups.setdefault(p.analysis.stock_thickness_in, []).append(p)
+            if not p.spec.by_hand:
+                groups.setdefault(p.analysis.stock_thickness_in, []).append(p)
         for thickness in sorted(groups):
             made, slot = _nest_group(adapter, job, thickness, groups[thickness], x_start, slot, log, notes)
+            sheets += made
+        for p in [p for p in good if p.spec.by_hand]:
+            made, slot = _by_hand_sheet(adapter, job, p, x_start, slot, log)
             sheets += made
     sheets = _plan_sheets(adapter, job, sheets, parts, log)
 
@@ -1076,8 +1123,13 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             except AdapterError as e:
                 sheet.notes.append(f"machining time unavailable: {e}")
             png = f"{sheet.name}.png"
-            rect = (sheet.origin[0], sheet.origin[1], sheet.origin[0] + job.sheet.width_in,
-                    sheet.origin[1] + job.sheet.length_in)
+            if sheet.by_hand:                         # the part's box and a little round it
+                w, h = sheet.size
+                ox, oy = sheet.origin
+                rect = (ox - 0.5, oy - 0.5, ox + w + 0.5, oy + h + 0.5)
+            else:
+                rect = (sheet.origin[0], sheet.origin[1], sheet.origin[0] + job.sheet.width_in,
+                        sheet.origin[1] + job.sheet.length_in)
             try:
                 adapter.preview(sheet.name, rect, out_dir / png)
                 preview = png
@@ -1097,7 +1149,8 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             parts=tuple(SheetPart(k, n) for k, n in sorted(sheet.counts().items())),
             outer_order=sheet.outer_order, tool_forced_by=tuple(ToolForce(k, r) for k, r in sheet.forced),
             errors=_dedupe(sheet.errors), warnings=_dedupe(sheet.warnings), notes=tuple(sheet.notes),
-            **_sheet_use(job, sheet, parts)))
+            by_hand=sheet.by_hand, repeat=sheet.repeat,
+            **({} if sheet.by_hand else _sheet_use(job, sheet, parts))))
 
     f3d_name: Optional[str] = None
     f3d_bytes: Optional[int] = None
@@ -1122,7 +1175,7 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
     part_rows: List[PartResult] = []
     for part in parts.values():
         on = sorted(s.index for s in sheets if part.key in s.counts()) if part.ok and not part.deferred else []
-        placed = sum(s.counts().get(part.key, 0) for s in sheets) if on else 0
+        placed = sum(s.counts().get(part.key, 0) * s.repeat for s in sheets) if on else 0
         holes = None
         if part.plan is not None:
             c = part.plan.counts()

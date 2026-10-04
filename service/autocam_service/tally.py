@@ -16,12 +16,16 @@ class CutSheet:
     stock: str                          # e.g. "6061 1/8in"
     from_offcut: bool
     parts_area_in2: Optional[float]     # None: not on record (a sheet card from before 2026-10-02)
+    by_hand: bool = False               # a part placed by hand, cut from a piece of its own
 
 
 def season_text(cut: Sequence[CutSheet], since: datetime, sheet_area_in2: float, on_shelf: int) -> str:
     head = f"Stock since {since:%b} {since.day}: "
+    by_hand = sum(1 for c in cut if c.by_hand)
+    cut = [c for c in cut if not c.by_hand]
+    tail = f" {by_hand} part{'s' if by_hand != 1 else ''} placed by hand." if by_hand else ""
     if not cut:
-        return head + "nothing cut yet."
+        return head + ("nothing cut on sheets yet." + tail if by_hand else "nothing cut yet.")
     new = [c for c in cut if not c.from_offcut]
     reloads = len(cut) - len(new)
     stocks = Counter(c.stock for c in new)
@@ -37,4 +41,4 @@ def season_text(cut: Sequence[CutSheet], since: datetime, sheet_area_in2: float,
     missing = len(cut) - len(known)
     if missing:
         text += f" ({missing} cut sheet{'s' if missing != 1 else ''} with no parts area on record.)"
-    return text
+    return text + tail

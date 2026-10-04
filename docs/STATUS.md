@@ -58,9 +58,8 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 5. A **corner stop** on the bed (the user's idea): every sheet and offcut square, in reach and at one zero.
 
 ### Still to build
-- **Manual placement** for a part that isn't nested (P-032 waits in Ready for CAM with "Nest this part"
-  unticked): its own program, zeroed at its bounding box's front-left corner, no margin (the user's choice).
-  Today an unticked box just keeps the card out of runs.
+- **Placed by hand** (built 2026-10-03, tested offline, untested in Fusion): "Nest this part" unticked gives a
+  part its own program, long side along X, zeroed at its box's front-left corner, run once per copy.
 - **Templates:** `alu_eighth`, `poly_4mm`, `poly_eighth` (only `alu_4mm` exists). Until then, polycarbonate
   parts and parts that need the 1/8 in endmill stay in Ready for CAM. Set Tab shape: Triangular in each.
 - **Pockets:** needs a `dump_params` run on a job with a 2D Adaptive op (P-2015 waits in Needs fixing).

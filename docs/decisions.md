@@ -602,3 +602,19 @@ built off by default, then switched on by default the same day ("make tabs on by
 - **The air test** follows the outline through tab lifts: the lap at the final depth may rise up to 0.25 in
   over a tab and come back down (`airtest.TAB_MAX_IN`).
 
+## 2026-10-03: parts placed by hand (the user's choices)
+
+A part card in Ready for CAM with **"Nest this part" unticked** is no longer skipped: it's **placed by hand**
+(a card nobody wants processed stays in Drafts).
+- **Its program:** one copy, alone, laid flat by an Arrange of its own in an area just long enough for its
+  longest side along X and its shorter side along Y, so it lands **long side across the bed**. The stock is the
+  part's own bounding box, so the program's X/Y zero is the **front-left corner of the part's box** (no
+  margin); Z0 is still the spoilboard. Qty N: the same program, **run N times**, zeroed at a fresh spot each
+  time (`SheetResult.repeat`; the part counts N placed).
+- **Its checks:** the same, except there are no fixed clamp strips, sheet or reach to check against
+  (`check_sheet_program(..., by_hand=True)`). The guard reports what the cutter covers below the stock top
+  (`GuardReport.cut_box_in`, grown by its radius), and the sheet card says it: "The cutter reaches X -0.21 to
+  6.33 and Y -0.21 to 2.51 in from there", so the piece must cover that, clamps 1/2 in clear of it.
+- **Its card:** "... - placed by hand - ... - 1 part, run 3x - ...", no Sheet use, no Offcut or Stock box, never
+  opened for other parts. Tabs, the air test and Rush work as usual. The stock tally counts these separately.
+

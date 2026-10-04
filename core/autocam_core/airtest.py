@@ -280,10 +280,10 @@ def air_test_program(text: str, thickness_in: float, gap_in: float, feed_ipm: fl
 
 
 def check_air_test(data: bytes, job: Job, thickness_in: float, tool_key: str, outer_order: Sequence[str],
-                   part_counts: Mapping[str, int], gap_in: float) -> SheetCheck:
+                   part_counts: Mapping[str, int], gap_in: float, by_hand: bool = False) -> SheetCheck:
     """The sheet check for an air test: the same guard and pauses, the outlines must NOT reach the stock bottom,
     and no Z (or drill R) comes below the stock top + gap."""
-    check = check_sheet_program(data, job, thickness_in, tool_key, outer_order, part_counts)
+    check = check_sheet_program(data, job, thickness_in, tool_key, outer_order, part_counts, by_hand)
     text = data.decode("ascii", errors="replace")
     expected = set(outer_depth_problems(text, job.guard.z_floor_in))
     problems = [p for p in check.plan_problems if p not in expected]

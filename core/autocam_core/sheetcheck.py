@@ -47,8 +47,12 @@ class SheetCheck:
         return out
 
 
-def guard_spec(job: Job, thickness_in: float, tool_key: str) -> GuardSpec:
+def guard_spec(job: Job, thickness_in: float, tool_key: str, by_hand: bool = False) -> GuardSpec:
+    """by_hand: a part placed by hand (its own program, zeroed at its box's corner on any piece): no fixed clamp
+    strips, sheet or reach to check against; everything else is checked the same."""
     tool = job.tooling.tools[tool_key]
+    if by_hand:
+        return replace(guard_spec(job, thickness_in, tool_key), clamp_zones_in=(), reach_y_in=None, sheet_in=None)
     return GuardSpec(
         z_floor_in=job.guard.z_floor_in,
         allowed_g=frozenset(job.guard.allowed_g),
@@ -122,12 +126,13 @@ def outer_depth_problems(text: str, floor_in: float) -> List[str]:
 
 
 def check_sheet_program(data: bytes, job: Job, thickness_in: float, tool_key: str,
-                        outer_order: Sequence[str], part_counts: Mapping[str, int]) -> SheetCheck:
+                        outer_order: Sequence[str], part_counts: Mapping[str, int],
+                        by_hand: bool = False) -> SheetCheck:
     text = data.decode("ascii", errors="replace")
     problems = tuple(plan_problems(text, job, thickness_in, tool_key, outer_order, part_counts))
     if tool_key not in job.tooling.tools:
         return SheetCheck(_failed(check_program(data, GuardSpec()), "unknown tool"), None, problems)
-    spec = guard_spec(job, thickness_in, tool_key)
+    spec = guard_spec(job, thickness_in, tool_key, by_hand)
     report = check_program(data, spec)
     if not job.pauses.enabled:
         if report.m0_count:

@@ -73,6 +73,7 @@ class GuardReport:
     problems: Tuple[str, ...]           # anything else that makes the program unsafe or unreadable
     m0_count: int
     line_count: int
+    cut_box_in: Optional[Rect] = None   # what the cutter (grown by its radius) covers below the stock top
 
     def summary(self, limit: int = 3) -> str:
         if self.passed:
@@ -258,6 +259,7 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
     moved = False
     last_motion_index = -1
     mist_codes_seen = set()
+    cut_box: Optional[Rect] = None
     tail: List[Tuple[int, List[Tuple[str, Optional[float]]]]] = []  # code lines after the last motion
 
     def where(n: int, raw: str) -> str:
@@ -484,6 +486,15 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
                 clamp.append(where(n, raw) + " (descends at an unknown position)")
             elif over_zone(x, y, x, y):
                 clamp.append(where(n, raw))
+        if spec.stock_top_in is not None and low < spec.stock_top_in - 1e-6 and nx is not None and ny is not None:
+            if arc_box is not None:
+                seg = arc_box
+            elif x is not None and y is not None:
+                seg = (min(x, nx), min(y, ny), max(x, nx), max(y, ny))
+            else:
+                seg = (nx, ny, nx, ny)
+            cut_box = seg if cut_box is None else (min(cut_box[0], seg[0]), min(cut_box[1], seg[1]),
+                                                   max(cut_box[2], seg[2]), max(cut_box[3], seg[3]))
         if low_enough(low):
             if arc_box is not None:
                 path = arc_box
@@ -525,6 +536,7 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
         sha256=sha, passed=passed, floor_in=spec.z_floor_in, min_z_in=min_z, units=unit_name,
         offenders=tuple(offenders), clamp_violations=tuple(clamp), problems=tuple(problems),
         m0_count=m0_count, line_count=len(lines),
+        cut_box_in=_grow(cut_box, spec.tool_radius_in) if cut_box is not None else None,
     )
 
 

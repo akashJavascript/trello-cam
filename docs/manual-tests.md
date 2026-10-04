@@ -375,6 +375,15 @@ Run `autocam trello-setup` once (the read-me card's line about tabs).
 | 4 | Tick "Add an air test program": the air test traces the whole outline, tabs included (small bumps up) | |
 | 5 | Cut it: the tabs hold the part through the cut and break out cleanly. If they're too weak or too strong, change the template's tab width/height (or `[tabs] distance_in`) | |
 
+### 11. Parts placed by hand (2026-10-03)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Untick "Nest this part" on a card and move it to Ready for CAM: about 2 minutes later a sheet card "... - placed by hand - ..." appears with its own program | |
+| 2 | Open its Fusion file: the part alone, long side along X, the stock exactly its box, the setup's origin at the box's front-left bottom corner | |
+| 3 | Air-test it: zero X/Y where you want the part's front-left corner, Z on the spoilboard; the cutter stays within the area the card gives | |
+| 4 | Qty 3: the card says to run it 3 times, and the part card follows the sheet card to Cut | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

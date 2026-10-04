@@ -93,3 +93,44 @@ def test_a_rebuilt_sheet_takes_its_carried_parts_tabs_box_as_it_is_now(tmp_path)
     h.runner.tick()
     job = read_job(next(h.queue.incoming.glob("r002-*.json")))
     assert {p.card_id: p.tabs for p in job.parts} == {"c2": True, "c1": True}       # c1 carried, now with tabs
+
+
+def test_a_part_placed_by_hand_through_the_real_pipeline(tmp_path, monkeypatch):
+    tests = Path(__file__).resolve().parents[1]
+    monkeypatch.syspath_prepend(str(tests / "fusion"))
+    monkeypatch.syspath_prepend(str(tests / "core"))
+    from fakeadapter import FakeAdapter
+    from geombuilder import PlateBuilder
+    from autocam_worker.worker import Worker
+    import autocam_service.jobs as jobs
+    monkeypatch.setattr(jobs, "fusion_path", lambda p: Path(p).resolve().as_posix())
+
+    h = harness(tmp_path, step_card("c1", "bracket", qty=3))
+    for key, t in RAW["templates"].items():
+        f = tmp_path / "templates" / f"{key}.f3dhsm-template"
+        if f.exists():
+            guid = RAW["tools"][t["tool"]]["guid"]
+            f.write_text(json.dumps([[op, guid] for op in ("[bore] holes", "[inner] cutouts", "[outer] outline")]))
+    h.runner.ready_cards()
+    h.tracker.tick_all("c1", "Nest", done=False)          # placed by hand
+    h.runner.tick()
+    fake = FakeAdapter()
+    for job_id in h.queue.pending():
+        for part in read_job(h.queue.incoming / f"{job_id}.json").parts:
+            b = PlateBuilder(part.name)
+            b.hole(0.25)
+            fake.register(Path(part.step), b.build(), (5.0, 2.0))
+    worker = Worker(h.queue, lambda job: fake, max_attempts=2, fusion_version="fake")
+    while worker.tick():
+        pass
+    h.runner.tick()
+    s1 = sheet(h)
+    assert "placed by hand" in s1.name and "1 part, run 3x" in s1.name and not s1.name.startswith("NOT CUTTABLE")
+    assert "Stock: any piece of 6061 1/8in, anywhere on the bed (bracket is placed by hand, not nested)." in s1.desc
+    assert "Zero X and Y at the front-left corner of bracket's box" in s1.desc
+    assert "The cutter reaches X -0." in s1.desc and "so the piece must cover that" in s1.desc
+    assert "It cuts one bracket: run it 3 times, zeroing at a fresh spot each time." in s1.desc
+    assert "Clamps: left and right" not in s1.desc and "Sheet use" not in s1.desc
+    assert h.list_of("c1") == "nested" and h.store.sheet_cards()[s1.id]["by_hand"] is True
+    h.runner.tick()                                       # the boxes appear: no Offcut box, no Stock box
+    assert (s1.id, "Offcut") not in h.tracker.checklists and (s1.id, "Stock") not in h.tracker.checklists

@@ -87,7 +87,8 @@ def test_moving_a_card_out_and_back_starts_a_run_again(tmp_path):
     assert h.store.run_ids() == ["r001", "r002"]
 
 
-def test_nest_box_unticked_keeps_the_card_out_of_runs(tmp_path):
+def test_nest_box_unticked_means_placed_by_hand(tmp_path):
+    from autocam_core.schema_job import read_job
     h = harness(tmp_path, step_card("c1", "plate"), step_card("c2", "gusset"),
                 step_card("c3", "draft", list_key="inbox"),
                 Card("tpl", "New part", "", "inbox", "u", is_template=True),
@@ -99,13 +100,9 @@ def test_nest_box_unticked_keeps_the_card_out_of_runs(tmp_path):
     assert h.tracker.checklists[("c3", "Nest")] == [["Nest this part", True]]
     assert h.tracker.checklists[("c2", "Nest")] == [["Nest this part", False]]
     assert ("tpl", "Nest") not in h.tracker.checklists and ("rm", "Nest") not in h.tracker.checklists
-    assert h.tracker.comments_on(SYS)[0] == "Run r001 started: 1 part."
-    run_fake_worker(h.queue)
-    h.runner.tick()
-    assert h.list_of("c1") == "nested" and h.list_of("c2") == "ready_for_cam"
-    h.tracker.tick_all("c2", "Nest")                  # ticking it counts like dragging it in
-    h.runner.tick()
-    assert h.store.run_ids() == ["r001", "r002"]
+    assert h.tracker.comments_on(SYS)[0] == "Run r001 started: 2 parts."
+    job = read_job(next(h.queue.incoming.glob("r001-*.json")))
+    assert {p.card_id: p.by_hand for p in job.parts} == {"c1": False, "c2": True}
 
 
 def test_cards_over_the_onshape_limit_wait_for_the_next_run(tmp_path):

@@ -49,10 +49,30 @@ def sheet_title(job: Job, vs: VerifiedSheet, offcut_number: Optional[int] = None
     n = sum(p.count for p in s.parts)
     stock = f"{material_label(job.material)} {thickness_label(s.thickness_in)}" + (
         (f" offcut #{offcut_number}" if offcut_number else " offcut") if s.offcut_id else "")
-    bits = [stock, s.cutter_label,
-            f"{n} part{'s' if n != 1 else ''}", _minutes(s.machining_time_s), f"{job.run_id} S{s.index}"]
+    if s.by_hand:
+        stock += " - placed by hand"
+    count = f"{n} part{'s' if n != 1 else ''}" + (f", run {s.repeat}x" if s.repeat > 1 else "")
+    bits = [stock, s.cutter_label, count, _minutes(s.machining_time_s), f"{job.run_id} S{s.index}"]
     title = " - ".join(b for b in bits if b)
     return title if vs.cuttable else f"NOT CUTTABLE - {title}"
+
+
+def _by_hand_load(job: Job, vs: VerifiedSheet, part_cards: Mapping[str, Tuple[str, str]]) -> List[str]:
+    """Where a part placed by hand goes: any piece, anywhere; X/Y zero at the part's box corner."""
+    s = vs.sheet
+    name = part_cards.get(s.parts[0].part_key, (s.parts[0].part_key, ""))[0] if s.parts else "the part"
+    stock = f"{material_label(job.material)} {thickness_label(s.thickness_in)}"
+    box = vs.check.guard.cut_box_in if vs.check is not None else None
+    lines = [f"Stock: any piece of {stock}, anywhere on the bed ({name} is placed by hand, not nested)."]
+    if box is not None:
+        x0, y0, x1, y1 = box
+        lines += [f"Zero X and Y at the front-left corner of {name}'s box (the part's own corner, not the "
+                  f"piece's). The cutter reaches X {x0:.2f} to {x1:.2f} and Y {y0:.2f} to {y1:.2f} in from "
+                  f"there ({x1 - x0:.1f} x {y1 - y0:.1f} in), so the piece must cover that.",
+                  "Z on the spoilboard, beside the piece. Clamps: anywhere at least 1/2 in clear of that area."]
+    else:
+        lines += [f"Zero X and Y at the front-left corner of {name}'s box; Z on the spoilboard, beside the piece."]
+    return lines
 
 
 def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_key: str,
@@ -67,11 +87,16 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
     if not vs.cuttable:
         lines += ["NOT CUTTABLE. This sheet failed the checks:"] + [f"- {p}" for p in vs.problems] + [""]
 
-    lines += ["LOAD",
-              stock or f"Stock: {material_label(m)} {thickness_label(s.thickness_in)} ({s.thickness_in:g}), "
-                       f"{job.sheet.width_in:g} x {job.sheet.length_in:g}",
-              f"Cutter: {s.cutter_label} (T{tool.number}). Check the cutter itself: tool numbers are shared.",
-              f"Clamps: {_clamp_edges(job)}. Mist: {'on' if m.use_mist else 'off'}."]
+    if s.by_hand:
+        lines += ["LOAD"] + _by_hand_load(job, vs, part_cards) + [
+            f"Cutter: {s.cutter_label} (T{tool.number}). Check the cutter itself: tool numbers are shared.",
+            f"Mist: {'on' if m.use_mist else 'off'}."]
+    else:
+        lines += ["LOAD",
+                  stock or f"Stock: {material_label(m)} {thickness_label(s.thickness_in)} ({s.thickness_in:g}), "
+                           f"{job.sheet.width_in:g} x {job.sheet.length_in:g}",
+                  f"Cutter: {s.cutter_label} (T{tool.number}). Check the cutter itself: tool numbers are shared.",
+                  f"Clamps: {_clamp_edges(job)}. Mist: {'on' if m.use_mist else 'off'}."]
     for forced in s.tool_forced_by:
         name = part_cards.get(forced.part_key, (forced.part_key, ""))[0]
         lines.append(f"This sheet uses the {s.cutter_label} because of {name}: {forced.reason}.")
@@ -81,6 +106,9 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         key = resume_key or "the continue key"
         run = f"Program: {program or s.tap}" + (f" (about {_minutes(s.machining_time_s)})" if s.machining_time_s else "")
         lines += ["", "RUN", run]
+        if s.by_hand and s.repeat > 1:
+            name = part_cards.get(s.parts[0].part_key, (s.parts[0].part_key, ""))[0] if s.parts else "the part"
+            lines.append(f"It cuts one {name}: run it {s.repeat} times, zeroing at a fresh spot each time.")
         if n and stops:
             lines.append(f"It stops after each part but the last ({n} stops), spindle off. Take the part out, "
                          f"then press {key}. Never press Esc at a stop: it ends the program.")

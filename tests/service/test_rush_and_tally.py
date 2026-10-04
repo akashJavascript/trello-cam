@@ -128,6 +128,8 @@ def test_season_text():
     cut_sheets = [CutSheet("6061 1/8in", False, 300.0), CutSheet("6061 1/8in", False, 200.0),
                   CutSheet("6061 3/16in", False, 100.0), CutSheet("6061 1/8in", True, 76.0),
                   CutSheet("PC smoked 1/8in", True, None)]
+    assert season_text([CutSheet("6061 1/8in", False, 12.0, by_hand=True)], since, 1152.0, 0) == \
+        "Stock since Sep 1: nothing cut on sheets yet. 1 part placed by hand."
     assert season_text(cut_sheets, since, 1152.0, 2) == (
         "Stock since Sep 1: 3 new sheets (6061 1/8in x2, 6061 3/16in x1), 2 cut from offcuts. Parts: 676 sq in, "
         "20% of the new sheets (2 offcuts still on the shelf). (1 cut sheet with no parts area on record.)")

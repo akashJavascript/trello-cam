@@ -65,7 +65,7 @@ def verify_sheet(folder: Path, job: Job, sheet: SheetResult) -> VerifiedSheet:
     if hashlib.sha256(data).hexdigest() != sheet.tap_sha256:
         problems.append(f"{sheet.tap} changed after Fusion checked it")
     counts = {p.part_key: p.count for p in sheet.parts}
-    check = check_sheet_program(data, job, sheet.thickness_in, sheet.tool, sheet.outer_order, counts)
+    check = check_sheet_program(data, job, sheet.thickness_in, sheet.tool, sheet.outer_order, counts, sheet.by_hand)
     problems += check.problems()
     tool = job.tooling.tools.get(sheet.tool)
     if tool is not None and sheet.tool_guid != tool.guid:
@@ -77,7 +77,8 @@ def part_consistency(job: Job, result: Result) -> Dict[str, Tuple[str, ...]]:
     on_sheets: Dict[str, Dict[int, int]] = {}
     for s in result.sheets:
         for p in s.parts:
-            on_sheets.setdefault(p.part_key, {})[s.index] = on_sheets.get(p.part_key, {}).get(s.index, 0) + p.count
+            on_sheets.setdefault(p.part_key, {})[s.index] = (on_sheets.get(p.part_key, {}).get(s.index, 0)
+                                                            + p.count * s.repeat)    # by hand: run repeat times
     problems: Dict[str, List[str]] = {}
     reported = {p.part_key for p in result.parts}
     for spec in job.parts:

@@ -332,3 +332,12 @@ def test_arc_that_really_dips_into_a_clamp_strip_is_still_caught():
     # at Z0; G2 is the quarter turn on the right and stays clear.
     assert check(edit("G1 Y8.\r\n", "G3 X11. Y3. I0. J-2.\r\nG1 Y8.\r\n"), ON_SHEET).clamp_violations
     assert not check(edit("G1 Y8.\r\n", "G2 X11. Y3. I0. J-2.\r\nG1 Y8.\r\n"), ON_SHEET).clamp_violations
+
+
+def test_the_report_says_what_the_cutter_covers_below_the_stock_top():
+    program = b"G90\r\nG20\r\nG53 Z\r\nS18000\r\nM3\r\nG4 X4.\r\nG0 X1. Y1.\r\nG0 Z0.3\r\nG1 Z0. F20.\r\n" \
+              b"G1 X3. F60.\r\n" \
+              b"G3 X3. Y3. I0. J1.\r\nG1 X1.\r\nG0 Z2.\r\nG0 X9. Y9.\r\nG53 Z\r\nM5\r\nG53 P10\r\n"
+    report = check_program(program, GuardSpec(stock_top_in=0.125, tool_radius_in=0.1))
+    # the counter-clockwise arc bulges out to X4 (centre X3 Y2, radius 1); the rapid at Z2 doesn't count
+    assert report.cut_box_in == (0.9, 0.9, 4.1, 3.1)

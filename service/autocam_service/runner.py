@@ -187,7 +187,8 @@ class Runner:
             area = info.get("parts_area_in2")
             cut.append(tally.CutSheet(self._stock_label(info["material"], info["thickness_in"]),
                                       bool(info.get("offcut_id")),
-                                      area if area is not None else self._result_area(info)))
+                                      area if area is not None else self._result_area(info),
+                                      bool(info.get("by_hand"))))
         return tally.season_text(cut, since, self.cfg.sheet.width_in * self.cfg.sheet.length_in,
                                  len(self.offcuts.all()))
 
@@ -226,8 +227,9 @@ class Runner:
             self.s.store.set_alert("fusion_down", False)
 
     def ready_cards(self) -> List[Card]:
-        """The cards in Ready for CAM whose "Nest this part" box is ticked. Part cards in Drafts and Ready for
-        CAM that have no box get one, ticked, and a "Hold it in with tabs" box, ticked if tabs.default."""
+        """The part cards in Ready for CAM: nested if their "Nest this part" box is ticked, placed by hand if not
+        (decided in start_run). Part cards in Drafts and Ready for CAM that have no box get one, ticked, and a
+        "Hold it in with tabs" box, ticked if tabs.default."""
         t = self.cfg.trello
         ready: List[Card] = []
         for list_key in ("inbox", "ready_for_cam"):
@@ -244,7 +246,7 @@ class Runner:
                         self.t.add_checklist(card.id, t.tabs_checklist, [t.tabs_item], checked=self.cfg.tabs.default)
                     except Exception as e:  # noqa: BLE001 - no box means tabs.default
                         log.warning("couldn't add the %s box to %s: %s", t.tabs_checklist, card.id, e)
-                if list_key == "ready_for_cam" and wants_nest(card, t.nest_checklist, t.nest_item):
+                if list_key == "ready_for_cam":
                     ready.append(card)
         return ready
 
@@ -762,7 +764,8 @@ class Runner:
                 return f"the stops couldn't be taken out ({e})"
             run_job = replace(job, pauses=replace(job.pauses, enabled=False))
             data = plain.encode("ascii")
-            check = check_sheet_program(data, run_job, sheet.thickness_in, sheet.tool, sheet.outer_order, counts)
+            check = check_sheet_program(data, run_job, sheet.thickness_in, sheet.tool, sheet.outer_order, counts,
+                                        sheet.by_hand)
             if not check.passed:
                 return "the program without stops failed its check (" + "; ".join(check.problems()) + ")"
             report, main, stops = check.guard, f"{stem}{NO_STOP_SUFFIX}.tap", False
@@ -776,7 +779,8 @@ class Runner:
             except AirTestError as e:
                 return f"the air test couldn't be made ({e})"
             air_data = air_text.encode("ascii")
-            check = check_air_test(air_data, run_job, sheet.thickness_in, sheet.tool, sheet.outer_order, counts, gap)
+            check = check_air_test(air_data, run_job, sheet.thickness_in, sheet.tool, sheet.outer_order, counts, gap,
+                                   sheet.by_hand)
             if not check.passed:
                 return "the air test failed its check (" + "; ".join(check.problems()) + ")"
             programs[air_test_name(main)] = (air_data, check.guard)
@@ -810,7 +814,8 @@ class Runner:
             parsed = parse_card(card, cfg.labels.smoked, cfg.labels.tool_eighth)
             if not isinstance(parsed, CardProblem):
                 parsed = replace(parsed, tabs=box(card, cfg.trello.tabs_checklist, cfg.trello.tabs_item,
-                                                  cfg.tabs.default))
+                                                  cfg.tabs.default),
+                                 by_hand=not wants_nest(card, cfg.trello.nest_checklist, cfg.trello.nest_item))
             if isinstance(parsed, CardProblem):
                 self._reject(state, card.id, parsed.comment(cfg.labels.smoked, cfg.labels.tool_eighth))
                 summary["rejected"] += 1
@@ -941,6 +946,8 @@ class Runner:
                 continue
             if any(c.done for c in card.checks if c.checklist == review):
                 continue
+            if info.get("by_hand"):
+                continue                              # one part placed by hand: nothing joins it
             if info.get("rush") and not set(info["parts"]) & set(renesting):
                 continue                              # a rush sheet is for its own parts, unless one changed
             if not all(p in nested or p in renesting for p in info["parts"]):
@@ -1260,7 +1267,7 @@ class Runner:
         extra = {"label": f"{run_id} S{sheet.index}", "offcut_id": sheet.offcut_id, "turned": sheet.offcut_turned,
                  "used_along": list(sheet.used_y_in) if sheet.used_y_in else None,
                  "beside_used": list(sheet.beside_used), "beside_left": [list(r) for r in sheet.beside_left_in],
-                 "rush": state.rush, "parts_area_in2": sheet.parts_area_in2,
+                 "rush": state.rush, "parts_area_in2": sheet.parts_area_in2, "by_hand": sheet.by_hand,
                  "bands": self._bands(sheet.used_y_in, sheet.beside_used, sheet.offcut_id, sheet.offcut_turned),
                  "converted": False, "asked": False, "instead_of": None}
         if sheet.used_y_in:
