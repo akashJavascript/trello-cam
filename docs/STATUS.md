@@ -59,7 +59,8 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 
 ### Still to build
 - **Placed by hand** (built 2026-10-03, tested offline, untested in Fusion): "Nest this part" unticked gives a
-  part its own program, long side along X, zeroed at its box's front-left corner, run once per copy.
+  part its own program, long side along X, zeroed at its box's front-left corner, run once per copy. Its first
+  real card (P-032, renamed P-2015) waits on pockets.
 - **Templates:** `alu_eighth`, `poly_4mm`, `poly_eighth` (only `alu_4mm` exists). Until then, polycarbonate
   parts and parts that need the 1/8 in endmill stay in Ready for CAM. Set Tab shape: Triangular in each.
 - **Pockets:** needs a `dump_params` run on a job with a 2D Adaptive op (P-2015 waits in Needs fixing).
@@ -86,6 +87,19 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 - **Fusion:** several sheets in one run, the 1/8 in tool, polycarbonate. (Fusion dying mid-job is handled:
   M2 checks 4-5 passed by accident on 2026-10-03.)
 - **Self-updating** works (the service and the add-in, most recently into core 0.11.0).
+
+### Stretch ideas (not planned; rough size)
+- **Board upkeep** (small): cards in Cut archive themselves after ~14 days; old job folders and exports pruned
+  (keeping what open sheets need); a machine queue on the System card ("Ready to cut: 3 sheets, about 2 h 40").
+- **Brief leftovers** (small each): clamp-strip blocks in the Fusion setup so the simulation shows them; the
+  "stock/cutter loaded" and "clamps as shown" items back in the required Review checklist; lowest Z per sheet
+  in the run summary; a parts checklist on sheet cards.
+- **A separate `[bearing]` op** in the template, for press-fit tuning (now bored with `[bore]`).
+- **Fewer Onshape calls:** export every part a run needs from one Part Studio in one go.
+- **Part-in-part nesting** (large): small parts placed inside big cutouts; needs a per-part cut order and
+  tabs on the slugs that hold them.
+- **Splitting a 1/8 in aluminum sheet** into two programs (out of scope for v1 in the brief).
+- **Tracker adapters** (Notion, GitHub Projects): possible, not worth it on Trello Free (decisions).
 
 ## Not verified yet (don't rely on these until they are)
 
