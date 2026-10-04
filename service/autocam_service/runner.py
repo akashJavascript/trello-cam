@@ -930,8 +930,9 @@ class Runner:
         sheet is rebuilt with the new version)."""
         reg = self.s.store.sheet_cards()
         in_review = {c.id: c for c in self.t.list_cards(self.targets["sheet_created"])}
-        nested = {c.id for c in self.t.list_cards(self.targets["part_nested"])}
+        nested = {c.id: c for c in self.t.list_cards(self.targets["part_nested"])}
         review = self.cfg.trello.checklist_name
+        t = self.cfg.trello
         found: Dict[str, Tuple[Dict, List[PartSpec]]] = {}
         for card_id, info in reg.items():
             card = in_review.get(card_id)
@@ -951,6 +952,9 @@ class Runner:
             specs = [p for p in specs if p.card_id not in renesting]
             if not all(Path(p.step).is_file() for p in specs):
                 continue
+            # a carried part keeps its STEP file but follows its card's tabs box now (no box: tabs.default)
+            specs = [replace(p, tabs=box(nested[p.card_id], t.tabs_checklist, t.tabs_item, self.cfg.tabs.default))
+                     for p in specs]
             found[card_id] = (info, specs)
         while True:
             # parts also on a sheet that isn't open (cut and archived sheets are history: a part card can come

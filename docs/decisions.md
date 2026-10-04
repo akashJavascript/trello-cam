@@ -560,7 +560,9 @@ The operator has to find the piece a sheet card names. What happens when it isn'
 Tape alone didn't hold parts in the team's earlier trials, so tabs are built (M6), as an option. It was
 built off by default, then switched on by default the same day ("make tabs on by default"):
 - **Where it's set:** a "Hold it in with tabs" box on part cards (checklist Tabs), ticked to start
-  (`[tabs] default = true`; untick it for a part tape holds on its own). The service adds it, like the Nest box. A part already on a sheet: tick it and
+  (`[tabs] default = true`; untick it for a part tape holds on its own). When a sheet in review is rebuilt,
+  the parts carried over from it follow their card's box as it is then (no box: the default), so sending one
+  card back rebuilds the whole sheet with the current tab settings. The service adds it, like the Nest box. A part already on a sheet: tick it and
   move the card back to Ready for CAM (its sheet is rebuilt if nobody has started reviewing it).
 - **What it does:** that part's outline (`[outer]` op) and cutouts (`[inner]` loops) get the template's own
   tabs turned on (`group_tabs`), the template keeping their shape, width and height (rectangular, the

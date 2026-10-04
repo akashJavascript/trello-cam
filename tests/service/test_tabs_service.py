@@ -79,3 +79,17 @@ def test_a_tabbed_sheet_through_the_real_pipeline_with_an_air_test(tmp_path, mon
     air = programs(h, s1.id)["6061_0p125_r001_S1_AIRTEST.tap"].decode("ascii")
     assert air.count("Z0.665") == 2                                    # the tabs, raised with the rest
     assert "couldn't" not in " ".join(h.tracker.comments_on(s1.id))
+
+
+def test_a_rebuilt_sheet_takes_its_carried_parts_tabs_box_as_it_is_now(tmp_path):
+    from test_runner_autostart import add, run
+    h = harness(tmp_path, step_card("c1", "plate"))
+    h.runner.ready_cards()
+    h.tracker.tick_all("c1", "Tabs", done=False)          # first nested without tabs
+    run(h)
+    assert [p.tabs for p in read_job(h.store.jobs_dir / "r001-al6061.json").parts] == [False]
+    h.tracker.tick_all("c1", "Tabs")                      # changed its mind while the sheet waits in review
+    add(h, step_card("c2", "gusset"))
+    h.runner.tick()
+    job = read_job(next(h.queue.incoming.glob("r002-*.json")))
+    assert {p.card_id: p.tabs for p in job.parts} == {"c2": True, "c1": True}       # c1 carried, now with tabs
