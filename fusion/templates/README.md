@@ -42,6 +42,7 @@ building the templates, run `dump_params` on a part with each template applied a
   sideways below the stock top. Vertical rapids back into a pocket are fine.
 - **Compensation:** keep it "in computer". The post's in-control compensation (`G41`/`G42`) is rejected.
 - **Tabs** (on `[inner]` and `[outer]`): leave them off; the automation turns them on per part and places them.
-  Set **Tab shape: Triangular** here (the API can't change it), and the width and height you want.
+  Set **Tab shape: Triangular** here (the API can't change it). Width and height come from `[tabs]` in config
+  (the template's are used only if those are 0).
   `alu_4mm` was set to triangular by hand on 2026-10-03 (`tabShape` in the XML); re-exporting it from Fusion
   should keep that.

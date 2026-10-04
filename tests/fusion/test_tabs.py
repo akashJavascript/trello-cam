@@ -41,26 +41,31 @@ def test_no_tabs_without_the_box(tmp_path):
 
 def test_every_cutout_gets_tabs_by_its_length_however_short(tmp_path):
     rig = Rig(tmp_path)
-    # Cutouts 20, 5, 2 and 1.6 in around, and one of 0.5 in: one per 2.5 in, 2 to 6, as many as fit (one per
-    # 4 cutter widths, 0.63 in with the 4 mm cutter).
+    # Cutouts 20, 5, 2 and 1.6 in around, and one of 0.5 in: one per 2.5 in, 2 to 6, as many as fit. With the
+    # config's 0.3 in tabs and the 4 mm cutter, each tab needs 2 x (0.3 + 0.157) = 0.91 in of contour.
     tabbed = with_cutouts("bracket", [20.0, 5.0, 2.0, 1.6, 0.5])
     plain = with_cutouts("spacer", [5.0])
     job = rig.job([("bracket", 1, tabbed, (8.0, 6.0)), ("spacer", 1, plain, (4.0, 4.0))])
+    assert (job.tabs.width_in, job.tabs.height_in) == (0.3, 0.0394)
     job = dataclasses.replace(job, parts=(dataclasses.replace(job.parts[0], tabs=True), job.parts[1]))
     result = rig.run(job)
     [sheet] = result.sheets
     assert sheet.tap and not sheet.errors
     [fake] = rig.fake.sheets.values()
     inner = [op for op in fake["ops"] if op.startswith("[inner]")]
-    assert inner == ["[inner] cutouts", "[inner] cutouts - 2 tabs each", "[inner] cutouts - 6 tabs each"]
+    assert inner == ["[inner] cutouts", "[inner] cutouts - 1 tab each", "[inner] cutouts - 2 tabs each",
+                     "[inner] cutouts - 6 tabs each"]
     assert fake["ops"].index(inner[-1]) < min(i for i, op in enumerate(fake["ops"]) if op.startswith("[outer]"))
     points = {op: len(pts) for op, pts in fake["tab_points"].items()}
-    assert points["[inner] cutouts - 6 tabs each"] == 6 and points["[inner] cutouts - 2 tabs each"] == 2 * 3
-    lengths = {op: len(fake["fills"][op].loops) for op in inner}
-    # 20 in -> 6; 5 in -> 2; 2 in -> 3 fit but 1 wanted -> 2 (the minimum); 1.6 in -> 2 fit -> 2;
-    # 0.5 in: none fit, so it's cut with the spacer's cutout, without tabs.
-    assert lengths == {"[inner] cutouts": 2, "[inner] cutouts - 2 tabs each": 3, "[inner] cutouts - 6 tabs each": 1}
+    # 20 in -> 6; 5 in -> 2; 2 in -> 2 (the minimum, and 2 fit); 1.6 in -> 1 fits; 0.5 in: none fit, so it's
+    # cut with the spacer's cutout, without tabs.
+    assert {op: len(fake["fills"][op].loops) for op in inner} == {
+        "[inner] cutouts": 2, "[inner] cutouts - 1 tab each": 1, "[inner] cutouts - 2 tabs each": 2,
+        "[inner] cutouts - 6 tabs each": 1}
+    assert points["[inner] cutouts - 6 tabs each"] == 6 and points["[inner] cutouts - 2 tabs each"] == 2 * 2
     assert points["[outer] p01-1"] == 6 and "[outer] p02-1" not in points
+    # every tabbed op gets the config's size; the untabbed ones keep the template's
+    assert set(fake["tab_size"]) == set(points) and set(fake["tab_size"].values()) == {(0.3, 0.0394)}
 
 
 def test_tab_points_on_the_outline_are_on_its_sides_clear_of_the_corners(tmp_path):

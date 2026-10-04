@@ -12,6 +12,12 @@ def test_one_per_distance_between_two_and_six():
     assert tab_count(3.0, 2.5, CUTTER) == 2                   # short: still 2 (spacing by distance gave 0 or 1)
 
 
+def test_wider_tabs_need_more_room():
+    assert tab_count(1.6, 2.5, CUTTER) == 2                   # one cutter wide: 0.63 in each
+    assert tab_count(1.6, 2.5, CUTTER, tab_width_in=0.3) == 1   # 0.3 in wide: 0.91 in each
+    assert tab_count(0.8, 2.5, CUTTER, tab_width_in=0.3) == 0
+
+
 def test_a_short_contour_gets_what_fits():
     assert tab_count(1.0, 2.5, CUTTER) == 1                   # room for one
     assert tab_count(0.5, 2.5, CUTTER) == 0                   # a slug that's little more than chips: none

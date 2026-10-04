@@ -131,6 +131,22 @@ def set_tabs(op, names, per_contour: int) -> None:
     set_expr(op, names.get("per_contour", "tabsPerContour"), str(int(per_contour)))   # jobs from before 0.8.0
 
 
+def _set_length(op, name: str, inches: float) -> None:
+    p = param(op, name)
+    p.expression = f"{inches:g} in"
+    got = getattr(p.value, "value", None)
+    if got is not None and abs(got - to_cm(inches)) > 1e-4:
+        raise AdapterError(f"{name} = {inches:g} in didn't stick (reads {p.expression})")
+
+
+def set_tab_size(op, names, width_in: float, height_in: float) -> None:
+    """The op's tab width and height in inches (0: the template's)."""
+    if width_in:
+        _set_length(op, names.get("width", "tabWidth"), width_in)
+    if height_in:
+        _set_length(op, names.get("height", "tabHeight"), height_in)
+
+
 def set_tab_points(op, sketch, names, points_in) -> None:
     """The op's tabs on (the template's shape, width and height), at sketch points made in `sketch` (on the
     root's X/Y plane) at points_in."""

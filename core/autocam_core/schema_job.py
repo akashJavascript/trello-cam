@@ -154,7 +154,8 @@ class TabSpec:
     min_per_contour: int = 2
     max_per_contour: int = 6
     at_points: bool = True                             # placed by tabs.place_tabs, else spread evenly by Fusion
-                                                       # (their shape, width and height are the template's)
+    width_in: float = 0.0                              # set on each tabbed op; 0: the template's (core 0.11.0)
+    height_in: float = 0.0                             # the shape is always the template's
 
 
 @dataclass(frozen=True)
@@ -236,6 +237,10 @@ class Job:
                 e.append(f"offcuts.{o.id}: room beside cuts must be inside the sheet")
         if self.tabs.distance_in <= 0:
             e.append("tabs.distance_in: must be > 0")
+        if self.tabs.width_in < 0 or self.tabs.height_in < 0:
+            e.append("tabs: width_in and height_in can't be negative")
+        if self.tabs.height_in and self.tabs.height_in >= min(self.material.thicknesses_in):
+            e.append("tabs.height_in: must be less than the stock thickness")
         if not 1 <= self.tabs.min_per_contour <= self.tabs.max_per_contour:
             e.append("tabs: need 1 <= min_per_contour <= max_per_contour")
         if not self.parts:

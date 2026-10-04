@@ -335,7 +335,9 @@ season_start = "09-01"          # the stock tally counts sheets cut since this d
 [tabs]                          # tabs on the outlines of parts whose "Hold it in with tabs" box is ticked
 default = true                  # the box starts ticked on new part cards (the user's choice, 2026-10-03)
 distance_in = 2.5               # about one tab per this much contour (outline or cutout); their shape
-                                # (triangular), width and height are the template's: the API can't set the shape
+                                # (triangular) is the template's: the API can't set the shape
+width_in = 0.3                  # along the cut (2x the 4 mm cutter: a triangular tab only peaks in the middle)
+height_in = 0.0394              # above the bottom: 1 mm, what the template had (0 for either: the template's)
 min_per_contour = 2             # every tabbed outline and cutout gets at least this many (fewer only if they
 max_per_contour = 6             # don't fit: a tiny cutout gets none)
 at_points = true                # placed on straight edges clear of corners where possible (tabs.place_tabs);

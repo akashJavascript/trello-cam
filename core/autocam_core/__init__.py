@@ -6,4 +6,4 @@ Fusion 2705.1.15 bundles Python 3.14 (api_probe, 2026-10-01); CI tests this pack
 
 # job.json and result.json carry this. The Fusion worker refuses a job built by a
 # different version, so a long-lived Fusion process can't run stale code.
-CORE_VERSION = "0.10.0"  # 0.10.0: tab shape from the template; 0.9.0: tabs at points; 0.8.0: counts
+CORE_VERSION = "0.11.0"  # 0.11.0: tab width/height; 0.10.0: tab shape from the template

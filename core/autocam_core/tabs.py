@@ -1,7 +1,7 @@
 """How many tabs a contour gets: one per `distance` along it, at least `least` and at most `most` (the brief:
-2 to 6), but no more than fit. Each tab takes about four cutter widths of the contour (its own width, the
-template's `tool_diameter`, the cutter going up and over it, and room before the next), so a small cutout gets
-fewer, and one too small for even one gets none (its slug is little more than chips). Fusion spreads them evenly along the
+2 to 6), but no more than fit. Each tab takes about twice its own width plus a cutter diameter of the contour
+(the tab, the cutter going up and over it, and room before the next: four cutter widths for a tab one cutter
+wide), so a small cutout gets fewer, and one too small for even one gets none. Fusion spreads them evenly along the
 contour ('tabCount' positioning, `tabsPerContour`), so a short contour always gets its tabs, where spacing
 them by distance gave a cutout shorter than the distance none.
 
@@ -55,8 +55,10 @@ def outline_length(geom: PartGeometry, inner_walls: Set[int]) -> float:
 
 
 def tab_count(length_in: float, distance_in: float, tool_diameter_in: float, least: int = 2,
-              most: int = 6) -> int:
-    fit = int(length_in // (4 * tool_diameter_in)) if tool_diameter_in > 0 else most
+              most: int = 6, tab_width_in: float = 0.0) -> int:
+    """tab_width_in: 0 means one cutter diameter (the template's own width)."""
+    w = tab_width_in or tool_diameter_in
+    fit = int(length_in // (2 * (w + tool_diameter_in))) if tool_diameter_in > 0 else most
     want = max(least, min(most, round(length_in / distance_in))) if distance_in > 0 else least
     return max(0, min(want, fit))
 

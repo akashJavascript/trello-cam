@@ -157,6 +157,10 @@ class FusionAdapter(Adapter):
         call(f"{op_name}: tabs", fx_cam.set_tabs, fx_cam.op_by_name(self._setup(sheet), op_name),
              self.job.fusion_params["tabs"], per_contour)
 
+    def set_tab_size(self, sheet, op_name, width_in, height_in):
+        call(f"{op_name}: tab size", fx_cam.set_tab_size, fx_cam.op_by_name(self._setup(sheet), op_name),
+             self.job.fusion_params["tabs"], width_in, height_in)
+
     def loop_segments(self, copy_id, face_id, loop_index):
         return call("loop edges", fx_geometry.loop_segments, fx_design.face_by_id(self._occ(copy_id), face_id),
                     loop_index)

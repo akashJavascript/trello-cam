@@ -81,6 +81,8 @@ class Tabs:
     min_per_contour: int = 2
     max_per_contour: int = 6
     at_points: bool = True
+    width_in: float = 0.0
+    height_in: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -689,7 +691,9 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
     tabs = Tabs(default=t.boolean("default"), distance_in=t.number("distance_in", positive=True, default=2.5),
                 min_per_contour=t.integer("min_per_contour", minimum=1, default=2),
                 max_per_contour=t.integer("max_per_contour", minimum=1, default=6),
-                at_points=t.boolean("at_points")) if t else Tabs()
+                at_points=t.boolean("at_points"),
+                width_in=t.number("width_in", minimum=0, default=0.0),
+                height_in=t.number("height_in", minimum=0, default=0.0)) if t else Tabs()
     if t:
         t.finish()
 

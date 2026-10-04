@@ -61,7 +61,7 @@ def test_job_round_trips():
         nest={**d["nest"], "offcut_gap_in": 0.5, "offcut_min_in": 6.0, "offcut_beside_min_in": 3.0},
         parts=[{**p, "tabs": False} for p in d["parts"]],
         offcuts=[], tabs={"distance_in": 2.5, "min_per_contour": 2, "max_per_contour": 6,
-                                 "at_points": True}))   # defaults: older jobs load
+                                 "at_points": True, "width_in": 0.0, "height_in": 0.0}))   # defaults: older jobs load
     assert load_job(json.loads(json.dumps(to_dict(job)))) == job
 
 

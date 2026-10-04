@@ -590,7 +590,11 @@ built off by default, then switched on by default the same day ("make tabs on by
   notes say so. Each sheet's points are saved next to its program (`<sheet>.tabs.json`, sheet X/Y).
 - **Shape:** triangular, set in the template (`alu_4mm`: `tabShape` on `[inner]` and `[outer]`). Fusion's API
   refuses every `tabShape` value ("Invalid enumeration value", even the one already set), but takes it from
-  the template: the cutter ramps up onto each tab and back down. Width and height stay the template's.
+  the template: the cutter ramps up onto each tab and back down.
+- **Size** (`[tabs] width_in`, `height_in`, set on each tabbed op; 0 keeps the template's): 0.3 in wide, twice
+  the 4 mm cutter, because a triangular tab only reaches full height in its middle; 1 mm high (the template's
+  height). The placement and the count use the same width: each tab needs about twice its width plus a cutter
+  diameter of contour, so with 0.3 in tabs a cutout under about 0.9 in around gets none.
 - **Sheet cards** say to break tabbed parts out once the program is done (at the stops they stay held):
   once if every part has tabs, else with each tabbed part marked in the cut order.
 - **The air test** follows the outline through tab lifts: the lap at the final depth may rise up to 0.25 in

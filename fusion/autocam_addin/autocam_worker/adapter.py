@@ -147,6 +147,10 @@ class Adapter:
         contours, spread evenly."""
         raise NotImplementedError
 
+    def set_tab_size(self, sheet: str, op_name: str, width_in: float, height_in: float) -> None:
+        """The op's tab width and height (0: leave the template's)."""
+        raise NotImplementedError
+
     def loop_segments(self, copy_id: str, face_id: int, loop_index: Optional[int]) -> List[Seg]:
         """A loop of a face of a copy as it is now, in the design's X/Y (inches): the outer loop (loop_index
         None) or that inner loop, as straight lines and curves (polylines) in loop order."""

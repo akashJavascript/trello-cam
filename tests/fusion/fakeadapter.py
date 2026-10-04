@@ -162,7 +162,7 @@ class FakeAdapter(Adapter):
             raise AdapterError("setups.add: RuntimeError: 3 : something broke")
         self.sheets[sheet] = {"origin": origin, "size": (size_x_in, size_y_in), "t": thickness_in,
                               "copies": list(copy_ids), "ops": [], "fills": {}, "outer": [], "deleted": [],
-                              "tabs": {}, "tab_points": {}}
+                              "tabs": {}, "tab_points": {}, "tab_size": {}}
 
     def apply_template(self, sheet, template_path):
         ops = [TemplateOp(name, guid) for name, guid in json.loads(Path(template_path).read_text())]
@@ -181,6 +181,10 @@ class FakeAdapter(Adapter):
     def set_tabs(self, sheet, op_name, per_contour):
         assert op_name in self.sheets[sheet]["ops"], op_name
         self.sheets[sheet]["tabs"][op_name] = per_contour
+
+    def set_tab_size(self, sheet, op_name, width_in, height_in):
+        assert op_name in self.sheets[sheet]["ops"], op_name
+        self.sheets[sheet]["tab_size"][op_name] = (width_in, height_in)
 
     def loop_segments(self, copy_id, face_id, loop_index):
         """The copy's box as its outline; inner loop k: a 0.5 in square inside it, k in from the corner."""
