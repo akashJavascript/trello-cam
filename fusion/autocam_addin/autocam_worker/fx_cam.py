@@ -109,8 +109,16 @@ def _set_choice(op, name: str, wants) -> str:
         try:
             set_expr(op, name, f"'{value}'")
             return value
+        except Exception as e:  # noqa: BLE001 - try the choice's own value next
+            tried.append(f"{value!r} as expression: {e}")
+        try:
+            v = adsk.cam.ChoiceParameterValue.cast(param(op, name).value)
+            v.value = value
+            if v.value == value:
+                return value
+            tried.append(f"{value!r} as value: reads {v.value!r}")
         except Exception as e:  # noqa: BLE001 - try the next
-            tried.append(f"{value!r}: {e}")
+            tried.append(f"{value!r} as value: {e}")
     listed = (f"{', '.join(f'{lab}={v}' for lab, v in zip(labels, values))}" if labels is not None else values)
     raise AdapterError(f"{name}: nothing like {'/'.join(wants)} took (choices: {listed}; tried: {'; '.join(tried) or 'none'})")
 
@@ -141,11 +149,20 @@ def set_tab_points(op, sketch, names, points_in, shape: str):
     """The op's tabs on (`shape`), at sketch points made in `sketch` (on the root's X/Y plane) at points_in.
     Returns a note if the shape didn't take."""
     note = _tabs_on(op, names, shape)
-    _set_choice(op, names["positioning"], ("points", "point", "manual"))
+    labels, values = _choices(op, names["positioning"])
+    if labels is not None and any("point" in v.lower() or "point" in lab.lower() for lab, v in zip(labels, values)):
+        _set_choice(op, names["positioning"], ("points", "point"))
+    else:
+        # This Fusion has no "at points" choice (2705: by distance or number of tabs), but a tabPositions
+        # selection: by distance, so far apart that Fusion adds none of its own, plus the points.
+        set_expr(op, names["positioning"], "'distance'")
+        param(op, names["distance"]).expression = "1000 in"
     made = [sketch.sketchPoints.add(adsk.core.Point3D.create(to_cm(x), to_cm(y), 0)) for x, y in points_in]
-    value = adsk.cam.CadObjectParameterValue.cast(param(op, names.get("manual_positions", "tabPositions")).value)
+    raw = param(op, names.get("manual_positions", "tabPositions")).value
+    value = adsk.cam.CadObjectParameterValue.cast(raw)
     if value is None:
-        raise AdapterError(f"{names.get('manual_positions', 'tabPositions')} isn't a selection parameter")
+        raise AdapterError(f"{names.get('manual_positions', 'tabPositions')} isn't a selection parameter (it's a "
+                           f"{getattr(raw, 'objectType', type(raw).__name__)})")
     value.value = made
     if len(list(value.value)) != len(made):
         raise AdapterError(f"tab positions took {len(list(value.value))} of {len(made)} points")
