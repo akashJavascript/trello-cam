@@ -12,6 +12,7 @@ Response field names (partId, bodyType, material.displayName, requestState,
 resultExternalDataIds) follow Onshape's docs; confirm them on the first recorded responses (M3).
 """
 
+import difflib
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,8 +41,18 @@ def pick_part(parts: List[Dict[str, Any]], name: str) -> Dict[str, Any]:
     if len(solids) == 1:
         return solids[0]
     names = ", ".join(sorted(str(p.get("name")) for p in solids)[:8]) or "none"
-    raise ExportError(f"no part named '{name}' in that Part Studio. Make the card title the part's name. "
-                      f"Parts there: {names}")
+    guess = closest_name(name, [str(p.get("name")) for p in solids])
+    raise ExportError(f"no part named '{name}' in that Part Studio. "
+                      + (f"Did you mean {guess}? Make the card title that. " if guess else
+                         "Make the card title the part's name. ")
+                      + f"Parts there: {names}")
+
+
+def closest_name(name: str, names: List[str]) -> Optional[str]:
+    """The part name most like `name` (ignoring case and spaces), if one is close enough to be a likely typo."""
+    by_norm = {_norm(n): n for n in names}
+    got = difflib.get_close_matches(_norm(name), list(by_norm), n=1, cutoff=0.6)
+    return by_norm[got[0]] if got else None
 
 
 class ExportError(Exception):

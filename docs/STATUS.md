@@ -101,6 +101,31 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 - **Splitting a 1/8 in aluminum sheet** into two programs (out of scope for v1 in the brief).
 - **Tracker adapters** (Notion, GitHub Projects): possible, not worth it on Trello Free (decisions).
 
+More stretch ideas (2026-10-04, saved for later; 1 and 2 were built the same day, below):
+- **Cutter hours on the System card** (small): each sheet card moved to Cut adds its machining time (times its
+  repeat) to its cutter, per tool (the two 4 mm cutters share T1 but are counted apart); air tests don't
+  count. A "Cutter changed" checklist on the System card, one box per cutter: tick it when you put in a new
+  one, and the service resets that count, unticks the box and comments how long the old one ran. Optional: a
+  warning point per cutter in config ("check or change it"), inches of cut from the programs, and a way to add
+  time for hand-CAM'd jobs.
+- **Automatic air test on risky loads** (small): tick "Add an air test program" on the first sheet from an
+  offcut, a scrap or a part placed by hand.
+- **Feedback after a cut** (small): an "After the cut" checklist (a part came loose, tabs too hard to break,
+  didn't cut through), tallied on the System card, to tune the tabs.
+- **Part names on the preview** (medium, needs a Fusion test): a `LABELS <sheet>` sketch in the design with
+  each part's cut-order number and name (and copy, "2/3") as sketch text at its centre, sized to fit (up to
+  about 1/2 in; the number only on a small part), a little above the plate; on solid material when the box
+  centre falls in a cutout. The preview and the Fusion file then show them. It doesn't touch the CAM; if the
+  text fails, the preview stays unlabelled with a note. Check the text reads well against the grey parts.
+- **Sheets on the shelf** (small-medium): a Stock card with the full sheets of each material; each new sheet
+  cut counts one off; the System card warns below a threshold.
+- **Spares list** (medium): spare part cards with quantities; one tick sends every spare of a material to
+  Ready for CAM together, nested from cache (no Onshape calls).
+- **Team chat ping** (small, needs a webhook URL): Discord or Slack messages when a sheet is ready for review, a
+  run fails or Fusion goes down.
+- **Changed-part alerts** (larger, costs Onshape calls): before a sheet is cut, check whether its parts changed
+  in Onshape since it was CAM'd.
+
 ## Not verified yet (don't rely on these until they are)
 
 - **Fusion:** what has run is in `docs/fusion-api-status.md`; everything else in `fx_*.py` is untested.

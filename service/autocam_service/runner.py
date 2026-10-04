@@ -48,7 +48,7 @@ from . import health, tally
 from . import sheet_cards as text
 from .autostart import ReadyWatch, box, signature, wants_nest
 from .batching import ReadyPart, make_batches
-from .cards import README_CARD, CardProblem, PartRequest, parse_card
+from .cards import README_CARD, TITLE_QTY_RE, CardProblem, PartRequest, parse_card
 from .config import Config
 from .jobs import JobBuildError, build_job, sheet_fixture
 from .materials import resolve_material
@@ -232,6 +232,7 @@ class Runner:
         "Hold it in with tabs" box, ticked if tabs.default."""
         t = self.cfg.trello
         ready: List[Card] = []
+        fresh: List[Card] = []
         for list_key in ("inbox", "ready_for_cam"):
             for card in self.t.list_cards(list_key):
                 if card.is_template or card.name.strip() == README_CARD:
@@ -248,7 +249,54 @@ class Runner:
                         log.warning("couldn't add the %s box to %s: %s", t.tabs_checklist, card.id, e)
                 if list_key == "ready_for_cam":
                     ready.append(card)
+                fresh.append(card)
+        try:
+            self.warn_duplicates(fresh)
+        except Exception as e:  # noqa: BLE001 - a warning mustn't stop the tick
+            log.warning("checking for duplicate part cards: %s", e)
         return ready
+
+    def warn_duplicates(self, fresh: Sequence[Card]) -> None:
+        """A part card in Drafts or Ready for CAM for a part another active card already has (the same name, and
+        the same Part Studio when both link one; Cut doesn't count, cutting again is normal): one comment naming
+        the other card(s). Checked again only when the card changes."""
+        if self.dry_run:
+            return
+        path = self.s.store.sheets_file.with_name("duplicates.json")
+        try:
+            checked = dict(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            checked = {}
+        todo = [c for c in fresh if checked.get(c.id) != signature(c)]
+        if not todo:
+            return
+        cfg = self.cfg
+        others = list(fresh) + [c for key in ("needs_fixing", self.targets["part_nested"])
+                                for c in self.t.list_cards(key) if not c.is_template and c.name.strip() != README_CARD]
+
+        def identity(card: Card):
+            parsed = parse_card(card, cfg.labels.smoked, cfg.labels.tool_eighth)
+            if isinstance(parsed, CardProblem):           # still the same part: matched by its title alone
+                m = TITLE_QTY_RE.match(card.name.strip())
+                return " ".join((m["name"] if m else card.name).split()).casefold(), None
+            return " ".join(parsed.name.split()).casefold(), (parsed.link.did, parsed.link.eid) if parsed.link else None
+
+        ids = {c.id: identity(c) for c in {c.id: c for c in others}.values()}
+        names = {"inbox": "Drafts", "ready_for_cam": "Ready for CAM", "needs_fixing": "Needs fixing",
+                 self.targets["part_nested"]: "On a sheet"}
+        for card in todo:
+            mine = ids.get(card.id)
+            same = [] if mine is None else [
+                o for o in {c.id: c for c in others}.values()
+                if o.id != card.id and ids.get(o.id) and ids[o.id][0] == mine[0]
+                and (mine[1] is None or ids[o.id][1] is None or ids[o.id][1] == mine[1])]
+            if same:
+                where = "; ".join(f"{o.url} ({names.get(o.list_key, o.list_key)})" for o in same)
+                self.t.comment(card.id, f"Another card has this part too: {where}. If it's the same part, archive "
+                                        "one so it isn't cut twice (this card's Qty is added, not shared).")
+            checked[card.id] = signature(card)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_atomic(path, (json.dumps(checked, indent=1) + "\n").encode("utf-8"))
 
     # ------------------------------------------------------------ guard
     def check_ready_to_cut(self) -> None:

@@ -318,3 +318,14 @@ def test_single_part_studio_needs_no_name(ledger, tmp_path):
     only = [{"name": "Part 1", "partId": "JHD", "bodyType": "solid"}]
     ex, _ = exporter(ledger, tmp_path, [("GET", "/parts/", [resp(body=only)])])
     assert ex.find_part(LINK, "left gusset")["partId"] == "JHD"
+
+
+def test_a_name_that_isnt_there_suggests_the_closest():
+    from autocam_service.onshape.export import closest_name, pick_part
+    parts = [{"name": n, "bodyType": "solid"} for n in ("P-2011", "P-2015", "P-2032", "35T HTD Belt")]
+    with pytest.raises(ExportError, match=r"no part named 'P-032' in that Part Studio\. Did you mean P-2032\? "
+                                          r"Make the card title that\. Parts there: 35T HTD Belt, P-2011"):
+        pick_part(parts, "P-032")
+    assert closest_name("p 2015", ["P-2015", "P-2011"]) == "P-2015"
+    with pytest.raises(ExportError, match="Make the card title the part's name"):
+        pick_part(parts, "intake roller")                       # nothing close: no guess

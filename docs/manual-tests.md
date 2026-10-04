@@ -384,6 +384,13 @@ Run `autocam trello-setup` once (the read-me card's line about tabs).
 | 3 | Air-test it: zero X/Y where you want the part's front-left corner, Z on the spoilboard; the cutter stays within the area the card gives | |
 | 4 | Qty 3: the card says to run it 3 times, and the part card follows the sheet card to Cut | |
 
+### 12. Duplicate part cards and "did you mean" (2026-10-04)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Make a second card for a part that's already on a card in Needs fixing or On a sheet: within a minute it gets one comment linking the other card | |
+| 2 | Give a card a name with a typo (P-201 for P-2011): the Needs fixing comment says "Did you mean P-2011?" | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

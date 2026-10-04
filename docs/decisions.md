@@ -618,3 +618,14 @@ A part card in Ready for CAM with **"Nest this part" unticked** is no longer ski
 - **Its card:** "... - placed by hand - ... - 1 part, run 3x - ...", no Sheet use, no Offcut or Stock box, never
   opened for other parts. Tabs, the air test and Rush work as usual. The stock tally counts these separately.
 
+## 2026-10-04: duplicate part cards and "did you mean" (the user's choice, from the stretch list)
+
+- **Duplicates:** each pass, a part card in Drafts or Ready for CAM that's new or changed is compared with the
+  other part cards in Drafts, Ready for CAM, Needs fixing and On a sheet (Cut doesn't count: cutting again is
+  normal). The same name (ignoring case and spaces; a card the service can't read is matched by its title),
+  and the same Part Studio when both link one, gets one comment naming the other card and its list. Nothing is
+  blocked: two cards for one part may be on purpose, and each card's Qty is added. Checked again only when the
+  card changes (`state/duplicates.json`).
+- **Did you mean:** when the card's name isn't in the Part Studio, the comment suggests the closest part name
+  (difflib, ignoring case and spaces, close enough to be a typo), e.g. "Did you mean P-2032?".
+
