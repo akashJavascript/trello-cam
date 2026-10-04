@@ -1,6 +1,6 @@
 # Status
 
-_Last updated 2026-10-03 (branch `m1-offline`)._
+_Last updated 2026-10-03, evening (branch `m1-offline`)._
 
 ## Where things are
 
@@ -42,54 +42,49 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
 **2026-10-03: sheets are now laid out in the machine's axes** (X across, Y front to back). Programs from
 r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisions.md`).
 
-## What's left (2026-10-03)
+## What's left (2026-10-03, evening)
 
 ### Before the first real cut
 1. **Z touch-off on the spoilboard** (decision 22): the programs' Z0 is the spoilboard, not the sheet top.
-2. **Tabs trial:** cut a sheet with a tabbed part and check the tabs hold and break out cleanly (tape
-   alone didn't hold parts in the team's earlier trials).
+2. **Tabs trial:** cut a sheet with tabbed parts (triangular, 0.157 in wide, 1 mm high) and check the parts
+   and slugs stay put and the tabs break out cleanly (tape alone didn't hold parts in the team's trials).
 3. **Pause test** on a sheet with 2+ parts: tick "Add an air test program" under Options and run it
    (`docs/manual-tests.md` → M1.6). Record the resume key: `pauses.resume_key` is empty, so cards say
    "the continue key".
 4. **Confirm the clamp values** and the other `[assumed]` entries in `config/autocam.toml` (`autocam
    config-check` lists them): clamp reach, clearance and height decide where parts may go.
+5. A **corner stop** on the bed (the user's idea): every sheet and offcut square, in reach and at one zero.
+
+### Still to build
+- **Manual placement** for a part that isn't nested (P-032 waits in Ready for CAM with "Nest this part"
+  unticked): its own program, zeroed at its bounding box's front-left corner, no margin (the user's choice).
+  Today an unticked box just keeps the card out of runs.
+- **Templates:** `alu_eighth`, `poly_4mm`, `poly_eighth` (only `alu_4mm` exists). Until then, polycarbonate
+  parts and parts that need the 1/8 in endmill stay in Ready for CAM. Set Tab shape: Triangular in each.
+- **Pockets:** needs a `dump_params` run on a job with a 2D Adaptive op (P-2015 waits in Needs fixing).
+- **0.3 in tabs:** crashed Fusion before tabs were kept on one edge; try a test job before using them.
+- **Adapters:** the user's, later.
+- **M5, on the shop PC:** run `ops\install-autostart.ps1`, tick the add-in's Run on Startup, then a reboot test
+  (`docs/manual-tests.md` → M5). On this PC: tick Run on Startup (a Fusion restart left the add-in off once).
 
 ### Decisions waiting on you
 - **Merge `m1-offline` into `main`:** everything since M0 is on the branch.
 - **Onshape per-run cap:** `onshape.per_run_max_calls` is still 15, about 2 uncached parts per run (more cards
-  just wait for the next run). Raise it once the ledger looks right (15 calls so far).
+  just wait for the next run). Raise it once the ledger looks right (17 calls so far).
 
-### Not seen working on the real board or machine yet
-- **Board:** "Cut the whole sheet without stopping" on a 2+ part sheet; unticking "Nest this part". (A new
-  part filling an open sheet works: r005 S1 -> r006 S1.)
-- **Fusion:**
-  - several sheets in one run, the 1/8 in tool, polycarbonate;
-  - killing Fusion mid-job (M2 checks 4-5).
-- **Self-updating:** the service restarting itself and the add-in reloading itself both work (many times,
-  most recently into core 0.5.0 on 2026-10-03).
-
-### Still to build
-- **Templates:** `alu_eighth`, `poly_4mm`, `poly_eighth` (only `alu_4mm` exists). Until then, polycarbonate
-  parts and parts that need the 1/8 in endmill stay in Ready for CAM.
-- **Pockets:** needs a `dump_params` run on a job with a 2D Adaptive op.
-- **M5, on the shop PC:** run `ops\install-autostart.ps1`, tick the add-in's Run on Startup, then a reboot test
-  (`docs/manual-tests.md` → M5).
-- **Better nests** (2026-10-02): several Arrange tries per thickness, the best kept, and "Sheet use" on the
-  card. Then the last sheet is **squeezed** into a strip across the front, since Fusion's Arrange packs down
-  the left edge. Both work in Fusion (r006: tries; r014: 4 parts went from 30.6 in down the left edge to a
-  7.5 in strip). The squeeze's copies have to be made before the first Arrange (decisions, 2026-10-03).
-- **Offcuts** (2026-10-03): partly used sheets kept in an Offcuts list and filled before new sheets. Nesting
-  onto an offcut works in Fusion (r013 to r016); not cut on the machine yet (manual tests M3 section 5c:
-  air-test the first offcut sheet). Since core 0.5.0 an offcut also keeps the **room beside** the parts cut
-  (a one-off no longer writes off the whole width of its band), filled first by the next nest. Works in
-  Fusion (hand-queued test job, 2026-10-03); not cut on the machine yet (manual tests 5c, 7 to 9).
-- **Extras** (2026-10-03, tested offline): a **Rush** label (nested at once, on its own); an offcut is freed
-  when its sheet card is archived or deleted without being cut; offcuts are filled smallest room first; the
-  System card tallies the season's stock ("Stock since Sep 1: ..."). Manual tests M3 section 8.
-- **Finding offcuts** (2026-10-03, tested offline): numbered offcuts; "The offcut isn't on the rack" on sheet
-  cards (switches to another offcut the same program fits, or offers a re-nest with Rush or a new sheet);
-  scraps added by hand as cards in Offcuts (never turned round, core 0.6.0). Manual tests M3 section 9.
-- **Later ideas** (not planned): part-in-part nesting (needs per-part cut ordering first).
+### Built, not yet seen on the machine or the real board
+- **Better nests:** several Arrange tries per thickness, the best kept, then the last sheet squeezed into a
+  strip across the front. Work in Fusion (r006, r014).
+- **Offcuts**, with **room beside** earlier cuts: work in Fusion (r013 to r016, a test job); none cut yet
+  (manual tests M3 5c).
+- **Rush**, freed offcuts, smallest offcut first, the season's stock tally: tested offline (M3 section 8).
+- **Finding offcuts:** numbers, "The offcut isn't on the rack", scraps added by hand: tested offline (M3 section 9).
+- **Tabs:** on by default, counts per contour, placed at points on straight edges clear of corners,
+  triangular from the template. Work in Fusion (test jobs, r018 S1); none cut yet (M3 section 10).
+- **Board:** "Cut the whole sheet without stopping" on a 2+ part sheet.
+- **Fusion:** several sheets in one run, the 1/8 in tool, polycarbonate. (Fusion dying mid-job is handled:
+  M2 checks 4-5 passed by accident on 2026-10-03.)
+- **Self-updating** works (the service and the add-in, most recently into core 0.11.0).
 
 ## Not verified yet (don't rely on these until they are)
 
