@@ -393,6 +393,10 @@ Run `autocam trello-setup` once (the read-me card's line about tabs).
 
 ### 13. Part labels on the preview (2026-10-04)
 
+To see them without the board: after any job has gone through Fusion (add-in 0.12.0 or later), run
+`C:\dev\venvs\frc-autocam\Scripts\autocam.exe preview-labels queue\done\<job>` in `C:\dev\frc-autocam`. It
+writes `<sheet>.labelled.png` beside each preview: the picture the sheet card would get.
+
 | # | Check | Result |
 |---|---|---|
 | 1 | A new sheet card's cover shows a yellow numbered badge on every part, its name under it, and "the numbers are the cut order" along the top | |

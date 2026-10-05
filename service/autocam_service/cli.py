@@ -10,6 +10,7 @@
     trello-discover   print the board's list and card IDs as a ready-to-paste [trello.lists] block
     trello-setup      create the board's lists, control/status cards and labels (only what's missing)
     onshape-check     one logged Onshape call: do the keys and onshape.base_url work, and whose are they
+    preview-labels    draw the part labels on a finished job's sheet previews, to look at what the card gets
 """
 
 import argparse
@@ -55,11 +56,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     where.add_argument("--create", metavar="NAME", help="make a new board with this name")
     where.add_argument("--board", help="set up an existing board (ID or short link from its URL)")
     ts.add_argument("--workspace", help="workspace (organization) ID for a new board")
+    pl = sub.add_parser("preview-labels", help="draw the part labels on a finished job's sheet previews")
+    pl.add_argument("path", type=Path, help="a job folder (queue/done/<job>) or one sheet's .png")
+    pl.add_argument("--out", type=Path, help="where to write it (one .png only; default: <sheet>.labelled.png beside it)")
     argv = list(sys.argv[1:] if argv is None else argv)
     args = parser.parse_args(argv)
 
     if args.command == "config-check":
         return config_check(args.config, args.env_file)
+    if args.command == "preview-labels":
+        return preview_labels(args.path, args.out)
     try:
         cfg = load_config(args.config)
     except ConfigError as e:
@@ -96,6 +102,39 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"Credentials: {e}")
         return 1
     return 2
+
+
+def preview_labels(path: Path, out: Optional[Path]) -> int:
+    """The previews as a sheet card would get them, with the labels the worker placed (<sheet>.labels.json)."""
+    from . import labels
+    if path.is_dir():
+        pngs = sorted(p for p in path.glob("*.png") if not p.name.endswith(".labelled.png"))
+    else:
+        pngs = [path] if path.is_file() and path.suffix.lower() == ".png" else []
+    if not pngs:
+        print(f"No sheet preview (.png) at {path}")
+        return 1
+    if out is not None and len(pngs) > 1:
+        print(f"--out is for one picture, and {path} has {len(pngs)}: give one .png instead")
+        return 1
+    status = 0
+    for png in pngs:
+        stem = png.name[:-len(png.suffix)]
+        spots = png.with_name(f"{stem}.labels.json")
+        if not spots.is_file():
+            print(f"{png.name}: no {spots.name} beside it. Sheets CAM'd before add-in 0.12.0 have none: "
+                  f"run the job through Fusion again.")
+            status = 1
+            continue
+        try:
+            drawn = labels.draw(png.read_bytes(), json.loads(spots.read_text(encoding="utf-8")))
+        except ImportError:
+            print("Pillow isn't installed in this Python (pip install pillow).")
+            return 1
+        target = out or png.with_name(f"{stem}.labelled.png")
+        target.write_bytes(drawn)
+        print(f"{png.name}: labelled -> {target}")
+    return status
 
 
 def config_check(path: Path, env_file: Optional[Path]) -> int:

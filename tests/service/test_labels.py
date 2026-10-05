@@ -64,3 +64,21 @@ def test_names_of_parts_side_by_side_dont_land_on_each_other():
     white_right = [out.getpixel((262 + 16 + 6 + dx, 1168)) for dx in range(5, 60)]
     white_above = [out.getpixel((262 + dx, 1168 - 16 - 10)) for dx in range(-30, 30)]
     assert labels.NAME in white_right + white_above             # so it went above or to the right
+
+
+def test_the_command_labels_every_sheet_in_a_job_folder(tmp_path, capsys):
+    import json
+    from autocam_service import cli
+    (tmp_path / "6061_0p125_r001_S1.png").write_bytes(picture())
+    (tmp_path / "6061_0p125_r001_S1.labels.json").write_text(json.dumps(SPOTS))
+    (tmp_path / "6061_0p125_r001_S2.png").write_bytes(picture())           # made before labels existed
+    assert cli.main(["preview-labels", str(tmp_path)]) == 1
+    said = capsys.readouterr().out
+    assert "6061_0p125_r001_S1.png: labelled -> " in said and "S2.labels.json beside it" in said
+    drawn = (tmp_path / "6061_0p125_r001_S1.labelled.png").read_bytes()
+    assert drawn == labels.draw(picture(), SPOTS)
+    assert cli.main(["preview-labels", str(tmp_path)]) == 1                 # its own output isn't a sheet
+    assert "labelled.labels.json" not in capsys.readouterr().out
+    out = tmp_path / "look.png"
+    assert cli.main(["preview-labels", str(tmp_path / "6061_0p125_r001_S1.png"), "--out", str(out)]) == 0
+    assert out.read_bytes() == drawn
