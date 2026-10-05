@@ -203,7 +203,7 @@ rush = "Rush"              # one part needed now: nested at once, on its own (an
 [onshape]
 base_url = "https://cad.onshape.com"
 calls_per_part_estimate = 4    # translation + status checks + download; parts after the first usually need 3
-per_run_max_calls = 15          # first supervised runs (plan, M3); raise to 60 once a real run has gone well
+per_run_max_calls = 60          # was 15 for the first supervised runs; raised 2026-10-04 (ledger checked)
 monthly_soft_calls = 150
 yearly_cap_calls = 1500
 budget_year_start = "01-01"

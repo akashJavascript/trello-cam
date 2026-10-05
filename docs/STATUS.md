@@ -71,8 +71,6 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 
 ### Decisions waiting on you
 - **Merge `m1-offline` into `main`:** everything since M0 is on the branch.
-- **Onshape per-run cap:** `onshape.per_run_max_calls` is still 15, about 3 uncached parts per run (more cards
-  just wait for the next run). Raise it once the ledger looks right (19 calls so far).
 
 ### Built, not yet seen on the machine or the real board
 - **Part labels on the preview** (2026-10-04): numbered badges and names, in the middle of parts that are

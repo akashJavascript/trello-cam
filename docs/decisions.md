@@ -673,3 +673,11 @@ Not changed:
   changed. A geometry fingerprint from Onshape could, but its meaning would have to be confirmed with real
   calls first. Version links avoid all of it: no pin, and cached for good.
 - **One export per Part Studio** (several parts in one STEP) needs the add-in to split the bodies; not done.
+
+## 2026-10-04: Onshape per-run cap 15 -> 60 (the user's choice)
+
+The ledger checked out before raising it: 19 billable calls (r004, r005, r007, r009, r019, r020 and 2 key
+checks), none left dangling, each run's calls what it should have made, the most in one run 8 (r004). 60 is
+the plan's figure once a real run had gone well: about 14 uncached parts per run (one pin and one parts list
+per Part Studio, about 4 per part). The monthly warning (150) and the yearly cap (1500) are unchanged and
+still stop a runaway.
