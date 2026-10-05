@@ -1,6 +1,6 @@
 # Status
 
-_Last updated 2026-10-03, evening (branch `m1-offline`)._
+_Last updated 2026-10-04 (branch `m1-offline`)._
 
 ## Where things are
 
@@ -42,7 +42,7 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
 **2026-10-03: sheets are now laid out in the machine's axes** (X across, Y front to back). Programs from
 r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisions.md`).
 
-## What's left (2026-10-03, evening)
+## What's left (2026-10-04)
 
 ### Before the first real cut
 1. **Z with the probe** (the user has a Z height probe): set it on the spoilboard next to the sheet, not on
@@ -75,6 +75,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   just wait for the next run). Raise it once the ledger looks right (19 calls so far).
 
 ### Built, not yet seen on the machine or the real board
+- **Part labels on the preview** (2026-10-04): numbered badges and names, in the middle of parts that are
+  mostly cutouts. Work in Fusion (test jobs lbl1, lbl2); not on a real sheet card yet (M3 section 13).
+- **Duplicate part cards and "did you mean"** for a wrong part name: tested offline (M3 section 12).
 - **Fewer Onshape calls** (2026-10-04): a run starts all its STEP exports before it waits on any, status
   checks are timed from each export's start (5, 20, 65, 125 s), and an export left from an earlier run gets one
   check. Two parts that each take 30 s: 4 checks instead of 8. Tested with recorded responses only.
