@@ -210,8 +210,8 @@ schema = 1
 
 [labels]   smoked = "Smoked"  tool_eighth = "Tool 1/8"
 [onshape]  base_url = "https://cad.onshape.com"   # enterprise subdomain TBD
-           calls_per_part_estimate = 5  per_run_max_calls = 60  monthly_soft_calls = 150  yearly_cap_calls = 1500
-           budget_year_start = "01-01"  poll_first_s = 4  poll_factor = 2  poll_max_s = 30  poll_max_count = 6
+           calls_per_part_estimate = 4  per_run_max_calls = 60  monthly_soft_calls = 150  yearly_cap_calls = 1500
+           budget_year_start = "01-01"  poll_first_s = 5  poll_factor = 3  poll_max_s = 60  poll_max_count = 4
            retry_after_max_wait_s = 60   # longer Retry-After -> stop the run, resume next trigger
 [onshape.material_map]  "Aluminum - 6061" = "al6061"  "Aluminum - 5052" = "al5052"  "Polycarbonate" = "pc_clear"   # open question 8
 [trello]   board_id = ""  poll_interval_s = 60  attachment_limit_mb = 10  job_timeout_s = 3600  checklist_name = "Review"

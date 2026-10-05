@@ -645,3 +645,27 @@ the drawing can be big and high-contrast, where Fusion's sketch text would be th
 - **If anything fails** (no Pillow, a bad spot file): the card gets the plain picture, and the log says why.
   Pillow is a service dependency now (pyproject); it was installed in the shop venv on 2026-10-04.
 
+## 2026-10-04: fewer Onshape calls (the user's choice)
+
+The ledger (19 billable calls, runs r001-r020) showed status checks on STEP exports as the largest share (6),
+then workspace pins (5). Changed:
+- **Exports start together.** A run starts every uncached part's translation before it waits on any
+  (`Exporter.start`). Onshape works on them side by side, and each part's checks are timed from when its own
+  export started (the cache keeps the start time), so once the first part is done the rest usually need one
+  check each. Before, each part started only when the one before it had finished. A problem met while
+  starting (bad name, an Assembly link, a 401) is kept and raised in the usual order, so it costs no second
+  call; running out of calls stops the starts.
+- **A slower check schedule:** 5, 20, 65 and 125 s after the export started (was 4, 12, 28, 58, 88, 118 s).
+  r004's export, done between 58 and 88 s, would take 3 or 4 checks instead of 5. A fast one (r005) still takes 1.
+- **An export left from an earlier run** is past its schedule: one check per run, not a whole new schedule.
+- **Estimate:** `calls_per_part_estimate` 5 -> 4, so 3 uncached parts fit the per-run cap of 15 (was 2).
+
+Not changed:
+- **Pins stay one per document per run.** It's the least that never exports a stale part: reusing a pin
+  across runs would miss a fix made between them.
+- **Re-exporting unchanged parts** after an edit elsewhere in the document is still the largest cost in real
+  use (the cache is keyed by the document's microversion). The parts list's `microversionId` is the
+  document's state, the same for every part (checked in the cached lists), so it can't say which parts
+  changed. A geometry fingerprint from Onshape could, but its meaning would have to be confirmed with real
+  calls first. Version links avoid all of it: no pin, and cached for good.
+- **One export per Part Studio** (several parts in one STEP) needs the add-in to split the bodies; not done.

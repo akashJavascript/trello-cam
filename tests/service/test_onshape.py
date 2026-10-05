@@ -11,7 +11,7 @@ from autocam_service.onshape.cache import OnshapeCache
 from autocam_service.onshape.client import (
     BudgetExceeded, OnshapeClient, OnshapeError, QuotaExhausted, RateLimited, sign,
 )
-from autocam_service.onshape.export import Exporter, ExportError, PollSchedule
+from autocam_service.onshape.export import Exporter, ExportError, PollSchedule, TryAgainLater
 from autocam_service.onshape.ledger import Ledger, budget_year_start
 from autocam_service.onshape.urls import parse_link
 from fakeonshape import FakeTransport, resp
@@ -178,7 +178,7 @@ def export_routes(poll_states=("ACTIVE", "DONE")):
 def test_export_then_cache_hit_costs_nothing(ledger, tmp_path):
     t = FakeTransport(export_routes())
     sleeps = []
-    ex = Exporter(client(ledger, t), OnshapeCache(tmp_path / "cache"), POLLS, sleep=sleeps.append)
+    ex = Exporter(client(ledger, t), OnshapeCache(tmp_path / "cache"), POLLS, sleep=sleeps.append, clock=lambda: 0.0)
     first = ex.export(LINK, "hood_gusset", "p01")
     assert (first.part_id, first.material, first.from_cache) == ("JHD", "Aluminum - 6061", False)
     assert first.step_path.read_bytes() == b"ISO-10303-21;"
@@ -208,6 +208,104 @@ def test_unfinished_translation_resumes_next_run(ledger, tmp_path):
     got = Exporter(client(ledger, t2), cache, POLLS, sleep=lambda s: None).export(LINK, "hood_gusset")
     assert not any(m == "POST" for m, *_ in t2.sent)       # no second translation paid for
     assert got.step_path.read_bytes() == b"ISO" and cache.translation(LINK, "JHD") is None
+
+
+def test_status_checks_are_timed_from_the_start_of_the_export():
+    polls = PollSchedule(first_s=5, factor=3, max_s=60, max_count=4)
+    assert polls.at() == [5, 20, 65, 125]
+    assert polls.waits_from(0) == [5, 15, 45, 60]
+    assert polls.waits_from(50) == [15, 60]                 # started a while ago: only the checks still to come
+    assert polls.waits_from(20) == [0, 45, 60]              # one is due now
+    assert polls.waits_from(200) == [0] and polls.waits_from(None) == [0]   # past them all: one check now
+
+
+class Clock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, s):
+        self.now += s
+
+
+class TimedTranslations(FakeTransport):
+    """Each translation is done once the clock reaches its time."""
+
+    def __init__(self, routes, clock, done_at):
+        super().__init__(routes)
+        self.clock, self.done_at = clock, done_at
+
+    def send(self, method, url, headers, body):
+        tid = url.rsplit("/", 1)[-1]
+        if method == "GET" and "/translations/" in url:
+            self.sent.append((method, url, dict(headers), body))
+            done = self.clock.now >= self.done_at[tid]
+            return resp(body={"requestState": "DONE" if done else "ACTIVE", "resultExternalDataIds": [f"F{tid}"] if done else []})
+        return super().send(method, url, headers, body)
+
+
+TWO = [{"name": "hood_gusset", "partId": "JHD", "bodyType": "solid"}, {"name": "plate", "partId": "JHP", "bodyType": "solid"}]
+
+
+def test_exports_started_together_need_one_check_after_the_first(ledger, tmp_path):
+    clock = Clock()
+    t = TimedTranslations([("GET", "/parts/", [resp(body=TWO)]),
+                           ("POST", "/translations", [resp(body={"id": "T1"}), resp(body={"id": "T2"})]),
+                           ("GET", "/externaldata/", [resp(200, b"ISO 1"), resp(200, b"ISO 2")])],
+                          clock, {"T1": 30, "T2": 30})
+    ex = Exporter(client(ledger, t), OnshapeCache(tmp_path), PollSchedule(5, 3, 60, 4), sleep=clock.sleep, clock=clock)
+    assert ex.start(LINK, "hood_gusset") and ex.start(LINK, "plate")
+    a, b = ex.export(LINK, "hood_gusset"), ex.export(LINK, "plate")
+    assert a.step_path.read_bytes() == b"ISO 1" and b.step_path.read_bytes() == b"ISO 2"
+    kinds = ["poll" if "/translations/" in u else m for m, u, _, _ in t.sent if "/parts/" not in u and "/externaldata/" not in u]
+    assert kinds == ["POST", "POST", "poll", "poll", "poll", "poll"]   # 3 for the first (5, 20, 65 s), 1 for the second
+    assert clock.now == 65
+
+
+def test_a_problem_met_while_starting_costs_no_second_call(ledger, tmp_path):
+    t = FakeTransport([("GET", "/parts/", [resp(400, body={"message": "not a Part Studio"})])])
+    ex = Exporter(client(ledger, t), OnshapeCache(tmp_path), POLLS, sleep=lambda s: None)
+    assert ex.start(LINK, "hood_gusset")                    # not a reason to stop starting the others
+    for _ in range(2):
+        with pytest.raises(OnshapeError):
+            ex.export(LINK, "hood_gusset")
+    assert len(t.sent) == 1
+
+
+def test_running_out_of_calls_while_starting_stops_the_starts(ledger, tmp_path):
+    t = FakeTransport(export_routes())
+    ex = Exporter(client(ledger, t, max_calls=1), OnshapeCache(tmp_path), POLLS, sleep=lambda s: None)
+    assert not ex.start(LINK, "hood_gusset")                # the parts list fit, the translation didn't
+    with pytest.raises(BudgetExceeded):
+        ex.export(LINK, "hood_gusset")
+
+
+def test_after_a_stop_while_starting_only_cached_parts_come_through(ledger, tmp_path):
+    cache = OnshapeCache(tmp_path)
+    cache.put_parts(LINK, TWO + [{"name": "bracket", "partId": "JHB", "bodyType": "solid"}])
+    cache.put_translation(LINK, "JHD", "T1", 0.0)           # hood_gusset: started, not downloaded
+    cache.put_step(LINK, "JHB", b"ISO bracket")             # bracket: cached
+    t = FakeTransport([("POST", "/translations", [resp(429, b"", retry_after="600")])])
+    ex = Exporter(client(ledger, t), cache, POLLS, sleep=lambda s: None, clock=lambda: 0.0)
+    assert not ex.start(LINK, "plate")                      # a long rate limit
+    with pytest.raises(RateLimited):
+        ex.export(LINK, "hood_gusset")                      # its checks aren't even tried
+    assert ex.export(LINK, "bracket").from_cache
+    assert len(t.sent) == 1
+
+
+@pytest.mark.parametrize("started", [None, -600.0])
+def test_an_export_left_from_an_earlier_run_gets_one_check(ledger, tmp_path, started):
+    cache = OnshapeCache(tmp_path)
+    cache.put_parts(LINK, PARTS)
+    cache.put_translation(LINK, "JHD", "T1", started)       # None: kept before the start time was
+    t = FakeTransport([("GET", "/translations/T1", [resp(body={"requestState": "ACTIVE"})] * 3)])
+    ex = Exporter(client(ledger, t), cache, POLLS, sleep=lambda s: None, clock=lambda: 0.0)
+    with pytest.raises(TryAgainLater):
+        ex.export(LINK, "hood_gusset")
+    assert len(t.sent) == 1 and cache.translation(LINK, "JHD") == "T1"
 
 
 def test_failed_translation(ledger, tmp_path):

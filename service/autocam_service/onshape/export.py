@@ -4,6 +4,11 @@ Calls per uncached part: parts list (shared by every card in the same Part Studi
 cached forever), translation POST, a few status polls, one download. A translation that doesn't
 finish in time is remembered, so the next run polls it instead of starting (and paying for) a new one.
 
+A run starts every part's translation before it waits on any (`start`): Onshape works on them side by
+side, and each one's status checks are timed from when it started, so once the first is done the rest
+usually need one check each. A translation left over from an earlier run is past its schedule and gets
+one check.
+
 Workspace links cost one more call per Part Studio per run: the workspace's current microversion, which
 pins it. The cache is keyed by that microversion, so an edited Part Studio is exported again and an
 unchanged one isn't.
@@ -19,7 +24,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .cache import OnshapeCache, sha256_file
-from .client import API, OnshapeClient
+from .client import API, BudgetExceeded, OnshapeClient, QuotaExhausted, RateLimited
 from .urls import OnshapeLink
 
 
@@ -87,17 +92,40 @@ class PollSchedule:
             wait = min(wait * self.factor, self.max_s)
         return out
 
+    def at(self) -> List[float]:
+        """When to check, in seconds after the translation started."""
+        out, total = [], 0.0
+        for wait in self.waits():
+            total += wait
+            out.append(total)
+        return out
+
+    def waits_from(self, elapsed: Optional[float]) -> List[float]:
+        """The sleeps before each check for a translation that started `elapsed` seconds ago (None: in an
+        earlier run, so long ago): the checks still to come, or one check now when it's past them all."""
+        if elapsed is None:
+            return [0.0]
+        due = [t - max(elapsed, 0.0) for t in self.at() if t >= elapsed]
+        if not due:
+            return [0.0]
+        return [due[0]] + [b - a for a, b in zip(due, due[1:])]
+
 
 class Exporter:
     def __init__(self, client: Optional[OnshapeClient], cache: OnshapeCache, polls: PollSchedule,
-                 sleep: Callable[[float], None] = time.sleep):
+                 sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.time):
         self.client = client          # None: cache only (offline / no budget)
         self.cache = cache
         self.polls = polls
         self.sleep = sleep
+        self.clock = clock
         self._pins: Dict[Tuple[str, str], str] = {}   # (did, wid) -> microversion, for this run
+        self._failed: Dict[Tuple[str, str], Exception] = {}   # what start() ran into, raised again by export()
+        self._stopped: Optional[Exception] = None              # start() ran out of calls: no more this run
 
     def _need_client(self, what: str) -> OnshapeClient:
+        if self._stopped is not None:
+            raise self._stopped
         if self.client is None:
             raise TryAgainLater(f"{what} isn't cached and Onshape calls are off for this run")
         return self.client
@@ -152,7 +180,39 @@ class Exporter:
             return False
         return bool(part.get("partId")) and self.cache.has_step(link, part["partId"])
 
+    def start(self, link: OnshapeLink, name: str, part_key: Optional[str] = None) -> bool:
+        """Get the part's STEP export going (nothing to do when it's cached or already running) without
+        waiting for it. A problem is kept for export() to raise, so it costs no second call. False when calls
+        have to stop for this run (budget, quota, rate limit): start no more, and every later export that needs
+        a call raises the same (a cached part still comes from the cache)."""
+        try:
+            pinned = self.resolve(link)
+            pid = self.find_part(pinned, name)["partId"]
+            if not self.cache.has_step(pinned, pid) and self.cache.translation(pinned, pid) is None:
+                self._translate(pinned, name, pid, part_key)
+        except Exception as e:  # noqa: BLE001 - export() raises it, where the run handles each kind
+            self._failed[(link.studio, name)] = e
+            if isinstance(e, (BudgetExceeded, QuotaExhausted, RateLimited)):
+                self._stopped = e
+                return False
+        return True
+
+    def _translate(self, link: OnshapeLink, name: str, pid: str, part_key: Optional[str]) -> str:
+        client = self._need_client(f"the STEP file for '{name}'")
+        started = client.post_json(
+            f"{API}/partstudios/d/{link.did}/{link.wvm}/{link.vid}/e/{link.eid}/translations",
+            {"formatName": "STEP", "partIds": pid, "storeInDocument": False},
+            purpose="export_step", part_key=part_key)
+        tid = started.get("id")
+        if not tid:
+            raise ExportError("Onshape didn't start the STEP export")
+        self.cache.put_translation(link, pid, tid, self.clock())
+        return tid
+
     def export(self, link: OnshapeLink, name: str, part_key: Optional[str] = None) -> ExportedPart:
+        failed = self._failed.get((link.studio, name))
+        if failed is not None:
+            raise failed
         link = self.resolve(link)
         part = self.find_part(link, name)
         pid = part["partId"]
@@ -164,16 +224,11 @@ class Exporter:
         client = self._need_client(f"the STEP file for '{name}'")
         tid = self.cache.translation(link, pid)
         if tid is None:
-            started = client.post_json(
-                f"{API}/partstudios/d/{link.did}/{link.wvm}/{link.vid}/e/{link.eid}/translations",
-                {"formatName": "STEP", "partIds": pid, "storeInDocument": False},
-                purpose="export_step", part_key=part_key)
-            tid = started.get("id")
-            if not tid:
-                raise ExportError("Onshape didn't start the STEP export")
-            self.cache.put_translation(link, pid, tid)
+            tid = self._translate(link, name, pid, part_key)
+        started = self.cache.translation_started(link, pid)
+        elapsed = None if started is None else self.clock() - started
 
-        for wait in self.polls.waits():
+        for wait in self.polls.waits_from(elapsed):
             self.sleep(wait)
             status = client.get_json(f"{API}/translations/{tid}", purpose="export_poll", part_key=part_key)
             state = status.get("requestState")

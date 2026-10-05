@@ -71,10 +71,13 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 
 ### Decisions waiting on you
 - **Merge `m1-offline` into `main`:** everything since M0 is on the branch.
-- **Onshape per-run cap:** `onshape.per_run_max_calls` is still 15, about 2 uncached parts per run (more cards
-  just wait for the next run). Raise it once the ledger looks right (17 calls so far).
+- **Onshape per-run cap:** `onshape.per_run_max_calls` is still 15, about 3 uncached parts per run (more cards
+  just wait for the next run). Raise it once the ledger looks right (19 calls so far).
 
 ### Built, not yet seen on the machine or the real board
+- **Fewer Onshape calls** (2026-10-04): a run starts all its STEP exports before it waits on any, status
+  checks are timed from each export's start (5, 20, 65, 125 s), and an export left from an earlier run gets one
+  check. Two parts that each take 30 s: 4 checks instead of 8. Tested with recorded responses only.
 - **Better nests:** several Arrange tries per thickness, the best kept, then the last sheet squeezed into a
   strip across the front. Work in Fusion (r006, r014).
 - **Offcuts**, with **room beside** earlier cuts: work in Fusion (r013 to r016, a test job); none cut yet
@@ -95,7 +98,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   "stock/cutter loaded" and "clamps as shown" items back in the required Review checklist; lowest Z per sheet
   in the run summary; a parts checklist on sheet cards.
 - **A separate `[bearing]` op** in the template, for press-fit tuning (now bored with `[bore]`).
-- **Fewer Onshape calls:** export every part a run needs from one Part Studio in one go.
+- **Even fewer Onshape calls:** one export per Part Studio (the add-in splits the bodies), and not
+  exporting parts again after an edit elsewhere in the document (needs a geometry fingerprint from Onshape,
+  confirmed with real calls first). Decisions, 2026-10-04.
 - **Part-in-part nesting** (large): small parts placed inside big cutouts; needs a per-part cut order and
   tabs on the slugs that hold them.
 - **Splitting a 1/8 in aluminum sheet** into two programs (out of scope for v1 in the brief).

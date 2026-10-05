@@ -1,7 +1,7 @@
 """Version-keyed Onshape cache. Versions never change, so entries never expire (decision 3).
 
     cache/onshape/parts_<did>_<vid>_<eid>.json        the Part Studio's parts list
-    cache/onshape/translation_<did>_<vid>_<eid>_<part>.json   an unfinished STEP translation to resume
+    cache/onshape/translation_<did>_<vid>_<eid>_<part>.json   an unfinished STEP translation to resume (id, when started)
     cache/step/<did>_<vid>_<eid>_<part>.step          exported STEP
 """
 
@@ -54,14 +54,24 @@ class OnshapeCache:
         self.forget_translation(link, part_id)
         return path, hashlib.sha256(data).hexdigest()
 
-    def translation(self, link: OnshapeLink, part_id: str) -> Optional[str]:
+    def _translation(self, link: OnshapeLink, part_id: str) -> Optional[dict]:
         path = self.meta / f"translation_{link.key}_{safe_token(part_id)}.json"
-        return json.loads(path.read_text(encoding="utf-8"))["id"] if path.exists() else None
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
 
-    def put_translation(self, link: OnshapeLink, part_id: str, translation_id: str) -> None:
+    def translation(self, link: OnshapeLink, part_id: str) -> Optional[str]:
+        entry = self._translation(link, part_id)
+        return entry["id"] if entry else None
+
+    def translation_started(self, link: OnshapeLink, part_id: str) -> Optional[float]:
+        """When the translation was started (seconds since the epoch), or None if that wasn't kept."""
+        entry = self._translation(link, part_id)
+        return entry.get("started") if entry else None
+
+    def put_translation(self, link: OnshapeLink, part_id: str, translation_id: str,
+                        started: Optional[float] = None) -> None:
         self._ensure()
         write_atomic(self.meta / f"translation_{link.key}_{safe_token(part_id)}.json",
-                     json.dumps({"id": translation_id}).encode("utf-8"))
+                     json.dumps({"id": translation_id, "started": started}).encode("utf-8"))
 
     def forget_translation(self, link: OnshapeLink, part_id: str) -> None:
         path = self.meta / f"translation_{link.key}_{safe_token(part_id)}.json"

@@ -888,6 +888,13 @@ class Runner:
             self.watch.forget(r.card.id for r in later)
             summary["later"] = len(later)
 
+        # Every STEP export starts before the run waits on any: Onshape works on them side by side, so the
+        # parts after the first usually need one status check each (Exporter.start keeps any problem for
+        # _prepare to meet in order, as before).
+        for req in requests:
+            if req.link is not None and not exporter.start(req.link, req.name):
+                break
+
         ready: List[ReadyPart] = []
         for req in requests:
             if summary["stop_reason"]:

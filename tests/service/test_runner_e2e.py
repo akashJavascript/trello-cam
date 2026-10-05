@@ -117,6 +117,8 @@ def test_full_run(tmp_path):
     assert h.tracker.comments_on(SYS)[0].startswith("Run r001 started: 3 parts.")
     assert h.ledger.month_count() == 7   # one parts list + 2 x (translation, poll, download)
     assert all(h.list_of(c) == "ready_for_cam" for c in ("ca", "cb", "cd"))
+    sent = [m if "/translations/" not in u else "poll" for m, u, _, _ in h.transport.sent if "/translations" in u]
+    assert sent == ["POST", "POST", "poll", "poll"]   # both exports start before the run waits on either
 
     run_fake_worker(h.queue)
     h.runner.tick()

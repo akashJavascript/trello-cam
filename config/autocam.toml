@@ -202,15 +202,15 @@ rush = "Rush"              # one part needed now: nested at once, on its own (an
 
 [onshape]
 base_url = "https://cad.onshape.com"
-calls_per_part_estimate = 5
+calls_per_part_estimate = 4    # translation + status checks + download; parts after the first usually need 3
 per_run_max_calls = 15          # first supervised runs (plan, M3); raise to 60 once a real run has gone well
 monthly_soft_calls = 150
 yearly_cap_calls = 1500
 budget_year_start = "01-01"
-poll_first_s = 4.0
-poll_factor = 2.0
-poll_max_s = 30.0
-poll_max_count = 6
+poll_first_s = 5.0               # STEP export status checks: 5, 20, 65 and 125 s after it started,
+poll_factor = 3.0                # then the next run checks once (it remembers the export)
+poll_max_s = 60.0
+poll_max_count = 4
 retry_after_max_wait_s = 60.0   # a longer Retry-After stops the run instead of sleeping
 
 [onshape.material_map]
