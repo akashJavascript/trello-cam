@@ -629,3 +629,19 @@ A part card in Ready for CAM with **"Nest this part" unticked** is no longer ski
 - **Did you mean:** when the card's name isn't in the Part Studio, the comment suggests the closest part name
   (difflib, ignoring case and spaces, close enough to be a typo), e.g. "Did you mean P-2032?".
 
+## 2026-10-04: part labels on the sheet preview (the user's choice: the most visible for the operator)
+
+Drawn on the preview picture (not as sketch text in Fusion), because the picture is what's on the card and
+the drawing can be big and high-contrast, where Fusion's sketch text would be thin lines in its own colour:
+- **Where:** the worker finds each part's spot (`autocam_core/preview.py`, `label_spot`): inside its outline,
+  outside its cutouts (both read from Fusion, `loop_segments`), as far from any edge as possible; a grid, then
+  a finer one round the best, ties going to the middle. It maps that into the picture with the same framing it
+  gives Fusion's camera (`preview_view`, now shared with `fx_design.preview`) and writes `<sheet>.labels.json`
+  next to the picture.
+- **What:** the service (`labels.py`, Pillow) draws a yellow badge with the part's cut-order number (the card's
+  CUT ORDER uses the same numbers), its name and copy ("2/3") in bold white with a black outline under it, and a
+  line along the top: "<sheet>: the numbers are the cut order". The picture in the job folder stays as Fusion
+  made it; the card gets the labelled one.
+- **If anything fails** (no Pillow, a bad spot file): the card gets the plain picture, and the log says why.
+  Pillow is a service dependency now (pyproject); it was installed in the shop venv on 2026-10-04.
+

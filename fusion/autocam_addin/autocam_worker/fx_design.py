@@ -8,6 +8,8 @@ isDirectionFlipped where a part's upDirection points away from the face that mus
 import adsk.core
 import adsk.fusion
 
+from autocam_core.preview import preview_size, preview_view
+
 from .adapter import AdapterError, Arranged
 from .fx_util import call, items, normal, to_cm, to_in, vec, vi, wait_for
 
@@ -154,18 +156,16 @@ def preview(app, rect, path: str) -> None:
     upright sheet gets an upright picture. viewExtents is what shows across the picture's shorter side (r014:
     with viewExtents = the sheet's length, a 1000 x 1600 picture showed about 50 in across, so the sheet
     filled less than half of it); it's set so the sheet fits both ways, with 8% to spare."""
-    x0, y0, x1, y1 = (to_cm(v) for v in rect)
-    width, height = (1000, 1600) if (y1 - y0) > (x1 - x0) else (1600, 900)
-    short = min(width, height)
+    width, height = preview_size(rect)               # the same framing the labels are placed with
+    cx, cy, extent = (to_cm(v) for v in preview_view(rect, (width, height)))
     vp = app.activeViewport
     cam = vp.camera
-    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     cam.cameraType = adsk.core.CameraTypes.OrthographicCameraType
     cam.target = adsk.core.Point3D.create(cx, cy, 0)
     cam.eye = adsk.core.Point3D.create(cx, cy, 500)
     cam.upVector = adsk.core.Vector3D.create(0, 1, 0)
     cam.isFitView = False
-    cam.viewExtents = max((x1 - x0) * short / width, (y1 - y0) * short / height) * 1.08
+    cam.viewExtents = extent
     vp.camera = cam
     adsk.doEvents()
     if not vp.saveAsImageFile(path, width, height):

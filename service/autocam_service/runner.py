@@ -44,7 +44,7 @@ from autocam_core.sheetcheck import check_sheet_program, pause_spec
 from autocam_core.schema import SchemaError
 from autocam_core.schema_job import OffcutSpec, PartSpec, job_json, load_job
 
-from . import health, tally
+from . import health, labels, tally
 from . import sheet_cards as text
 from .autostart import ReadyWatch, box, signature, wants_nest
 from .batching import ReadyPart, make_batches
@@ -1338,7 +1338,7 @@ class Runner:
         png = ing.file(vs.sheet.preview_png)
         if png is not None:
             png_id = once(store, state, f"{key}:png", lambda: self.t.attach_file(
-                card_id, png.name, png.read_bytes(), "image/png"), WRITE_ATTEMPTS)
+                card_id, png.name, self._labelled_preview(ing, png), "image/png"), WRITE_ATTEMPTS)
             if png_id != GAVE_UP:
                 once(store, state, f"{key}:cover", lambda: self.t.set_cover(card_id, png_id) or png_id,
                      WRITE_ATTEMPTS)
@@ -1348,6 +1348,17 @@ class Runner:
             once(store, state, f"{key}:f3d", lambda: self.t.attach_file(
                 card_id, f3d.name, f3d.read_bytes(), "application/octet-stream"), WRITE_ATTEMPTS)
         return card_id, url
+
+    @staticmethod
+    def _labelled_preview(ing: IngestedJob, png: Path) -> bytes:
+        """The preview with the part labels the worker placed (<sheet>.labels.json; labels.py)."""
+        data = png.read_bytes()
+        spots = ing.file(png.name[:-len(".png")] + ".labels.json") if png.name.endswith(".png") else None
+        try:
+            found = json.loads(spots.read_text(encoding="utf-8")) if spots else None
+        except (OSError, ValueError):
+            found = None
+        return labels.labelled(data, found)
 
     def _clear_sheet(self, card_id: str) -> str:
         """Delete every file on a sheet card (program, preview, Fusion file) before it's rebuilt."""

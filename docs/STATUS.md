@@ -112,11 +112,7 @@ More stretch ideas (2026-10-04, saved for later; 1 and 2 were built the same day
   offcut, a scrap or a part placed by hand.
 - **Feedback after a cut** (small): an "After the cut" checklist (a part came loose, tabs too hard to break,
   didn't cut through), tallied on the System card, to tune the tabs.
-- **Part names on the preview** (medium, needs a Fusion test): a `LABELS <sheet>` sketch in the design with
-  each part's cut-order number and name (and copy, "2/3") as sketch text at its centre, sized to fit (up to
-  about 1/2 in; the number only on a small part), a little above the plate; on solid material when the box
-  centre falls in a cutout. The preview and the Fusion file then show them. It doesn't touch the CAM; if the
-  text fails, the preview stays unlabelled with a note. Check the text reads well against the grey parts.
+- **Part names on the preview:** built 2026-10-04, drawn on the picture by the service instead (decisions).
 - **Sheets on the shelf** (small-medium): a Stock card with the full sheets of each material; each new sheet
   cut counts one off; the System card warns below a threshold.
 - **Spares list** (medium): spare part cards with quantities; one tick sends every spare of a material to

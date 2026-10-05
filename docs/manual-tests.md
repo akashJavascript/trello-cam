@@ -391,6 +391,14 @@ Run `autocam trello-setup` once (the read-me card's line about tabs).
 | 1 | Make a second card for a part that's already on a card in Needs fixing or On a sheet: within a minute it gets one comment linking the other card | |
 | 2 | Give a card a name with a typo (P-201 for P-2011): the Needs fixing comment says "Did you mean P-2011?" | |
 
+### 13. Part labels on the preview (2026-10-04)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | A new sheet card's cover shows a yellow numbered badge on every part, its name under it, and "the numbers are the cut order" along the top | |
+| 2 | The numbers match the card's CUT ORDER list, and each badge sits on its part's material (not in a cutout) | |
+| 3 | At the machine, the labels are enough to tell which part is which when unloading | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

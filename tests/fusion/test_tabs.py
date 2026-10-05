@@ -96,3 +96,19 @@ def test_if_fusion_wont_take_points_it_spreads_the_same_number_evenly(tmp_path):
     [fake] = rig.fake.sheets.values()
     assert fake["tabs"] == {"[inner] cutouts - 2 tabs each": 2, "[outer] p01-1": 6} and fake["tab_points"] == {}
     assert any("tabs at points didn't work" in n and "spread evenly by Fusion instead" in n for n in sheet.notes)
+
+
+def test_the_preview_gets_label_spots_for_every_part(tmp_path):
+    import json
+    rig = Rig(tmp_path)
+    result = rig.run(rig.job([("gusset", 2, plate(name="gusset"), (6.0, 4.0)),
+                              ("bracket", 1, with_cutouts("bracket", [5.0]), (8.0, 6.0))]))
+    [sheet] = result.sheets
+    spots = json.loads((rig.out / f"{sheet.name}.labels.json").read_text())
+    assert spots["image"] == [1000, 1600] and spots["sheet"] == sheet.name
+    order = {inst: n for n, inst in enumerate(sheet.outer_order, 1)}
+    assert [s["n"] for s in spots["labels"]] == list(range(1, 4))
+    names = {s["n"]: (s["name"], s["copy"]) for s in spots["labels"]}
+    assert names[order["p01-1"]] == ("gusset", "1/2") and names[order["p01-2"]] == ("gusset", "2/2")
+    assert names[order["p02-1"]] == ("bracket", "")
+    assert all(0 < s["x"] < 1000 and 0 < s["y"] < 1600 and s["room"] > 0 for s in spots["labels"])

@@ -49,6 +49,7 @@ from autocam_core.names import instance_id, outer_op_name, program_name
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
 from autocam_core.plate import PlateAnalysis, analyze
+from autocam_core.preview import flatten, label_spot, pixels_per_unit, preview_size, to_pixels
 from autocam_core.tabs import outline_length, place_tabs, tab_count, walls_length
 from autocam_core.schema_job import Job, PartSpec, ToolSpec
 from autocam_core.schema_result import (
@@ -942,6 +943,31 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
 
 # ------------------------------------------------------------------ 6. post and check
 
+def _labels(adapter: Adapter, sheet: _Sheet, parts: Dict[str, _Part], rect: Rect) -> Dict[str, Any]:
+    """Where each part's label goes in the preview (the service draws them, labels.py): its cut-order number,
+    name and copy ("2/3"), at the point on its material furthest from any edge, in pixels, with that clearance
+    in pixels (how big a label fits)."""
+    size = preview_size(rect)
+    scale = pixels_per_unit(rect, size)
+    by_instance = dict(sheet.instances)
+    totals = sheet.counts()
+    out = []
+    for n, inst in enumerate(sheet.outer_order, 1):
+        placed = by_instance[inst]
+        part = parts[placed.part_key]
+        face = part.analysis.up_face_id
+        outer = flatten(adapter.loop_segments(placed.body_id, face, None))
+        holes = [flatten(adapter.loop_segments(placed.body_id, face, i))
+                 for i in range(len(part.analysis.geometry.face(face).inner_loops))]
+        x, y, room = label_spot(outer, holes)
+        px, py = to_pixels(x, y, rect, size)
+        copy = inst.rsplit("-", 1)[1]
+        out.append({"n": n, "name": part.spec.name, "copy": f"{copy}/{totals[placed.part_key]}"
+                    if totals[placed.part_key] > 1 else "", "x": round(px, 1), "y": round(py, 1),
+                    "room": round(room * scale, 1)})
+    return {"image": list(size), "sheet": sheet.name, "labels": out}
+
+
 def _post_sheet(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> None:
     raw_dir = out_dir / "raw" / sheet.name
     if raw_dir.exists():
@@ -1135,6 +1161,13 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
                 preview = png
             except AdapterError as e:
                 sheet.notes.append(f"no preview: {e}")
+            if preview:
+                try:
+                    labels = _labels(adapter, sheet, parts, rect)
+                    write_atomic(out_dir / f"{sheet.name}.labels.json",
+                                 (json.dumps(labels, indent=1) + "\n").encode("utf-8"))
+                except (AdapterError, KeyError, IndexError, ValueError) as e:
+                    sheet.notes.append(f"no labels on the preview: {e}")
         base = sheet.result or SheetResult(
             index=sheet.index, name=sheet.name, stock_type="", thickness_in=sheet.thickness_in, tool=sheet.tool_key,
             tool_guid="", cutter_label="", template="", tap=None, tap_rejected=None, tap_bytes=None, tap_sha256=None,

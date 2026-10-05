@@ -10,6 +10,7 @@ requires-python = ">=3.10"
 dependencies = [
     "requests>=2.31",
     "python-dotenv>=1.0",
+    "pillow>=10.1",           # part labels on the sheet previews (labels.py; without it they go unlabelled)
     "tomli>=2.0; python_version < '3.11'",
 ]
 
