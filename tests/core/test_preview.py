@@ -34,3 +34,13 @@ def test_a_label_goes_on_the_material_away_from_the_edges():
     c = [(0, 0), (5, 0), (5, 1), (1, 1), (1, 5), (0, 5)]
     x, y, room = label_spot(c)
     assert x < 1 and y < 1 + 0.5 and room > 0.4
+
+
+def test_a_part_thats_mostly_cutouts_gets_its_label_in_the_middle():
+    ring = (square(0, 0, 4, 4), [square(0.5, 0.5, 3.5, 3.5)])     # a 0.5 wide band: room 0.25 at most
+    x, y, room = label_spot(*ring, min_room=0.2)
+    assert not (0.5 < x < 3.5 and 0.5 < y < 3.5)                    # a badge that small fits on the band
+    x, y, room = label_spot(*ring, min_room=1.0)
+    assert abs(x - 2) < 0.1 and abs(y - 2) < 0.1 and abs(room - 2) < 0.1   # it doesn't: the middle, over the hole
+    x, y, room = label_spot(square(0, 0, 1, 1), min_room=1.0)       # no cutouts: nothing else to try
+    assert abs(x - 0.5) < 0.1 and room < 1.0

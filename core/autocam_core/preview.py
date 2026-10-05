@@ -1,5 +1,6 @@
 """The sheet preview: how it's framed, where a point in the design lands in the picture, and where a part's label
-goes (on its material, as far from any edge as possible).
+goes (on its material, as far from any edge as possible; in the middle of its outline when the material is
+thinner than the smallest badge).
 
 The framing is the one Fusion's camera is given (fx_design.preview): a top view centred on the sheet, its
 viewExtents being what shows across the picture's shorter side (found on r014/r015), set so the sheet fits both
@@ -14,6 +15,7 @@ Point = Tuple[float, float]
 Rect = Tuple[float, float, float, float]
 
 MARGIN = 1.08
+BADGE_MIN_PX = 16      # the smallest badge the service draws (radius, pixels; labels.py)
 
 
 def preview_size(rect: Rect) -> Tuple[int, int]:
@@ -88,10 +90,20 @@ def _clearance(x: float, y: float, edges, best: float) -> float:
     return math.sqrt(d2)
 
 
-def label_spot(outer: Sequence[Point], holes: Sequence[Sequence[Point]] = (), grid: int = 24) -> Tuple[float, float, float]:
+def label_spot(outer: Sequence[Point], holes: Sequence[Sequence[Point]] = (), grid: int = 24,
+               min_room: float = 0.0) -> Tuple[float, float, float]:
     """(x, y, clearance): the point inside the outline and outside every cutout that's furthest from any edge,
-    and that distance. A grid over the part's box, then a finer one round the best point. A part that's all
-    edge (or a bad outline) gets its box centre and 0."""
+    and that distance. When that's under `min_room` (a part that's mostly cutouts: a badge there would hang off
+    a thin rail), the point furthest from the outline alone, cutouts or not: the middle of the part."""
+    spot = _furthest(outer, holes, grid)
+    if spot[2] >= min_room or not holes:
+        return spot
+    return _furthest(outer, (), grid)
+
+
+def _furthest(outer: Sequence[Point], holes: Sequence[Sequence[Point]], grid: int) -> Tuple[float, float, float]:
+    """A grid over the part's box, then a finer one round the best point. A part that's all edge (or a bad
+    outline) gets its box centre and 0."""
     if len(outer) < 3:
         xs = [p[0] for p in outer] or [0.0]
         ys = [p[1] for p in outer] or [0.0]

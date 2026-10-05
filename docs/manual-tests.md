@@ -400,7 +400,7 @@ writes `<sheet>.labelled.png` beside each preview: the picture the sheet card wo
 | # | Check | Result |
 |---|---|---|
 | 1 | A new sheet card's cover shows a yellow numbered badge on every part, its name under it, and "the numbers are the cut order" along the top | |
-| 2 | The numbers match the card's CUT ORDER list, and each badge sits on its part's material (not in a cutout) | |
+| 2 | The numbers match the card's CUT ORDER list. Each badge sits on its part's material (not in a cutout), except on a part that's mostly cutouts, where it's in the middle of the part (lbl1: spots on the material, right numbers and copies, 2026-10-04) | |
 | 3 | At the machine, the labels are enough to tell which part is which when unloading | |
 
 ## M5: status card, start at logon, reboot test on the shop PC

@@ -644,6 +644,10 @@ the drawing can be big and high-contrast, where Fusion's sketch text would be th
   made it; the card gets the labelled one.
 - **If anything fails** (no Pillow, a bad spot file): the card gets the plain picture, and the log says why.
   Pillow is a service dependency now (pyproject); it was installed in the shop venv on 2026-10-04.
+- **Parts that are mostly cutouts** (seen on lbl1, 2026-10-04: the spots were right, on the material, but on
+  rails 4 to 8 px wide, so the 16 px badges hung off the edges): when the material is thinner than the
+  smallest badge everywhere, the label goes in the middle of the part's outline instead, over the cutouts
+  (core 0.12.1). On the picture that reads more clearly as "this part" than a badge on an edge.
 
 ## 2026-10-04: fewer Onshape calls (the user's choice)
 

@@ -49,7 +49,7 @@ from autocam_core.names import instance_id, outer_op_name, program_name
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
 from autocam_core.plate import PlateAnalysis, analyze
-from autocam_core.preview import flatten, label_spot, pixels_per_unit, preview_size, to_pixels
+from autocam_core.preview import BADGE_MIN_PX, flatten, label_spot, pixels_per_unit, preview_size, to_pixels
 from autocam_core.tabs import outline_length, place_tabs, tab_count, walls_length
 from autocam_core.schema_job import Job, PartSpec, ToolSpec
 from autocam_core.schema_result import (
@@ -945,8 +945,8 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
 
 def _labels(adapter: Adapter, sheet: _Sheet, parts: Dict[str, _Part], rect: Rect) -> Dict[str, Any]:
     """Where each part's label goes in the preview (the service draws them, labels.py): its cut-order number,
-    name and copy ("2/3"), at the point on its material furthest from any edge, in pixels, with that clearance
-    in pixels (how big a label fits)."""
+    name and copy ("2/3"), at the point on its material furthest from any edge (or the middle of its outline when
+    the material is too thin for a badge), in pixels, with that clearance in pixels (how big a label fits)."""
     size = preview_size(rect)
     scale = pixels_per_unit(rect, size)
     by_instance = dict(sheet.instances)
@@ -959,7 +959,7 @@ def _labels(adapter: Adapter, sheet: _Sheet, parts: Dict[str, _Part], rect: Rect
         outer = flatten(adapter.loop_segments(placed.body_id, face, None))
         holes = [flatten(adapter.loop_segments(placed.body_id, face, i))
                  for i in range(len(part.analysis.geometry.face(face).inner_loops))]
-        x, y, room = label_spot(outer, holes)
+        x, y, room = label_spot(outer, holes, min_room=BADGE_MIN_PX / scale)
         px, py = to_pixels(x, y, rect, size)
         copy = inst.rsplit("-", 1)[1]
         out.append({"n": n, "name": part.spec.name, "copy": f"{copy}/{totals[placed.part_key]}"

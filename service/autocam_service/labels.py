@@ -4,13 +4,16 @@ numbers), its name (and copy, "2/3") in bold white with a black outline under it
 it, whichever covers the least of the other labels), and a line along the top saying what the numbers mean.
 
 The Fusion side works out where each label goes (autocam_core/preview.py: on the part's material, as far from
-any edge as possible) and writes <sheet>.labels.json next to the picture. Drawing needs Pillow; without it, or
+any edge as possible, or in the middle of a part that's mostly cutouts) and writes <sheet>.labels.json next to
+the picture. Drawing needs Pillow; without it, or
 if anything goes wrong, the card gets the picture as Fusion made it.
 """
 
 import io
 import logging
 from typing import Any, Dict, Optional
+
+from autocam_core.preview import BADGE_MIN_PX
 
 log = logging.getLogger("autocam.labels")
 
@@ -43,7 +46,7 @@ def draw(png: bytes, labels: Dict[str, Any]) -> bytes:
     badges = []
     for item in labels["labels"]:
         room = item.get("room", 0) * min(sx, sy)
-        badges.append((item["x"] * sx, item["y"] * sy, int(max(16, min(30, room * 0.9)))))
+        badges.append((item["x"] * sx, item["y"] * sy, int(max(BADGE_MIN_PX, min(30, room * 0.9)))))
     taken = [(x - r, y - r, x + r, y + r) for x, y, r in badges]
     for item, (x, y, r) in zip(labels["labels"], badges):
         d.ellipse((x - r, y - r, x + r, y + r), fill=BADGE, outline=INK, width=3)
