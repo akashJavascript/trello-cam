@@ -45,3 +45,22 @@ def test_without_labels_or_pillow_the_picture_goes_as_it_was(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", no_pillow)
     assert labels.labelled(png, SPOTS) == png
     assert labels.labelled(b"not a png", SPOTS) == b"not a png"
+
+
+def test_names_of_parts_side_by_side_dont_land_on_each_other():
+    from PIL import Image
+    close = {"image": [1000, 1600], "labels": [
+        {"n": 1, "name": "P-2041", "copy": "", "x": 212.0, "y": 1172.0, "room": 18.0},
+        {"n": 2, "name": "P-2020", "copy": "", "x": 262.0, "y": 1168.0, "room": 18.0}]}
+    out = Image.open(io.BytesIO(labels.draw(picture(), close)))
+    # the first name went under its badge; the second can't go there too (it would cover the first), so it's
+    # somewhere else: nothing white is drawn right under the second badge's centre where the first name isn't
+    from PIL import ImageDraw
+    d = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+    font = labels._font(16)
+    first = d.textbbox((212, 1172 + 16 + 4), "P-2041", font=font, anchor="mt", stroke_width=3)
+    second_under = d.textbbox((262, 1168 + 16 + 4), "P-2020", font=font, anchor="mt", stroke_width=3)
+    assert labels._overlap(first, second_under) > 0            # under would have collided
+    white_right = [out.getpixel((262 + 16 + 6 + dx, 1168)) for dx in range(5, 60)]
+    white_above = [out.getpixel((262 + dx, 1168 - 16 - 10)) for dx in range(-30, 30)]
+    assert labels.NAME in white_right + white_above             # so it went above or to the right
