@@ -39,7 +39,7 @@ def test_placeholders_and_warnings_are_reported():
     assert "pauses.resume_key" in cfg.placeholders
     assert not any(p.startswith(("trello.", "fusion_team.")) for p in cfg.placeholders)   # the real board is set up
     assert not any(p.endswith(".color") for p in cfg.placeholders)
-    assert any("poly_eighth.f3dhsm-template not exported yet" in w for w in cfg.warnings)
+    assert not any("not exported yet" in w for w in cfg.warnings)      # all four templates are in (2026-10-31)
 
 
 def test_post_property_names_match_the_post():

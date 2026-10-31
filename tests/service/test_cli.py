@@ -25,6 +25,7 @@ def cfg_with_templates(tmp_path):
         f = tmp_path / f"{key}.f3dhsm-template"
         f.write_bytes(b"t")
         data["templates"][key]["file"] = str(f)
+    data["templates"]["poly_eighth"]["file"] = str(tmp_path / "missing" / "poly_eighth.f3dhsm-template")   # left out
     data["paths"] = {k: str(tmp_path / k) for k in ("queue", "cache", "state", "logs")}
     return parse_config(data, root=REPO_ROOT)
 
