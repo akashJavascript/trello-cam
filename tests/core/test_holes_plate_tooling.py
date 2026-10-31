@@ -137,6 +137,24 @@ def test_counterbore():
     assert 0.2 in a.inside_radii_in       # the counterbore itself must suit the tool
 
 
+def test_holes_and_deeper_steps_in_a_pocket_floor_are_not_islands():
+    b = PlateBuilder(thickness=0.25)
+    b.counterbore(d_big=1.6, depth=0.1, d_small=0.25)
+    a = analysis(b)
+    assert a.ok and a.pocket_islands == ()
+    assert plan_features(a, MM4, RULES).errors == ()
+
+
+def test_a_raised_island_in_a_pocket_needs_manual_cam():
+    b = PlateBuilder(thickness=0.25)
+    floor = b.pocket(0.1)
+    b.island(floor)
+    a = analysis(b)
+    assert a.ok and a.pocket_islands == ((floor, 0),)
+    (err,) = plan_features(a, MM4, RULES).errors
+    assert err.code == E.NEEDS_MANUAL_CAM and "island" in err.msg
+
+
 def test_sharp_inside_corners_warn():
     b = PlateBuilder()
     b.sharp = 3

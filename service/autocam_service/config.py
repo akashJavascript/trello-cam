@@ -29,7 +29,7 @@ DEFAULT_CONFIG = REPO_ROOT / "config" / "autocam.toml"
 SCHEMA = 1
 FAMILIES = ("aluminum", "polycarbonate")
 CLAMP_EDGES = ("left", "right", "front")      # the long edges, and the end by the operator
-OP_TAGS = ("drill", "bore", "bearing", "pocket", "inner", "outer")
+OP_TAGS = ("pocket", "pocketfinish", "drill", "bore", "bearing", "inner", "outer")
 TRELLO_LISTS = ("inbox", "ready_for_cam", "needs_fixing", "nested", "sheet_review",
                 "ready_to_cut", "cut", "offcuts", "control")
 TRELLO_TARGETS = ("part_nested", "part_rejected", "part_deferred", "part_cut", "sheet_created",

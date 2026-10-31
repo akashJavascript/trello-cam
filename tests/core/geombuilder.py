@@ -96,6 +96,16 @@ class PlateBuilder:
         self._loop(floor, small)
         return floor
 
+    def island(self, floor: int, size: float = 0.5, height: float = None):
+        """A raised island standing on a pocket floor: up to the top of the plate, or `height` above the floor."""
+        zf = self._z_of(floor)
+        top = self.t if height is None else zf + height
+        walls = [self._face(kind="plane", z0=zf, z1=top, normal_dot=0.0, area=size * (top - zf))
+                 for _ in range(4)]
+        self._face(kind="plane", z0=top, z1=top, normal_dot=1.0, area=size * size)
+        self._loop(floor, walls)
+        return walls
+
     def chamfer(self) -> int:
         return self._face(kind="plane", z0=self.t - 0.03, z1=self.t, normal_dot=0.7)
 

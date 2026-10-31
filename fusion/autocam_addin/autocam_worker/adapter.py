@@ -21,8 +21,9 @@ from autocam_core.tabs import Seg
 Rect = Tuple[float, float, float, float]   # x0, y0, x1, y1
 
 # Op tags, in template order (fusion/templates/README.md).
-DRILL, BORE, BEARING, POCKET, INNER, OUTER = "drill", "bore", "bearing", "pocket", "inner", "outer"
-TAGS = (DRILL, BORE, BEARING, POCKET, INNER, OUTER)
+POCKET, POCKETFINISH = "pocket", "pocketfinish"
+DRILL, BORE, BEARING, INNER, OUTER = "drill", "bore", "bearing", "inner", "outer"
+TAGS = (POCKET, POCKETFINISH, DRILL, BORE, BEARING, INNER, OUTER)
 
 
 class AdapterError(Exception):
@@ -69,7 +70,7 @@ class OpFill:
     tag: str
     holes: Tuple[Tuple[str, Tuple[int, ...]], ...] = ()     # drill/bore/bearing: (copy id, the hole's face ids)
     loops: Tuple[Tuple[str, int, int], ...] = ()            # inner: (copy id, face id, inner loop index)
-    floors: Tuple[Tuple[str, int], ...] = ()                # pocket: (copy id, floor face id)
+    floors: Tuple[Tuple[str, int], ...] = ()                # pocket, pocketfinish: (copy id, floor face id)
 
 
 class Adapter:
@@ -133,8 +134,8 @@ class Adapter:
         raise NotImplementedError
 
     def fill(self, sheet: str, op_name: str, fill: OpFill) -> None:
-        """Select what the op cuts. Inner and pocket ops also get bottom height = stock bottom where that
-        applies (inner: yes, pocket: no)."""
+        """Select what the op cuts. Inner ops also get bottom height = stock bottom; pocket ops keep the
+        template's (the selected floor)."""
         raise NotImplementedError
 
     def make_outer_ops(self, sheet: str, template_op: str, outlines: Sequence[Tuple[str, str, int]]) -> None:

@@ -102,13 +102,17 @@ def inner_loops(face):
     return [lp for lp in items(face.loops) if not lp.isOuter]
 
 
+def outer_loop(face):
+    return next(lp for lp in items(face.loops) if lp.isOuter)
+
+
 STROKE_CM = 0.005          # a curve as a polyline within 0.05 mm
 
 
 def loop_segments(face, index=None):
     """The face's outer loop (index None) or inner loop `index`, as Segs in X/Y (inches) in loop order: a
     straight edge as its two ends, anything else as a polyline from its evaluator."""
-    loop = next(lp for lp in items(face.loops) if lp.isOuter) if index is None else inner_loops(face)[index]
+    loop = outer_loop(face) if index is None else inner_loops(face)[index]
     segs = []
     for co in items(loop.coEdges):
         edge = co.edge

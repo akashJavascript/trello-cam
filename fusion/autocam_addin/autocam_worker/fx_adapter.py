@@ -15,13 +15,13 @@ from typing import Dict, List
 from autocam_core.schema_job import Job
 
 from . import fx_cam, fx_design, fx_geometry
-from .adapter import BEARING, BORE, DRILL, INNER, OUTER, Adapter, AdapterError, Box
+from .adapter import BEARING, BORE, DRILL, INNER, OUTER, POCKET, POCKETFINISH, Adapter, AdapterError, Box
 from .fx_cam import UNCONFIRMED
 from .fx_util import call, to_cm
 
 
 class FusionAdapter(Adapter):
-    capabilities = frozenset({DRILL, BORE, BEARING, INNER, OUTER})   # pocket: selection name still unknown
+    capabilities = frozenset({DRILL, BORE, BEARING, INNER, OUTER, POCKET, POCKETFINISH})
 
     def __init__(self, app, job: Job, generate_timeout_s: float = 900.0):
         self.app = app
@@ -128,6 +128,21 @@ class FusionAdapter(Adapter):
             call(f"{op_name}: select loops", fx_cam.select_loops, op, whole, single, params["selections"]["contour"],
                  self._used)
             fx_cam.cut_to_stock_bottom(op)
+        elif fill.tag == POCKET:
+            self._used("pocket_floors")
+            floors = [fx_design.face_by_id(self._occ(cid), fid) for cid, fid in fill.floors]
+            how = call(f"{op_name}: select pockets", fx_cam.select_pockets, op, floors, params["selections"]["pocket"])
+            if how != "face contours":
+                self._used("pocket_selection")
+                self.run_notes.append(f"{op_name}: pockets selected as {how}")
+        elif fill.tag == POCKETFINISH:
+            self._used("pocket_walls")
+            loops = [fx_geometry.outer_loop(fx_design.face_by_id(self._occ(cid), fid)) for cid, fid in fill.floors]
+            note = fx_cam.chain_api()
+            if note not in self.run_notes:
+                self.run_notes.append(note)
+            call(f"{op_name}: select pocket walls", fx_cam.select_loops, op, [], loops,
+                 params["selections"]["contour"], self._used)
         else:
             raise AdapterError(f"[{fill.tag}] ops aren't automated yet")
 

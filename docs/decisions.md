@@ -691,3 +691,22 @@ about 0.19 in between the two cuts, and 0.25 in with the 1/8 in cutter. 3/8 in w
 0.06 in sliver that can break off or grab the cutter. Cost: the arrange envelope shrinks by the spacing too,
 so the largest part that fits goes from 21 x 38.5 in to 20.5 x 38 in; material use is no concern at the
 sheet use seen so far (0-4 %). Open sheets keep the spacing they were nested with until they're rebuilt.
+
+## 2026-10-31: pockets (the user's choice: adaptive, then a finish pass)
+
+`dump_params` on the user's test part (a counterbore with a hole through its floor) named 2D Adaptive's pocket
+selection `pockets`, a CadContours2dParameterValue like the contours' `contours`. Built on that:
+- **Two ops:** `[pocket]` (2D Adaptive, wall stock left) and `[pocketfinish]` (2D Contour, no stock), a new tag,
+  because a template allows one op per tag. `[pocketfinish]` is optional: a template without it is fine.
+- **Pockets first** in the template, before the holes: a hole in a pocket floor starts at the floor, and a hole
+  op run before the pocket is cleared would plunge through it. Fusion runs the ops in template order.
+- **Selection:** `[pocket]` takes each floor's outer loop (a face contour, outside loops only), so it clears
+  everything above the floor, over its holes too; if Fusion refuses a face contour there, its pocket selection
+  on the same faces, said in the run notes. `[pocketfinish]` takes each floor's outer loop as a chain, cut on
+  the floor's side: the same rule as single cutouts (`fx_cam._inside`) with the direction reversed, since an
+  outer loop's face is the region it encloses. The posted program's check against the part bodies catches a
+  wrong side either way.
+- **Islands** (a floor's inner loop whose walls rise from it) aren't cut around yet: the part goes back for
+  manual CAM. One that reaches the top was already caught (it splits the top face).
+- **Bottom height** stays the template's (the selected floor); only `[inner]` and `[outer]` are set to the
+  stock bottom.

@@ -73,3 +73,21 @@ def test_fusion_team_link_kind(fx):
     urn = base64.urlsafe_b64encode(b"urn:adsk.wipprod:dm.lineage:AbCdEf123").decode().rstrip("=")
     assert fx.design.link_kind(f"https://x.autodesk360.com/g/data/{urn}") == "file"
     assert fx.design.link_kind("https://x.autodesk360.com/g/data/@@@") == "unknown"
+
+
+def test_pocket_walls_are_cut_from_the_pocket_side(fx):
+    from autocam_worker import fx_cam
+
+    class Chain:                       # a ChainSelection without sideType, like Fusion 2705
+        isReverted = None
+
+    def loop(outer, opposed):
+        first = types.SimpleNamespace(isOpposedToEdge=opposed)
+        return types.SimpleNamespace(isOuter=outer, coEdges=types.SimpleNamespace(item=lambda i: first))
+
+    for opposed in (False, True):
+        cutout, walls = Chain(), Chain()
+        fx_cam._inside(cutout, loop(False, opposed), lambda key: None)
+        fx_cam._inside(walls, loop(True, opposed), lambda key: None)
+        assert cutout.isReverted is (not opposed)   # an inner loop: against the loop's way (seen in Fusion)
+        assert walls.isReverted is opposed          # a floor's outer loop: the loop's way, the floor's side

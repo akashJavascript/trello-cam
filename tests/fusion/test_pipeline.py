@@ -111,18 +111,6 @@ def test_poly_part_needing_the_eighth_without_its_template_gets_the_decision_13_
     assert result.sheets == () and result.status == "failed"
 
 
-def test_pockets_need_manual_cam_until_the_pocket_selection_is_known(tmp_path):
-    rig = Rig(tmp_path)
-    b = PlateBuilder("pocketed")
-    b.pocket(0.06)
-    job = rig.job([("pocketed", 1, b.build(), (10.0, 10.0)), ("spacer", 1, plate(), (3.0, 3.0))])
-    result = rig.run(job)
-    pocketed = result.parts[0]
-    assert pocketed.errors[0].code == E.NEEDS_MANUAL_CAM and "pocket" in pocketed.errors[0].msg
-    assert [p.part_key for p in result.sheets[0].parts] == ["p02"]
-    assert rig.service_view(job, result).part_problems == {}
-
-
 def test_part_arranged_upside_down_is_rejected(tmp_path):
     rig = Rig(tmp_path)
     rig.fake.upside_down.add("p01")

@@ -111,6 +111,9 @@ def plan_features(analysis: PlateAnalysis, tool: ToolProfile, rules: HoleRules) 
     looped = {l.hole for l in inner_loops if l.hole is not None}
     for i in sorted(inner_holes - looped):
         errors.append(Issue(E.NOT_A_PLATE, f'{analysis.through_holes[i].diameter_in:.4f}" hole has no loop to contour'))
+    if analysis.pocket_islands:
+        errors.append(Issue(E.NEEDS_MANUAL_CAM, "needs manual CAM: a pocket has a raised island in it, and the "
+                                                "pocket ops don't cut around islands yet"))
     return FeaturePlan(
         drill=tuple(i for i, k in enumerate(kinds) if k == DRILL),
         bearing=tuple(i for i, k in enumerate(kinds) if k == BEARING),

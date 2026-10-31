@@ -9,7 +9,7 @@ _Last updated 2026-10-04 (branch `m1-offline`)._
 | M0 scaffolding, config, `.env` | Done, on `main` |
 | M1.0 dump_params / api_probe / smoke test / probes | Done: api_probe, dump_params, the smoke test (stopped at Arrange), `pipeline_probe` and three `pipeline_probe2` runs. Every call the through-cut pipeline needs has been seen working. Results: `docs/fusion-api-status.md` |
 | M1.1 pure core | Done and unit-tested |
-| M1.2-M1.7 Fusion adapters + pipeline | **Working in Fusion for through-cut aluminum plates** (2026-10-01): drilled, bored and bearing holes, cutouts, several parts per sheet, pauses, the guard and a check that the tool never enters a part. Still to run in Fusion: several sheets, the 1/8 in tool, polycarbonate. Pockets wait on a 2D Adaptive dump. Fusion Team save (M1.7) **works**: jobs save to 5940 BREAD / AutoCAM test with a file link |
+| M1.2-M1.7 Fusion adapters + pipeline | **Working in Fusion for through-cut aluminum plates** (2026-10-01): drilled, bored and bearing holes, cutouts, several parts per sheet, pauses, the guard and a check that the tool never enters a part. Still to run in Fusion: several sheets, the 1/8 in tool, polycarbonate. Pockets: built, waiting on a Fusion test (branch `pockets`). Fusion Team save (M1.7) **works**: jobs save to 5940 BREAD / AutoCAM test with a file link |
 | M2 add-in hot-folder worker | Written: `fusion/autocam_addin/` (job loop in `autocam_worker/worker.py`, tested offline, including a full service run through it); **works in Fusion** (2026-10-01: a queued job ran by itself into `done/`). Still worth doing once on the shop PC: kill Fusion mid-job and check the retry (`docs/manual-tests.md` → M2, checks 4-5) |
 | M3 service: Trello read + Onshape export + jobs | **First real run worked** (2026-10-02, board https://trello.com/b/fsuTYbO3/5940-autocam): a real card -> Onshape STEP export -> job. It found and fixed: Markdown around `Qty:`, and an Onshape 400 crashing the pass (now that card goes to Needs fixing) |
 | M4 service: results back to Trello | **First real run worked** (2026-10-02): the sheet card with the program came back to Sheet review |
@@ -63,7 +63,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   real card (P-032, renamed P-2015) waits on pockets.
 - **Templates:** `alu_eighth`, `poly_4mm`, `poly_eighth` (only `alu_4mm` exists). Until then, polycarbonate
   parts and parts that need the 1/8 in endmill stay in Ready for CAM. Set Tab shape: Triangular in each.
-- **Pockets:** needs a `dump_params` run on a job with a 2D Adaptive op (P-2015 waits in Needs fixing).
+- **Pockets** (built 2026-10-31 on branch `pockets`, tested offline, untested in Fusion): `[pocket]` (2D
+  Adaptive) clears each floor, `[pocketfinish]` (2D Contour) finishes its walls, both before the holes. The new
+  `alu_4mm` has both ops. Needs one Fusion test job before it's merged (`docs/manual-tests.md` → M3 section 14).
 - **0.3 in tabs:** crashed Fusion before tabs were kept on one edge; try a test job before using them.
 - **Adapters:** the user's, later.
 - **M5, on the shop PC:** run `ops\install-autostart.ps1`, tick the add-in's Run on Startup, then a reboot test

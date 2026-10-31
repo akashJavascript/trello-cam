@@ -29,7 +29,7 @@ from .tapguard import parse_code
 SUFFIX = "_AIRTEST"
 _WORD = re.compile(r"(?<![A-Z])([ZR])( *)([+-]?(?:\d+\.?\d*|\.\d+))")
 _FEED = re.compile(r"(?<![A-Z])F *[+-]?(?:\d+\.?\d*|\.\d+)")
-OP_TAGS = ("drill", "bore", "bearing", "pocket", "inner", "outer")
+OP_TAGS = ("pocket", "pocketfinish", "drill", "bore", "bearing", "inner", "outer")
 _MOTION_G = (0.0, 1.0, 2.0, 3.0, 73.0, 81.0, 82.0, 83.0)
 _FEED_G = (1.0, 2.0, 3.0, 73.0, 81.0, 82.0, 83.0)
 

@@ -19,7 +19,8 @@ from autocam_core.names import comment_line
 from autocam_core.tabs import Seg
 
 from autocam_worker.adapter import (
-    BEARING, BORE, DRILL, INNER, OUTER, TAGS, Adapter, AdapterError, Arranged, Box, OpFill, OpState, TemplateOp,
+    BEARING, BORE, DRILL, INNER, OUTER, POCKET, POCKETFINISH, TAGS, Adapter, AdapterError, Arranged, Box, OpFill,
+    OpState, TemplateOp,
 )
 
 OUTLINE_OFFSET_IN = 0.0787 + 0.05     # 4 mm tool radius + lead-in
@@ -31,7 +32,7 @@ def _tag(name: str) -> Optional[str]:
 
 
 class FakeAdapter(Adapter):
-    capabilities = frozenset({DRILL, BORE, BEARING, INNER, OUTER})
+    capabilities = frozenset({DRILL, BORE, BEARING, INNER, OUTER, POCKET, POCKETFINISH})
 
     def __init__(self):
         self.parts: Dict[str, Tuple[PartGeometry, Tuple[float, float]]] = {}

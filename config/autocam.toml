@@ -31,7 +31,6 @@ schema = 1
 "onshape.budget_year_start" = "plan: when the enterprise's call year resets (MM-DD)"
 "fusion.params.setup.wcs_origin_boxPoint" = "the team's manual value; check it lands bottom front-left in the nest preview (M1.3)"
 "fusion.params.setup.stock_mode_value" = "fallback only; confirm the 'from solid' value if Setup.stockSolids fails"
-"fusion.params.selections.pocket" = "pending: dump_params on a job with a 2D Adaptive op"
 
 [machine]
 reach_y_in = 40.0          # ShopSabre 23: Y runs front to back, 40 in; the rest of the 48 in sheet hangs off the back
@@ -172,7 +171,8 @@ t12_eighth_alu = [0.125, 0.136]
 eighth_poly = [0.125, 0.136]
 
 [cam]
-op_tags = ["drill", "bore", "bearing", "pocket", "inner", "outer"]   # template op order
+op_tags = ["pocket", "pocketfinish", "drill", "bore", "bearing", "inner", "outer"]   # template op order: pockets
+                                # first, so a hole in a pocket floor is cut after the pocket is cleared
 
 # One template per material family and tool. Files are exported from Fusion's template library.
 [templates.alu_4mm]
@@ -307,7 +307,7 @@ faces = "circularFaces"
 
 [fusion.params.selections]
 contour = "contours"
-pocket = "pockets"
+pocket = "pockets"                      # 2D Adaptive's "Pocket Selections" (dump_params, 2026-10-31)
 
 [fusion.params.tabs]                    # M6
 enabled = "group_tabs"

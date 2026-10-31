@@ -4,7 +4,8 @@ Rules (brief, "Existing code" and "Not implemented yet"):
 - exactly one solid body; thickness within tolerance of one of the material's stock thicknesses;
 - flat top and bottom, vertical walls; no chamfers/countersinks, edge fillets or 3D faces;
 - pockets are fine if they all open to one side; that side is cut facing up. Features from both
-  sides are rejected (two-sided parts are out of scope);
+  sides are rejected (two-sided parts are out of scope). A floor's inner loops are holes or deeper pockets,
+  or raised islands (walls rising from the floor), which the pocket ops don't cut around yet;
 - sharp inside corners are a warning (the router leaves its radius there).
 Tool-dependent rules (hole sizes, inside radii) are in tooling.py.
 """
@@ -45,6 +46,7 @@ class PlateAnalysis:
     through_holes: Tuple[Hole, ...] = ()
     inside_radii_in: Tuple[float, ...] = ()     # inside corners and round pockets; must suit the tool
     through_loops: Tuple[Loop, ...] = ()
+    pocket_islands: Tuple[Tuple[int, int], ...] = ()   # (floor face id, inner loop index): walls rise from it
 
     @property
     def ok(self) -> bool:
@@ -144,9 +146,16 @@ def _analyze(geom: PartGeometry, thicknesses_in, thickness_tol_in, flipped: bool
             if all(geom.face(w).z_min_in <= HEIGHT_TOL_IN for w in walls):
                 loops.append(Loop(face_id, index, tuple(walls), by_faces.get(frozenset(walls))))
 
+    islands = []
+    for face_id in up_floors:
+        floor = geom.face(face_id)
+        for index, walls in enumerate(floor.inner_loops):
+            if any(geom.face(w).z_max_in > floor.z_max_in + HEIGHT_TOL_IN for w in walls):
+                islands.append((face_id, index))
+
     return PlateAnalysis(
         name=geom.name, errors=tuple(errors), warnings=tuple(warnings), measured_thickness_in=t,
         stock_thickness_in=stock, flipped=flipped, geometry=geom, top_face_ids=tuple(tops),
         pocket_floor_ids=tuple(up_floors), through_holes=through, inside_radii_in=inside_radii,
-        through_loops=tuple(loops),
+        through_loops=tuple(loops), pocket_islands=tuple(islands),
     )

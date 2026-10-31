@@ -34,6 +34,9 @@ UNCONFIRMED = {
     "tabs": "contour op tabs: group_tabs, tabPositioning = 'tabCount', tabsPerContour",
     "tab_points": "contour op tabs at points: tabPositioning 'distance' 1000 in, tabPositions = sketch points",
     "op_copy": "a copy of the template's [inner] op (CAMTemplate.createFromOperations) for tabbed cutouts",
+    "pocket_floors": "[pocket] (2D Adaptive): 'pockets' = each floor's outer loop (FaceContourSelection, OnlyOutsideLoops)",
+    "pocket_selection": "[pocket]: CurveSelections.createNewPocketSelection on the floors, when face contours fail",
+    "pocket_walls": "[pocketfinish] (2D Contour): each floor's outer loop as a chain, cut on the floor's side",
 }
 
 
@@ -212,13 +215,15 @@ def chain_api() -> str:
 
 
 def _inside(chain, loop, used) -> None:
-    """Cut a single loop on its inside. Fusion picks the cut side of a chain from the chain's direction, and a
-    chain built from edges runs the way its first edge happens to point.
+    """Cut a single loop on the inside of the region it encloses: inside the hole for an inner loop (a cutout),
+    on the face for an outer loop (a pocket floor's walls, cut from the pocket). Fusion picks the cut side of a
+    chain from the chain's direction, and a chain built from edges runs the way its first edge happens to point.
 
-    Seen in Fusion 2705.1.15 (2026-10-01; ChainSelection has no sideType there):
+    Seen in Fusion 2705.1.15 (2026-10-01; ChainSelection has no sideType there), on inner loops:
     - not reverted at all: round cutouts outside, triangles inside (edge directions vary);
     - isReverted = first co-edge isOpposedToEdge (chain runs the loop's way): every cutout outside;
-    - so: isReverted = not isOpposedToEdge (chain runs against the loop's way).
+    - so: isReverted = not isOpposedToEdge (chain runs against the loop's way). The cut is on the side away from
+      the loop's face; an outer loop's face is the region it encloses, so it runs the loop's way instead.
     The posted program is still tested against the part bodies (pipeline), so a wrong side is never offered."""
     sides = getattr(adsk.cam, "SideTypes", None)
     if sides is not None and hasattr(type(chain), "sideType") and hasattr(sides, "AlwaysInsideSideType"):
@@ -226,12 +231,14 @@ def _inside(chain, loop, used) -> None:
         used("chain_side_type")
         return
     if hasattr(type(chain), "isReverted"):
-        chain.isReverted = not loop.coEdges.item(0).isOpposedToEdge
+        with_loop = loop.coEdges.item(0).isOpposedToEdge
+        chain.isReverted = with_loop if loop.isOuter else not with_loop
         used("chain_direction")
 
 
 def select_loops(op, whole_faces, single_loops, contour_param: str, used=lambda key: None) -> None:
-    """whole_faces: faces whose inner loops are all cut; single_loops: BRepLoops cut on their own."""
+    """whole_faces: faces whose inner loops are all cut; single_loops: BRepLoops cut on their own, on the inside
+    of what they enclose (_inside)."""
     value = _contours(op, contour_param)
     sels = value.getCurveSelections()
     sels.clear()
@@ -245,6 +252,28 @@ def select_loops(op, whole_faces, single_loops, contour_param: str, used=lambda 
         chain.inputGeometry = [co.edge for co in items(loop.coEdges)]   # the whole loop, in order
         _inside(chain, loop, used)
     value.applyCurveSelections(sels)
+
+
+def select_pockets(op, floors, pocket_param: str) -> str:
+    """[pocket]: clear down to each floor inside its outer loop. The floor's inner loops aren't islands: they're
+    holes or deeper pockets below it (a raised island sends the part to manual CAM, plate.py), and what's above
+    them comes out with the pocket. Face contours first (the outline ops' kind of selection); if Fusion refuses
+    them here, its pocket selection on the same faces. Returns which one took."""
+    try:
+        select_face_loops(op, floors, adsk.cam.LoopTypes.OnlyOutsideLoops, pocket_param)
+        return "face contours"
+    except Exception as e:  # noqa: BLE001 - try the pocket selection, and say both if it fails too
+        first = f"{type(e).__name__}: {e}"
+    value = _contours(op, pocket_param)
+    sels = value.getCurveSelections()
+    sels.clear()
+    try:
+        ps = sels.createNewPocketSelection()
+        ps.inputGeometry = list(floors)
+        value.applyCurveSelections(sels)
+    except Exception as e:  # noqa: BLE001
+        raise AdapterError(f"face contours: {first}; pocket selection: {type(e).__name__}: {e}") from None
+    return "pocket selection"
 
 
 def select_hole_faces(op, faces, names) -> None:

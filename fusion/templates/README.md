@@ -17,13 +17,20 @@ building the templates, run `dump_params` on a part with each template applied a
 ## Rules for every template (decisions 7, 12, 22)
 
 - **Op names:**
-  - Tag operations by name: `[drill]`, `[bore]`, `[bearing]`, `[pocket]`, `[inner]`, `[outer]`, in that order.
+  - Tag operations by name: `[pocket]`, `[pocketfinish]`, `[drill]`, `[bore]`, `[bearing]`, `[inner]`, `[outer]`,
+    in that order. Fusion runs them in the template's order, so pockets come first: a hole in a pocket floor is
+    then cut after the pocket is cleared, not plunged through it.
   - Names may contain only letters, digits, spaces, `-` and `_` besides the tag.
   - Every op needs exactly one tag, and each tag appears at most once. An untagged op stops the sheet.
   - `[outer]` is required. The others are optional, but a sheet that needs one the template lacks is stopped
     (for example drill-size holes and no `[drill]` op). Without a `[bearing]` op, bearing holes are cut by
     `[bore]` with a warning.
-  - `[pocket]` isn't automated yet: pocketed parts go back for manual CAM.
+  - `[pocket]` is a **2D Adaptive** that clears each pocket floor inside its outline, down to the floor. Leave
+    wall stock for `[pocketfinish]` if the template has one; floor stock 0 (nothing comes back for the floor).
+    Its bottom height is the selected contour, offset 0: the automation keeps the template's here.
+  - `[pocketfinish]` (optional) is a **2D Contour** on each pocket floor's outline at the floor: no stock to
+    leave, no tabs. Without it, the adaptive's walls are the finished walls.
+  - A pocket with a raised island in it still goes back for manual CAM.
   - Selections don't matter: the automation selects the geometry for every op on every sheet.
 - **One tool:**
   - Every op uses the template's single tool. The automation checks the tool GUID.

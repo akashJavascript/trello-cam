@@ -60,7 +60,8 @@ from autocam_core.sheetcheck import check_sheet_program, pause_spec
 from autocam_core.tooling import FeaturePlan, ToolNeed, part_tool, plan_features, sheet_tool
 from autocam_core.toolpoints import cutting_points
 
-from .adapter import BEARING, BORE, DRILL, INNER, OUTER, POCKET, TAGS, Adapter, AdapterError, OpFill, Rect
+from .adapter import (BEARING, BORE, DRILL, INNER, OUTER, POCKET, POCKETFINISH, TAGS, Adapter, AdapterError,
+                      OpFill, Rect)
 
 RESULT = "result.json"
 LOG = "worker.log"
@@ -896,10 +897,10 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
         tabbed = {}
     fills = {DRILL: OpFill(DRILL, holes=tuple(holes[DRILL])), BORE: OpFill(BORE, holes=tuple(holes[BORE])),
              BEARING: OpFill(BEARING, holes=tuple(holes[BEARING])), INNER: OpFill(INNER, loops=tuple(loops)),
-             POCKET: OpFill(POCKET, floors=tuple(floors))}
+             POCKET: OpFill(POCKET, floors=tuple(floors)), POCKETFINISH: OpFill(POCKETFINISH, floors=tuple(floors))}
     for tag, fill in fills.items():
         wanted = len(fill.holes) + len(fill.loops) + len(fill.floors)
-        if wanted and tag not in by_tag:
+        if wanted and tag not in by_tag and tag != POCKETFINISH:      # a template may leave out the finish pass
             sheet.errors.append(Issue(E.TEMPLATE_PROBLEM, f"template has no [{tag}] op but this sheet needs one "
                                                           f"({wanted} features)"))
     if sheet.errors:

@@ -403,6 +403,19 @@ writes `<sheet>.labelled.png` beside each preview: the picture the sheet card wo
 | 2 | The numbers match the card's CUT ORDER list. Each badge sits on its part's material (not in a cutout), except on a part that's mostly cutouts, where it's in the middle of the part (lbl1: spots on the material, right numbers and copies, 2026-10-04) | |
 | 3 | At the machine, the labels are enough to tell which part is which when unloading | |
 
+### 14. Pockets (2026-10-31)
+
+Needs the `pockets` code and the new `alu_4mm` (with `[pocket]` and `[pocketfinish]`) on the Fusion PC, and the
+add-in reloaded. Use a part with a counterbore or pocket and a hole through its floor (the test part from the
+dump, or P-2015), as a card with its STEP attached so no Onshape calls are made.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | The sheet card comes back (not Needs fixing). result.json's untested steps list `pocket_floors` and `pocket_walls`, and its notes say how the pockets were selected | |
+| 2 | In the Fusion file: `[pocket] pockets` and `[pocketfinish] pocket walls` come first, each with every pocket floor selected; the finish pass runs inside the pocket, not in the wall | |
+| 3 | Simulate: the pocket is cleared to its floor, including over the hole; the hole is cut after; nothing below a floor | |
+| 4 | A part with a raised island in a pocket goes to Needs fixing with "needs manual CAM ... island" | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)
