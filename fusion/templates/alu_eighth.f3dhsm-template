@@ -16,19 +16,6 @@
       <coolant mode="mist"/>
       <material name="carbide"/>
       <body assembly-gauge-length="1" body-length="1" coolant-support="no" diameter="0.125" flute-length="0.472441" number-of-flutes="1" overall-length="1.49606" shaft-diameter="0.125" shoulder-diameter="0.125" shoulder-length="0.669291" thread-pitch="0" thread-profile-angle="60"/>
-      <holder description="Default Holder" gauge-length="1.141732283">
-        <section diameter="0.984251969" length="0"/>
-        <section diameter="1.181102362" length="0.196850394"/>
-        <section diameter="1.181102362" length="0.31496063"/>
-        <section diameter="1.968503937" length="0"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.811023622" length="0.078740157"/>
-        <section diameter="1.811023622" length="0.118110236"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.653543307" length="0"/>
-        <section diameter="1.57480315" length="0.196850394"/>
-      </holder>
       <motion clockwise="yes" cutting-feedrate="48.000090758" entry-feedrate="48" exit-feedrate="48" feed-mode="per-minute" plunge-feedrate="10" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="48.000090758"/>
       <presets>
         <preset description="" id="{65ac7474-4ce4-9dd1-b13b-059596495299}" name="Default preset">
@@ -114,7 +101,7 @@
     <parameter expression="''" name="holder_productId"/>
     <parameter expression="''" name="holder_productLink"/>
     <parameter expression="''" name="holder_libraryName"/>
-    <parameter expression="1.141732283464567" name="tool_holderGaugeLength"/>
+    <parameter expression="0." name="tool_holderGaugeLength"/>
     <parameter expression="1.0" name="tool_assemblyGaugeLength"/>
     <parameter expression="'default'" name="preset_search"/>
     <parameter expression="''" name="preset_contains"/>
@@ -391,19 +378,6 @@
       <coolant mode="mist"/>
       <material name="carbide"/>
       <body assembly-gauge-length="1" body-length="1" coolant-support="no" diameter="0.125" flute-length="0.472441" number-of-flutes="1" overall-length="1.49606" shaft-diameter="0.125" shoulder-diameter="0.125" shoulder-length="0.669291" thread-pitch="0" thread-profile-angle="60"/>
-      <holder description="Default Holder" gauge-length="1.141732283">
-        <section diameter="0.984251969" length="0"/>
-        <section diameter="1.181102362" length="0.196850394"/>
-        <section diameter="1.181102362" length="0.31496063"/>
-        <section diameter="1.968503937" length="0"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.811023622" length="0.078740157"/>
-        <section diameter="1.811023622" length="0.118110236"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.653543307" length="0"/>
-        <section diameter="1.57480315" length="0.196850394"/>
-      </holder>
       <motion clockwise="yes" cutting-feedrate="48.000090758" entry-feedrate="48" exit-feedrate="48" feed-mode="per-minute" plunge-feedrate="10" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="48.000090758"/>
       <presets>
         <preset description="" id="{65ac7474-4ce4-9dd1-b13b-059596495299}" name="Default preset">
@@ -492,7 +466,7 @@
     <parameter expression="''" name="holder_productId"/>
     <parameter expression="''" name="holder_productLink"/>
     <parameter expression="''" name="holder_libraryName"/>
-    <parameter expression="1.141732283464567" name="tool_holderGaugeLength"/>
+    <parameter expression="0." name="tool_holderGaugeLength"/>
     <parameter expression="1.0" name="tool_assemblyGaugeLength"/>
     <parameter expression="'default'" name="preset_search"/>
     <parameter expression="''" name="preset_contains"/>
@@ -807,19 +781,6 @@
       <coolant mode="mist"/>
       <material name="carbide"/>
       <body assembly-gauge-length="1" body-length="1" coolant-support="no" diameter="0.125" flute-length="0.472441" number-of-flutes="1" overall-length="1.49606" shaft-diameter="0.125" shoulder-diameter="0.125" shoulder-length="0.669291" thread-pitch="0" thread-profile-angle="60"/>
-      <holder description="Default Holder" gauge-length="1.141732283">
-        <section diameter="0.984251969" length="0"/>
-        <section diameter="1.181102362" length="0.196850394"/>
-        <section diameter="1.181102362" length="0.31496063"/>
-        <section diameter="1.968503937" length="0"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.811023622" length="0.078740157"/>
-        <section diameter="1.811023622" length="0.118110236"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.653543307" length="0"/>
-        <section diameter="1.57480315" length="0.196850394"/>
-      </holder>
       <motion clockwise="yes" cutting-feedrate="0" entry-feedrate="0" exit-feedrate="0" feed-mode="per-minute" plunge-feedrate="10" ramp-angle="2" ramp-feedrate="0" ramp-spindle-rpm="0" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="0"/>
       <presets>
         <preset description="" id="{65ac7474-4ce4-9dd1-b13b-059596495299}" name="Default preset">
@@ -911,7 +872,7 @@
     <parameter expression="''" name="holder_productId"/>
     <parameter expression="''" name="holder_productLink"/>
     <parameter expression="''" name="holder_libraryName"/>
-    <parameter expression="1.141732283464567" name="tool_holderGaugeLength"/>
+    <parameter expression="0." name="tool_holderGaugeLength"/>
     <parameter expression="1.0" name="tool_assemblyGaugeLength"/>
     <parameter expression="'default'" name="preset_search"/>
     <parameter expression="''" name="preset_contains"/>
@@ -1328,19 +1289,6 @@
       <coolant mode="mist"/>
       <material name="carbide"/>
       <body assembly-gauge-length="1" body-length="1" coolant-support="no" diameter="0.125" flute-length="0.472441" number-of-flutes="1" overall-length="1.49606" shaft-diameter="0.125" shoulder-diameter="0.125" shoulder-length="0.669291" thread-pitch="0" thread-profile-angle="60"/>
-      <holder description="Default Holder" gauge-length="1.141732283">
-        <section diameter="0.984251969" length="0"/>
-        <section diameter="1.181102362" length="0.196850394"/>
-        <section diameter="1.181102362" length="0.31496063"/>
-        <section diameter="1.968503937" length="0"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.811023622" length="0.078740157"/>
-        <section diameter="1.811023622" length="0.118110236"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.653543307" length="0"/>
-        <section diameter="1.57480315" length="0.196850394"/>
-      </holder>
       <motion clockwise="yes" cutting-feedrate="48.000090758" entry-feedrate="48" exit-feedrate="48" feed-mode="per-minute" plunge-feedrate="10" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="48.000090758"/>
       <presets>
         <preset description="" id="{65ac7474-4ce4-9dd1-b13b-059596495299}" name="Default preset">
@@ -1426,7 +1374,7 @@
     <parameter expression="''" name="holder_productId"/>
     <parameter expression="''" name="holder_productLink"/>
     <parameter expression="''" name="holder_libraryName"/>
-    <parameter expression="1.141732283464567" name="tool_holderGaugeLength"/>
+    <parameter expression="0." name="tool_holderGaugeLength"/>
     <parameter expression="1.0" name="tool_assemblyGaugeLength"/>
     <parameter expression="'default'" name="preset_search"/>
     <parameter expression="''" name="preset_contains"/>
@@ -1639,19 +1587,6 @@
       <coolant mode="mist"/>
       <material name="carbide"/>
       <body assembly-gauge-length="1" body-length="1" coolant-support="no" diameter="0.125" flute-length="0.472441" number-of-flutes="1" overall-length="1.49606" shaft-diameter="0.125" shoulder-diameter="0.125" shoulder-length="0.669291" thread-pitch="0" thread-profile-angle="60"/>
-      <holder description="Default Holder" gauge-length="1.141732283">
-        <section diameter="0.984251969" length="0"/>
-        <section diameter="1.181102362" length="0.196850394"/>
-        <section diameter="1.181102362" length="0.31496063"/>
-        <section diameter="1.968503937" length="0"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.811023622" length="0.078740157"/>
-        <section diameter="1.811023622" length="0.118110236"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.653543307" length="0"/>
-        <section diameter="1.57480315" length="0.196850394"/>
-      </holder>
       <motion clockwise="yes" cutting-feedrate="48.000090758" entry-feedrate="48" exit-feedrate="48" feed-mode="per-minute" plunge-feedrate="10" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="48.000090758"/>
       <presets>
         <preset description="" id="{65ac7474-4ce4-9dd1-b13b-059596495299}" name="Default preset">
@@ -1740,7 +1675,7 @@
     <parameter expression="''" name="holder_productId"/>
     <parameter expression="''" name="holder_productLink"/>
     <parameter expression="''" name="holder_libraryName"/>
-    <parameter expression="1.141732283464567" name="tool_holderGaugeLength"/>
+    <parameter expression="0." name="tool_holderGaugeLength"/>
     <parameter expression="1.0" name="tool_assemblyGaugeLength"/>
     <parameter expression="'default'" name="preset_search"/>
     <parameter expression="''" name="preset_contains"/>
@@ -2151,19 +2086,6 @@
       <coolant mode="mist"/>
       <material name="carbide"/>
       <body assembly-gauge-length="1" body-length="1" coolant-support="no" diameter="0.125" flute-length="0.472441" number-of-flutes="1" overall-length="1.49606" shaft-diameter="0.125" shoulder-diameter="0.125" shoulder-length="0.669291" thread-pitch="0" thread-profile-angle="60"/>
-      <holder description="Default Holder" gauge-length="1.141732283">
-        <section diameter="0.984251969" length="0"/>
-        <section diameter="1.181102362" length="0.196850394"/>
-        <section diameter="1.181102362" length="0.31496063"/>
-        <section diameter="1.968503937" length="0"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.811023622" length="0.078740157"/>
-        <section diameter="1.811023622" length="0.118110236"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.968503937" length="0.078740157"/>
-        <section diameter="1.653543307" length="0"/>
-        <section diameter="1.57480315" length="0.196850394"/>
-      </holder>
       <motion clockwise="yes" cutting-feedrate="48.000090758" entry-feedrate="48" exit-feedrate="48" feed-mode="per-minute" plunge-feedrate="10" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="48.000090758"/>
       <presets>
         <preset description="" id="{65ac7474-4ce4-9dd1-b13b-059596495299}" name="Default preset">
@@ -2252,7 +2174,7 @@
     <parameter expression="''" name="holder_productId"/>
     <parameter expression="''" name="holder_productLink"/>
     <parameter expression="''" name="holder_libraryName"/>
-    <parameter expression="1.141732283464567" name="tool_holderGaugeLength"/>
+    <parameter expression="0." name="tool_holderGaugeLength"/>
     <parameter expression="1.0" name="tool_assemblyGaugeLength"/>
     <parameter expression="'default'" name="preset_search"/>
     <parameter expression="''" name="preset_contains"/>
