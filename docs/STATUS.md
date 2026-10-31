@@ -71,7 +71,8 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 - **0.3 in tabs:** crashed Fusion before tabs were kept on one edge; try a test job before using them.
 - **Adapters:** the user's, later.
 - **M5, on the scouting laptop** (the shop PC since 2026-10-30, reached over Tailscale): autostart tasks
-  installed, the add-in on Run on Startup, Windows signs in by itself. Left: the reboot test
+  installed (the service in the background, no window, since 2026-10-31), the add-in on Run on Startup, Windows
+  signs in by itself. Left: the reboot test
   (`docs/manual-tests.md` → M5). The laptop's Fusion runs on the user's Autodesk account, so Fusion opened
   elsewhere suspends it (one session per account); a separate account for the laptop would end that.
 

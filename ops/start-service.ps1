@@ -1,5 +1,6 @@
-# Starts the auto-CAM service in this window (titled "autocam service").
-# The logon task runs this; you can also run it by hand:
+# Starts the auto-CAM service in this window (titled "autocam service"), for running it by hand. The shop PC's
+# "AutoCAM service" task runs it in the background instead (install-autostart.ps1): disable that task first, or
+# this copy says the service is already running and stops. To run it by hand:
 #   powershell -ExecutionPolicy Bypass -File C:\dev\frc-autocam\ops\start-service.ps1
 # Ctrl+C stops it. If the service is already running elsewhere, this one says so and stops.
 param(

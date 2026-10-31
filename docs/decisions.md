@@ -748,3 +748,14 @@ could land on the hole. Two pieces:
   item "Something's already cut where this program goes" works like "The offcut isn't on the rack" (another
   offcut the program fits, or re-nest / new sheet), but the offcut stays, with a comment asking for the cut.
 - Not done: a cut that isn't a rectangle is recorded as its bounding rectangle by whoever measures it.
+
+## 2026-10-31: the service runs in the background, no window (the user's choice)
+
+The logon task opened a visible "autocam service" PowerShell window on the shared scouting laptop; closing it, or
+signing out, stopped AutoCAM until the next logon. Now the "AutoCAM service" task runs `autocam.exe run` as the
+same user without a window or a stored password (Task Scheduler's S4U: it may reach the internet but not network
+shares, which it doesn't use), 30 s after the PC starts and again every 5 minutes; a run still going makes that a
+no-op (MultipleInstances IgnoreNew), so a stopped service is back within 5 minutes. Its output is
+`logs/service.log`; the System card shows whether it's alive. To stop it for a while: disable the task, then stop
+it. Fusion's task is unchanged (interactive, at logon: it needs the desktop). Registering an S4U task needs an
+administrator PowerShell. `ops/start-service.ps1` stays for running it by hand.

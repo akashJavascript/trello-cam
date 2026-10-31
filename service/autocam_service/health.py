@@ -76,7 +76,7 @@ def _fusion(h: Health, stale_after_s: float) -> str:
                      "Run autocam_addin.")
         else:
             line += (f" The service runs older code ({h.service_core}; the add-in is {core}). It restarts into new "
-                     "code by itself within a few minutes; if this stays, restart the service window.")
+                     "code by itself within a few minutes; if this stays, restart the 'AutoCAM service' task.")
     return line
 
 

@@ -435,14 +435,16 @@ dump, or P-2015), as a card with its STEP attached so no Onshape calls are made.
 powershell -ExecutionPolicy Bypass -File C:\dev\frc-autocam\ops\install-autostart.ps1 -DryRun   # shows what it will set up
 powershell -ExecutionPolicy Bypass -File C:\dev\frc-autocam\ops\install-autostart.ps1
 ```
-Then, in Fusion: Shift+S > Add-Ins > autocam_addin > tick **Run on Startup**. Set Sleep to Never (when plugged in).
-Close the service window you started by hand before logging off, or the logon copy will say it's already running.
-Undo with `ops\uninstall-autostart.ps1`.
+Run it from an administrator PowerShell (the service's task runs without a window, whether or not anyone is
+logged in, which Task Scheduler only lets an administrator set up). Then, in Fusion: Shift+S > Add-Ins >
+autocam_addin > tick **Run on Startup**. Set Sleep to Never (when plugged in). Stop any service window you
+started by hand first, or the task's copy will say it's already running. Undo with `ops\uninstall-autostart.ps1`.
 
 | # | Check | Result |
 |---|---|---|
-| 1 | Task Scheduler shows "AutoCAM service" and "AutoCAM Fusion", triggered at logon | |
-| 2 | Log off and on: Fusion opens by itself, and ~30 s after logon a window titled "autocam service" starts the service | |
+| 1 | Task Scheduler shows "AutoCAM service" (at startup, then every 5 minutes; "Run whether user is logged on or not") and "AutoCAM Fusion" (at logon) | |
+| 2 | Log off and on: Fusion opens by itself; no service window appears, and the System card keeps updating | |
+| 2b | End the service's processes (Task Manager, or `Stop-ScheduledTask "AutoCAM service"`): within 5 minutes it's running again and the System card updates | |
 | 3 | The add-in starts with Fusion: `queue\worker_heartbeat.json` updates and the System card says "Fusion: running" | |
 | 4 | Reboot the PC (after someone logs in, or with automatic sign-in): the same, with no other steps | |
 | 5 | A card dragged into Ready for CAM after the reboot is nested without anyone touching the PC | |
