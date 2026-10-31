@@ -10,6 +10,11 @@ expects:
 | `poly_4mm.f3dhsm-template` | polycarbonate | `4mm 0 flute Poly` |
 | `poly_eighth.f3dhsm-template` | polycarbonate | `1/8 polycarbonate` (T12) |
 
+**Only `alu_4mm` is built in Fusion.** The other three are made from it with `fusion/tools/make_templates/`
+(the same ops and settings, the other tool and its preset feeds from the pinned library); run those again
+whenever `alu_4mm` changes. Each one checks every swap's count, so a reworked `alu_4mm` stops it rather than
+half-converting it.
+
 Build every template from the pinned library (`fusion/tools/5940_Tool_Library.tools`). Tool GUIDs change when a
 library is re-saved or copied, and the automation rejects any op whose tool GUID isn't the one in config. After
 building the templates, run `dump_params` on a part with each template applied and check that the GUIDs match.

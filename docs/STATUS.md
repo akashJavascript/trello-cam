@@ -61,13 +61,13 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 - **Placed by hand** (built 2026-10-03, tested offline, untested in Fusion): "Nest this part" unticked gives a
   part its own program, long side along X, zeroed at its box's front-left corner, run once per copy. Its first
   real card (P-032, renamed P-2015) waits on pockets.
-- **Templates:** `alu_eighth`, `poly_4mm`, `poly_eighth` (only `alu_4mm` exists). Until then, polycarbonate
-  parts and parts that need the 1/8 in endmill stay in Ready for CAM. Set Tab shape: Triangular in each.
+- **Templates** (2026-10-31): all four exist. `alu_eighth`, `poly_4mm` and `poly_eighth` are made from `alu_4mm`
+  (`fusion/tools/make_templates/`) and work in Fusion: r025 (poly 4 mm), r027 (both 1/8), every check passed.
+  Polycarbonate and the 1/8 in endmill are no longer held back; none has been cut yet.
 - **Pockets** (2026-10-31): `[pocket]` (2D Adaptive) clears each floor, `[pocketfinish]` (2D Contour) finishes its
   walls, both before the holes; `alu_4mm` has both ops. **Work in Fusion** (r024, P-2015): the pocket selection
   took, the adaptive stayed in the pocket, the finish pass ran inside the wall, every check passed. Not yet
-  simulated by eye or cut (`docs/manual-tests.md` → M3 section 14, row 3). The other three templates need both
-  ops too. Islands in pockets still go to manual CAM.
+  simulated by eye or cut (`docs/manual-tests.md` → M3 section 14, row 3). The other three templates have both ops. Islands in pockets still go to manual CAM.
 - **0.3 in tabs:** crashed Fusion before tabs were kept on one edge; try a test job before using them.
 - **Adapters:** the user's, later.
 - **M5, on the shop PC:** run `ops\install-autostart.ps1`, tick the add-in's Run on Startup, then a reboot test

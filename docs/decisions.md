@@ -714,3 +714,19 @@ selection `pockets`, a CadContours2dParameterValue like the contours' `contours`
 - **First Fusion runs (r023, r024, P-2015):** r023's face contour cleared the whole sheet around the floor and
   the guard rejected it. r024's pocket selection stayed in the pocket, down to its floor; the finish pass ran
   inside the wall (this Fusion's ChainSelection has no sideType, so the direction rule did it); every check passed.
+
+## 2026-10-31: the other three templates, made from alu_4mm (the user's choice: alu_4mm's settings for all)
+
+`alu_eighth`, `poly_4mm` and `poly_eighth` are `alu_4mm` with another tool from the pinned library and its
+preset feeds, every op setting the same (one full-depth pass on outlines and cutouts, 1/16 in pocket
+stepdowns, 0.02 in wall stock). Made by `fusion/tools/make_templates/` with exact text swaps, each count
+checked; the scripts reproduce the committed files byte for byte. Learned in Fusion on the way:
+- **An op's feeds read in mm/min, whatever the tool's unit.** The 1/8 tools are in inches; r026 ran 96 in/min
+  as 3.78. Lengths do follow the tool's unit (the 1/8 outline sits a radius difference, 0.0157 in, closer).
+  At ~2 in/min alu_eighth's outline failed outright ("Failed to write Job File", r025, r026); that was the feed,
+  not the holder, which was dropped anyway so the 1/8 tools match the library (it gives them none).
+- **The tab size check** said "didn't stick" on inch tools although the expression took: a length's value
+  isn't in cm there. A matching expression now counts as taken.
+- The ops' coolant stays disabled: mist comes from the material (on for aluminum, off for polycarbonate).
+Results: r025 poly_4mm 100 in/min, r027 alu_eighth 48 and poly_eighth 96 (ramp 48, plunge 10), all checks
+passed, no warnings.
