@@ -1,6 +1,6 @@
 # Status
 
-_Last updated 2026-10-04 (branch `m1-offline`)._
+_Last updated 2026-10-31 (branch `m1-offline`)._
 
 ## Where things are
 
@@ -42,7 +42,7 @@ Ready to cut, pauses are safe, the Onshape budget can't be undercounted, and res
 **2026-10-03: sheets are now laid out in the machine's axes** (X across, Y front to back). Programs from
 r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisions.md`).
 
-## What's left (2026-10-04)
+## What's left (2026-10-31)
 
 ### Before the first real cut
 1. **Z:** settled (2026-10-31): the ShopSabre's fixed tool setter zeros to the top of the spoilboard, which is
@@ -70,8 +70,10 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   simulated by eye or cut (`docs/manual-tests.md` → M3 section 14, row 3). The other three templates have both ops. Islands in pockets still go to manual CAM.
 - **0.3 in tabs:** crashed Fusion before tabs were kept on one edge; try a test job before using them.
 - **Adapters:** the user's, later.
-- **M5, on the shop PC:** run `ops\install-autostart.ps1`, tick the add-in's Run on Startup, then a reboot test
-  (`docs/manual-tests.md` → M5). On this PC: tick Run on Startup (a Fusion restart left the add-in off once).
+- **M5, on the scouting laptop** (the shop PC since 2026-10-30, reached over Tailscale): autostart tasks
+  installed, the add-in on Run on Startup, Windows signs in by itself. Left: the reboot test
+  (`docs/manual-tests.md` → M5). The laptop's Fusion runs on the user's Autodesk account, so Fusion opened
+  elsewhere suspends it (one session per account); a separate account for the laptop would end that.
 
 ### Decisions waiting on you
 - **Merge `m1-offline` into `main`:** everything since M0 is on the branch.
