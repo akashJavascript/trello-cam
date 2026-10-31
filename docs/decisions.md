@@ -700,9 +700,10 @@ selection `pockets`, a CadContours2dParameterValue like the contours' `contours`
   because a template allows one op per tag. `[pocketfinish]` is optional: a template without it is fine.
 - **Pockets first** in the template, before the holes: a hole in a pocket floor starts at the floor, and a hole
   op run before the pocket is cleared would plunge through it. Fusion runs the ops in template order.
-- **Selection:** `[pocket]` takes each floor's outer loop (a face contour, outside loops only), so it clears
-  everything above the floor, over its holes too; if Fusion refuses a face contour there, its pocket selection
-  on the same faces, said in the run notes. `[pocketfinish]` takes each floor's outer loop as a chain, cut on
+- **Selection:** `[pocket]` takes Fusion's pocket selection on the floors (what picking a floor in the dialog
+  makes), so it clears everything above the floor, over its holes too; if that fails, each floor's outer loop
+  as a chain, inside; which one took is in the run notes. Not a face contour: the first test (r023) showed a
+  2D Adaptive keeps a selected face and clears around it, out to the stock. The guard rejected that program. `[pocketfinish]` takes each floor's outer loop as a chain, cut on
   the floor's side: the same rule as single cutouts (`fx_cam._inside`) with the direction reversed, since an
   outer loop's face is the region it encloses. The posted program's check against the part bodies catches a
   wrong side either way.

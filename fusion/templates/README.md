@@ -25,7 +25,7 @@ building the templates, run `dump_params` on a part with each template applied a
   - `[outer]` is required. The others are optional, but a sheet that needs one the template lacks is stopped
     (for example drill-size holes and no `[drill]` op). Without a `[bearing]` op, bearing holes are cut by
     `[bore]` with a warning.
-  - `[pocket]` is a **2D Adaptive** that clears each pocket floor inside its outline, down to the floor. Leave
+  - `[pocket]` is a **2D Adaptive** that clears each pocket down to its floor (the automation picks the floors). Leave
     wall stock for `[pocketfinish]` if the template has one; floor stock 0 (nothing comes back for the floor).
     Its bottom height is the selected contour, offset 0: the automation keeps the template's here.
   - `[pocketfinish]` (optional) is a **2D Contour** on each pocket floor's outline at the floor: no stock to

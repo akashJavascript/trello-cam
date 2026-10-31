@@ -131,10 +131,11 @@ class FusionAdapter(Adapter):
         elif fill.tag == POCKET:
             self._used("pocket_floors")
             floors = [fx_design.face_by_id(self._occ(cid), fid) for cid, fid in fill.floors]
-            how = call(f"{op_name}: select pockets", fx_cam.select_pockets, op, floors, params["selections"]["pocket"])
-            if how != "face contours":
+            how = call(f"{op_name}: select pockets", fx_cam.select_pockets, op, floors,
+                       [fx_geometry.outer_loop(f) for f in floors], params["selections"]["pocket"], self._used)
+            if how != "pocket selection":
                 self._used("pocket_selection")
-                self.run_notes.append(f"{op_name}: pockets selected as {how}")
+            self.run_notes.append(f"{op_name}: pockets selected as {how}")
         elif fill.tag == POCKETFINISH:
             self._used("pocket_walls")
             loops = [fx_geometry.outer_loop(fx_design.face_by_id(self._occ(cid), fid)) for cid, fid in fill.floors]

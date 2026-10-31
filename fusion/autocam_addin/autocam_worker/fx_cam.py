@@ -34,8 +34,8 @@ UNCONFIRMED = {
     "tabs": "contour op tabs: group_tabs, tabPositioning = 'tabCount', tabsPerContour",
     "tab_points": "contour op tabs at points: tabPositioning 'distance' 1000 in, tabPositions = sketch points",
     "op_copy": "a copy of the template's [inner] op (CAMTemplate.createFromOperations) for tabbed cutouts",
-    "pocket_floors": "[pocket] (2D Adaptive): 'pockets' = each floor's outer loop (FaceContourSelection, OnlyOutsideLoops)",
-    "pocket_selection": "[pocket]: CurveSelections.createNewPocketSelection on the floors, when face contours fail",
+    "pocket_floors": "[pocket] (2D Adaptive): 'pockets' = CurveSelections.createNewPocketSelection on the floors",
+    "pocket_selection": "[pocket]: each floor's outer loop as a chain, inside, when the pocket selection fails",
     "pocket_walls": "[pocketfinish] (2D Contour): each floor's outer loop as a chain, cut on the floor's side",
 }
 
@@ -254,16 +254,13 @@ def select_loops(op, whole_faces, single_loops, contour_param: str, used=lambda 
     value.applyCurveSelections(sels)
 
 
-def select_pockets(op, floors, pocket_param: str) -> str:
-    """[pocket]: clear down to each floor inside its outer loop. The floor's inner loops aren't islands: they're
+def select_pockets(op, floors, outer_loops, pocket_param: str, used=lambda key: None) -> str:
+    """[pocket]: clear each floor's pocket down to the floor. The floor's inner loops aren't islands: they're
     holes or deeper pockets below it (a raised island sends the part to manual CAM, plate.py), and what's above
-    them comes out with the pocket. Face contours first (the outline ops' kind of selection); if Fusion refuses
-    them here, its pocket selection on the same faces. Returns which one took."""
-    try:
-        select_face_loops(op, floors, adsk.cam.LoopTypes.OnlyOutsideLoops, pocket_param)
-        return "face contours"
-    except Exception as e:  # noqa: BLE001 - try the pocket selection, and say both if it fails too
-        first = f"{type(e).__name__}: {e}"
+    them comes out with the pocket. Fusion's pocket selection on the floors first (what picking a floor in the
+    2D Adaptive's Pocket Selections makes); if this Fusion can't, each floor's outer loop as a chain, inside.
+    Never a face contour: on a 2D Adaptive that keeps the face and clears everything around it, out to the stock
+    (r023, 2026-10-31). Returns which one took."""
     value = _contours(op, pocket_param)
     sels = value.getCurveSelections()
     sels.clear()
@@ -271,9 +268,14 @@ def select_pockets(op, floors, pocket_param: str) -> str:
         ps = sels.createNewPocketSelection()
         ps.inputGeometry = list(floors)
         value.applyCurveSelections(sels)
+        return "pocket selection"
+    except Exception as e:  # noqa: BLE001 - fall back to chains, and say both if they fail too
+        first = f"{type(e).__name__}: {e}"
+    try:
+        select_loops(op, [], outer_loops, pocket_param, used)
     except Exception as e:  # noqa: BLE001
-        raise AdapterError(f"face contours: {first}; pocket selection: {type(e).__name__}: {e}") from None
-    return "pocket selection"
+        raise AdapterError(f"pocket selection: {first}; chains: {type(e).__name__}: {e}") from None
+    return f"chains (pocket selection: {first})"
 
 
 def select_hole_faces(op, faces, names) -> None:
