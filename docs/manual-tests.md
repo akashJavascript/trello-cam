@@ -411,8 +411,8 @@ dump, or P-2015), as a card with its STEP attached so no Onshape calls are made.
 
 | # | Check | Result |
 |---|---|---|
-| 1 | The sheet card comes back (not Needs fixing). result.json's untested steps list `pocket_floors` and `pocket_walls`, and its notes say how the pockets were selected | |
-| 2 | In the Fusion file: `[pocket] pockets` and `[pocketfinish] pocket walls` come first, each with every pocket floor selected; the finish pass runs inside the pocket, not in the wall | |
+| 1 | The sheet card comes back (not Needs fixing). result.json's untested steps list `pocket_floors` and `pocket_walls`, and its notes say how the pockets were selected | r024 (P-2015, 2026-10-31): "pockets selected as pocket selection". r023 (face contour) cleared the whole sheet around the floor; the guard rejected it |
+| 2 | In the Fusion file: `[pocket] pockets` and `[pocketfinish] pocket walls` come first, each with every pocket floor selected; the finish pass runs inside the pocket, not in the wall | r024: pocket, pocketfinish, then holes in the program; adaptive within the pocket; the finish pass's tool center one radius inside the wall; checks passed |
 | 3 | Simulate: the pocket is cleared to its floor, including over the hole; the hole is cut after; nothing below a floor | |
 | 4 | A part with a raised island in a pocket goes to Needs fixing with "needs manual CAM ... island" | |
 

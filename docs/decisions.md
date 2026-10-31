@@ -711,3 +711,6 @@ selection `pockets`, a CadContours2dParameterValue like the contours' `contours`
   manual CAM. One that reaches the top was already caught (it splits the top face).
 - **Bottom height** stays the template's (the selected floor); only `[inner]` and `[outer]` are set to the
   stock bottom.
+- **First Fusion runs (r023, r024, P-2015):** r023's face contour cleared the whole sheet around the floor and
+  the guard rejected it. r024's pocket selection stayed in the pocket, down to its floor; the finish pass ran
+  inside the wall (this Fusion's ChainSelection has no sideType, so the direction rule did it); every check passed.
