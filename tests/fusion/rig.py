@@ -45,7 +45,7 @@ class Rig:
             f.write_text(json.dumps([[name, guid] for name in ops]))
             t["file"] = str(f)
         data["paths"] = {k: str(tmp_path / k) for k in ("queue", "cache", "state", "logs")}
-        data["nest"].update(nest)
+        data["nest"].update({"part_spacing_in": 0.25, **nest})   # the tests' layouts assume 1/4 in, whatever the shop's is
         if team:
             data["fusion_team"] = {"project": team[0], "folder": team[1]}
         self.cfg = parse_config(data, root=REPO_ROOT)

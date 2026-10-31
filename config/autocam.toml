@@ -52,7 +52,7 @@ width_in = 24.0
 [nest]
 edge_margin_in = 0.5       # margin on unclamped edges, including the zero-corner end
 reach_margin_in = 0.5      # stay this far short of reach_y_in
-part_spacing_in = 0.25     # must exceed the largest tool diameter
+part_spacing_in = 0.5      # more than 2 tool diameters: a solid strip between two parts' cuts holds their tabs
 max_sheets_per_group = 4   # per material + thickness group in one job
 rotation = "all"           # "all" | "none"
 part_in_part = false

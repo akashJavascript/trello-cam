@@ -681,3 +681,13 @@ checks), none left dangling, each run's calls what it should have made, the most
 the plan's figure once a real run had gone well: about 14 uncached parts per run (one pin and one parts list
 per Part Studio, about 4 per part). The monthly warning (150) and the yearly cap (1500) are unchanged and
 still stop a runaway.
+
+## 2026-10-30: part spacing 1/4 -> 1/2 in (the user's choice)
+
+At 1/4 in, two neighbouring parts' outlines with the 4 mm cutter (0.157 in) overlap by about 0.065 in, so the
+second outline cuts through the first part's tabs on the side facing it (`tabs.py` places tabs without
+looking at neighbours). A part boxed in by others could lose most of its tabs. 1/2 in leaves a solid strip of
+about 0.19 in between the two cuts, and 0.25 in with the 1/8 in cutter. 3/8 in was ruled out: it leaves a
+0.06 in sliver that can break off or grab the cutter. Cost: the arrange envelope shrinks by the spacing too,
+so the largest part that fits goes from 21 x 38.5 in to 20.5 x 38 in; material use is no concern at the
+sheet use seen so far (0-4 %). Open sheets keep the spacing they were nested with until they're rebuilt.
