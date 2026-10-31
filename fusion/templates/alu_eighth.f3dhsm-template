@@ -109,13 +109,13 @@
     <parameter expression="tool_isTurning ? (tool_unit == 'millimeters' ? 25mm : 1.0in) : tool_diameter" name="tool_stockDiameter"/>
     <parameter expression="tool_diameter * Math.PI * tool_spindleSpeed" name="tool_surfaceSpeed"/>
     <parameter expression="18000." name="tool_rampSpindleSpeed"/>
-    <parameter expression="48.000090757587415" name="tool_feedCutting"/>
+    <parameter expression="1219.2023052427203" name="tool_feedCutting"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedCutting/(tool_spindleSpeed * tool_numberOfFlutes) : 0.0" name="tool_feedPerTooth"/>
-    <parameter expression="47.99999999999999" name="tool_feedEntry"/>
-    <parameter expression="47.99999999999999" name="tool_feedExit"/>
+    <parameter expression="1219.1999999999998" name="tool_feedEntry"/>
+    <parameter expression="1219.1999999999998" name="tool_feedExit"/>
     <parameter expression="tool_feedCutting" name="tool_feedTransition"/>
-    <parameter expression="47.99999999999999" name="tool_feedRamp"/>
-    <parameter expression="10.0" name="tool_feedPlunge"/>
+    <parameter expression="1219.1999999999998" name="tool_feedRamp"/>
+    <parameter expression="254.0" name="tool_feedPlunge"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedPlunge/tool_spindleSpeed : 0.0" name="tool_feedPerRevolution"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRetract"/>
     <parameter expression="true" name="tool_clockwise"/>
@@ -474,13 +474,13 @@
     <parameter expression="tool_isTurning ? (tool_unit == 'millimeters' ? 25mm : 1.0in) : tool_diameter" name="tool_stockDiameter"/>
     <parameter expression="tool_diameter * Math.PI * tool_spindleSpeed" name="tool_surfaceSpeed"/>
     <parameter expression="18000." name="tool_rampSpindleSpeed"/>
-    <parameter expression="48.000090757587415" name="tool_feedCutting"/>
+    <parameter expression="1219.2023052427203" name="tool_feedCutting"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedCutting/(tool_spindleSpeed * tool_numberOfFlutes) : 0.0" name="tool_feedPerTooth"/>
-    <parameter expression="47.99999999999999" name="tool_feedEntry"/>
-    <parameter expression="47.99999999999999" name="tool_feedExit"/>
+    <parameter expression="1219.1999999999998" name="tool_feedEntry"/>
+    <parameter expression="1219.1999999999998" name="tool_feedExit"/>
     <parameter expression="tool_feedCutting" name="tool_feedTransition"/>
-    <parameter expression="47.99999999999999" name="tool_feedRamp"/>
-    <parameter expression="10.0" name="tool_feedPlunge"/>
+    <parameter expression="1219.1999999999998" name="tool_feedRamp"/>
+    <parameter expression="254.0" name="tool_feedPlunge"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedPlunge/tool_spindleSpeed : 0.0" name="tool_feedPerRevolution"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRetract"/>
     <parameter expression="true" name="tool_clockwise"/>
@@ -887,7 +887,7 @@
     <parameter expression="tool_isDepositing ? 40inpm : tool_feedCutting" name="tool_feedExit"/>
     <parameter expression="tool_feedCutting" name="tool_feedTransition"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRamp"/>
-    <parameter expression="10.0" name="tool_feedPlunge"/>
+    <parameter expression="254.0" name="tool_feedPlunge"/>
     <parameter expression="(tool_spindleSpeed > 0) ? tool_feedPlunge / tool_spindleSpeed : 0.0" name="tool_feedPerRevolution"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRetract"/>
     <parameter expression="(tool_spindleSpeed > 0) ? tool_feedRetract / tool_spindleSpeed : 0.0" name="tool_feedRetractPerRevolution"/>
@@ -1382,13 +1382,13 @@
     <parameter expression="tool_isTurning ? (tool_unit == 'millimeters' ? 25mm : 1.0in) : tool_diameter" name="tool_stockDiameter"/>
     <parameter expression="tool_diameter * Math.PI * tool_spindleSpeed" name="tool_surfaceSpeed"/>
     <parameter expression="18000." name="tool_rampSpindleSpeed"/>
-    <parameter expression="48.000090757587415" name="tool_feedCutting"/>
+    <parameter expression="1219.2023052427203" name="tool_feedCutting"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedCutting/(tool_spindleSpeed * tool_numberOfFlutes) : 0.0" name="tool_feedPerTooth"/>
-    <parameter expression="47.99999999999999" name="tool_feedEntry"/>
-    <parameter expression="47.99999999999999" name="tool_feedExit"/>
+    <parameter expression="1219.1999999999998" name="tool_feedEntry"/>
+    <parameter expression="1219.1999999999998" name="tool_feedExit"/>
     <parameter expression="tool_feedCutting" name="tool_feedTransition"/>
-    <parameter expression="47.99999999999999" name="tool_feedRamp"/>
-    <parameter expression="10.0" name="tool_feedPlunge"/>
+    <parameter expression="1219.1999999999998" name="tool_feedRamp"/>
+    <parameter expression="254.0" name="tool_feedPlunge"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedPlunge/tool_spindleSpeed : 0.0" name="tool_feedPerRevolution"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRetract"/>
     <parameter expression="true" name="tool_clockwise"/>
@@ -1683,13 +1683,13 @@
     <parameter expression="tool_isTurning ? (tool_unit == 'millimeters' ? 25mm : 1.0in) : tool_diameter" name="tool_stockDiameter"/>
     <parameter expression="tool_diameter * Math.PI * tool_spindleSpeed" name="tool_surfaceSpeed"/>
     <parameter expression="18000." name="tool_rampSpindleSpeed"/>
-    <parameter expression="48.000090757587415" name="tool_feedCutting"/>
+    <parameter expression="1219.2023052427203" name="tool_feedCutting"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedCutting/(tool_spindleSpeed * tool_numberOfFlutes) : 0.0" name="tool_feedPerTooth"/>
-    <parameter expression="47.99999999999999" name="tool_feedEntry"/>
-    <parameter expression="47.99999999999999" name="tool_feedExit"/>
+    <parameter expression="1219.1999999999998" name="tool_feedEntry"/>
+    <parameter expression="1219.1999999999998" name="tool_feedExit"/>
     <parameter expression="tool_feedCutting" name="tool_feedTransition"/>
-    <parameter expression="47.99999999999999" name="tool_feedRamp"/>
-    <parameter expression="10.0" name="tool_feedPlunge"/>
+    <parameter expression="1219.1999999999998" name="tool_feedRamp"/>
+    <parameter expression="254.0" name="tool_feedPlunge"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedPlunge/tool_spindleSpeed : 0.0" name="tool_feedPerRevolution"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRetract"/>
     <parameter expression="true" name="tool_clockwise"/>
@@ -2182,13 +2182,13 @@
     <parameter expression="tool_isTurning ? (tool_unit == 'millimeters' ? 25mm : 1.0in) : tool_diameter" name="tool_stockDiameter"/>
     <parameter expression="tool_diameter * Math.PI * tool_spindleSpeed" name="tool_surfaceSpeed"/>
     <parameter expression="18000." name="tool_rampSpindleSpeed"/>
-    <parameter expression="48.000090757587415" name="tool_feedCutting"/>
+    <parameter expression="1219.2023052427203" name="tool_feedCutting"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedCutting/(tool_spindleSpeed * tool_numberOfFlutes) : 0.0" name="tool_feedPerTooth"/>
-    <parameter expression="47.99999999999999" name="tool_feedEntry"/>
-    <parameter expression="47.99999999999999" name="tool_feedExit"/>
+    <parameter expression="1219.1999999999998" name="tool_feedEntry"/>
+    <parameter expression="1219.1999999999998" name="tool_feedExit"/>
     <parameter expression="tool_feedCutting" name="tool_feedTransition"/>
-    <parameter expression="47.99999999999999" name="tool_feedRamp"/>
-    <parameter expression="10.0" name="tool_feedPlunge"/>
+    <parameter expression="1219.1999999999998" name="tool_feedRamp"/>
+    <parameter expression="254.0" name="tool_feedPlunge"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedPlunge/tool_spindleSpeed : 0.0" name="tool_feedPerRevolution"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRetract"/>
     <parameter expression="true" name="tool_clockwise"/>

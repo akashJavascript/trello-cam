@@ -136,10 +136,12 @@ def set_tabs(op, names, per_contour: int) -> None:
 
 def _set_length(op, name: str, inches: float) -> None:
     p = param(op, name)
-    p.expression = f"{inches:g} in"
+    want = f"{inches:g} in"
+    p.expression = want
+    if p.expression.replace(" ", "") == want.replace(" ", ""):
+        return                     # it took; on an op whose tool is in inches the value isn't in cm (r025, r026)
     got = getattr(p.value, "value", None)
-    # cm, except on an op whose tool is in inches: there it reads in inches (r025, the 1/8 in tools)
-    if got is not None and min(abs(got - to_cm(inches)), abs(got - inches)) > 1e-4:
+    if got is not None and abs(got - to_cm(inches)) > 1e-4:
         raise AdapterError(f"{name} = {inches:g} in didn't stick (reads {p.expression})")
 
 
