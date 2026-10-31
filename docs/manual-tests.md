@@ -362,6 +362,8 @@ Run `autocam trello-setup` once (the read-me card's new Offcuts paragraph).
 | 5 | Unarchive the missing offcut's card (send it back to Offcuts): "Back on the rack", and runs use it again | |
 | 6 | Make a card in Offcuts with Material, Thickness and Length lines: it becomes "#N - ... offcut"; a sheet nested on it says to push it against the front stop. A card missing a line gets one reply saying what's needed | |
 | 7 | **Air-test** the first sheet switched to another offcut, and the first one on a scrap | |
+| 8 | Hand cuts (2026-10-31): add "Cut by hand: 12 to 18 along, 5 to 10 across" to an offcut card: within a minute it's written back as read, a comment says how much is free, and the next sheet on it keeps clear (look at its preview) | |
+| 9 | Tick "Something's already cut where this program goes" on a sheet card on an offcut: it moves to another offcut it fits (or asks: re-nest or a new sheet), and the offcut stays, with a comment asking for the cut to be recorded | |
 
 ### 10. Tabs (2026-10-03)
 

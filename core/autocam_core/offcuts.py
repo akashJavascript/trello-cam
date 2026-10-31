@@ -16,6 +16,9 @@ part leaves most of its band empty. That **room beside** the parts (room_beside:
 the edge of the nest region, as deep as the band) is kept too, as rectangles in the sheet's own coordinates,
 and the next nest fills it first with whatever fits. What a nest leaves of a rectangle it used (to the right
 of its new parts) is kept the same way.
+
+A part someone cuts out by hand is recorded the same way (cut_away): its stretch along the length is used, and
+the room to its left and right is room beside.
 """
 
 from dataclasses import dataclass
@@ -133,3 +136,68 @@ def room_beside(boxes: Sequence[Rect], band: Stretch, right: float, margin: floa
 def to_own(r: Rect, width: float, length: float, turned: bool) -> Rect:
     """A rectangle in machine X/Y back in the sheet's own coordinates (end A at the front)."""
     return turn_rect(r, width, length) if turned else tuple(round(v, 3) for v in r)
+
+
+def rect_minus(r: Rect, cut: Rect) -> List[Rect]:
+    """What's left of rectangle r with `cut` taken out: up to four rectangles that don't overlap (the full height
+    left and right of the cut, then below and above it)."""
+    x0, y0, x1, y1 = r
+    c0, d0, c1, d1 = cut
+    if c0 >= x1 or c1 <= x0 or d0 >= y1 or d1 <= y0:
+        return [tuple(r)]
+    out: List[Rect] = []
+    if c0 > x0:
+        out.append((x0, y0, c0, y1))
+    if c1 < x1:
+        out.append((c1, y0, x1, y1))
+    m0, m1 = max(x0, c0), min(x1, c1)
+    if d0 > y0:
+        out.append((m0, y0, m1, d0))
+    if d1 < y1:
+        out.append((m0, d1, m1, y1))
+    return out
+
+
+def cut_away(used: Sequence[Stretch], beside: Sequence[Rect], cut: Rect, sheet_length: float,
+             across: Tuple[float, float], margin: float, gap: float,
+             min_side: float) -> Tuple[Tuple[Stretch, ...], List[Rect]]:
+    """A rectangle cut out of an offcut by hand (x across, y along, in its own coordinates). Its stretch along the
+    length, `margin` either side for the next cutter's path, becomes used. The room to its left and right, in
+    what was free of that stretch, is kept as room beside: from the edges of the nest region (`across`) to
+    `margin` + `gap` clear of the cut, like the room beside AutoCAM's own cuts. Room beside earlier cuts loses
+    whatever the cut takes. Rooms under min_side either way go. Each earlier room keeps its place in the list
+    (empty if the cut took all of it), so a sheet nested in a room by its index still finds it; the pieces split
+    off and the new rooms come after (compact drops the empty ones). Returns (used, beside)."""
+    x0, y0, x1, y1 = cut
+    a, b = max(0.0, y0 - margin), min(sheet_length, y1 + margin)
+    clear = margin + gap
+    hole = (x0 - clear, y0 - clear, x1 + clear, y1 + clear)
+
+    def big(r: Rect) -> bool:
+        return r[2] - r[0] >= min_side and r[3] - r[1] >= min_side
+
+    keep: List[Rect] = []
+    extra: List[Rect] = []
+    for r in beside:
+        pieces = [piece for piece in rect_minus(tuple(r), hole) if big(piece)]
+        keep.append(pieces[0] if pieces else (r[0], r[1], r[0], r[1]))
+        extra += pieces[1:]
+    free, at = [], a                                # what of a..b no earlier cut used
+    for u0, u1 in sorted((float(s[0]), float(s[1])) for s in used):
+        if u1 <= at:
+            continue
+        if u0 >= b:
+            break
+        if u0 > at:
+            free.append((at, u0))
+        at = max(at, u1)
+    if at < b:
+        free.append((at, b))
+    for f0, f1 in free:
+        extra += [r for r in ((across[0], f0, hole[0], f1), (hole[2], f0, across[1], f1)) if big(r)]
+    return add_used(used, (a, b), sheet_length, False), [tuple(round(v, 3) for v in r) for r in keep + extra]
+
+
+def compact(beside: Sequence[Rect]) -> List[Rect]:
+    """The rooms beside without the empty places cut_away keeps."""
+    return [tuple(r) for r in beside if r[2] > r[0] and r[3] > r[1]]

@@ -14,6 +14,9 @@
 - A piece the service didn't make (a "scrap") is added by making a card in Offcuts with Material, Thickness
   and Length lines (parse_scrap). It must be the full width; the missing length counts as used, and it's
   never turned round (it always goes in at the front).
+- A part someone cut out of an offcut by hand is a "Cut by hand: 12 to 18 along, 5 to 10 across" line on its
+  card (parse_hand_cuts; across left out = the whole width). The service takes that rectangle out once
+  (core cut_away) and writes the line back as it read it; a scrap card can carry such lines from the start.
 - Besides the used stretches, an offcut keeps the room beside the parts cut from them ("beside": rectangles
   in its own coordinates, core 0.5.0), which the next nest fills first. A sheet that used some of that room
   replaces it with what's left of it. An offcut is used up when it has neither a free stretch worth loading
@@ -23,7 +26,8 @@
                           "beside": [[x0, y0, x1, y1], ...] (absent before core 0.5.0),
                           "last": {"label": "r006 S1", "stretch": [a, b], "turned": false},
                           "reserved_by": sheet card id or null, "number": 4, "missing": false,
-                          "scrap": false, "length_in": 48.0}}
+                          "scrap": false, "length_in": 48.0,
+                          "hand_cuts": [[x0, y0, x1, y1], ...] (across, along; recorded once each)}}
     state/offcut_numbers.json   {"last": 4}         the last number given
     state/offcut_replies.json   {card id: what the card said when the service last answered it}
 """
@@ -32,15 +36,59 @@ import json
 import re
 from fractions import Fraction
 from pathlib import Path
-from typing import Dict, Mapping, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from autocam_core.hotfolder import write_atomic
-from autocam_core.offcuts import Stretch
+from autocam_core.offcuts import Rect, Stretch
 
 SCRAP_HELP = ("To add a piece of stock as an offcut, its description needs these lines (inches):\n"
               "Material: 6061\nThickness: 3/16\nLength: 20\n"
-              "Length is end to end. It must be the full sheet width (the clamps hold the long edges), "
-              "with nothing cut out of it yet.")
+              "Length is end to end. It must be the full sheet width (the clamps hold the long edges). If parts "
+              "were cut out of it already, add a line for each, like Cut by hand: 12 to 18 along, 5 to 10 across "
+              "(along from the end that goes against the front stop; mark that end).")
+
+
+def hand_cut_help(first_end: str) -> str:
+    """The offcut card's line on recording a part cut out of it by hand. first_end: where `along` is measured from."""
+    return ("Cut a part out of it by hand? Add a line like: Cut by hand: 12 to 18 along, 5 to 10 across. Inches: "
+            f"along from {first_end}, across from the left edge with that end toward you. Leave out \"across\" "
+            "if the cut went all the way across. Runs then keep clear of it.")
+
+
+_SPAN = r"(\d+(?:\.\d*)?|\.\d+)\s*(?:in\b|\"|”)?\s*(?:to|-|–)\s*(\d+(?:\.\d*)?|\.\d+)\s*(?:in\b|\"|”)?\s*"
+_HAND_CUT = re.compile(r"^[ \t>\-*]*cut by hand[ \t*]*[:=][ \t]*(.+?)[ \t*]*$", re.IGNORECASE | re.MULTILINE)
+
+
+def parse_hand_cuts(text: str, width: float, length: float) -> Tuple[List[Rect], List[str]]:
+    """The "Cut by hand:" lines in a card's text: (x0, y0, x1, y1) in the piece's own coordinates (across, along;
+    no "across" = the whole width), and what's wrong with each line that can't be read."""
+    cuts, problems = [], []
+    for m in _HAND_CUT.finditer(text):
+        said = m.group(1).strip("`* ")
+        along = re.search(_SPAN + r"along", said, re.IGNORECASE)
+        across = re.search(_SPAN + r"across", said, re.IGNORECASE)
+        if not along:
+            problems.append(f'"Cut by hand: {said}" has no "... along" part (inches along its length, like '
+                            "12 to 18 along).")
+            continue
+        y0, y1 = sorted((float(along[1]), float(along[2])))
+        x0, x1 = sorted((float(across[1]), float(across[2]))) if across else (0.0, width)
+        if y1 - y0 <= 0 or x1 - x0 <= 0 or y1 > length + 1e-6 or x1 > width + 1e-6:
+            problems.append(f'"Cut by hand: {said}" isn\'t within the {width:g} x {length:g} in piece.')
+            continue
+        cuts.append((x0, y0, x1, y1))
+    return cuts, problems
+
+
+def hand_cut_line(cut: Sequence[float], width: float) -> str:
+    """A recorded hand cut as its card line (parse_hand_cuts reads it back the same)."""
+    x0, y0, x1, y1 = cut
+    across = "" if x0 <= 1e-6 and x1 >= width - 1e-6 else f", {x0:g} to {x1:g} across"
+    return f"Cut by hand: {y0:g} to {y1:g} along{across}"
+
+
+def same_cut(a: Sequence[float], b: Sequence[float]) -> bool:
+    return all(abs(x - y) < 1e-3 for x, y in zip(a, b))
 
 
 class OffcutStore:
@@ -111,9 +159,10 @@ class OffcutStore:
 
 def card_text(stock: str, free_in: float, used: Sequence[Stretch], last_label: str,
               beside: Sequence[Sequence[float]] = (), min_free_in: float = 0.0, number: Optional[int] = None,
-              length_in: Optional[float] = None) -> Tuple[str, str]:
+              length_in: Optional[float] = None, hand_cuts: Sequence[Sequence[float]] = (),
+              width: float = 24.0) -> Tuple[str, str]:
     """stock: e.g. "6061 3/16in". The offcut card's title and description. length_in: a scrap's length (the
-    rest of the sheet's length is missing, not cut)."""
+    rest of the sheet's length is missing, not cut). hand_cuts: parts cut out of it by hand, as recorded."""
     title = (f"#{number} - " if number else "") + f"{stock} offcut - " + \
         (f"{free_in:.0f} in free" if free_in >= min_free_in else "small parts only")
     if beside and free_in >= min_free_in:
@@ -136,14 +185,20 @@ def card_text(stock: str, free_in: float, used: Sequence[Stretch], last_label: s
     if beside:
         sizes = ", ".join(f"{x1 - x0:.1f} x {y1 - y0:.1f} in" for x0, y0, x1, y1 in beside)
         lines.append(f"Room beside the parts already cut, filled first with parts that fit: {sizes}.")
+    lines += [hand_cut_line(c, width) for c in hand_cuts]
+    first_end = ("the end that goes against the front stop (mark it)" if length_in is not None and not last_label
+                 else "the end AutoCAM cut first")
+    lines.append(hand_cut_help(first_end))
     lines.append("Archive this card if the sheet is gone.")
     return title, "\n".join(lines)
 
 
 def load_line(stock: str, url: str, last_label: str, last_stretch: Stretch, turned: bool, sheet_length: float,
-              last_turned: bool = False, number: Optional[int] = None, scrap_length: Optional[float] = None) -> str:
+              last_turned: bool = False, number: Optional[int] = None, scrap_length: Optional[float] = None,
+              hand_cut: bool = False) -> str:
     """The sheet card's Stock line for a nest on an offcut: the same way round as its last cut, or spun round.
-    scrap_length: a piece shorter than a sheet (always at the front, never turned)."""
+    scrap_length: a piece shorter than a sheet (always at the front, never turned). hand_cut: it has parts cut
+    out by hand (a scrap AutoCAM hasn't cut yet then goes in the end they were measured from first)."""
     middle = (last_stretch[0] + last_stretch[1]) / 2
     if turned:
         middle = sheet_length - middle
@@ -152,7 +207,8 @@ def load_line(stock: str, url: str, last_label: str, last_stretch: Stretch, turn
             f"Stock: the {stock} offcut, not a new sheet ({url}).")
     if scrap_length is not None:
         how = (f"It's a {scrap_length:.0f} in piece: push it against the front stop, "
-               + (f"the end where {last_label}'s parts were cut toward you." if last_label else "either end first."))
+               + (f"the end where {last_label}'s parts were cut toward you." if last_label else
+                  "the end its hand cuts were measured from (marked) toward you." if hand_cut else "either end first."))
     elif turned == last_turned:
         how = f"Put it in the same way round as for {last_label}: the end where its parts were cut {end}."
     else:

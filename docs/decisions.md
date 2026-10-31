@@ -730,3 +730,21 @@ checked; the scripts reproduce the committed files byte for byte. Learned in Fus
 - The ops' coolant stays disabled: mist comes from the material (on for aluminum, off for polycarbonate).
 Results: r025 poly_4mm 100 in/min, r027 alu_eighth 48 and poly_eighth 96 (ramp 48, plunge 10), all checks
 passed, no warnings.
+
+## 2026-10-31: parts cut out of offcuts by hand (the user's choice: a rectangle, not the whole width)
+
+Someone can cut a part out of a numbered offcut outside AutoCAM; its record wouldn't know, and the next nest
+could land on the hole. Two pieces:
+- **Recording it:** a line on the offcut's card, `Cut by hand: 12 to 18 along, 5 to 10 across` (inches; along
+  from the end AutoCAM cut first, the same measure as its "Used along its length"; across from the left edge
+  with that end toward you; no `across` = the whole width). The service takes it out once (`core offcuts.cut_away`):
+  its stretch along the length, plus the part spacing either side, is used, and the room to its left and right
+  becomes room beside (1 in clear: spacing + loading slack, 3 in minimum), the same mechanism as the room beside
+  AutoCAM's own cuts. It writes the line back as it read it, and an unreadable line gets one reply. A scrap card
+  can carry such lines from the start (so old pieces with holes in them can be added; mark the end measured from).
+- **Rooms keep their place:** a sheet nested on an offcut holds its room beside by index, so while one is, a room
+  the cut takes whole stays as an empty placeholder; `compact` drops them once nothing holds them.
+- **A sheet already on the offcut** where the cut lands gets a comment. At the machine, the Stock checklist's new
+  item "Something's already cut where this program goes" works like "The offcut isn't on the rack" (another
+  offcut the program fits, or re-nest / new sheet), but the offcut stays, with a comment asking for the cut.
+- Not done: a cut that isn't a rectangle is recorded as its bounding rectangle by whoever measures it.

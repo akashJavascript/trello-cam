@@ -234,6 +234,7 @@ tabs_checklist = "Tabs"         # part cards: ticked = its outline gets tabs ([t
 tabs_item = "Hold it in with tabs"
 stock_checklist = "Stock"       # sheet cards on an offcut: tick the item if the offcut can't be found
 not_found_item = "The offcut isn't on the rack"
+cut_away_item = "Something's already cut where this program goes"   # ticked: like not_found, but the offcut stays
 renest_item = "Re-nest it on other stock (a new run and a new review)"   # offered when no other offcut fits
 new_sheet_item = "Cut it on a new sheet (the same program)"
 checklist_name = "Review"                  # all ticked before a sheet may sit in Ready to cut

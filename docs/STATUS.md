@@ -91,6 +91,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   (manual tests M3 5c).
 - **Rush**, freed offcuts, smallest offcut first, the season's stock tally: tested offline (M3 section 8).
 - **Finding offcuts:** numbers, "The offcut isn't on the rack", scraps added by hand: tested offline (M3 section 9).
+- **Parts cut out of offcuts by hand** (2026-10-31): a "Cut by hand: 12 to 18 along, 5 to 10 across" line on
+  the offcut card takes that rectangle out (the room either side kept), and "Something's already cut where this
+  program goes" on a sheet card moves it like "isn't on the rack" but keeps the offcut. Tested offline (M3 section 9).
 - **Tabs:** on by default, counts per contour, placed at points on straight edges clear of corners,
   triangular from the template. Work in Fusion (test jobs, r018 S1); none cut yet (M3 section 10).
 - **Board:** "Cut the whole sheet without stopping" on a 2+ part sheet.

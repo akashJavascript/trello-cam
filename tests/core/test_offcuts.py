@@ -1,8 +1,8 @@
 """Offcuts: where the next nest can go on a partly used sheet (offcuts.py)."""
 
 from autocam_core.offcuts import (
-    add_used, as_loaded, beside_as_loaded, best_placement, free_length, free_stretch, room_beside, to_own,
-    turn_rect,
+    add_used, as_loaded, beside_as_loaded, best_placement, compact, cut_away, free_length, free_stretch, rect_minus,
+    room_beside, to_own, turn_rect,
 )
 
 L, LO, HI, GAP = 48.0, 0.5, 39.5, 0.5     # sheet length, the nest region along X, the gap from old cuts
@@ -78,3 +78,49 @@ def test_room_beside_as_loaded_is_cut_to_what_the_machine_reaches():
     # Cut down to the reach, what's left must still be 3 in deep.
     assert beside_as_loaded([(10.0, 37.0, 22.75, 46.0)], W, L, False, REGION, 3.0) == []
     assert beside_as_loaded([(10.0, 35.0, 22.75, 46.0)], W, L, False, REGION, 3.0) == [(0, (10.0, 35.0, 22.75, 39.5))]
+
+
+# ---- parts cut out by hand (cut_away)
+
+ACROSS, MARGIN, MIN_SIDE = (1.25, 22.75), 0.5, 3.0
+
+
+def test_a_hand_cut_in_the_free_stretch_keeps_the_room_either_side_of_it():
+    # a 5 x 6 in part cut 6 to 11 across, 12 to 18 along, from a sheet used 0.5 to 7.5 along
+    used, beside = cut_away([(0.5, 7.5)], [], (6.0, 12.0, 11.0, 18.0), L, ACROSS, MARGIN, GAP, MIN_SIDE)
+    assert used == ((0.5, 7.5), (11.5, 18.5))
+    assert beside == [(1.25, 11.5, 5.0, 18.5), (12.0, 11.5, 22.75, 18.5)]   # 1 in clear of the cut both sides
+    used, beside = cut_away([(0.5, 7.5)], [], (5.0, 12.0, 10.0, 18.0), L, ACROSS, MARGIN, GAP, MIN_SIDE)
+    assert beside == [(11.0, 11.5, 22.75, 18.5)]       # 1.25 to 4 in on its left is under 3 in: no room there
+
+
+def test_a_hand_cut_across_the_whole_width_leaves_no_room_beside_it():
+    used, beside = cut_away([], [], (0.0, 20.0, 24.0, 26.0), L, ACROSS, MARGIN, GAP, MIN_SIDE)
+    assert used == ((19.5, 26.5),) and beside == []
+
+
+def test_a_hand_cut_in_room_beside_earlier_cuts_takes_its_piece_of_that_room():
+    room = (8.0, 0.5, 22.75, 7.5)                       # beside a part cut at the front-left
+    used, beside = cut_away([(0.5, 7.5)], [room], (15.0, 1.0, 18.0, 4.0), L, ACROSS, MARGIN, GAP, MIN_SIDE)
+    assert used == ((0.5, 7.5),)                       # inside the used band already
+    assert beside == [(8.0, 0.5, 14.0, 7.5), (19.0, 0.5, 22.75, 7.5)]   # above it, 14 to 19 x 5 to 7.5, is too small
+
+
+def test_a_hand_cut_overlapping_a_used_band_only_adds_room_where_the_sheet_was_free():
+    used, beside = cut_away([(0.5, 14.0)], [], (6.0, 12.0, 11.0, 22.0), L, ACROSS, MARGIN, GAP, MIN_SIDE)
+    assert used == ((0.5, 22.5),)
+    assert beside == [(1.25, 14.0, 5.0, 22.5), (12.0, 14.0, 22.75, 22.5)]   # not over the old band
+
+
+def test_rect_minus_leaves_rectangles_that_dont_overlap():
+    pieces = rect_minus((0.0, 0.0, 10.0, 10.0), (3.0, 4.0, 6.0, 7.0))
+    assert pieces == [(0.0, 0.0, 3.0, 10.0), (6.0, 0.0, 10.0, 10.0), (3.0, 0.0, 6.0, 4.0), (3.0, 7.0, 6.0, 10.0)]
+    assert sum((x1 - x0) * (y1 - y0) for x0, y0, x1, y1 in pieces) == 100 - 9
+    assert rect_minus((0.0, 0.0, 1.0, 1.0), (2.0, 2.0, 3.0, 3.0)) == [(0.0, 0.0, 1.0, 1.0)]
+
+
+def test_a_room_the_hand_cut_takes_whole_keeps_its_place_until_compacted():
+    rooms = [(8.0, 0.5, 12.0, 7.5), (14.0, 0.5, 22.75, 7.5)]        # a sheet may hold room 1 by its index
+    _, beside = cut_away([(0.5, 7.5)], rooms, (8.0, 1.0, 12.0, 7.0), L, ACROSS, MARGIN, GAP, MIN_SIDE)
+    assert beside[0] == (8.0, 0.5, 8.0, 0.5) and beside[1] == (14.0, 0.5, 22.75, 7.5)
+    assert compact(beside) == [(14.0, 0.5, 22.75, 7.5)]

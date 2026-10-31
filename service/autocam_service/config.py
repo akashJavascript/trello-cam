@@ -236,6 +236,7 @@ class Trello:
     tabs_item: str = "Hold it in with tabs"
     stock_checklist: str = "Stock"
     not_found_item: str = "The offcut isn't on the rack"
+    cut_away_item: str = "Something's already cut where this program goes"
     renest_item: str = "Re-nest it on other stock (a new run and a new review)"
     new_sheet_item: str = "Cut it on a new sheet (the same program)"
 
@@ -648,6 +649,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         tabs_item=t.string("tabs_item", default="Hold it in with tabs"),
         stock_checklist=t.string("stock_checklist", default="Stock"),
         not_found_item=t.string("not_found_item", default="The offcut isn't on the rack"),
+        cut_away_item=t.string("cut_away_item", default="Something's already cut where this program goes"),
         renest_item=t.string("renest_item", default="Re-nest it on other stock (a new run and a new review)"),
         new_sheet_item=t.string("new_sheet_item", default="Cut it on a new sheet (the same program)"),
     )

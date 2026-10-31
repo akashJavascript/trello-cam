@@ -1,4 +1,4 @@
-"""Finding offcuts at the machine: numbers, "the offcut isn't on the rack", and scraps added by hand."""
+"""Finding offcuts at the machine: numbers, "the offcut isn't on the rack", scraps and parts cut out by hand."""
 
 import json
 
@@ -9,6 +9,7 @@ from test_offcuts_service import cut, first_sheet, offcut_cards
 from test_runner_autostart import add, run, sheet, step_card
 
 NOT_FOUND = "The offcut isn't on the rack"
+CUT_AWAY = "Something's already cut where this program goes"
 RENEST = "Re-nest it on other stock (a new run and a new review)"
 NEW_SHEET = "Cut it on a new sheet (the same program)"
 
@@ -34,7 +35,7 @@ def on_an_offcut(tmp_path):
     run(h)
     s2 = sheet(h)
     h.runner.tick()                                       # the boxes appear
-    assert h.tracker.checklists[(s2.id, "Stock")] == [[NOT_FOUND, False]]
+    assert h.tracker.checklists[(s2.id, "Stock")] == [[NOT_FOUND, False], [CUT_AWAY, False]]
     assert h.store.sheet_cards()[s2.id]["bands"] == [[9.0, 13.0]]
     return h, off1, s2
 
@@ -67,7 +68,7 @@ def test_another_offcut_the_same_program_fits_takes_over(tmp_path):
     assert h.tracker.comments_on(s2.id)[-1].startswith("Offcut #1 isn't on the rack, but this program fits offcut #2 "
                                                        "as it is: no new run, no new review.")
     h.runner.tick()
-    assert h.tracker.checklists[(s2.id, "Stock")] == [[NOT_FOUND, False]]            # fresh, for offcut #2
+    assert h.tracker.checklists[(s2.id, "Stock")] == [[NOT_FOUND, False], [CUT_AWAY, False]]            # fresh, for offcut #2
     cut(h, s2.id)
     assert pieces(h)["off2"]["used"] == [[0.5, 4.0], [9.0, 13.0]]                   # the cut is on #2
     assert pieces(h)[off1.id]["used"] == [[0.5, 8.5]]                               # #1 untouched
@@ -184,3 +185,83 @@ def test_a_scrap_card_that_says_too_little_gets_one_reply(tmp_path):
     h.runner.tick()
     assert "isn't one we cut" in h.tracker.comments_on("sc1")[-1]
     assert not h.store.offcuts_file.exists() or "sc1" not in pieces(h)
+
+
+# ---------------------------------------------------------------- parts cut out by hand
+
+def note(h, card_id, line):
+    card = h.tracker.cards[card_id]
+    h.tracker.cards[card_id] = card.__class__(**{**card.__dict__, "desc": card.desc + "\n" + line})   # a person types
+
+
+def test_a_hand_cut_is_recorded_once_and_the_next_nest_keeps_clear_of_it(tmp_path):
+    h, s1 = first_sheet(tmp_path)
+    cut(h, s1.id)
+    [off1] = offcut_cards(h)
+    assert "Cut a part out of it by hand? Add a line like: Cut by hand: 12 to 18 along" in off1.desc
+    note(h, off1.id, "Cut by hand: 12-18 along, 6 to 11 across")
+    h.runner.tick()
+    h.runner.tick()
+    p = pieces(h)[off1.id]
+    assert p["hand_cuts"] == [[6.0, 12.0, 11.0, 18.0]]
+    assert [11.5, 18.5] in p["used"]
+    assert [1.25, 11.5, 5.0, 18.5] in p["beside"] and [12.0, 11.5, 22.75, 18.5] in p["beside"]
+    card = h.tracker.cards[off1.id]
+    assert "\nCut by hand: 12 to 18 along, 6 to 11 across\n" in card.desc         # written back as it was read
+    [said] = [c for c in h.tracker.comments_on(off1.id) if c.startswith("Recorded the hand cut")]
+    assert said.startswith("Recorded the hand cut (12 to 18 along, 6 to 11 across): runs keep clear of it.")
+    h.tracker.tick_all(s1.id, "Review")
+    add(h, step_card("c2", "gusset"))
+    h.runner.tick()
+    job = read_job(next(h.queue.incoming.glob("r002-*.json")))
+    [spec] = job.offcuts
+    assert (11.5, 18.5) in spec.used_in and (12.0, 11.5, 22.75, 18.5) in spec.beside_in
+
+
+def test_a_hand_cut_line_that_cant_be_read_gets_one_reply(tmp_path):
+    h, s1 = first_sheet(tmp_path)
+    cut(h, s1.id)
+    [off1] = offcut_cards(h)
+    note(h, off1.id, "Cut by hand: 5 to 10 across")
+    h.runner.tick()
+    h.runner.tick()
+    replies = [c for c in h.tracker.comments_on(off1.id) if c.startswith("Couldn't record a hand cut")]
+    assert len(replies) == 1 and 'has no "... along" part' in replies[0]
+    assert "hand_cuts" not in pieces(h)[off1.id]
+
+
+def test_a_sheet_on_the_offcut_is_told_when_a_hand_cut_lands_on_its_stretch(tmp_path):
+    h, off1, s2 = on_an_offcut(tmp_path)                  # s2's part: 9 to 13 in along offcut #1
+    note(h, off1.id, "Cut by hand: 30 to 34 along, 6 to 11 across")
+    h.runner.tick()
+    assert not any("cut out of it by hand" in c for c in h.tracker.comments_on(s2.id))
+    note(h, off1.id, "Cut by hand: 10 to 12 along, 6 to 9 across")
+    h.runner.tick()
+    warned = [c for c in h.tracker.comments_on(s2.id) if "cut out of it by hand" in c]
+    assert len(warned) == 1 and f'tick "{CUT_AWAY}" under Stock' in warned[0]
+    assert pieces(h)[off1.id]["reserved_by"] == s2.id   # still s2's until someone ticks
+
+
+def test_something_cut_where_the_program_goes_moves_the_sheet_and_keeps_the_offcut(tmp_path):
+    h, off1, s2 = on_an_offcut(tmp_path)
+    add_offcut(h, "off2", [[0.5, 4.0]], 2)
+    tick_item(h, s2.id, CUT_AWAY)
+    h.runner.tick()
+    p = pieces(h)
+    assert not p[off1.id].get("missing") and off1.id not in h.tracker.archived
+    assert "Record it on this card with a line like Cut by hand:" in h.tracker.comments_on(off1.id)[-1]
+    assert p["off2"]["reserved_by"] == s2.id and p[off1.id]["reserved_by"] is None
+    assert h.tracker.comments_on(s2.id)[-1].startswith("Offcut #1 has something cut where this program goes, but "
+                                                       "this program fits offcut #2 as it is")
+
+
+def test_a_scrap_card_can_say_what_was_cut_out_of_it_already(tmp_path):
+    h, _ = first_sheet(tmp_path)
+    scrap(h, "Material: 6061\nThickness: 1/8\nLength: 30\nCut by hand: 2 to 8 along, 15 to 22 across")
+    h.runner.tick()
+    piece = pieces(h)["sc1"]
+    assert piece["hand_cuts"] == [[15.0, 2.0, 22.0, 8.0]] and [1.5, 8.5] in piece["used"]
+    assert [1.25, 1.5, 14.0, 8.5] in piece["beside"]
+    reply = h.tracker.comments_on("sc1")[-1]
+    assert "mark the end its hand cuts were measured from" in reply and "Recorded 1 hand cut" in reply
+    assert "Cut by hand: 2 to 8 along, 15 to 22 across" in h.tracker.cards["sc1"].desc
