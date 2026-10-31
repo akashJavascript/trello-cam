@@ -69,9 +69,9 @@ def _by_hand_load(job: Job, vs: VerifiedSheet, part_cards: Mapping[str, Tuple[st
         lines += [f"Zero X and Y at the front-left corner of {name}'s box (the part's own corner, not the "
                   f"piece's). The cutter reaches X {x0:.2f} to {x1:.2f} and Y {y0:.2f} to {y1:.2f} in from "
                   f"there ({x1 - x0:.1f} x {y1 - y0:.1f} in), so the piece must cover that.",
-                  "Z on the spoilboard, beside the piece. Clamps: anywhere at least 1/2 in clear of that area."]
+                  "Z from the fixed tool setter (the spoilboard). Clamps: anywhere at least 1/2 in clear of that area."]
     else:
-        lines += [f"Zero X and Y at the front-left corner of {name}'s box; Z on the spoilboard, beside the piece."]
+        lines += [f"Zero X and Y at the front-left corner of {name}'s box; Z from the fixed tool setter (the spoilboard)."]
     return lines
 
 

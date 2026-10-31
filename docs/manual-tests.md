@@ -188,7 +188,7 @@ sheet clamped). Or use `fusion/tests/pause_air_test.tap`
 
 ## Before the first real cut
 
-- [ ] Open question 4: Z is touched off on the spoilboard next to the sheet (decision 22).
+- [x] Open question 4: Z0 is the spoilboard (decision 22); the fixed tool setter zeros there (the user, 2026-10-31).
 - [ ] Open question 10: no-tab trial on one taped sheet (decision 6).
 - [ ] Both air tests above passed.
 
@@ -381,7 +381,7 @@ Run `autocam trello-setup` once (the read-me card's line about tabs).
 |---|---|---|
 | 1 | Untick "Nest this part" on a card and move it to Ready for CAM: about 2 minutes later a sheet card "... - placed by hand - ..." appears with its own program | |
 | 2 | Open its Fusion file: the part alone, long side along X, the stock exactly its box, the setup's origin at the box's front-left bottom corner | |
-| 3 | Air-test it: zero X/Y where you want the part's front-left corner, Z on the spoilboard; the cutter stays within the area the card gives | |
+| 3 | Air-test it: zero X/Y where you want the part's front-left corner, Z from the fixed tool setter; the cutter stays within the area the card gives | |
 | 4 | Qty 3: the card says to run it 3 times, and the part card follows the sheet card to Cut | |
 
 ### 12. Duplicate part cards and "did you mean" (2026-10-04)
