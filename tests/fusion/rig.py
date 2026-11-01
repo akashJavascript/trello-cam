@@ -57,8 +57,9 @@ class Rig:
         self.fake = FakeAdapter()
         self.out = tmp_path / "out"
 
-    def job(self, parts, material="al6061", face=()):
-        """parts: (name, qty, geometry, (w, h)); face: names of the parts with the Face label"""
+    def job(self, parts, material="al6061", face=(), fits=None):
+        """parts: (name, qty, geometry, (w, h)); face: names of the parts with the Face label; fits: name ->
+        ("hole", diameter) or ("outline", 0) (a Fit: line)"""
         ready = []
         for i, (name, qty, geometry, size) in enumerate(parts, 1):
             step = self.tmp / "steps" / f"{name}.step"
@@ -66,7 +67,8 @@ class Rig:
             step.write_bytes(f"ISO-10303-21; {name}".encode())
             self.fake.register(step, geometry, size)
             card = Card(f"local-{i}", name, "", None, "")
-            ready.append(ReadyPart(PartRequest(card, name, qty, None, None, material, False, False, face=name in face),
+            ready.append(ReadyPart(PartRequest(card, name, qty, None, None, material, False, False, face=name in face,
+                                               fit=(fits or {}).get(name)),
                                    material, step, sha256_file(step)))
         job = build_job(self.cfg, Batch(material, tuple((f"p{i:02d}", r) for i, r in enumerate(ready, 1))),
                         "r001", "2026-10-01T00:00:00Z")

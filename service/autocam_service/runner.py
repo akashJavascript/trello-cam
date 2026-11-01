@@ -56,7 +56,8 @@ from .offcuts import _number as _scrap_number
 from .config import Config
 from .handprograms import ProgramCut, footprint, is_program, parse_cutter, program_cuts
 from .own_programs import find_spot, parse_thickness, placed_name, program_attachments, shift_program
-from .jobs import JobBuildError, build_job, face_spec, sheet_fixture
+from .fits import FitStore, key as fit_key, parse_fit, stocks as fit_stocks
+from .jobs import JobBuildError, build_job, face_spec, fit_spec, sheet_fixture
 from .materials import resolve_material
 from .offcuts import (SCRAP_HELP, OffcutStore, card_text, hand_cut_line, load_line, parse_hand_cuts, parse_scrap,
                       same_cut)
@@ -135,6 +136,7 @@ class Runner:
         delay = s.cfg.trello.start_delay_s if start_delay_s is None else start_delay_s
         self.watch = ReadyWatch(s.store.watch_file, delay)
         self.offcuts = OffcutStore(s.store.offcuts_file)
+        self.fits = FitStore(s.store.offcuts_file.with_name("fits.json"))
         self.waiting_count = 0                                   # cards waiting for a run (for the status)
         self.rush_count = 0                                      # ...of which have the Rush label
         self._status_sent: Optional[Tuple[str, datetime]] = None  # (status without its time, when it was sent)
@@ -147,6 +149,7 @@ class Runner:
         self.scan_offcuts()
         self.retire_old_layout()
         self.sheet_options()
+        self.fit_results()
         self.own_programs()
         waiting = self.ready_cards()
         state = self.s.store.active()
@@ -834,6 +837,38 @@ class Runner:
             self.t.comment(part, f"Back for a re-nest: {f'offcut #{n}' if n else 'the offcut'} for {label} wasn't on "
                                  "the rack. It has the Rush label, so it's nested again within a minute.")
 
+    # ------------------------------------------------------------ fit results
+    def fit_results(self) -> None:
+        """A sheet card's Fit checklists (fits.py): the first run ticked as the one that fit is kept for that
+        material and feature, so the next series starts there; "still tight after the last one" counts as one
+        step past the last lap. Recorded again only if the ticks change."""
+        if self.dry_run or not self.cfg.fit.enabled:
+            return
+        reg = self.s.store.sheet_cards()
+        step = self.cfg.fit.step_in
+        changed = False
+        for list_key in (self.targets["sheet_created"], "ready_to_cut", self.targets["part_cut"]):
+            for card in self.t.list_cards(list_key):
+                info = reg.get(card.id)
+                if not info or not info.get("fits"):
+                    continue
+                for f in info["fits"]:
+                    ticked = [c.item for c in card.checks if c.checklist == f["checklist"] and c.done]
+                    items = {label: stock for label, stock in f["items"]}
+                    first = next((label for label, _ in f["items"] if label in ticked), None)
+                    if first is None or first == f.get("recorded"):
+                        continue
+                    stock = items[first]
+                    if stock is None:                 # still tight after the last lap
+                        stock = round([s for _, s in f["items"] if s is not None][-1] - step, 4)
+                    self.fits.record(f["key"], stock, info.get("label") or card.id)
+                    f["recorded"] = first
+                    changed = True
+                    nxt = fit_stocks(self.cfg.fit.start_in, step, self.cfg.fit.laps, stock)[0]
+                    self.t.comment(card.id, text.fit_recorded_comment(f["name"], f["feature"], stock, nxt))
+        if changed:
+            self.s.store._write_sheets(reg)
+
     # ------------------------------------------------------------ own programs (option 3)
     def _own_program_card(self, card: Card) -> bool:
         """A part card carrying someone's own program instead of a part: a .tap, no Onshape link, no STEP file."""
@@ -1202,6 +1237,15 @@ class Runner:
                 if parsed.face and face_spec(cfg) is None:
                     parsed = CardProblem(card, (f"The {cfg.labels.face} label needs the face template, which isn't "
                                                 "set up yet. Take the label off to cut it unfaced.",))
+            if not isinstance(parsed, CardProblem) and cfg.fit.enabled:
+                fit = parse_fit(card.desc)
+                if isinstance(fit, str):
+                    parsed = CardProblem(card, (fit,))
+                elif fit and parsed.by_hand:
+                    parsed = CardProblem(card, ("A part placed by hand can't have a Fit: line yet. Tick \"Nest this "
+                                                "part\" or take the line off.",))
+                elif fit:
+                    parsed = replace(parsed, fit=fit, tabs=True)    # held by tabs: its laps run after it's cut
             if isinstance(parsed, CardProblem):
                 self._reject(state, card.id, parsed.comment(cfg.labels.smoked, cfg.labels.tool_eighth))
                 summary["rejected"] += 1
@@ -1274,7 +1318,7 @@ class Runner:
             carried = list({p.card_id: p for _, _, specs in reopened for p in specs}.values())   # dedupe
             try:
                 offcuts = self.available_offcuts(batch.material_key, [card_id for card_id, _, _ in reopened])
-                job = build_job(cfg, batch, run_id, _iso(self.s.clock()), carried, offcuts)
+                job = build_job(cfg, batch, run_id, _iso(self.s.clock()), carried, offcuts, self.fits)
             except JobBuildError as e:
                 summary["untouched"] += len(batch.parts)
                 state.notes.append(f"Can't CAM {batch.material_key} parts yet: {e}. They stay in Ready for CAM.")
@@ -1319,6 +1363,14 @@ class Runner:
                 later.append(req)
         return taken, later
 
+    def _carried_fit(self, spec: PartSpec, card: Card, material: str) -> Optional[PartSpec]:
+        """A carried part follows its card's Fit: line now (and what was learned since); None if it can't be read."""
+        fit = parse_fit(card.desc) if self.cfg.fit.enabled else None
+        if isinstance(fit, str):
+            return None
+        return replace(spec, fit=fit_spec(self.cfg, self.fits, material, fit, spec.name),
+                       tabs=spec.tabs or bool(fit))
+
     def open_sheets(self, renesting: Set[str] = frozenset()) -> Dict[str, List[Tuple[str, Dict, List[PartSpec]]]]:
         """Material -> the open sheet cards a run may nest again, with the parts to carry over from them (from
         the jobs that made them). Open: made by this service with everything a re-nest needs, cuttable, still
@@ -1358,6 +1410,9 @@ class Runner:
             specs = [replace(p, tabs=box(nested[p.card_id], t.tabs_checklist, t.tabs_item, self.cfg.tabs.default),
                              face=face in {_label(l) for l in nested[p.card_id].labels})
                      for p in specs]
+            specs = [self._carried_fit(p, nested[p.card_id], job.material.key) for p in specs]
+            if any(s is None for s in specs):
+                continue                              # its Fit: line can't be read any more: left as it is
             if any(p.face for p in specs) and face_spec(self.cfg) is None:
                 continue                              # can't face it any more: left as it is
             found[card_id] = (info, specs)
@@ -1667,7 +1722,11 @@ class Runner:
                  "beside_used": list(sheet.beside_used), "beside_left": [list(r) for r in sheet.beside_left_in],
                  "rush": state.rush, "parts_area_in2": sheet.parts_area_in2, "by_hand": sheet.by_hand,
                  "bands": self._bands(sheet.used_y_in, sheet.beside_used, sheet.offcut_id, sheet.offcut_turned),
-                 "converted": False, "asked": False, "instead_of": None}
+                 "converted": False, "asked": False, "instead_of": None,
+                 "fits": [{"checklist": f["checklist"], "name": f["name"], "feature": f["feature"],
+                           "key": fit_key(js.material, (f["fit"].kind, f["fit"].diameter_in), f["name"]),
+                           "items": [[label, stock] for label, stock in text.fit_items(f)], "recorded": None}
+                          for f in text.fit_series(ing.job, sheet)] if vs.cuttable else []}
         if sheet.used_y_in:
             before = (self.offcuts.get(sheet.offcut_id) or {}).get("used", []) if sheet.offcut_id else []
             extra["rest_in"] = round(self._free_after(add_used(before, sheet.used_y_in, cfg.sheet.length_in,
@@ -1681,13 +1740,17 @@ class Runner:
         if vs.cuttable:
             once(store, state, f"{key}:tap", lambda: self.t.attach_program(
                 card_id, vs.sheet.tap, vs.tap_bytes, vs.check.guard), WRITE_ATTEMPTS)
-            for vp in vs.programs:                    # the FACE program: checked like the sheet's own
-                once(store, state, f"{key}:{vp.program.kind}", lambda vp=vp: self.t.attach_program(
+            for vp in vs.programs:                    # the FACE program, fit laps: checked like the sheet's own
+                step = f"{key}:face" if vp.program.kind == "face" else f"{key}:{vp.program.name}"
+                once(store, state, step, lambda vp=vp: self.t.attach_program(
                     card_id, vp.program.tap, vp.tap_bytes, vp.check.guard), WRITE_ATTEMPTS)
             once(store, state, f"{key}:checklist", lambda: self.t.add_checklist(
                 card_id, cfg.trello.checklist_name, cfg.trello.checklist), WRITE_ATTEMPTS)
             once(store, state, f"{key}:machine", lambda: self.t.add_checklist(
                 card_id, cfg.trello.machine_checklist_name, cfg.trello.machine_checklist), WRITE_ATTEMPTS)
+            for f in extra["fits"]:                   # which run made it fit: ticked at the machine, then learned
+                once(store, state, f"{key}:fit:{f['checklist']}", lambda f=f: self.t.add_checklist(
+                    card_id, f["checklist"], [label for label, _ in f["items"]]), WRITE_ATTEMPTS)
         png = ing.file(vs.sheet.preview_png)
         if png is not None:
             png_id = once(store, state, f"{key}:png", lambda: self.t.attach_file(
@@ -1723,6 +1786,8 @@ class Runner:
     def _reset_checklists(self, card_id: str) -> str:
         self.t.remove_checklists(card_id, self.cfg.trello.checklist_name)
         self.t.remove_checklists(card_id, self.cfg.trello.machine_checklist_name)
+        for f in (self.s.store.sheet_cards().get(card_id) or {}).get("fits") or []:
+            self.t.remove_checklists(card_id, f["checklist"])
         return ""
 
     def _retire(self, state: RunState, job_id: str, card_id: str) -> None:

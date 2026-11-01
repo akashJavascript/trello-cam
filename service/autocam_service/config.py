@@ -20,7 +20,7 @@ if sys.version_info >= (3, 11):
 else:  # WSL dev boxes still ship Python 3.10
     import tomli as tomllib
 
-from autocam_core.schema_job import MAX_FACE_DEPTH_IN
+from autocam_core.schema_job import MAX_FACE_DEPTH_IN, MAX_FIT_STOCK_IN
 from autocam_core.tapguard import SAFE_G, SAFE_M
 from autocam_core.toollib import ToolLibrary, ToolLibraryError
 
@@ -200,6 +200,16 @@ class Labels:
 
 
 @dataclass(frozen=True)
+class Fit:
+    """A "Fit:" line on a part card (fits.py): that hole size or the outline is cut a little tight, and the sheet
+    gets lap programs that each take a little more off, run one by one at the machine until it fits."""
+    enabled: bool = True
+    start_in: float = 0.003      # radial stock the sheet's program leaves (+: a hole smaller, an outline bigger)
+    step_in: float = 0.001       # each lap leaves this much less
+    laps: int = 4
+
+
+@dataclass(frozen=True)
 class HandCuts:
     """Parts cut out of offcuts outside AutoCAM: besides a typed "Cut by hand:" rectangle, the program that cut it
     can be attached with a "Zeroed at:" line (handprograms.py)."""
@@ -330,6 +340,7 @@ class Config:
     tabs: Tabs = Tabs()
     face: Optional[Face] = None
     hand_cuts: HandCuts = HandCuts()
+    fit: Fit = Fit()
 
     def stock_types(self) -> List[Tuple[Material, float]]:
         return [(m, t) for m in self.materials.values() for t in m.thicknesses_in]
@@ -737,6 +748,13 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                     template=root / t.string("template", required=True))
         t.finish()
 
+    fit = Fit()
+    if "fit" in top.data:
+        t = top.table("fit")
+        fit = Fit(enabled=t.boolean("enabled"), start_in=t.number("start_in"), step_in=t.number("step_in", positive=True),
+                  laps=t.integer("laps", minimum=1))
+        t.finish()
+
     hand_cuts = HandCuts()
     if "hand_cuts" in top.data:
         t = top.table("hand_cuts")
@@ -759,6 +777,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         op_tags=op_tags, templates=MappingProxyType(templates), labels=labels, onshape=onshape,
         trello=trello, fusion=fusion, tapguard=tapguard, fusion_team=fusion_team, status=status, paths=paths,
         placeholders=tuple(_placeholders(data)), warnings=(), tabs=tabs, face=face, hand_cuts=hand_cuts,
+        fit=fit,
     )
     warnings: List[str] = []
     _cross_check(cfg, data, errors, warnings)
@@ -946,6 +965,11 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
     for s in cfg.holes.bearing_sizes_in:
         if not cfg.holes.bore_min_in <= s <= cfg.holes.bore_max_in:
             e(f"holes.bearing_sizes_in: {s} is outside the bore range")
+    f = cfg.fit
+    if abs(f.start_in) > MAX_FIT_STOCK_IN or abs(f.start_in - f.laps * f.step_in) > MAX_FIT_STOCK_IN:
+        e(f"fit: start_in and its last lap (start_in - laps x step_in) must stay within {MAX_FIT_STOCK_IN} in")
+    if f.laps > 8:
+        e("fit.laps: at most 8 (each is a program on the card)")
     if abs(cfg.holes.bearing_stock_in) > MAX_BEARING_STOCK_IN:
         e(f"holes.bearing_stock_in: at most {MAX_BEARING_STOCK_IN} in either way (a fit, not a size change)")
 

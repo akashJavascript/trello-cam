@@ -47,6 +47,15 @@ def face_program_name(sheet_program: str) -> str:
     return name
 
 
+def fit_program_name(sheet_program: str, series: int, lap: int) -> str:
+    """Lap `lap` of fit series `series` on a sheet (core 0.16.0), e.g. 6061_0p25_r030_S1_FIT1_2: run after the
+    sheet's program, in order, until the fit is right."""
+    name = f"{sheet_program}_FIT{series}_{lap}"
+    if not is_safe_name(name):
+        raise ValueError(f"program name {name!r} has characters the post would strip")
+    return name
+
+
 def filter_comment(text: str) -> str:
     """What the post keeps of a comment (without the brackets)."""
     return "".join(c for c in text if c in COMMENT_CHARS)[:COMMENT_MAX]

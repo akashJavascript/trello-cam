@@ -46,6 +46,9 @@ the part's box, to cut from any piece anywhere on the bed (one copy; the card sa
 {tabs} (Already on a sheet? Change it and move the card back to Ready for CAM.)
 Need one part now? Add the {rush} label before moving it: it's nested at once (within a minute, after any run
 already going), on its own: an offcut or a new sheet, not a sheet waiting in Sheet review.
+Need a press fit or a slip fit you'll tune at the machine? Add a line like Fit: 1.125 hole (that hole size) or
+Fit: outline. It's cut a little tight, and the sheet card gets short programs that each take a little more off,
+to run one at a time until it fits; tick the one that did, and the next time starts there.
 Labels, if needed: {smoked} for smoked polycarbonate, {tool} to force the 1/8 in endmill, {face} for a clean
 top (it's skimmed {face_depth} in off the top, in a program run before the sheet's).
 No Onshape? Attach a .step file and add a line like Material: 6061 (or 5052, PC).
@@ -85,6 +88,7 @@ class PartRequest:
     tabs: bool = False                   # the card's "Hold it in with tabs" box (set by the runner)
     by_hand: bool = False                # "Nest this part" unticked: placed by hand (set by the runner)
     face: bool = False                   # the Face label: its top skimmed clean first
+    fit: Optional[Tuple[str, float]] = None   # its Fit: line, ("hole", diameter) or ("outline", 0) (set by the runner)
 
 
 @dataclass(frozen=True)

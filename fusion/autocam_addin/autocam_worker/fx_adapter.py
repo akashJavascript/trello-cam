@@ -109,14 +109,18 @@ class FusionAdapter(Adapter):
         self.sheet_info[sheet] = (origin, thickness_in, list(copy_ids))
         self.stocks[sheet] = stock
 
-    def make_face_setup(self, sheet, face, copy_ids):
-        self._used("face_setup")
+    def make_extra_setup(self, sheet, name, copy_ids):
+        self._used("extra_setup")
         if sheet not in self.stocks:
             raise AdapterError(f"no stock for {sheet}")
         models = [fx_design.body(self._occ(c)) for c in copy_ids]
-        self.setups[face] = fx_cam.make_setup(self.cam, face, models, self.stocks[sheet], self.job.fusion_params["setup"])
-        origin, thickness_in, _ = self.sheet_info[sheet]
-        self.sheet_info[face] = (origin, thickness_in, list(copy_ids))
+        self.setups[name] = fx_cam.make_setup(self.cam, name, models, self.stocks[sheet], self.job.fusion_params["setup"])
+        self.sheet_info[name] = self.sheet_info[sheet]          # the gouge check: every copy on the sheet
+        self.stocks[name] = self.stocks[sheet]
+
+    def set_radial_stock(self, sheet, op_name, stock_in):
+        self._used("fit_stock")
+        call(f"{op_name}: radial stock", fx_cam.radial_stock, fx_cam.op_by_name(self._setup(sheet), op_name), stock_in)
 
     def apply_template(self, sheet, template_path):
         return fx_cam.apply_template(self._setup(sheet), template_path)
@@ -285,6 +289,6 @@ def _as_adapter_error(name, method):
 
 
 for _name in ("begin", "import_step", "extract", "add_copy", "arrange", "box", "faces_up", "discard", "make_sheet",
-              "make_face_setup", "apply_template", "fill", "make_outer_ops", "delete_op", "generate", "post", "cuts_into_parts",
+              "make_extra_setup", "set_radial_stock", "apply_template", "fill", "make_outer_ops", "delete_op", "generate", "post", "cuts_into_parts",
               "machining_time", "preview", "export_f3d", "save_to_team", "finish"):
     setattr(FusionAdapter, _name, _as_adapter_error(_name, getattr(FusionAdapter, _name)))

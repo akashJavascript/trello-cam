@@ -10,7 +10,7 @@ from typing import List, Optional
 from autocam_core import CORE_VERSION
 from autocam_core.errors import Issue
 from autocam_core.hotfolder import Queue
-from autocam_core.names import face_program_name, instance_id, program_name
+from autocam_core.names import face_program_name, fit_program_name, instance_id, program_name
 from autocam_core.offcuts import beside_as_loaded, placement_for
 from autocam_core.pauses import insert
 from autocam_core.schema_job import read_job
@@ -18,7 +18,7 @@ from autocam_core.schema_result import (
     RESULT_SCHEMA, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary, PostResult, ProgramResult,
     Result, SheetPart, SheetResult, WorkerInfo, overall_status, result_json,
 )
-from autocam_core.sheetcheck import check_face_program, check_sheet_program, pause_spec
+from autocam_core.sheetcheck import check_face_program, check_fit_program, check_sheet_program, pause_spec
 
 
 def make_program(name: str, instances: List[str], thickness: float, mist: bool) -> str:
@@ -42,6 +42,24 @@ def make_face_program(name: str, slots: List[int], thickness: float, depth: floa
         y = 2 + 4 * k
         lines += [f"G0 X4.2 Y{y + 0.2:g}", f"G0 Z{retract:g}", f"G1 Z{thickness - depth:.4f} F20.", "G1 X6.8 F90.",
                   f"G1 Y{y + 2.8:g}", "G1 X4.2", f"G0 Z{clear:g}"]
+    lines += (["M12 C8"] if mist else []) + ["G53 Z", "M5", "G53 P10"]
+    return "\r\n".join(lines) + "\r\n"
+
+
+def make_fit_lap(name: str, slots: List[int], instances: List[str], thickness: float, mist: bool, outline: bool) -> str:
+    """A fit lap over the copies in these slots: their outline again (outline fits) or a bore in each (holes)."""
+    clear, retract = thickness + 2.0, thickness + 0.2
+    lines = [f"[{name}]"] + (["M11 C8"] if mist else []) + ["G90", "G20", "G53 Z"]
+    if not outline:
+        lines += ["[bore holes]"]
+    lines += ["S18000", "M3", "G4 X4."]
+    for k in slots:
+        y = 2 + 4 * k
+        if outline:
+            lines += [f"[outer {instances[k]}]", f"G0 X4. Y{y}.", f"G0 Z{retract:g}", "G1 Z0. F20.", "G1 X7. F60.",
+                      f"G1 Y{y + 3}.", "G1 X4.", f"G1 Y{y}.", f"G0 Z{clear:g}"]
+        else:
+            lines += [f"G0 X5.5 Y{y + 1.5:g}", f"G0 Z{retract:g}", "G1 Z0. F20.", "G1 X5.6 F60.", f"G0 Z{clear:g}"]
     lines += (["M12 C8"] if mist else []) + ["G53 Z", "M5", "G53 P10"]
     return "\r\n".join(lines) + "\r\n"
 
@@ -98,6 +116,27 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
                 depth_in=job.face.depth_in),)
             if not fc.passed:                         # like the pipeline: the sheet isn't offered without it
                 check = replace(check, plan_problems=check.plan_problems + tuple(fc.problems()))
+        for series, p in enumerate([p for p in placed if p.fit is not None], 1):     # like the pipeline: the laps
+            slots = [k for k, i in enumerate(instances) if i.rsplit("-", 1)[0] == p.part_key]
+            outline = p.fit.kind == "outline"
+            for lap, stock in enumerate(p.fit.stocks_in[1:], 1):
+                lap_name = fit_program_name(name, series, lap)
+                lap_data = make_fit_lap(lap_name, slots, instances, thickness, job.material.use_mist,
+                                        outline).encode("ascii")
+                lc = check_fit_program(lap_data, job, thickness, tool,
+                                       tuple(instances[k] for k in slots) if outline else (), {p.part_key: p.qty})
+                (claim.out_dir / f"{lap_name}.tap").write_bytes(lap_data)
+                lg = lc.guard
+                programs += (ProgramResult(
+                    kind="fit", name=lap_name, runs="after", tool_guid=job.tooling.tools[tool].guid,
+                    cutter_label=job.tooling.tools[tool].cutter_label, tool_number=job.tooling.tools[tool].number,
+                    tap=f"{lap_name}.tap" if lc.passed else None, tap_rejected=None if lc.passed else f"{lap_name}.tap",
+                    tap_bytes=len(lap_data), tap_sha256=lg.sha256 if lc.passed else None,
+                    guard=GuardSummary(lg.passed, lg.sha256, lg.floor_in, lg.min_z_in, lg.units, lg.offenders,
+                                       lg.clamp_violations, lg.problems),
+                    machining_time_s=30.0, parts=(SheetPart(p.part_key, p.qty),), stock_in=stock, series=series,
+                    lap=lap, feature=f"{p.fit.diameter_in:g} hole" if not outline else "outline"),)
+                assert lc.passed, lc.problems()
         tap_name = f"{name}.tap" if check.passed else f"{name}.REJECTED.tap"
         (claim.out_dir / tap_name).write_bytes(data)
         (claim.out_dir / f"{name}.png").write_bytes(b"\x89PNG fake preview")

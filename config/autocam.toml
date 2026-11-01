@@ -345,6 +345,15 @@ update_every_s = 600            # rewritten this often while the service runs, a
 fusion_stale_after_s = 300      # no heartbeat from the add-in for this long: Fusion or the add-in isn't running
 season_start = "09-01"          # the stock tally counts sheets cut since this day (MM-DD) each year
 
+[fit]                           # a "Fit: 1.125 hole" or "Fit: outline" line on a part card: that feature is cut
+                                # tight, and the sheet gets lap programs that each take a little more off, run one
+                                # by one until it fits (the user's choice, 2026-11-01). The part is always tabbed.
+enabled = true
+start_in = 0.003                # radial stock the sheet's program leaves on it (+: a hole smaller, an outline bigger)
+step_in = 0.001                 # each lap takes this much more off (radial): 0.002 on a hole's diameter
+laps = 4                        # so the laps leave 0.002, 0.001, 0 and -0.001; once a fit is ticked on a sheet
+                                # card, the next one starts two steps above where it fit
+
 [hand_cuts]                     # parts cut out of offcuts outside AutoCAM. A "Cut by hand:" line on the offcut's
                                 # card always works; this lets the card carry the program that cut it instead
 programs = true                 # read .tap files attached to offcut cards, with a "Zeroed at:" line (the user's

@@ -37,10 +37,11 @@ UNCONFIRMED = {
     "pocket_floors": "[pocket] (2D Adaptive): 'pockets' = CurveSelections.createNewPocketSelection on the floors",
     "pocket_selection": "[pocket]: each floor's outer loop as a chain, inside, when the pocket selection fails",
     "pocket_walls": "[pocketfinish] (2D Contour): each floor's outer loop as a chain, cut on the floor's side",
-    # face_setup and face_tops ([face] on each faced copy's top outer loop, from the stock top down by the depth)
+    # extra_setup (then face_setup) and face_tops ([face] on each faced copy's top outer loop, from the stock top down by the depth)
     # work in Fusion (r029, 2026-11-01); still reported until a sheet with them has been cut.
     "bearing_stock": "[bearing] (Bore): useStockToLeave + stockToLeave = holes.bearing_stock_in",   # works (r031)
-    "face_setup": "a FACE setup on the sheet's stock solid (a second setup on one stock body)",
+    "extra_setup": "another setup on the sheet's stock solid (the FACE program, fit laps)",
+    "fit_stock": "fit: useStockToLeave + stockToLeave on the fitted [bore]/[bearing] copy or [outer] ops",
     "face_tops": "[face] (2D Adaptive): each faced copy's top outer loop as a chain, inside; bottom height "
                  "'from stock top' less the depth",
 }

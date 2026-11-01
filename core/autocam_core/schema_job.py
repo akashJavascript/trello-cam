@@ -132,6 +132,20 @@ class OnshapeRef:
     microversion: Optional[str] = None  # workspace links: the exact state that was exported
 
 
+FIT_KINDS = ("hole", "outline")
+MAX_FIT_STOCK_IN = 0.02
+
+
+@dataclass(frozen=True)
+class FitSpec:
+    """A feature cut tight and then fitted at the machine (core 0.16.0): the part's holes of `diameter_in` (bored
+    ones) or its outline. The sheet's program leaves stocks_in[0] of radial stock on it (+: a hole smaller, the
+    outline bigger); each lap program after it leaves the next value, a little less each time."""
+    kind: str                                          # "hole" | "outline"
+    stocks_in: Tuple[float, ...]
+    diameter_in: float = 0.0                           # hole fits
+
+
 @dataclass(frozen=True)
 class PartSpec:
     part_key: str
@@ -148,6 +162,7 @@ class PartSpec:
     by_hand: bool = False                              # not nested: one copy alone, placed by hand (core 0.12.0)
     face: bool = False                                 # its top skimmed clean first, in the sheet's FACE program
                                                        # (core 0.14.0)
+    fit: Optional[FitSpec] = None                      # a hole size or the outline fitted at the machine (0.16.0)
 
 
 @dataclass(frozen=True)
@@ -278,6 +293,20 @@ class Job:
                 e.append(f"{where}.source: {p.source!r} is not one of {', '.join(SOURCES)}")
             if (p.source == "onshape") != (p.onshape is not None):
                 e.append(f"{where}.onshape: required exactly when source is onshape")
+            f = p.fit
+            if f is not None:
+                if f.kind not in FIT_KINDS:
+                    e.append(f"{where}.fit.kind: {f.kind!r} is not one of {', '.join(FIT_KINDS)}")
+                if f.kind == "hole" and f.diameter_in <= 0:
+                    e.append(f"{where}.fit.diameter_in: a hole fit needs the hole's diameter")
+                if len(f.stocks_in) < 2 or any(abs(s) > MAX_FIT_STOCK_IN for s in f.stocks_in) \
+                        or any(b >= a for a, b in zip(f.stocks_in, f.stocks_in[1:])):
+                    e.append(f"{where}.fit.stocks_in: at least two values, each at most {MAX_FIT_STOCK_IN} in, "
+                             "each less than the one before")
+                if not p.tabs:
+                    e.append(f"{where}.fit: a fitted part is always held by tabs (its laps run after it's cut out)")
+                if p.by_hand:
+                    e.append(f"{where}.fit: parts placed by hand aren't fitted yet")
         return e
 
     def part(self, part_key: str) -> PartSpec:

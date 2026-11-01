@@ -41,7 +41,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from autocam_core import CORE_VERSION
 from autocam_core import errors as E
@@ -50,7 +50,7 @@ from autocam_core.holes import ToolProfile
 from autocam_core.hotfolder import write_atomic
 from autocam_core.layout import Placed, plan_layout
 from autocam_core.offcuts import Placement, beside_as_loaded, placement_for, room_beside
-from autocam_core.names import face_program_name, instance_id, outer_op_name, program_name
+from autocam_core.names import face_program_name, fit_program_name, instance_id, outer_op_name, program_name
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
 from autocam_core.plate import PlateAnalysis, analyze
@@ -62,7 +62,7 @@ from autocam_core.schema_result import (
     RESULT_SCHEMA, FusionTeamResult, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary,
     PostResult, ProgramResult, Result, SheetPart, SheetResult, ToolForce, WorkerInfo, overall_status, result_json,
 )
-from autocam_core.sheetcheck import check_face_program, check_sheet_program, pause_spec
+from autocam_core.sheetcheck import check_face_program, check_fit_program, check_sheet_program, pause_spec
 from autocam_core.tooling import FeaturePlan, ToolNeed, part_tool, plan_features, sheet_tool
 from autocam_core.toolpoints import cutting_points
 
@@ -141,6 +141,22 @@ class _Way:
 
 
 @dataclass
+class _Fit:
+    """One fit series on a sheet: a part's fitted holes or outline, cut tight by the sheet's program, then a lap
+    program per further stock value (core 0.16.0)."""
+    series: int
+    part_key: str
+    kind: str                                 # "hole" | "outline"
+    feature: str                              # e.g. "1.125 hole", "outline"
+    tag: str                                  # the op that cuts it: BORE or BEARING for holes, OUTER
+    stocks: Tuple[float, ...]
+    holes: List[Tuple[str, Tuple[int, ...]]] = field(default_factory=list)   # (copy id, face ids)
+    instances: List[Tuple[str, str, int]] = field(default_factory=list)      # outline: (instance, copy id, face id)
+    laps: List[str] = field(default_factory=list)
+    results: List[ProgramResult] = field(default_factory=list)
+
+
+@dataclass
 class _Sheet:
     thickness_in: float
     origin: Tuple[float, float]               # the sheet's (0, 0) in the design, inches
@@ -168,6 +184,7 @@ class _Sheet:
     face_name: str = ""                       # its FACE setup and program, if parts on it ask for facing
     face_tops: Tuple[Tuple[str, int], ...] = ()   # (copy id, top face id) of each faced copy
     face_result: Optional[ProgramResult] = None
+    fits: List[_Fit] = field(default_factory=list)
 
     def counts(self) -> Dict[str, int]:
         return dict(Counter(p.part_key for _, p in self.instances))
@@ -771,7 +788,8 @@ def _plan_sheets(adapter: Adapter, job: Job, sheets: List[_Sheet], parts: Dict[s
                 missing = _missing_ops(plan, adapter.capabilities)
                 if parts[k].spec.face and FACE not in adapter.capabilities:
                     missing.append(FACE)
-                problems = list(plan.errors)
+                problems_fit = _fit_problems(parts[k], plan, job)
+                problems = list(plan.errors) + problems_fit
                 if missing:
                     problems.append(Issue(E.NEEDS_MANUAL_CAM,
                                           f"needs manual CAM: {', '.join(missing)} ops aren't automated yet"))
@@ -795,6 +813,30 @@ def _plan_sheets(adapter: Adapter, job: Job, sheets: List[_Sheet], parts: Dict[s
     return sheets
 
 
+def _fit_holes(part: _Part, plan: FeaturePlan, job: Job) -> Tuple[str, List[int]]:
+    """A hole fit's holes on the part: (BORE or BEARING, indexes into through_holes)."""
+    d = part.spec.fit.diameter_in
+    through = part.analysis.through_holes
+    near = lambda i: abs(through[i].diameter_in - d) <= job.holes.bearing_tol_in + 1e-9
+    bore, bearing = [i for i in plan.bore if near(i)], [i for i in plan.bearing if near(i)]
+    return (BEARING, bearing) if bearing else (BORE, bore)
+
+
+def _fit_problems(part: _Part, plan: FeaturePlan, job: Job) -> List[Issue]:
+    fit = part.spec.fit
+    if fit is None or fit.kind != "hole":
+        return []
+    _, found = _fit_holes(part, plan, job)
+    if found:
+        return []
+    through = part.analysis.through_holes
+    sizes = ", ".join(sorted({f"{h.diameter_in:.3f}" for h in through})) or "none"
+    drilled = any(abs(through[i].diameter_in - fit.diameter_in) <= job.holes.bearing_tol_in for i in plan.drill)
+    why = ("it's drilled, and a drilled hole can't be fitted" if drilled else
+           f"no bored hole that size (its round holes: {sizes} in)")
+    return [Issue(E.NEEDS_MANUAL_CAM, f"Fit: {fit.diameter_in:g} hole: {why}")]
+
+
 def _sheet_xy(sheet: _Sheet, placed: Placed) -> Tuple[float, float]:
     cx, cy = placed.center
     return cx - sheet.origin[0], cy - sheet.origin[1]
@@ -808,13 +850,16 @@ def _op_tag(name: str) -> Optional[str]:
 
 
 def _tab_op(adapter: Adapter, job: Job, sheet: _Sheet, op_name: str,
-            contours: Sequence[Tuple[str, int, Optional[int]]], per_contour: int, tool_d: float) -> None:
+            contours: Sequence[Tuple[str, int, Optional[int]]], per_contour: int, tool_d: float,
+            setup: Optional[str] = None) -> None:
     """Tabs on one contour op: `per_contour` on each of its contours (copy id, face id, inner loop index or None
     for the outer loop), placed by tabs.place_tabs and given to Fusion as points; if that fails, Fusion spreads
-    the same number evenly (and the sheet card says so)."""
+    the same number evenly (and the sheet card says so). setup: another setup of the sheet (a fit lap): the same
+    tabs there, nothing recorded twice."""
+    where = setup or sheet.name
     if job.tabs.width_in or job.tabs.height_in:
         try:
-            adapter.set_tab_size(sheet.name, op_name, job.tabs.width_in, job.tabs.height_in)
+            adapter.set_tab_size(where, op_name, job.tabs.width_in, job.tabs.height_in)
         except AdapterError as e:
             sheet.warnings.append(Issue(E.OP_WARNING, f"{op_name}: the tab size stayed the template's ({e})"))
     if job.tabs.at_points:
@@ -827,16 +872,17 @@ def _tab_op(adapter: Adapter, job: Job, sheet: _Sheet, op_name: str,
                 points += [(p.x, p.y) for p in placed]
                 on_lines += sum(p.on_line for p in placed)
                 clear += sum(p.clear_of_corners for p in placed)
-            adapter.set_tab_points(sheet.name, op_name, points)
-            sheet.tab_points[op_name] = [(round(x - sheet.origin[0], 4), round(y - sheet.origin[1], 4))
-                                         for x, y in points]
-            sheet.notes.append(f"{op_name}: {len(points)} tabs at points, {on_lines} on straight edges, {clear} clear "
-                               "of corners")
+            adapter.set_tab_points(where, op_name, points)
+            if setup is None:
+                sheet.tab_points[op_name] = [(round(x - sheet.origin[0], 4), round(y - sheet.origin[1], 4))
+                                             for x, y in points]
+                sheet.notes.append(f"{op_name}: {len(points)} tabs at points, {on_lines} on straight edges, {clear} "
+                                   "clear of corners")
             return
         except AdapterError as e:
-            sheet.notes.append(f"{op_name}: tabs at points didn't work ({e}); {per_contour} per contour, spread "
-                               "evenly by Fusion instead")
-    adapter.set_tabs(sheet.name, op_name, per_contour)
+            sheet.notes.append(f"{where} {op_name}: tabs at points didn't work ({e}); {per_contour} per contour, "
+                               "spread evenly by Fusion instead")
+    adapter.set_tabs(where, op_name, per_contour)
 
 
 def _tabs_for(job: Job, part: _Part, length_in: float, tool_d: float) -> int:
@@ -887,17 +933,35 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     tool_d = job.tooling.tools[sheet.tool_key].diameter_in
     tabbed: Dict[int, List[Tuple[str, int, int]]] = {}   # tab count -> tabbed parts' cutouts that get that many
     floors: List[Tuple[str, int]] = []
+    fits: Dict[str, _Fit] = {}
     for _, placed in sheet.instances:
         part = parts[placed.part_key]
         plan = sheet.plans[part.key]
         through = part.analysis.through_holes
+        fitted: Set[int] = set()
+        if part.spec.fit is not None:
+            f = part.spec.fit
+            if part.key not in fits:
+                feature = f"{f.diameter_in:g} hole" if f.kind == "hole" else "outline"
+                fits[part.key] = _Fit(len(fits) + 1, part.key, f.kind, feature, OUTER, tuple(f.stocks_in))
+            if f.kind == "hole":
+                tag, found = _fit_holes(part, plan, job)
+                fits[part.key].tag = tag
+                fits[part.key].holes += [(placed.body_id, through[i].face_ids) for i in found]
+                fitted = set(found)
         for tag, indexes in ((DRILL, plan.drill), (BORE, plan.bore), (BEARING, plan.bearing)):
-            holes[tag] += [(placed.body_id, through[i].face_ids) for i in indexes]
+            holes[tag] += [(placed.body_id, through[i].face_ids) for i in indexes if i not in fitted]
         for loop in plan.inner_loops:
             n = _tabs_for(job, part, walls_length(part.analysis.geometry, loop.wall_face_ids), tool_d) \
                 if part.spec.tabs else 0
             (tabbed.setdefault(n, []) if n else loops).append((placed.body_id, loop.face_id, loop.index))
         floors += [(placed.body_id, f) for f in plan.pocket_floor_ids]
+    for fit in fits.values():                         # a bearing-size fit without a [bearing] op is bored
+        if fit.tag == BEARING and BEARING not in by_tag:
+            fit.tag = BORE
+        if fit.kind == "hole" and fit.tag not in by_tag:
+            sheet.errors.append(Issue(E.TEMPLATE_PROBLEM, f"template has no [{fit.tag}] op for the fitted holes"))
+    sheet.fits = sorted(fits.values(), key=lambda f: f.series)
     if holes[BEARING] and BEARING not in by_tag and BORE in by_tag:
         holes[BORE] += holes[BEARING]
         holes[BEARING] = []
@@ -921,6 +985,12 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     for tag, names in by_tag.items():
         if tag == OUTER:
             continue
+        for fit in sheet.fits:                       # fitted holes: a copy of their op (made before it's filled,
+            if fit.kind == "hole" and fit.tag == tag:   # like the tab copies), left tight by the first stock
+                name = f"{names[0]} - fit {fit.part_key}"
+                adapter.copy_op(sheet.name, names[0], name)
+                adapter.fill(sheet.name, name, OpFill(tag, holes=tuple(fit.holes)))
+                adapter.set_radial_stock(sheet.name, name, fit.stocks[0])
         if tag == INNER:
             # Tabbed parts' cutouts: a copy of the op per tab count, made before the op is filled, so each
             # copy starts empty; they land after it (and before the outlines).
@@ -941,12 +1011,15 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     outlines = [(outer_op_name(inst), by_instance[inst].body_id, parts[by_instance[inst].part_key].analysis.up_face_id)
                 for inst in sheet.outer_order]
     adapter.make_outer_ops(sheet.name, by_tag[OUTER][0], outlines)
+    outline_fits = {f.part_key: f for f in sheet.fits if f.kind == "outline"}
     for inst in sheet.outer_order:                    # the template's tabs, on for the parts that ask for them
         part = parts[by_instance[inst].part_key]
+        fit = outline_fits.get(part.key)
+        if fit is not None:                           # a fitted outline: cut tight by the first stock
+            adapter.set_radial_stock(sheet.name, outer_op_name(inst), fit.stocks[0])
+            fit.instances.append((inst, by_instance[inst].body_id, part.analysis.up_face_id))
         if part.spec.tabs:
-            g = part.analysis.geometry
-            inner = {w for loop in part.analysis.through_loops for w in loop.wall_face_ids}
-            n = _tabs_for(job, part, outline_length(g, inner), tool_d)
+            n = _outline_tabs(job, part, tool_d)
             if n:
                 _tab_op(adapter, job, sheet, outer_op_name(inst),
                         [(by_instance[inst].body_id, part.analysis.up_face_id, None)], n, tool_d)
@@ -954,6 +1027,46 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
                 sheet.warnings.append(Issue(E.OP_WARNING, f"{part.spec.name} is too small for tabs: it's cut free"))
     sheet.built = True
     _build_face(adapter, job, sheet, parts)
+    _build_fits(adapter, job, sheet, parts)
+
+
+def _outline_tabs(job: Job, part: _Part, tool_d: float) -> int:
+    g = part.analysis.geometry
+    inner = {w for loop in part.analysis.through_loops for w in loop.wall_face_ids}
+    return _tabs_for(job, part, outline_length(g, inner), tool_d)
+
+
+def _build_fits(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> None:
+    """A lap per further stock value of each fit series: a setup of its own on the sheet's stock and zero, the
+    sheet template's op for the feature alone (the fitted holes, or the fitted copies' outlines with the same tabs),
+    leaving that stock."""
+    tool = job.tooling.tools[sheet.tool_key]
+    for fit in sheet.fits:
+        part = parts[fit.part_key]
+        copies = sorted({cid for cid, _ in fit.holes} | {cid for _, cid, _ in fit.instances})
+        for lap, stock in enumerate(fit.stocks[1:], 1):
+            name = fit_program_name(sheet.name, fit.series, lap)
+            adapter.make_extra_setup(sheet.name, name, copies)
+            ops = [o.name for o in adapter.apply_template(name, tool.template_path)]
+            keep = next((o for o in ops if _op_tag(o) == fit.tag), None)
+            if keep is None:
+                sheet.errors.append(Issue(E.TEMPLATE_PROBLEM, f"template has no [{fit.tag}] op for {name}"))
+                return
+            for o in ops:
+                if o != keep:
+                    adapter.delete_op(name, o)
+            if fit.kind == "hole":
+                adapter.fill(name, keep, OpFill(fit.tag, holes=tuple(fit.holes)))
+                adapter.set_radial_stock(name, keep, stock)
+            else:
+                adapter.make_outer_ops(name, keep, [(outer_op_name(inst), cid, fid) for inst, cid, fid in fit.instances])
+                n = _outline_tabs(job, part, tool.diameter_in)
+                for inst, cid, fid in fit.instances:
+                    adapter.set_radial_stock(name, outer_op_name(inst), stock)
+                    if n:                             # the same tabs, so the lap doesn't cut the part free
+                        _tab_op(adapter, job, sheet, outer_op_name(inst), [(cid, fid, None)], n, tool.diameter_in,
+                                setup=name)
+            fit.laps.append(name)
 
 
 def _build_face(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> None:
@@ -968,7 +1081,7 @@ def _build_face(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Par
         return
     tool = job.face.tool
     name = face_program_name(sheet.name)
-    adapter.make_face_setup(sheet.name, name, [p.body_id for p in faced])
+    adapter.make_extra_setup(sheet.name, name, [p.body_id for p in faced])
     ops = adapter.apply_template(name, tool.template_path)
     tagged = [o.name for o in ops if f"[{FACE}]" in o.name.lower()]
     if len(ops) != 1 or len(tagged) != 1:
@@ -1126,6 +1239,57 @@ def _post_face(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part
         sheet.errors += [Issue(E.TAP_REJECTED, f"face program: {msg}") for msg in problems]
 
 
+def _post_fits(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> None:
+    """Post and check every fit lap: the check the service repeats (check_fit_program), and the tool center never
+    inside a part, as for the sheet's program. One that fails stops the sheet."""
+    tool = job.tooling.tools[sheet.tool_key]
+    for fit in sheet.fits:
+        outer = tuple(inst for inst, _, _ in fit.instances)
+        counts = {fit.part_key: len({cid for cid, _ in fit.holes} | {cid for _, cid, _ in fit.instances})}
+        for lap, (name, stock) in enumerate(zip(fit.laps, fit.stocks[1:]), 1):
+            raw_dir = out_dir / "raw" / name
+            if raw_dir.exists():
+                shutil.rmtree(raw_dir)
+            raw_dir.mkdir(parents=True)
+            try:
+                posted = adapter.post(name, name, raw_dir, job.post.path, job.post.properties)
+            except AdapterError as e:
+                sheet.errors.append(Issue(E.POST_FAILED, f"posting {name} failed: {e}"))
+                return
+            data = posted.read_bytes()
+            text = data.decode("ascii", errors="surrogateescape")
+            check = check_fit_program(data, job, sheet.thickness_in, sheet.tool_key, outer, counts, sheet.by_hand)
+            problems = check.problems()
+            if check.passed:
+                try:
+                    hits = adapter.cuts_into_parts(name, cutting_points(text, sheet.thickness_in))
+                except AdapterError as e:
+                    hits = []
+                    problems.append(f"couldn't check the toolpaths against the parts: {e}")
+                if hits:
+                    where = "; ".join(f"line {n} (X{x:.4f} Y{y:.4f})" for n, x, y in hits[:5])
+                    problems.append(f"the tool cuts into a part: {where}")
+            ok = check.passed and not problems
+            tap, rejected = (f"{name}.tap", None) if ok else (None, f"{name}.REJECTED.tap")
+            write_atomic(out_dir / (tap or rejected), data)
+            try:
+                machining = adapter.machining_time(name)
+            except AdapterError:
+                machining = None
+            g = check.guard
+            fit.results.append(ProgramResult(
+                kind="fit", name=name, runs="after", tool_guid=tool.guid, cutter_label=tool.cutter_label,
+                tool_number=tool.number, tap=tap, tap_rejected=rejected, tap_bytes=len(data),
+                tap_sha256=g.sha256 if tap else None,
+                guard=GuardSummary(g.passed, g.sha256, g.floor_in, g.min_z_in, g.units, g.offenders,
+                                   g.clamp_violations, g.problems),
+                machining_time_s=machining, parts=tuple(SheetPart(k, n) for k, n in counts.items()),
+                stock_in=stock, series=fit.series, lap=lap, feature=fit.feature))
+            if not ok:
+                sheet.errors += [Issue(E.TAP_REJECTED, f"{name}: {msg}") for msg in problems]
+                return
+
+
 # ------------------------------------------------------------------ the job
 
 def process_job(job: Job, adapter: Adapter, out_dir: Path, *, attempt: int = 1, keep_open: bool = False,
@@ -1224,12 +1388,14 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
     states = {}
     if built:
         try:
-            states = adapter.generate([s.name for s in built] + [s.face_name for s in built if s.face_name])
+            states = adapter.generate([s.name for s in built] + [s.face_name for s in built if s.face_name]
+                                      + [lap for s in built for f in s.fits for lap in f.laps])
         except AdapterError as e:
             for s in built:
                 s.errors.append(Issue(E.OP_ERROR, f"toolpath generation failed: {e}"))
     for sheet in built:
-        for setup in [sheet.name] + ([sheet.face_name] if sheet.face_name else []):
+        for setup in [sheet.name] + ([sheet.face_name] if sheet.face_name else []) + \
+                [lap for f in sheet.fits for lap in f.laps]:
             if setup not in states and not sheet.errors:
                 sheet.errors.append(Issue(E.OP_ERROR, f"Fusion reported no toolpaths for {setup}"))
             for st in states.get(setup, []):
@@ -1241,6 +1407,8 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
                     sheet.warnings.append(Issue(E.OP_WARNING, f"{st.name}: {st.warning}"))
         if not sheet.errors and sheet.face_name:
             _post_face(adapter, job, sheet, parts, out_dir)       # first: the sheet isn't offered without it
+        if not sheet.errors and sheet.fits:
+            _post_fits(adapter, job, sheet, out_dir)              # before it too, for the same reason
         if not sheet.errors:
             _post_sheet(adapter, job, sheet, out_dir)
 
@@ -1288,7 +1456,8 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             outer_order=sheet.outer_order, tool_forced_by=tuple(ToolForce(k, r) for k, r in sheet.forced),
             errors=_dedupe(sheet.errors), warnings=_dedupe(sheet.warnings), notes=tuple(sheet.notes),
             by_hand=sheet.by_hand, repeat=sheet.repeat,
-            programs=(sheet.face_result,) if sheet.face_result else (),
+            programs=((sheet.face_result,) if sheet.face_result else ())
+            + tuple(r for f in sheet.fits for r in f.results),
             **({} if sheet.by_hand else _sheet_use(job, sheet, parts))))
 
     f3d_name: Optional[str] = None

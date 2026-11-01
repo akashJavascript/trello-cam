@@ -52,6 +52,29 @@ def _face(s):
     return next((p for p in s.programs if p.kind == "face"), None)
 
 
+def fit_series(job: Job, s) -> List[dict]:
+    """Each fit series on a sheet: the part, its feature, the stocks and the lap programs in order."""
+    out = []
+    for n in sorted({p.series for p in s.programs if p.kind == "fit"}):
+        laps = sorted((p for p in s.programs if p.kind == "fit" and p.series == n), key=lambda p: p.lap)
+        spec = next((p for p in job.parts if p.part_key == laps[0].parts[0].part_key), None)
+        if spec is None or spec.fit is None:
+            continue
+        out.append({"series": n, "part_key": spec.part_key, "name": spec.name, "fit": spec.fit,
+                    "feature": laps[0].feature, "copies": laps[0].parts[0].count, "laps": laps,
+                    "checklist": f"Fit: {spec.name} {laps[0].feature}"[:60]})
+    return out
+
+
+def fit_items(series: dict) -> List[Tuple[str, Optional[float]]]:
+    """The Fit checklist on a sheet card: which run made it fit (the stock it left), or still tight after the last."""
+    tight = "too big" if series["fit"].kind == "outline" else "tight"
+    items = [(f"Fits after the sheet's program ({series['fit'].stocks_in[0]:+.4g})", series["fit"].stocks_in[0])]
+    items += [(f"Fits after {p.name.rsplit('_', 2)[-2]}_{p.lap} ({p.stock_in:+.4g})", p.stock_in) for p in series["laps"]]
+    items.append((f"Still {tight} after the last one", None))
+    return items
+
+
 def sheet_title(job: Job, vs: VerifiedSheet, offcut_number: Optional[int] = None) -> str:
     s = vs.sheet
     n = sum(p.count for p in s.parts)
@@ -144,8 +167,12 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
             lines.append("It cuts the whole sheet without stopping: cut parts stay loose in the sheet until it's "
                          "done. Keep hands off until the spindle stops at the end.")
 
+    if vs.cuttable:
+        for f in fit_series(job, s):
+            lines += [""] + fit_lines(f, s)
     on_sheet = {p.part_key for p in s.parts}
     faced = {p.part_key for p in face.parts} if face else set()
+    fitted = {f["part_key"] for f in fit_series(job, s)}
     tabbed = {p.part_key for p in job.parts if p.tabs} & on_sheet
     if vs.cuttable and tabbed == on_sheet:
         lines.append("Every part, and the slug in each of its cutouts, is held by small tabs: leave them in at the "
@@ -162,7 +189,8 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         counts[part_key] = counts.get(part_key, 0) + 1
         name = part_cards.get(part_key, (part_key, ""))[0]
         of = f" ({counts[part_key]} of {totals[part_key]})" if totals.get(part_key, 1) > 1 else ""
-        marks = [m for m, on in (("faced", part_key in faced), ("tabs", part_key in tabbed)) if on]
+        marks = [m for m, on in (("faced", part_key in faced), ("fit", part_key in fitted),
+                                 ("tabs", part_key in tabbed)) if on]
         lines.append(f"{i}. {name}{of}" + "".join(f" - {m}" for m in marks))
 
     use = sheet_use(s)
@@ -208,6 +236,26 @@ def own_program_description(*, program: str, placed: str, part: str, part_url: s
         + ". Check the toolpaths yourself before ticking Review.",
         f"Stock not there? Move {part} back to Ready for CAM: it gets another spot and this card is replaced.",
     ])
+
+
+def fit_lines(f: dict, s) -> List[str]:
+    """What the sheet card says about one fit series."""
+    hole = f["fit"].kind == "hole"
+    copies = f" ({f['copies']} copies)" if f["copies"] > 1 else ""
+    what = f"{f['name']}'s {f['feature']}" + ("s" if hole and f["copies"] > 1 else "") + copies
+    tight, fits = ("tight", "too tight") if hole else ("big", "too big")
+    laps = ", then ".join(f"{p.tap} ({p.stock_in:+.4g})" for p in f["laps"])
+    return [f"FIT {f['series']}: {what}",
+            f"The program cuts it {f['fit'].stocks_in[0]:.4g} in {tight} (radial) and leaves {f['name']} in, held by "
+            f"tabs: don't take it out at its stop. After the program, try the fit. Still {fits}? Run the next lap, "
+            f"with the same cutter and zero, and try again: {laps}.",
+            f"Stop at the first one that fits and tick it under \"{f['checklist']}\": the next sheet with it starts "
+            "there."]
+
+
+def fit_recorded_comment(name: str, feature: str, stock: float, next_start: float) -> str:
+    return (f"Recorded: {name}'s {feature} fit at {stock:+.4g} in of radial stock. The next sheet with it starts at "
+            f"{next_start:+.4g}.")
 
 
 def sheet_use(s) -> Optional[str]:

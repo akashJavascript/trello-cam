@@ -134,9 +134,14 @@ class Adapter:
         solid, and the work origin at the stock's bottom front-left corner."""
         raise NotImplementedError
 
-    def make_face_setup(self, sheet: str, face: str, copy_ids: Sequence[str]) -> None:
-        """A second setup for the sheet's FACE program, named `face`: the sheet's stock solid and work origin, these
-        copies (the faced ones) as models. From here on `face` is a sheet name like any other."""
+    def make_extra_setup(self, sheet: str, name: str, copy_ids: Sequence[str]) -> None:
+        """Another setup on the sheet's stock solid and work origin (its FACE program, a fit lap), named `name`,
+        with these copies as models. From here on `name` is a sheet name like any other; cuts_into_parts on it
+        checks against every copy on the sheet."""
+        raise NotImplementedError
+
+    def set_radial_stock(self, sheet: str, op_name: str, stock_in: float) -> None:
+        """The op leaves this much radial stock (+: a hole smaller, an outline bigger)."""
         raise NotImplementedError
 
     def apply_template(self, sheet: str, template_path: str) -> List[TemplateOp]:

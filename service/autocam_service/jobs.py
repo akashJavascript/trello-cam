@@ -11,10 +11,11 @@ from autocam_core import CORE_VERSION, fixture
 from autocam_core.holes import HoleRules
 from autocam_core.schema import to_dict
 from autocam_core.schema_job import (
-    JOB_SCHEMA, FaceSpec, FixtureSpec, FusionTeamSpec, GuardSettings, Job, MaterialSpec, NestSpec, OffcutSpec, OnshapeRef,
+    JOB_SCHEMA, FaceSpec, FitSpec, FixtureSpec, FusionTeamSpec, GuardSettings, Job, MaterialSpec, NestSpec, OffcutSpec, OnshapeRef,
     PartSpec, PauseSettings, PlateSpec, PostSpec, SheetSpec, TabSpec, ToolingSpec, ToolSpec, load_job,
 )
 
+from . import fits as fitting
 from .batching import Batch
 from .config import Config, Tool
 
@@ -55,6 +56,15 @@ def face_spec(cfg: Config) -> Optional[FaceSpec]:
     return FaceSpec(depth_in=f.depth_in, tool=tool)
 
 
+def fit_spec(cfg: Config, store: Optional["fitting.FitStore"], material: str, fit, part_name: str) -> Optional[FitSpec]:
+    """The stocks for a part's Fit: line ([fit], centred on what fitted last time if anything was ticked)."""
+    if fit is None or not cfg.fit.enabled:
+        return None
+    learned = store.learned(fitting.key(material, fit, part_name)) if store is not None else None
+    return FitSpec(kind=fit[0], stocks_in=fitting.stocks(cfg.fit.start_in, cfg.fit.step_in, cfg.fit.laps, learned),
+                   diameter_in=fit[1])
+
+
 def sheet_fixture(cfg: Config) -> fixture.Fixture:
     return fixture.build(
         sheet_length_in=cfg.sheet.length_in, sheet_width_in=cfg.sheet.width_in, reach_in=cfg.machine.reach_y_in,
@@ -64,7 +74,7 @@ def sheet_fixture(cfg: Config) -> fixture.Fixture:
 
 
 def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried: Sequence[PartSpec] = (),
-              offcuts: Sequence[OffcutSpec] = ()) -> Job:
+              offcuts: Sequence[OffcutSpec] = (), fits: Optional["fitting.FitStore"] = None) -> Job:
     """carried: parts already on open sheets of this material (from the jobs that made them), nested again
     with the new ones; they keep everything but get part keys after the new parts'."""
     m = cfg.materials[batch.material_key]
@@ -89,7 +99,8 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
             source="onshape" if link else ("local" if req.card.id.startswith("local-") else "trello_attachment"),
             onshape=OnshapeRef(link.did, link.vid, link.eid, ready.onshape_part_id or "", link.url,
                                ready.onshape_microversion) if link else None,
-            force_small_tool=req.force_small_tool, tabs=req.tabs, by_hand=req.by_hand, face=req.face))
+            force_small_tool=req.force_small_tool, tabs=req.tabs or bool(req.fit), by_hand=req.by_hand,
+            face=req.face, fit=fit_spec(cfg, fits, batch.material_key, req.fit, req.name)))
     for n, spec in enumerate(carried, len(parts) + 1):
         parts.append(replace(spec, part_key=f"p{n:02d}"))
 

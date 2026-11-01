@@ -16,7 +16,7 @@ from autocam_core.hotfolder import Queue
 from autocam_core.schema import SchemaError
 from autocam_core.schema_job import Job
 from autocam_core.schema_result import ProgramResult, Result, SheetResult, read_result
-from autocam_core.sheetcheck import SheetCheck, check_face_program, check_sheet_program
+from autocam_core.sheetcheck import SheetCheck, check_face_program, check_fit_program, check_sheet_program
 
 
 @dataclass(frozen=True)
@@ -75,10 +75,11 @@ class IngestedJob:
 
 
 def verify_program(folder: Path, job: Job, sheet: SheetResult, program: ProgramResult) -> VerifiedProgram:
-    if program.kind != "face":
+    if program.kind not in ("face", "fit"):
         return VerifiedProgram(program, None, None, (f"unknown kind of program {program.kind!r}",))
     if not program.tap:
-        return VerifiedProgram(program, None, None, (f"the face program {program.name} wasn't offered for cutting",))
+        return VerifiedProgram(program, None, None, (f"the {program.kind} program {program.name} wasn't offered for "
+                                                     "cutting",))
     path = folder / program.tap
     if not path.is_file():
         return VerifiedProgram(program, None, None, (f"{program.tap} is missing from the job folder",))
@@ -86,6 +87,8 @@ def verify_program(folder: Path, job: Job, sheet: SheetResult, program: ProgramR
     problems = []
     if hashlib.sha256(data).hexdigest() != program.tap_sha256:
         problems.append(f"{program.tap} changed after Fusion checked it")
+    if program.kind == "fit":
+        return _verify_fit(job, sheet, program, data, problems)
     check = check_face_program(data, job, sheet.thickness_in, {p.part_key: p.count for p in program.parts},
                                sheet.by_hand)
     problems += [f"face program: {p}" for p in check.problems()]
@@ -94,6 +97,37 @@ def verify_program(folder: Path, job: Job, sheet: SheetResult, program: ProgramR
     elif abs(program.depth_in - job.face.depth_in) > 1e-9:
         problems.append(f"the face program skims {program.depth_in:g} in, not the job's {job.face.depth_in:g} in")
     return VerifiedProgram(program, data, check, tuple(problems))
+
+
+def _verify_fit(job: Job, sheet: SheetResult, program: ProgramResult, data: bytes, problems) -> VerifiedProgram:
+    counts = {p.part_key: p.count for p in program.parts}
+    spec = next((p for p in job.parts if p.part_key in counts), None)
+    outer: Tuple[str, ...] = ()
+    if spec is not None and spec.fit is not None and spec.fit.kind == "outline":
+        outer = tuple(i for i in sheet.outer_order if i.rsplit("-", 1)[0] == spec.part_key)
+    check = check_fit_program(data, job, sheet.thickness_in, sheet.tool, outer, counts, sheet.by_hand)
+    problems += [f"{program.name}: {p}" for p in check.problems()]
+    tool = job.tooling.tools.get(sheet.tool)
+    if tool is None or program.tool_guid != tool.guid:
+        problems.append(f"{program.name} used tool GUID {program.tool_guid}, not the sheet's")
+    return VerifiedProgram(program, data, check, tuple(problems))
+
+
+def _fit_problems(job: Job, sheet: SheetResult, counts: Dict[str, int]) -> List[str]:
+    """Every fitted part on the sheet has its whole series of laps, in order, with the stocks the job asked for."""
+    out = []
+    for spec in job.parts:
+        if spec.fit is None or spec.part_key not in counts:
+            continue
+        laps = sorted((p for p in sheet.programs if p.kind == "fit" and any(q.part_key == spec.part_key for q in p.parts)),
+                      key=lambda p: p.lap)
+        want = spec.fit.stocks_in[1:]
+        got = tuple(p.stock_in for p in laps)
+        if len(got) != len(want) or any(g is None or abs(g - w) > 1e-6 for g, w in zip(got, want)):
+            out.append(f"{spec.name}'s fit laps leave {list(got)}, not the {list(want)} asked for")
+        elif any(p.parts[0].count != counts[spec.part_key] for p in laps):
+            out.append(f"{spec.name}'s fit laps don't cover every copy")
+    return out
 
 
 def verify_sheet(folder: Path, job: Job, sheet: SheetResult) -> VerifiedSheet:
@@ -122,6 +156,7 @@ def verify_sheet(folder: Path, job: Job, sheet: SheetResult) -> VerifiedSheet:
         problems.append("parts on it ask for facing but the sheet has no face program")
     elif faces and {p.part_key: p.count for p in faces[0].parts} != faced:
         problems.append("the face program doesn't face exactly the copies that ask for it")
+    problems += _fit_problems(job, sheet, counts)
     return VerifiedSheet(sheet, data, check, tuple(problems), programs)
 
 

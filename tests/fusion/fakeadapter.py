@@ -168,10 +168,14 @@ class FakeAdapter(Adapter):
                               "copies": list(copy_ids), "ops": [], "fills": {}, "outer": [], "deleted": [],
                               "tabs": {}, "tab_points": {}, "tab_size": {}}
 
-    def make_face_setup(self, sheet, face, copy_ids):
+    def make_extra_setup(self, sheet, name, copy_ids):
         s = self.sheets[sheet]
-        self.make_sheet(face, s["origin"], s["size"][0], s["size"][1], s["t"], copy_ids)
-        self.sheets[face]["face_of"] = sheet
+        self.make_sheet(name, s["origin"], s["size"][0], s["size"][1], s["t"], copy_ids)
+        self.sheets[name]["face_of"] = sheet
+
+    def set_radial_stock(self, sheet, op_name, stock_in):
+        assert op_name in self.sheets[sheet]["ops"], op_name
+        self.sheets[sheet].setdefault("stock", {})[op_name] = stock_in
 
     def apply_template(self, sheet, template_path):
         ops = [TemplateOp(name, guid) for name, guid in json.loads(Path(template_path).read_text())]

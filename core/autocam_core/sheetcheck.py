@@ -192,5 +192,35 @@ def check_face_program(data: bytes, job: Job, thickness_in: float, part_counts: 
     return SheetCheck(report, None, tuple(problems))
 
 
+def check_fit_program(data: bytes, job: Job, thickness_in: float, tool_key: str, outer_order: Sequence[str],
+                      part_counts: Mapping[str, int], by_hand: bool = False) -> SheetCheck:
+    """A fit lap (core 0.16.0): the sheet's guard with its tool, no stops, only parts that ask for a fit, and for an
+    outline fit exactly the fitted copies' outlines, each still reaching the stock bottom (the lap is the outline
+    again with a little less stock, tabs and all). A hole lap cuts no outline."""
+    text = data.decode("ascii", errors="replace")
+    problems: List[str] = []
+    if not any(abs(thickness_in - t) <= 1e-9 for t in job.material.thicknesses_in):
+        problems.append(f"sheet thickness {thickness_in:g} in is not a {job.material.name} stock thickness")
+    if tool_key not in job.tooling.tools:
+        return SheetCheck(_failed(check_program(data, GuardSpec()), "unknown tool"), None, ("unknown tool",))
+    fitted = {p.part_key for p in job.parts if p.fit is not None}
+    others = sorted(set(part_counts) - fitted)
+    if not part_counts:
+        problems.append("the fit lap lists no parts")
+    if others:
+        problems.append(f"the fit lap lists parts that don't ask for a fit: {', '.join(others)}")
+    in_program = [m.group(1) for m in (_OUTER_LINE.match(l.strip()) for l in text.splitlines()) if m]
+    if in_program != list(outer_order):
+        problems.append(f"outline ops in the fit lap {in_program} aren't the fitted copies {list(outer_order)}")
+    if outer_order:
+        problems += outer_depth_problems(text, job.guard.z_floor_in)
+    report = check_program(data, guard_spec(job, thickness_in, tool_key, by_hand))
+    if report.m0_count:
+        report = _failed(report, f"the fit lap has {report.m0_count} M0; laps never stop")
+    if report.min_z_in is None:
+        problems.append("the fit lap has no Z move")
+    return SheetCheck(report, None, tuple(problems))
+
+
 def _failed(report: GuardReport, problem: str) -> GuardReport:
     return replace(report, passed=False, problems=report.problems + (problem,))

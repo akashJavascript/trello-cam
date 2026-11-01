@@ -92,6 +92,11 @@ class ProgramResult:
     machining_time_s: Optional[float]
     parts: Tuple[SheetPart, ...]   # the copies it works on
     depth_in: float = 0.0          # face: how deep it skims
+    # fit laps (core 0.16.0): kind "fit", runs "after", in order
+    stock_in: Optional[float] = None   # the radial stock this lap leaves
+    series: int = 0                    # which fit series on the sheet (1, 2, ...)
+    lap: int = 0                       # 1, 2, ... in the order they're run
+    feature: str = ""                  # e.g. "1.125 hole", "outline"
 
 
 @dataclass(frozen=True)

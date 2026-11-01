@@ -6,4 +6,4 @@ Fusion 2705.1.15 bundles Python 3.14 (api_probe, 2026-10-01); CI tests this pack
 
 # job.json and result.json carry this. The Fusion worker refuses a job built by a
 # different version, so a long-lived Fusion process can't run stale code.
-CORE_VERSION = "0.15.0"  # 0.15.0: [bearing] op, holes.bearing_stock_in; 0.14.0: faced parts (a FACE program per sheet); 0.13.0: pockets ([pocket], [pocketfinish]); 0.12.1: labels in the middle of thin parts; 0.12.0: parts placed by hand; 0.11.0: tab width/height
+CORE_VERSION = "0.16.0"  # 0.16.0: fit series (PartSpec.fit, FIT lap programs); 0.15.0: [bearing] op, holes.bearing_stock_in; 0.14.0: faced parts (a FACE program per sheet); 0.13.0: pockets ([pocket], [pocketfinish]); 0.12.1: labels in the middle of thin parts; 0.12.0: parts placed by hand; 0.11.0: tab width/height
