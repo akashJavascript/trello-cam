@@ -65,7 +65,7 @@ class FakeAdapter(Adapter):
         self.face_extra_depth_in = 0.0                 # ...and goes this much deeper than asked
 
     def register(self, step: Path, geometry: PartGeometry, size: Tuple[float, float]) -> None:
-        self.parts[str(step)] = (geometry, size)
+        self.parts[str(Path(step))] = (geometry, size)
 
     # -- Adapter
     def versions(self):
@@ -79,7 +79,8 @@ class FakeAdapter(Adapter):
         self.arranged = False                          # each job is a new Fusion document
 
     def import_step(self, copy_id, path):
-        if path in self.fail_import or path not in self.parts:
+        path = str(Path(path))               # jobs write C:/... paths; on Windows the registered ones read C:\...
+        if path in {str(Path(f)) for f in self.fail_import} or path not in self.parts:
             raise AdapterError(f"importToTarget failed for {path}")
         self.copies[copy_id] = path
         geometry, (w, h) = self.parts[path]
