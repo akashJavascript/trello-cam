@@ -787,3 +787,18 @@ A **Face** label on a part card skims that part's top clean before it's cut, so 
 - Depth is capped at 0.02 in in config and the job: deeper is a pocket, not a skim. Part spacing (0.5 in) keeps
   neighbours clear of the 0.106 in overreach.
 - A part placed by hand gets its FACE program the same way, on its own box and zero (run it before each copy).
+
+## 2026-11-01: a hand cut can be recorded from its program (the user's choice: optional, the zero measured)
+
+People cutting their own parts zero X/Y on the piece wherever they want the part, not at the sheet's corner, so a
+program alone says what was cut but not where. Optionally (`[hand_cuts] programs`, on), the offcut's card can carry
+the .tap they ran plus one measured line, `Zeroed at: 10 along, 5 across` (the zero, measured like a "Cut by hand:"
+line), instead of the four numbers of the rectangle. The service works out what the cutter covered below the stock
+top (its center's path grown by its radius: `Cutter: 4 mm` on the card, else `[hand_cuts] cutter_in`, 1/4 in),
+moves it to the zero, cuts it down to the piece, and records it like a typed line (written back as one, "from
+P-3001.tap"). Programs with Z0 on top of the stock are read too (and the reply says so); mm programs are refused.
+With more than one new program on a card, each line names its program (`... for P-3001.tap`). A scrap card can
+carry programs the same way. Each attachment is downloaded once (cached) and recorded once. The typed line still
+works and stays the fallback. Not done (for later): WinCNC's machine coordinates instead of a tape (needs the corner
+stop, or a second reading at the piece's corner), and AutoCAM choosing the spot for a program (option 3).
+

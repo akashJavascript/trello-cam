@@ -55,7 +55,8 @@ offcut that isn't there, tick "The offcut isn't on the rack" under Stock on that
 piece the system doesn't know about, make a card in Offcuts with lines like Material: 6061, Thickness: 3/16
 and Length: 20.
 Cut a part out of an offcut by hand? Add a line to its card like Cut by hand: 12 to 18 along, 5 to 10 across
-(inches; the card says where to measure from) and runs keep clear of it. If a sheet card's offcut turns out
+(inches; the card says where to measure from) and runs keep clear of it. Cut it with your own program? You can
+attach the .tap instead, with a line like Zeroed at: 10 along, 5 across (where you zeroed X/Y). If a sheet card's offcut turns out
 to have something cut where the program goes, tick "Something's already cut where this program goes".
 If something is wrong, the card comes back in Needs fixing with a comment saying what to fix."""
 

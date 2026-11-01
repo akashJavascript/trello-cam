@@ -17,6 +17,8 @@
 - A part someone cut out of an offcut by hand is a "Cut by hand: 12 to 18 along, 5 to 10 across" line on its
   card (parse_hand_cuts; across left out = the whole width). The service takes that rectangle out once
   (core cut_away) and writes the line back as it read it; a scrap card can carry such lines from the start.
+  Optionally ([hand_cuts] programs) the card can carry the program that cut it instead, with where it was zeroed
+  ("Zeroed at: 10 along, 5 across"; handprograms.py): the cut is then worked out from the program.
 - Besides the used stretches, an offcut keeps the room beside the parts cut from them ("beside": rectangles
   in its own coordinates, core 0.5.0), which the next nest fills first. A sheet that used some of that room
   replaces it with what's left of it. An offcut is used up when it has neither a free stretch worth loading
@@ -45,14 +47,20 @@ SCRAP_HELP = ("To add a piece of stock as an offcut, its description needs these
               "Material: 6061\nThickness: 3/16\nLength: 20\n"
               "Length is end to end. It must be the full sheet width (the clamps hold the long edges). If parts "
               "were cut out of it already, add a line for each, like Cut by hand: 12 to 18 along, 5 to 10 across "
-              "(along from the end that goes against the front stop; mark that end).")
+              "(along from the end that goes against the front stop; mark that end), or attach the program that "
+              "cut it with a line like Zeroed at: 10 along, 5 across (where you zeroed X/Y, measured the same way).")
 
 
-def hand_cut_help(first_end: str) -> str:
-    """The offcut card's line on recording a part cut out of it by hand. first_end: where `along` is measured from."""
+def hand_cut_help(first_end: str, programs: bool = True) -> str:
+    """The offcut card's line on recording a part cut out of it by hand. first_end: where `along` is measured from.
+    programs: the card may carry the program that cut it instead ([hand_cuts] programs)."""
     return ("Cut a part out of it by hand? Add a line like: Cut by hand: 12 to 18 along, 5 to 10 across. Inches: "
             f"along from {first_end}, across from the left edge with that end toward you. Leave out \"across\" "
-            "if the cut went all the way across. Runs then keep clear of it.")
+            "if the cut went all the way across."
+            + (" Or, if you cut it with your own program, attach the .tap you ran and add a line like Zeroed at: 10 "
+               "along, 5 across (where you zeroed X/Y, measured the same way); AutoCAM works out what it cut "
+               "(add Cutter: 4 mm if the cutter was bigger than 1/4 in)." if programs else "")
+            + " Runs then keep clear of it.")
 
 
 _SPAN = r"(\d+(?:\.\d*)?|\.\d+)\s*(?:in\b|\"|”)?\s*(?:to|-|–)\s*(\d+(?:\.\d*)?|\.\d+)\s*(?:in\b|\"|”)?\s*"
@@ -160,7 +168,7 @@ class OffcutStore:
 def card_text(stock: str, free_in: float, used: Sequence[Stretch], last_label: str,
               beside: Sequence[Sequence[float]] = (), min_free_in: float = 0.0, number: Optional[int] = None,
               length_in: Optional[float] = None, hand_cuts: Sequence[Sequence[float]] = (),
-              width: float = 24.0) -> Tuple[str, str]:
+              width: float = 24.0, programs: bool = True) -> Tuple[str, str]:
     """stock: e.g. "6061 3/16in". The offcut card's title and description. length_in: a scrap's length (the
     rest of the sheet's length is missing, not cut). hand_cuts: parts cut out of it by hand, as recorded."""
     title = (f"#{number} - " if number else "") + f"{stock} offcut - " + \
@@ -188,7 +196,7 @@ def card_text(stock: str, free_in: float, used: Sequence[Stretch], last_label: s
     lines += [hand_cut_line(c, width) for c in hand_cuts]
     first_end = ("the end that goes against the front stop (mark it)" if length_in is not None and not last_label
                  else "the end AutoCAM cut first")
-    lines.append(hand_cut_help(first_end))
+    lines.append(hand_cut_help(first_end, programs))
     lines.append("Archive this card if the sheet is gone.")
     return title, "\n".join(lines)
 

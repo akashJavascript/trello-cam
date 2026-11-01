@@ -198,6 +198,14 @@ class Labels:
 
 
 @dataclass(frozen=True)
+class HandCuts:
+    """Parts cut out of offcuts outside AutoCAM: besides a typed "Cut by hand:" rectangle, the program that cut it
+    can be attached with a "Zeroed at:" line (handprograms.py)."""
+    programs: bool = True        # read attached programs at all
+    cutter_in: float = 0.25      # the cutter's diameter when the card has no Cutter: line
+
+
+@dataclass(frozen=True)
 class Face:
     """The "Face" label: that part's top skimmed clean, in a FACE program run before the sheet's own (core
     0.14.0). Its tool is identified by GUID only, like every tool, and must be the face template's."""
@@ -318,6 +326,7 @@ class Config:
     warnings: Tuple[str, ...]
     tabs: Tabs = Tabs()
     face: Optional[Face] = None
+    hand_cuts: HandCuts = HandCuts()
 
     def stock_types(self) -> List[Tuple[Material, float]]:
         return [(m, t) for m in self.materials.values() for t in m.thicknesses_in]
@@ -724,6 +733,12 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                     template=root / t.string("template", required=True))
         t.finish()
 
+    hand_cuts = HandCuts()
+    if "hand_cuts" in top.data:
+        t = top.table("hand_cuts")
+        hand_cuts = HandCuts(programs=t.boolean("programs"), cutter_in=t.number("cutter_in", positive=True))
+        t.finish()
+
     t = top.table("paths")
     paths = Paths(**{k: root / t.string(k, required=True) for k in ("queue", "cache", "state", "logs")})
     t.finish()
@@ -738,7 +753,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         tools=MappingProxyType(tools), tooling=MappingProxyType(tooling), holes=holes,
         op_tags=op_tags, templates=MappingProxyType(templates), labels=labels, onshape=onshape,
         trello=trello, fusion=fusion, tapguard=tapguard, fusion_team=fusion_team, status=status, paths=paths,
-        placeholders=tuple(_placeholders(data)), warnings=(), tabs=tabs, face=face,
+        placeholders=tuple(_placeholders(data)), warnings=(), tabs=tabs, face=face, hand_cuts=hand_cuts,
     )
     warnings: List[str] = []
     _cross_check(cfg, data, errors, warnings)

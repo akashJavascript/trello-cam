@@ -50,6 +50,7 @@ from .autostart import ReadyWatch, box, signature, wants_nest
 from .batching import ReadyPart, make_batches
 from .cards import README_CARD, TITLE_QTY_RE, CardProblem, PartRequest, parse_card
 from .config import Config
+from .handprograms import ProgramCut, is_program, program_cuts
 from .jobs import JobBuildError, build_job, face_spec, sheet_fixture
 from .materials import resolve_material
 from .offcuts import (SCRAP_HELP, OffcutStore, card_text, hand_cut_line, load_line, parse_hand_cuts, parse_scrap,
@@ -515,7 +516,7 @@ class Runner:
                          (piece.get("last") or {}).get("label", ""), compact(piece.get("beside", [])),
                          self.cfg.nest.offcut_min_in, piece.get("number"),
                          piece.get("length_in") if piece.get("scrap") else None, piece.get("hand_cuts", []),
-                         self.cfg.sheet.width_in)
+                         self.cfg.sheet.width_in, self.cfg.hand_cuts.programs)
 
     def scan_offcuts(self) -> None:
         """The Offcuts list each pass: offcuts without a number get one (their card says it), a missing offcut
@@ -573,6 +574,10 @@ class Runner:
                  "last": {"label": "", "stretch": [0.0, 0.0], "turned": False}, "reserved_by": None,
                  "url": card.url, "number": self.offcuts.next_number(), "scrap": True, "length_in": round(length, 3)}
         cuts, problems = parse_hand_cuts(f"{card.name}\n{card.desc}", cfg.sheet.width_in, length)
+        made, more, ids = self._program_cuts(card, thickness, length, ())
+        problems += more
+        cuts += [pc.cut for pc in made if not any(same_cut(pc.cut, c) for c in cuts)]
+        piece["programs"] = sorted({ids[pc.program] for pc in made})
         if cuts:
             self._apply_hand_cuts(piece, cuts)
         self.offcuts.put(card.id, piece)
@@ -605,27 +610,40 @@ class Runner:
         offcut where the cut is gets told how to move."""
         cfg, t = self.cfg, self.cfg.trello
         width = cfg.sheet.width_in
-        cuts, problems = parse_hand_cuts(card.desc, width, piece["length_in"] if piece.get("scrap")
-                                         else cfg.sheet.length_in)
+        piece_length = piece["length_in"] if piece.get("scrap") else cfg.sheet.length_in
+        cuts, problems = parse_hand_cuts(card.desc, width, piece_length)
         new = [c for c in cuts if not any(same_cut(c, k) for k in piece.get("hand_cuts", []))]
+        made, more, ids = self._program_cuts(card, piece["thickness_in"], piece_length, piece.get("programs", []))
+        problems += more
+        sources: Dict[int, ProgramCut] = {}
+        for pc in made:                               # a program's cut, unless it's recorded already
+            if not any(same_cut(pc.cut, k) for k in list(piece.get("hand_cuts", [])) + new):
+                sources[len(new)] = pc
+                new.append(pc.cut)
+        if made:
+            piece["programs"] = sorted(set(piece.get("programs", [])) | {ids[pc.program] for pc in made})
         if problems:
             said = signature(card)
             if self.offcuts.replies().get(card.id) != said:
                 self.t.comment(card.id, "Couldn't record a hand cut: " + " ".join(problems))
                 self.offcuts.set_reply(card.id, said)
         if not new:
+            if made:
+                self.offcuts.put(card.id, piece)      # its programs are read: they were recorded before
             return
         holder = piece.get("reserved_by")
         info = self.s.store.sheet_cards().get(holder, {}) if holder else {}
         bands = (info.get("bands") or self._bands(info.get("used_along"), info.get("beside_used") or (), card.id,
                                                   bool(info.get("turned")))) if holder else []
         self._apply_hand_cuts(piece, new)
-        what = "; ".join(hand_cut_line(c, width).split(": ", 1)[1] for c in new)
+        what = "; ".join(hand_cut_line(c, width).split(": ", 1)[1]
+                         + (f" (from {sources[i].program})" if i in sources else "") for i, c in enumerate(new))
+        notes = "".join(f" {pc.program}: {pc.note}." for pc in sources.values() if pc.note)
         free = self._free_after([tuple(s) for s in piece["used"]])
         rooms = compact(piece["beside"])
         if free < cfg.nest.offcut_min_in and not rooms and not holder:
             self.t.comment(card.id, f"Recorded the hand cut ({what}). Nothing worth nesting on is left, so it's "
-                                    "archived.")
+                                    "archived." + notes)
             self.t.archive(card.id)
             self.offcuts.remove(card.id)
             return
@@ -633,7 +651,7 @@ class Runner:
         self.t.update_card(card.id, *self._offcut_card_text(piece))
         self.t.comment(card.id, f"Recorded the hand cut ({what}): runs keep clear of it. "
                        + (f"{free:.0f} in free now" if free >= cfg.nest.offcut_min_in else "No free stretch now")
-                       + (", plus room beside the cuts for small parts." if rooms else "."))
+                       + (", plus room beside the cuts for small parts." if rooms else ".") + notes)
         length, slack = cfg.sheet.length_in, cfg.nest.part_spacing_in + cfg.nest.offcut_gap_in
         turned = bool(info.get("turned"))
         spans = [(length - c[3], length - c[1]) if turned else (c[1], c[3]) for c in new]
@@ -643,6 +661,23 @@ class Runner:
                                    f"program cuts. Check it before loading: if it's in the way, tick "
                                    f"\"{t.cut_away_item}\" under {t.stock_checklist} and this sheet moves to "
                                    "other stock.")
+
+    def _program_cuts(self, card: Card, thickness: float, length: float, read: Sequence[str]):
+        """The programs attached to an offcut card that aren't recorded yet (handprograms.py): (the cuts they made
+        where their Zeroed at lines say, problems, file name -> attachment id). Each is downloaded once."""
+        hc = self.cfg.hand_cuts
+        atts = [a for a in card.attachments if hc.programs and is_program(a.name) and a.id not in read]
+        if not atts:
+            return [], [], {}
+        programs = []
+        for a in atts:
+            path = self.cfg.paths.cache / "trello" / f"{a.id}.tap"      # attachments never change once uploaded
+            if not path.is_file():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                write_atomic(path, self.t.download(a))
+            programs.append((a.name, path.read_bytes()))
+        made, problems = program_cuts(card.desc, programs, thickness, self.cfg.sheet.width_in, length, hc.cutter_in)
+        return made, problems, {a.name: a.id for a in atts}
 
     def _bands(self, used_along, beside_used: Sequence[int], offcut_id: Optional[str],
                turned: bool) -> List[List[float]]:

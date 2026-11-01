@@ -364,6 +364,7 @@ Run `autocam trello-setup` once (the read-me card's new Offcuts paragraph).
 | 7 | **Air-test** the first sheet switched to another offcut, and the first one on a scrap | |
 | 8 | Hand cuts (2026-10-31): add "Cut by hand: 12 to 18 along, 5 to 10 across" to an offcut card: within a minute it's written back as read, a comment says how much is free, and the next sheet on it keeps clear (look at its preview) | |
 | 9 | Tick "Something's already cut where this program goes" on a sheet card on an offcut: it moves to another offcut it fits (or asks: re-nest or a new sheet), and the offcut stays, with a comment asking for the cut to be recorded | |
+| 10 | Hand cut from its program (2026-11-01): attach the .tap someone ran to an offcut card and add "Zeroed at: 10 along, 5 across" (where they zeroed X/Y). Within a minute the card shows a "Cut by hand" line for the program's reach from that spot and the comment says "from <file>"; measure the real cut against it. Without the Zeroed at line, one reply asks for it | |
 
 ### 10. Tabs (2026-10-03)
 
