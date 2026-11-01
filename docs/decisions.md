@@ -828,6 +828,6 @@ starts no Fusion run (`own_programs.py`, runner `own_programs`; `[hand_cuts] pla
 
 Everything since M0 had been on `m1-offline`, with a short branch per Fusion test (`pockets`, `poly4mm`,
 `handcuts`, `face`). `main` was moved up to `m1-offline` (a fast-forward: it held nothing else) and is now the branch
-the scouting laptop runs and new work goes on; the others were all fully in it, so they can go. A change that needs a Fusion run
+the scouting laptop runs and new work goes on; the others were all fully in it and were deleted. A change that needs a Fusion run
 still gets a short branch, checked out on the laptop for the test and deleted once `main` has it.
 
