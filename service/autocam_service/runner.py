@@ -37,20 +37,25 @@ from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from autocam_core import CORE_VERSION
 from autocam_core.airtest import SUFFIX as AIR_SUFFIX, AirTestError, air_test_name, air_test_program, check_air_test
+from autocam_core.fixture import clamp_clear_z
 from autocam_core.hotfolder import Queue, write_atomic
 from autocam_core.offcuts import add_used, as_loaded, compact, cut_away, free_length, to_own, turn_rect
 from autocam_core.pauses import PauseError, remove as remove_pauses
 from autocam_core.sheetcheck import check_sheet_program, pause_spec
 from autocam_core.schema import SchemaError
 from autocam_core.schema_job import OffcutSpec, PartSpec, job_json, load_job
+from autocam_core.tapguard import GuardSpec, check_program
 
 from . import health, labels, tally
 from . import sheet_cards as text
 from .autostart import ReadyWatch, box, signature, wants_nest
 from .batching import ReadyPart, make_batches
-from .cards import README_CARD, TITLE_QTY_RE, CardProblem, PartRequest, parse_card
+from .cards import (MATERIAL_RE, README_CARD, STEP_SUFFIXES, TITLE_QTY_RE, CardProblem, PartRequest, parse_card,
+                    problem_comment)
+from .offcuts import _number as _scrap_number
 from .config import Config
-from .handprograms import ProgramCut, is_program, program_cuts
+from .handprograms import ProgramCut, footprint, is_program, parse_cutter, program_cuts
+from .own_programs import find_spot, parse_thickness, placed_name, program_attachments, shift_program
 from .jobs import JobBuildError, build_job, face_spec, sheet_fixture
 from .materials import resolve_material
 from .offcuts import (SCRAP_HELP, OffcutStore, card_text, hand_cut_line, load_line, parse_hand_cuts, parse_scrap,
@@ -60,6 +65,7 @@ from .onshape.cache import sha256_file
 from .onshape.client import BudgetExceeded, OnshapeError, QuotaExhausted, RateLimited
 from .onshape.export import Exporter, ExportError, TryAgainLater
 from .onshape.ledger import Ledger, budget_year_start, utc_now
+from .onshape.urls import first_onshape_url
 from .results import IngestedJob, VerifiedSheet, ingest
 from .run_state import (
     COLLECTING, FAILED, GAVE_UP, PUBLISHED, QUEUED, STARTING, JobState, RunState, RunStore, once,
@@ -141,6 +147,7 @@ class Runner:
         self.scan_offcuts()
         self.retire_old_layout()
         self.sheet_options()
+        self.own_programs()
         waiting = self.ready_cards()
         state = self.s.store.active()
         if state is not None and state.dry_run != self.dry_run:
@@ -237,8 +244,8 @@ class Runner:
         fresh: List[Card] = []
         for list_key in ("inbox", "ready_for_cam"):
             for card in self.t.list_cards(list_key):
-                if card.is_template or card.name.strip() == README_CARD:
-                    continue
+                if card.is_template or card.name.strip() == README_CARD or self._own_program_card(card):
+                    continue                          # own programs: placed by own_programs, not nested
                 if not any(c.checklist == t.nest_checklist for c in card.checks):
                     try:
                         self.t.add_checklist(card.id, t.nest_checklist, [t.nest_item], checked=True)
@@ -448,6 +455,9 @@ class Runner:
         """A sheet card just went to Cut: update the offcut it was cut from, or keep the rest as a new one. The
         rest is the free stretch along the length and the room beside the parts cut (offcuts.py); an offcut with
         neither left is used up."""
+        if info.get("own"):
+            self._own_after_cut(card, info)
+            return
         used_along = info.get("used_along") or info.get("used_x")      # used_x: sheets published before 2026-10-03
         if info.get("converted"):                     # its stock was changed at the machine: the same program cut
             bands = [tuple(b) for b in info.get("bands") or []]     # these bands, nothing beside earlier cuts
@@ -591,8 +601,9 @@ class Runner:
                        + (" Couldn't read: " + " ".join(problems) if problems else ""))
         log.info("added scrap %s as offcut #%s", card.id, n)
 
-    def _apply_hand_cuts(self, piece: Dict, cuts: Sequence[Sequence[float]]) -> None:
-        """Take parts cut out by hand (across, along, in the piece's own coordinates) out of an offcut's record."""
+    def _apply_hand_cuts(self, piece: Dict, cuts: Sequence[Sequence[float]], record: bool = True) -> None:
+        """Take parts cut out by hand (across, along, in the piece's own coordinates) out of an offcut's record.
+        record: list them as "Cut by hand" on its card (not for an own program AutoCAM placed: that's a sheet)."""
         cfg = self.cfg
         region = sheet_fixture(cfg).nest_region_in
         used, beside = [tuple(s) for s in piece["used"]], [tuple(r) for r in piece.get("beside", [])]
@@ -601,8 +612,9 @@ class Runner:
                                     cfg.nest.part_spacing_in, cfg.nest.offcut_gap_in, cfg.nest.offcut_beside_min_in)
         if not piece.get("reserved_by"):
             beside = compact(beside)                  # no sheet holds a room by its place in the list
-        piece.update(used=[list(s) for s in used], beside=[list(r) for r in beside],
-                     hand_cuts=[list(c) for c in piece.get("hand_cuts", [])] + [list(c) for c in cuts])
+        piece.update(used=[list(s) for s in used], beside=[list(r) for r in beside])
+        if record:
+            piece["hand_cuts"] = [list(c) for c in piece.get("hand_cuts", [])] + [list(c) for c in cuts]
 
     def _hand_cuts(self, card: Card, piece: Dict) -> None:
         """"Cut by hand:" lines on an offcut's card: each new one is taken out of the offcut once (the card then
@@ -821,6 +833,216 @@ class Runner:
             self.t.add_label(part, self.cfg.labels.rush)
             self.t.comment(part, f"Back for a re-nest: {f'offcut #{n}' if n else 'the offcut'} for {label} wasn't on "
                                  "the rack. It has the Rush label, so it's nested again within a minute.")
+
+    # ------------------------------------------------------------ own programs (option 3)
+    def _own_program_card(self, card: Card) -> bool:
+        """A part card carrying someone's own program instead of a part: a .tap, no Onshape link, no STEP file."""
+        if not self.cfg.hand_cuts.place_programs or not program_attachments(card):
+            return False
+        return not first_onshape_url(card.desc or "") and not any(
+            a.name.lower().endswith(STEP_SUFFIXES) for a in card.attachments)
+
+    def own_programs(self) -> None:
+        """Cards in Ready for CAM with someone's own program (own_programs.py): each placed at once, on a card in
+        Sheet review with the program moved there, or sent to Needs fixing saying why."""
+        if self.dry_run or not self.cfg.hand_cuts.place_programs:
+            return
+        for card in self.t.list_cards("ready_for_cam"):
+            if card.is_template or not self._own_program_card(card):
+                continue
+            try:
+                self._place_own(card)
+            except Exception as e:  # noqa: BLE001 - one card mustn't stop the tick
+                log.warning("own program card %s: %s", card.id, e)
+
+    def _refuse_own(self, card: Card, problems: Sequence[str]) -> None:
+        self.t.move(card.id, self.targets["part_rejected"])
+        self.t.comment(card.id, problem_comment("Not placed", problems))
+
+    def _place_own(self, card: Card) -> None:
+        cfg = self.cfg
+        problems: List[str] = []
+        progs = program_attachments(card)
+        if len(progs) > 1:
+            problems.append("More than one program attached. Make a card for each.")
+        hints = [v.strip() for v in MATERIAL_RE.findall(card.desc or "") if v.strip()]
+        key = None
+        if not hints:
+            problems.append("No Material line. Add one like Material: 6061.")
+        else:
+            smoked = _label(cfg.labels.smoked) in {_label(l) for l in card.labels}
+            choice = resolve_material(None, hints[0], smoked, cfg.onshape.material_map, cfg.materials)
+            key = choice.key
+            if key is None:
+                problems.append((choice.problem or "unknown material")[:1].upper() + (choice.problem or "")[1:] + ".")
+        thickness = None
+        if key is not None:
+            thickness, why = parse_thickness(card.desc or "", cfg.materials[key].thicknesses_in, _scrap_number)
+            if why:
+                problems.append(why)
+        cutter, why = parse_cutter(card.desc or "")
+        problems += why
+        if problems:
+            self._refuse_own(card, problems)
+            return
+        att = progs[0]
+        path = cfg.paths.cache / "trello" / f"{att.id}.tap"          # attachments never change once uploaded
+        if not path.is_file():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            write_atomic(path, self.t.download(att))
+        data = path.read_bytes()
+        cutter = cutter or cfg.hand_cuts.cutter_in
+        box, why, note = footprint(data, thickness, cutter)
+        if box is None:
+            self._refuse_own(card, [f"{att.name}: " + "; ".join(why) + "."])
+            return
+        if note:
+            self._refuse_own(card, [f"{att.name}: {note}. AutoCAM checks programs with Z0 on the spoilboard (the "
+                                    "fixed tool setter): in Fusion put the setup's origin at the stock's bottom, "
+                                    "post it again and attach that."])
+            return
+        self._retire_own(card.id, "its part card came back to Ready for CAM")
+        fx = sheet_fixture(cfg)
+        width, length = cfg.sheet.width_in, cfg.sheet.length_in
+        on_board = {c.id for c in self.t.list_cards("offcuts")}
+        pieces = {oid: p for oid, p in self.offcuts.all().items()
+                  if oid in on_board and not p.get("reserved_by") and not p.get("missing")
+                  and p["material"] == key and abs(p["thickness_in"] - thickness) < 1e-6}
+        m = cfg.nest.part_spacing_in / 2               # the footprint has the cutter in it: a little to spare
+        r = fx.nest_region_in
+        region = (r[0] + m, r[1] + m, r[2] - m, r[3] - m)
+        spot = find_spot(box, pieces, region, width, length, cfg.nest.offcut_gap_in)
+        if spot is None:
+            r = region
+            self._refuse_own(card, [f"{att.name} cuts {box[2] - box[0]:.1f} x {box[3] - box[1]:.1f} in (across x "
+                                    f"along): more than a sheet's cutting area ({r[2] - r[0]:.1f} x {r[3] - r[1]:.1f})."])
+            return
+        label = self._own_label()
+        name = placed_name(att.name, label)
+        moved = shift_program(data.decode("ascii", errors="replace"), spot.dx, spot.dy,
+                              note=f"AUTOCAM {label} - {att.name} MOVED X+{spot.dx:g} Y+{spot.dy:g} - ZERO X/Y AT "
+                                   "THE PIECE FRONT-LEFT CORNER").encode("ascii", errors="replace")
+        piece_length = (pieces[spot.offcut_id].get("length_in") if spot.offcut_id and
+                        pieces[spot.offcut_id].get("scrap") else None) or length
+        spec = GuardSpec(z_floor_in=cfg.machine.z_floor_in, allowed_g=frozenset(cfg.tapguard.allowed_g),
+                         allowed_m=frozenset(cfg.tapguard.allowed_m), park=cfg.machine.park,
+                         clamp_zones_in=fx.clamp_zones_in,
+                         clamp_clear_z_in=clamp_clear_z(thickness, cfg.clamps.height_in, cfg.tapguard.clamp_margin_in),
+                         tool_radius_in=cutter / 2, reach_y_in=cfg.machine.reach_y_in, stock_top_in=thickness,
+                         sheet_in=(width, piece_length))
+        report = check_program(moved, spec)
+        if not report.passed:
+            self._refuse_own(card, [f"{att.name}, moved to its spot, failed AutoCAM's checks: {report.summary()}"])
+            return
+        stock = self._stock_label(key, thickness)
+        number = (pieces[spot.offcut_id].get("number") if spot.offcut_id else None)
+        title = (f"{stock}" + (f" offcut #{number}" if number else " offcut" if spot.offcut_id else "")
+                 + f" - own program {att.name} - {' '.join(card.name.split())} - {label}")
+        stock_line = (self._stock_text(spot.offcut_id, key, thickness, spot.turned) if spot.offcut_id else
+                      f"Stock: a new {stock} sheet, {width:g} x {length:g}.")
+        desc = text.own_program_description(
+            program=att.name, placed=name, part=" ".join(card.name.split()), part_url=card.url, stock=stock_line,
+            cutter_in=cutter, clamps=text.clamp_edges(fx.clamp_zones_in, width), spot=spot, lowest_z=report.min_z_in)
+        new = self.t.create_card(self.targets["sheet_created"], title, desc)
+        # On record at once (not cuttable yet), so a pass that stops half way replaces this card next time.
+        self.s.store.register_sheet(new.id, label, False, [card.id])
+        reg = self.s.store.sheet_cards()
+        spacing = cfg.nest.part_spacing_in
+        reg[new.id].update(
+            label=label, url=new.url, material=key, thickness_in=thickness, offcut_id=spot.offcut_id,
+            turned=spot.turned, bands=[[spot.cut_loaded[1] - spacing, spot.cut_loaded[3] + spacing]],
+            own={"program": att.name, "placed": name, "cut_own": list(spot.cut_own),
+                 "cut_loaded": list(spot.cut_loaded), "dx": spot.dx, "dy": spot.dy})
+        self.s.store._write_sheets(reg)
+        if spot.offcut_id:
+            self.offcuts.reserve(spot.offcut_id, new.id)
+        self.t.attach_program(new.id, name, moved, report)
+        self.t.add_checklist(new.id, cfg.trello.checklist_name, cfg.trello.checklist)
+        self.t.add_checklist(new.id, cfg.trello.machine_checklist_name, cfg.trello.machine_checklist)
+        if spot.offcut_id is None:
+            self.t.add_checklist(new.id, cfg.trello.offcut_checklist, [cfg.trello.offcut_item], checked=True)
+        reg = self.s.store.sheet_cards()
+        reg[new.id]["cuttable"] = True
+        self.s.store._write_sheets(reg)
+        self.t.move(card.id, self.targets["part_nested"])
+        where = f"offcut #{number}" if number else "an offcut" if spot.offcut_id else f"a new {stock} sheet"
+        self.t.comment(card.id, f"Placed on {where}: {new.url} ({label}). Its card has {att.name} moved there, "
+                                "checked; review it like any sheet.")
+        log.info("own program %s on card %s placed as %s on %s", att.name, card.id, label, spot.offcut_id or "a new sheet")
+
+    def _own_label(self) -> str:
+        f = self.s.store.offcuts_file.with_name("own_programs.json")
+        try:
+            last = int(json.loads(f.read_text(encoding="utf-8"))["last"])
+        except (OSError, ValueError, KeyError, TypeError):
+            last = 0
+        f.parent.mkdir(parents=True, exist_ok=True)
+        write_atomic(f, (json.dumps({"last": last + 1}) + "\n").encode("utf-8"))
+        return f"H{last + 1}"
+
+    def _retire_own(self, part_card: str, why: str) -> None:
+        """An own program's open sheet card is replaced: archived, its offcut free again."""
+        for card_id, info in self.s.store.sheet_cards().items():
+            if info.get("own") and part_card in info.get("parts", []) and not info.get("cut") \
+                    and not info.get("archived"):
+                self.t.comment(card_id, f"Replaced: {why}.")
+                self.t.archive(card_id)
+                self.offcuts.release_all([card_id])
+                self.s.store.retire_sheet(card_id)
+                sheets = self.s.store.sheet_cards()
+                sheets[card_id]["archived"] = True
+                self.s.store._write_sheets(sheets)
+
+    def _own_after_cut(self, card: Card, info: Dict) -> None:
+        """An own program's card went to Cut: its cut is taken out of the offcut it was on (like a hand cut, the
+        room either side kept), or the rest of the new sheet becomes an offcut if its Offcut box is ticked."""
+        if info.get("offcut_done") or not info.get("cuttable"):
+            return
+        cfg, own = self.cfg, info["own"]
+        label = info.get("label") or info.get("run")
+        cut = tuple(own["cut_own"])
+        turned = bool(info.get("turned"))
+        last = {"label": label, "stretch": [cut[1], cut[3]], "turned": turned}
+        offcut_id = info.get("offcut_id")
+        if offcut_id:
+            piece = self.offcuts.get(offcut_id)
+            if piece is None:
+                return                                # its card was archived: the piece is gone
+            piece["reserved_by"] = None
+            self._apply_hand_cuts(piece, [cut], record=False)
+            piece["last"] = last
+            free = self._free_after([tuple(s) for s in piece["used"]])
+            rooms = compact(piece["beside"])
+            if free < cfg.nest.offcut_min_in and not rooms:
+                self.t.comment(offcut_id, f"Used up: {label} ({own['program']}) was cut from it.")
+                self.t.archive(offcut_id)
+                self.offcuts.remove(offcut_id)
+            else:
+                self.offcuts.put(offcut_id, piece)
+                self.t.update_card(offcut_id, *self._offcut_card_text(piece))
+                self.t.comment(offcut_id, f"{label} ({own['program']}) was cut from it. "
+                               + (f"{free:.0f} in free now" if free >= cfg.nest.offcut_min_in else "No free stretch now")
+                               + (", plus room beside the cuts for small parts." if rooms else "."))
+        else:
+            keep = [c.done for c in card.checks if c.checklist == cfg.trello.offcut_checklist]
+            if not any(keep):
+                return
+            piece = {"material": info["material"], "thickness_in": info["thickness_in"], "used": [], "beside": [],
+                     "last": last, "reserved_by": None}
+            self._apply_hand_cuts(piece, [cut], record=False)
+            free = self._free_after([tuple(s) for s in piece["used"]])
+            if free < cfg.nest.offcut_min_in and not piece["beside"]:
+                return
+            piece["number"] = self.offcuts.next_number()
+            new = self.t.create_card("offcuts", *self._offcut_card_text(piece))
+            piece["url"] = new.url
+            self.offcuts.put(new.id, piece)
+            n = piece["number"]
+            self.t.comment(card.id, f"The rest of the sheet is offcut #{n}: {new.url}. Write #{n} on it before it "
+                                    "goes on the rack.")
+        sheets = self.s.store.sheet_cards()
+        sheets.get(card.id, {})["offcut_done"] = True
+        self.s.store._write_sheets(sheets)
 
     # ------------------------------------------------------------ sheet options
     def sheet_options(self) -> None:

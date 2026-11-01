@@ -32,10 +32,13 @@ def _minutes(seconds: Optional[float]) -> Optional[str]:
 
 
 def _clamp_edges(job: Job) -> str:
+    return clamp_edges(job.fixture.clamp_zones_in, job.sheet.width_in)
+
+
+def clamp_edges(zones, width: float) -> str:
     """Which edges the clamp strips are on, from the clamp zones (X across the sheet, Y along it)."""
-    width = job.sheet.width_in
     edges = []
-    for x0, y0, x1, y1 in job.fixture.clamp_zones_in:
+    for x0, y0, x1, y1 in zones:
         if x0 <= 0 and x1 < width:
             edges.append("left")
         elif x1 >= width and x0 > 0:
@@ -181,6 +184,30 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
             details.append(f"Face program: lowest Z {vs.face.check.guard.min_z_in:.4f}in, "
                            f"{s.thickness_in - face.depth_in:.4f} asked.")
     return "\n".join(lines + ([""] + details if details else []))
+
+
+def own_program_description(*, program: str, placed: str, part: str, part_url: str, stock: str, cutter_in: float,
+                            clamps: str, spot, lowest_z: Optional[float]) -> str:
+    """The card for someone's own program that AutoCAM placed (own_programs.py)."""
+    x0, y0, x1, y1 = spot.cut_loaded
+    return "\n".join([
+        "LOAD",
+        stock,
+        f"Cutter: the one {program} was made for (it's checked as up to {cutter_in:g} in across). Clamps: {clamps}.",
+        "",
+        "RUN",
+        f"Program: {placed}. It's {program} moved so its zero is the piece's front-left corner: zero X/Y there, as for "
+        "AutoCAM's sheets, and Z from the fixed tool setter (Z0 = spoilboard).",
+        f"It cuts {x0:.1f} to {x1:.1f} in across and {y0:.1f} to {y1:.1f} in along the piece as loaded (from its "
+        "left edge and the front).",
+        f"Or run {program} itself: zero X/Y at the piece's front-left corner, move to X {spot.dx:.4f} Y "
+        f"{spot.dy:.4f}, and zero X/Y again there.",
+        "",
+        f"{part} ({part_url}) was CAM'd by hand: AutoCAM only placed it and checked the moved program"
+        + (f" (lowest Z {lowest_z:.4f}, clear of the clamps)" if lowest_z is not None else "")
+        + ". Check the toolpaths yourself before ticking Review.",
+        f"Stock not there? Move {part} back to Ready for CAM: it gets another spot and this card is replaced.",
+    ])
 
 
 def sheet_use(s) -> Optional[str]:

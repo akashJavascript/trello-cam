@@ -203,6 +203,7 @@ class HandCuts:
     can be attached with a "Zeroed at:" line (handprograms.py)."""
     programs: bool = True        # read attached programs at all
     cutter_in: float = 0.25      # the cutter's diameter when the card has no Cutter: line
+    place_programs: bool = True  # a part card with its own .tap: AutoCAM picks the spot (own_programs.py)
 
 
 @dataclass(frozen=True)
@@ -736,7 +737,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
     hand_cuts = HandCuts()
     if "hand_cuts" in top.data:
         t = top.table("hand_cuts")
-        hand_cuts = HandCuts(programs=t.boolean("programs"), cutter_in=t.number("cutter_in", positive=True))
+        hand_cuts = HandCuts(programs=t.boolean("programs"), cutter_in=t.number("cutter_in", positive=True),
+                             place_programs=t.boolean("place_programs"))
         t.finish()
 
     t = top.table("paths")

@@ -101,6 +101,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   program goes" on a sheet card moves it like "isn't on the rack" but keeps the offcut. Tested offline (M3 section 9).
   Since 2026-11-01, optionally: the .tap that cut it attached, with "Zeroed at: 10 along, 5 across"; the cut is
   worked out from the program. Tested offline.
+- **Own programs placed by AutoCAM** (2026-11-01, option 3): a card in Ready for CAM with someone's .tap (Material,
+  Thickness lines) gets a spot on an offcut or a new sheet, a copy of the program moved there and checked, and a card
+  in Sheet review; its cut is recorded at Cut. Tested offline (`docs/manual-tests.md` → M3 section 9, row 11).
 - **Tabs:** on by default, counts per contour, placed at points on straight edges clear of corners,
   triangular from the template. Work in Fusion (test jobs, r018 S1); none cut yet (M3 section 10).
 - **Board:** "Cut the whole sheet without stopping" on a 2+ part sheet.

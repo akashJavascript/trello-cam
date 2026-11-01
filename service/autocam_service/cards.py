@@ -49,6 +49,9 @@ already going), on its own: an offcut or a new sheet, not a sheet waiting in She
 Labels, if needed: {smoked} for smoked polycarbonate, {tool} to force the 1/8 in endmill, {face} for a clean
 top (it's skimmed {face_depth} in off the top, in a program run before the sheet's).
 No Onshape? Attach a .step file and add a line like Material: 6061 (or 5052, PC).
+CAM'd it yourself? Attach your .tap instead, with lines like Material: 6061 and Thickness: 3/16 (and Cutter: 1/2
+if it's over 1/4 in). AutoCAM picks it a spot on an offcut or a new sheet, moves the program there and puts it in
+Sheet review: zero X/Y at the piece's front-left corner like any sheet. Its Z0 must be the spoilboard.
 
 Offcuts: each one has a number (#4); write it on the piece when it goes on the rack. If a sheet card names an
 offcut that isn't there, tick "The offcut isn't on the rack" under Stock on that card. To add a full-width

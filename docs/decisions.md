@@ -802,3 +802,25 @@ carry programs the same way. Each attachment is downloaded once (cached) and rec
 works and stays the fallback. Not done (for later): WinCNC's machine coordinates instead of a tape (needs the corner
 stop, or a second reading at the piece's corner), and AutoCAM choosing the spot for a program (option 3).
 
+## 2026-11-01: AutoCAM places someone's own program (option 3, the user's choice)
+
+A card in Ready for CAM with a .tap attached instead of an Onshape link or STEP file, plus `Material:` and
+`Thickness:` lines (`Cutter:` if it's over 1/4 in), is a part someone CAM'd themselves. AutoCAM doesn't CAM it and
+starts no Fusion run (`own_programs.py`, runner `own_programs`; `[hand_cuts] place_programs` switches it off):
+- **The spot:** the program's footprint (what its cutter covers below the stock top) can't be turned, so it goes as
+  it is: the smallest room beside earlier cuts or free stretch on an offcut of that stock that it fits, the way round
+  the offcut was last cut if it can (a scrap never turns), else a new sheet's front-left corner. It keeps half the part
+  spacing (0.25 in) inside the nest region: a footprint right at the region's edge touches the clamp strip.
+- **The program on the card is a copy moved there:** every X/Y shifted so its zero is the piece's front-left corner,
+  like AutoCAM's own sheets (not G53 lines, not a G4 dwell's X; arc centers are relative). The copy gets the sheet
+  checks at its real spot: Z floor (so Z0 must be the spoilboard; a program zeroed on top of the stock is sent back
+  saying how to fix it in Fusion), clamps, reach, rapids, allowed codes. The card also says how to run the original
+  instead (zero at the corner, move to the offset, zero again): the operator never needs absolute positions.
+- **The card** goes to Sheet review with the Review and At the machine checklists (and Offcut on a new sheet), the part
+  card to On a sheet. Labels are H1, H2, ... Moving the part card back to Ready for CAM replaces the card (the way to
+  get another spot if the offcut isn't on the rack). No Options or Stock checklist on these cards.
+- **At Cut** the cut is taken out of the offcut like a hand cut (the room either side kept; not listed as "Cut by
+  hand"), or the rest of a new sheet becomes an offcut if its box is ticked; the part card follows to Cut.
+- Not done: no preview picture or machining time on the card, one program per card, not counted in the season's
+  stock tally, and AutoCAM's nested parts don't share the piece with it in the same run.
+

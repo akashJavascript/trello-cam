@@ -348,6 +348,8 @@ season_start = "09-01"          # the stock tally counts sheets cut since this d
 programs = true                 # read .tap files attached to offcut cards, with a "Zeroed at:" line (the user's
                                 # choice, 2026-11-01: optional, beside the typed line)
 cutter_in = 0.25                # the cutter's diameter when the card has no "Cutter:" line (covers 4 mm, 1/8, 6 mm)
+place_programs = true           # a card in Ready for CAM with someone's own .tap (no part): AutoCAM picks the spot,
+                                # moves the program there and puts it on a card in Sheet review (option 3, 2026-11-01)
 
 [tabs]                          # tabs on the outlines of parts whose "Hold it in with tabs" box is ticked
 default = true                  # the box starts ticked on new part cards (the user's choice, 2026-10-03)
