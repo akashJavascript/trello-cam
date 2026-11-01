@@ -39,6 +39,7 @@ TRELLO_TARGETS = ("part_nested", "part_rejected", "part_deferred", "part_cut", "
 TRELLO_CARDS = ("system",)
 NEVER_AUTOMATED = "ready_to_cut"
 TRELLO_FREE_ATTACHMENT_MB = 10
+ENTERPRISE_CALLS_PER_YEAR = 10000   # Onshape: shared by the whole enterprise (runs and the panel are a share)
 # The guard only understands autocam_core.tapguard.SAFE_G / SAFE_M; allowlists must stay inside them.
 REQUIRED_G = frozenset({0, 1, 20, 53, 90})
 REQUIRED_M = frozenset({0, 3, 5})
@@ -219,6 +220,23 @@ class HandCuts:
 
 
 @dataclass(frozen=True)
+class Panel:
+    """The Onshape panel ("Send to AutoCAM", panel/): a page in Onshape's right panel that makes part cards. This
+    service serves it on 127.0.0.1:port; a Cloudflare tunnel (tunnel_dir) makes it public_url."""
+    enabled: bool = False
+    port: int = 8770
+    public_url: str = ""
+    tunnel_dir: str = ""                 # cloudflared.exe and config.yml ("": no tunnel started by the service)
+    onshape_calls_per_day: int = 40      # the panel's own calls, counted apart from runs' (ledger run_id "panel")
+    onshape_calls_per_year: int = 1500
+    parts_cache_s: int = 600             # a Part Studio's parts list is read again after this long (or on Refresh)
+    assembly_cache_s: int = 1800         # the document's assemblies (for quantities)
+    max_assemblies: int = 4              # quantities are counted in at most this many assemblies of the document
+    board_cache_s: int = 30              # the Trello lists read for each part's status
+    sends_per_minute: int = 20
+
+
+@dataclass(frozen=True)
 class Face:
     """The "Face" label: that part's top skimmed clean, in a FACE program run before the sheet's own (core
     0.14.0). Its tool is identified by GUID only, like every tool, and must be the face template's."""
@@ -341,6 +359,7 @@ class Config:
     face: Optional[Face] = None
     hand_cuts: HandCuts = HandCuts()
     fit: Fit = Fit()
+    panel: Panel = Panel()
 
     def stock_types(self) -> List[Tuple[Material, float]]:
         return [(m, t) for m in self.materials.values() for t in m.thicknesses_in]
@@ -762,6 +781,20 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                              place_programs=t.boolean("place_programs"))
         t.finish()
 
+    panel = Panel()
+    if "panel" in top.data:
+        t = top.table("panel")
+        panel = Panel(enabled=t.boolean("enabled"), port=t.integer("port", minimum=1024),
+                      public_url=t.string("public_url", default=""), tunnel_dir=t.string("tunnel_dir", default=""),
+                      onshape_calls_per_day=t.integer("onshape_calls_per_day", minimum=0),
+                      onshape_calls_per_year=t.integer("onshape_calls_per_year", minimum=0),
+                      parts_cache_s=t.integer("parts_cache_s", minimum=0),
+                      assembly_cache_s=t.integer("assembly_cache_s", minimum=0),
+                      max_assemblies=t.integer("max_assemblies", minimum=0),
+                      board_cache_s=t.integer("board_cache_s", minimum=0),
+                      sends_per_minute=t.integer("sends_per_minute", minimum=1))
+        t.finish()
+
     t = top.table("paths")
     paths = Paths(**{k: root / t.string(k, required=True) for k in ("queue", "cache", "state", "logs")})
     t.finish()
@@ -777,7 +810,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         op_tags=op_tags, templates=MappingProxyType(templates), labels=labels, onshape=onshape,
         trello=trello, fusion=fusion, tapguard=tapguard, fusion_team=fusion_team, status=status, paths=paths,
         placeholders=tuple(_placeholders(data)), warnings=(), tabs=tabs, face=face, hand_cuts=hand_cuts,
-        fit=fit,
+        fit=fit, panel=panel,
     )
     warnings: List[str] = []
     _cross_check(cfg, data, errors, warnings)
@@ -1006,6 +1039,14 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
             e(f"onshape.material_map.{name}: no material {key!r}")
     if cfg.onshape.per_run_max_calls > cfg.onshape.yearly_cap_calls:
         e("onshape.per_run_max_calls: larger than yearly_cap_calls")
+    p = cfg.panel
+    if p.onshape_calls_per_day > p.onshape_calls_per_year:
+        e("panel.onshape_calls_per_day: larger than onshape_calls_per_year")
+    if p.enabled and p.public_url and not p.public_url.startswith("https://"):
+        e("panel.public_url: must start with https:// (Onshape only loads panels over HTTPS)")
+    if cfg.onshape.yearly_cap_calls + p.onshape_calls_per_year > ENTERPRISE_CALLS_PER_YEAR:
+        e(f"onshape.yearly_cap_calls + panel.onshape_calls_per_year: more than the enterprise's "
+          f"{ENTERPRISE_CALLS_PER_YEAR} calls a year")
 
     # Trello: automation never moves anything to Ready to cut (decision 8).
     if cfg.trello.attachment_limit_mb > TRELLO_FREE_ATTACHMENT_MB:

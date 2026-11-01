@@ -86,6 +86,11 @@ class Tracker(abc.ABC):
     @abc.abstractmethod
     def download(self, attachment: Attachment) -> bytes: ...
 
+    def last_comment(self, card_id: str) -> Optional[str]:
+        """The card's newest comment (the Onshape panel shows why a card was sent back). None: no comments, or
+        this tracker can't say."""
+        return None
+
     # ---- writes (checked here, implemented by adapters)
     def move(self, card_id: str, list_key: str) -> None:
         self._refuse_ready_to_cut(list_key)
@@ -135,6 +140,10 @@ class Tracker(abc.ABC):
     def add_label(self, card_id: str, name: str) -> None:
         """Put the board's label with this name on the card (made if the board doesn't have it)."""
         self._add_label(card_id, name)
+
+    def remove_label(self, card_id: str, name: str) -> None:
+        """Take the label with this name (any case and spacing) off the card, if it's there."""
+        self._remove_label(card_id, name)
 
     def set_cover(self, card_id: str, attachment_id: str) -> None:
         """Show an attached image on the card's front (the nest preview on sheet cards)."""
@@ -186,3 +195,6 @@ class Tracker(abc.ABC):
 
     @abc.abstractmethod
     def _add_label(self, card_id: str, name: str) -> None: ...
+
+    def _remove_label(self, card_id: str, name: str) -> None:
+        raise NotImplementedError(f"{type(self).__name__} can't remove labels")

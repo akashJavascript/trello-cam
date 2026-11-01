@@ -32,9 +32,13 @@ def _norm(name: str) -> str:
     return " ".join((name or "").split()).casefold()
 
 
-def pick_part(parts: List[Dict[str, Any]], name: str) -> Dict[str, Any]:
-    """The card's part: same name (ignoring case and extra spaces). A Part Studio with one solid part needs no
-    name match at all."""
+def pick_part(parts: List[Dict[str, Any]], name: str, part_id: Optional[str] = None) -> Dict[str, Any]:
+    """The card's part: the one with its Part ID line's id, else the same name (ignoring case and extra spaces).
+    A Part Studio with one solid part needs no name match at all."""
+    if part_id:
+        by_id = [p for p in parts if p.get("partId") == part_id]
+        if by_id:
+            return by_id[0]                          # renamed since the card was made: still the same part
     solids = [p for p in parts if p.get("bodyType") in (None, "solid")]
     exact = [p for p in parts if p.get("name") == name]
     loose = exact or [p for p in parts if _norm(p.get("name", "")) == _norm(name)]
@@ -158,8 +162,8 @@ class Exporter:
         self.cache.put_parts(link, data)
         return data
 
-    def find_part(self, link: OnshapeLink, name: str) -> Dict[str, Any]:
-        part = pick_part(self.parts_list(link), name)
+    def find_part(self, link: OnshapeLink, name: str, part_id: Optional[str] = None) -> Dict[str, Any]:
+        part = pick_part(self.parts_list(link), name, part_id)
         body = part.get("bodyType")
         if body not in (None, "solid"):
             raise ExportError(f"'{name}' is a {body} body, not a solid part")
@@ -167,7 +171,7 @@ class Exporter:
             raise ExportError(f"Onshape returned no partId for '{name}'")
         return part
 
-    def is_cached(self, link: OnshapeLink, name: str) -> bool:
+    def is_cached(self, link: OnshapeLink, name: str, part_id: Optional[str] = None) -> bool:
         """Without spending a call: workspace links aren't pinned yet, so they count as not cached."""
         if link.is_workspace and not link.mid:
             return False
@@ -175,19 +179,20 @@ class Exporter:
         if parts is None:
             return False
         try:
-            part = pick_part(parts, name)
+            part = pick_part(parts, name, part_id)
         except ExportError:
             return False
         return bool(part.get("partId")) and self.cache.has_step(link, part["partId"])
 
-    def start(self, link: OnshapeLink, name: str, part_key: Optional[str] = None) -> bool:
+    def start(self, link: OnshapeLink, name: str, part_key: Optional[str] = None,
+              part_id: Optional[str] = None) -> bool:
         """Get the part's STEP export going (nothing to do when it's cached or already running) without
         waiting for it. A problem is kept for export() to raise, so it costs no second call. False when calls
         have to stop for this run (budget, quota, rate limit): start no more, and every later export that needs
         a call raises the same (a cached part still comes from the cache)."""
         try:
             pinned = self.resolve(link)
-            pid = self.find_part(pinned, name)["partId"]
+            pid = self.find_part(pinned, name, part_id)["partId"]
             if not self.cache.has_step(pinned, pid) and self.cache.translation(pinned, pid) is None:
                 self._translate(pinned, name, pid, part_key)
         except Exception as e:  # noqa: BLE001 - export() raises it, where the run handles each kind
@@ -209,12 +214,13 @@ class Exporter:
         self.cache.put_translation(link, pid, tid, self.clock())
         return tid
 
-    def export(self, link: OnshapeLink, name: str, part_key: Optional[str] = None) -> ExportedPart:
+    def export(self, link: OnshapeLink, name: str, part_key: Optional[str] = None,
+               part_id: Optional[str] = None) -> ExportedPart:
         failed = self._failed.get((link.studio, name))
         if failed is not None:
             raise failed
         link = self.resolve(link)
-        part = self.find_part(link, name)
+        part = self.find_part(link, name, part_id)
         pid = part["partId"]
         material = (part.get("material") or {}).get("displayName")
         if self.cache.has_step(link, pid):

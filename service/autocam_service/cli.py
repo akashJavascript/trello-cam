@@ -15,6 +15,7 @@
 
 import argparse
 import json
+import logging
 import re
 import sys
 from pathlib import Path
@@ -168,7 +169,7 @@ def config_check(path: Path, env_file: Optional[Path]) -> int:
 
 def service(cfg, env_file: Path, command: str, offline: bool, verbose: bool, now: bool = False,
             config_path: Optional[Path] = None, env_arg: Optional[Path] = None) -> int:
-    from .app import build_services, run_forever, setup_logging
+    from .app import build_services, run_forever, setup_logging, start_panel
     from .restart import CodeWatch, new_code_loads
     from .runner import Runner
     setup_logging(cfg, verbose)
@@ -178,6 +179,10 @@ def service(cfg, env_file: Path, command: str, offline: bool, verbose: bool, now
         config_path = config_path or DEFAULT_CONFIG
         code = CodeWatch(cfg.root, cfg.paths.state / "restart_service", extra=[Path(config_path), env_file],
                          validate=lambda: new_code_loads(config_path, env_arg))
+        try:
+            start_panel(cfg, env_file, services)
+        except Exception:  # noqa: BLE001 - the panel is extra; the service runs without it
+            logging.getLogger("autocam").exception("panel: couldn't start")
         try:
             return run_forever(runner, cfg.trello.poll_interval_s, code)
         except KeyboardInterrupt:
@@ -239,9 +244,12 @@ def ledger(cfg, action: str) -> int:
         print("latch cleared" if led.reset_latch() else "no latch was set")
         return 0
     latch = led.latched()
-    print(f"Onshape calls this month: {led.month_count()} (soft limit {cfg.onshape.monthly_soft_calls})")
-    print(f"Onshape calls this budget year: {led.year_count(cfg.onshape.budget_year_start)} "
+    print(f"Onshape calls this month (runs): {led.month_count(panel=False)} (soft limit {cfg.onshape.monthly_soft_calls})")
+    print(f"Onshape calls this budget year (runs): {led.year_count(cfg.onshape.budget_year_start, panel=False)} "
           f"(cap {cfg.onshape.yearly_cap_calls})")
+    print(f"Onshape panel calls: today {led.day_count(panel=True)} (limit {cfg.panel.onshape_calls_per_day}), "
+          f"this budget year {led.year_count(cfg.onshape.budget_year_start, panel=True)} "
+          f"(limit {cfg.panel.onshape_calls_per_year})")
     print(f"402 latch: {latch['reason'] if latch else 'not set'}")
     return 0
 

@@ -28,6 +28,8 @@ schema = 1
 "onshape.yearly_cap_calls" = "plan: this service's share of the enterprise's 10,000 calls/year"
 "onshape.monthly_soft_calls" = "plan: warn above this many calls in a month"
 "onshape.budget_year_start" = "plan: when the enterprise's call year resets (MM-DD)"
+"panel.onshape_calls_per_day" = "a guess: about 10 Part Studios looked at a day, each read again after 10 minutes"
+"panel.onshape_calls_per_year" = "a share of the enterprise's 10,000 calls a year, beside runs' 1500"
 "fusion.params.setup.wcs_origin_boxPoint" = "the team's manual value; check it lands bottom front-left in the nest preview (M1.3)"
 "fusion.params.setup.stock_mode_value" = "fallback only; confirm the 'from solid' value if Setup.stockSolids fails"
 
@@ -373,6 +375,21 @@ min_per_contour = 2             # every tabbed outline and cutout gets at least 
 max_per_contour = 6             # don't fit: a tiny cutout gets none)
 at_points = true                # placed on straight edges clear of corners where possible (tabs.place_tabs);
                                 # false: Fusion spreads them evenly
+
+[panel]                         # the Onshape panel ("Send to AutoCAM", service/autocam_service/panel; docs/panel.md):
+                                # a page in a Part Studio's right panel that makes part cards (Phase 1, 2026-11-01)
+enabled = true
+port = 8770                     # served on 127.0.0.1 only; the tunnel below makes it public_url
+public_url = "https://autocam.team5940.org"
+tunnel_dir = "C:/dev/autocam-tunnel"   # cloudflared.exe + config.yml + the tunnel's credentials (not in the repo);
+                                # the service starts the tunnel and keeps it running ("" = it doesn't)
+onshape_calls_per_day = 40      # the panel's own Onshape calls (parts lists, assembly counts, setting a material),
+onshape_calls_per_year = 1500   # counted apart from runs' yearly_cap_calls; both are shares of the enterprise's 10,000
+parts_cache_s = 600             # a Part Studio's parts list is read again after this long (or on Refresh)
+assembly_cache_s = 1800         # the document's assemblies, for "how many does the robot use"
+max_assemblies = 4              # quantities are counted in at most this many assemblies of the document
+board_cache_s = 30              # Trello lists read for each part's status
+sends_per_minute = 20
 
 [paths]                         # relative to the repo root
 queue = "queue"

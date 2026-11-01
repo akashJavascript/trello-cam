@@ -28,6 +28,9 @@ class DryRunTracker(Tracker):
     def download(self, attachment: Attachment) -> bytes:
         return self.inner.download(attachment)
 
+    def last_comment(self, card_id: str) -> Optional[str]:
+        return self.inner.last_comment(card_id)
+
     def _move(self, card_id, list_key):
         self.intended.append(("move", card_id, list_key))
 
@@ -68,3 +71,6 @@ class DryRunTracker(Tracker):
 
     def _add_label(self, card_id, name):
         self.intended.append(("add_label", card_id, name))
+
+    def _remove_label(self, card_id, name):
+        self.intended.append(("remove_label", card_id, name))

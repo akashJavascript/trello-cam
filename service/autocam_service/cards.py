@@ -7,6 +7,8 @@
 - Labels: `Smoked` (smoked polycarbonate), `Tool 1/8` (force the 1/8 in endmill), `Face` (skim its top clean
   first, in a program of its own).
 - Fallback: a .step attachment instead of a link, plus a `Material: ...` line.
+- Optional: `Part ID: JHD`, Onshape's id for the part (the Onshape panel writes it), so a part renamed after the
+  card was made is still found; a `Material:` line for a part with no material in Onshape.
 Anything wrong sends the card to Needs fixing with a short comment saying what to fix.
 """
 
@@ -25,6 +27,7 @@ QTY_LINE_RES = (
 )
 TITLE_QTY_RE = re.compile(r"^(?P<name>.*?)[ \t]*\(?[x\u00d7][ \t]*(?P<qty>\d+)\)?[ \t]*$", re.IGNORECASE)
 MATERIAL_RE = re.compile(r"^[ \t>\-]*material[ \t]*[:=][ \t]*(.*?)[ \t]*$", re.IGNORECASE | re.MULTILINE)
+PART_ID_RE = re.compile(r"^[ \t>\-]*part[ \t]*id[ \t]*[:=][ \t]*([A-Za-z0-9_.+/=-]+)[ \t]*$", re.IGNORECASE | re.MULTILINE)
 STEP_SUFFIXES = (".step", ".stp")
 README_CARD = "How to add a part (read me)"
 TABS_HELP = {
@@ -90,6 +93,7 @@ class PartRequest:
     by_hand: bool = False                # "Nest this part" unticked: placed by hand (set by the runner)
     face: bool = False                   # the Face label: its top skimmed clean first
     fit: Optional[Tuple[str, float]] = None   # its Fit: line, ("hole", diameter) or ("outline", 0) (set by the runner)
+    part_id: Optional[str] = None        # a Part ID: line: Onshape's id for the part, found by it before its name
 
 
 @dataclass(frozen=True)
@@ -154,9 +158,13 @@ def parse_card(card: Card, smoked_label: str = "Smoked", tool_label: str = "Tool
             if not hint:
                 problems.append("A .step file needs a material. Add a line like Material: 6061.")
 
+    ids = sorted({v.strip() for v in PART_ID_RE.findall(plain)})
+    if len(ids) > 1:
+        problems.append(f"Two different Part ID lines ({', '.join(ids)}). Keep one.")
+
     labels = {l.strip().lower() for l in card.labels}
     if problems:
         return CardProblem(card, tuple(problems))
     return PartRequest(card=card, name=name, qty=qty, link=link, step_attachment=step, material_hint=hint,
                        smoked=smoked_label.lower() in labels, force_small_tool=tool_label.lower() in labels,
-                       face=face_label.strip().lower() in labels)
+                       face=face_label.strip().lower() in labels, part_id=ids[0] if ids and link else None)

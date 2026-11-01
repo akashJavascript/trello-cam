@@ -52,6 +52,10 @@ class FakeTracker(Tracker):
     def download(self, attachment: Attachment) -> bytes:
         return self.downloads[attachment.id]
 
+    def last_comment(self, card_id: str) -> Optional[str]:
+        said = self.comments_on(card_id)
+        return said[-1] if said else None
+
     # writes
     def _move(self, card_id: str, list_key: str) -> None:
         self.cards[card_id] = replace(self.cards[card_id], list_key=list_key)
@@ -115,6 +119,12 @@ class FakeTracker(Tracker):
         if name not in c.labels:
             self.cards[card_id] = replace(c, labels=c.labels + (name,))
         self.log.append(("label", card_id, name))
+
+    def _remove_label(self, card_id: str, name: str) -> None:
+        c = self.cards[card_id]
+        keep = tuple(l for l in c.labels if " ".join(l.lower().split()) != " ".join(name.lower().split()))
+        self.cards[card_id] = replace(c, labels=keep)
+        self.log.append(("unlabel", card_id, name))
 
     # test helpers
     def tick_all(self, card_id: str, name: str, done: bool = True) -> None:

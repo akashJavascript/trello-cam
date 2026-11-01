@@ -77,6 +77,15 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   elsewhere suspends it (one session per account); a separate account for the laptop would end that.
 
 ### Built, not yet seen on the machine or the real board
+- **The Onshape panel, Phase 1** (2026-11-01, `docs/panel.md`): "Send to AutoCAM" in a Part Studio's right panel
+  makes part cards in AutoCAM's format (Ready for CAM, or Drafts), with the quantity counted from the document's
+  assemblies, the options in one list, the material set in Onshape when it has none, and each part's status
+  (waiting, on a sheet with its preview, cut, sent back and why). Served by the service on 127.0.0.1:8770, public as
+  https://autocam.team5940.org through its own Cloudflare tunnel; its own Onshape call limits. Tested offline (an
+  e2e test sends a card through a whole run) and in a browser with fakes. Left: registering the extension in
+  Onshape (needs a team Onshape login), then confirming selection messages, the material write and assembly counts
+  on real documents. A `Part ID:` line (new, written by the panel, works on typed cards too) finds a part by its id
+  before its name.
 - **Fit series** (2026-11-01): a part card's `Fit: 1.125 hole` or `Fit: outline` line gets that feature cut 0.003 tight,
   with lap programs taking 0.001 more each, run one by one at the machine; the run that fit is ticked on the sheet card
   and the next series starts there. Holes over 1.5 in too (cut as cutouts: the slug comes out by hand, then the laps,

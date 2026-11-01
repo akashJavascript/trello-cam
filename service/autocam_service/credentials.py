@@ -14,6 +14,7 @@ from dotenv import dotenv_values
 GROUPS: Dict[str, tuple] = {
     "trello": ("TRELLO_API_KEY", "TRELLO_TOKEN"),
     "onshape": ("ONSHAPE_ACCESS_KEY", "ONSHAPE_SECRET_KEY"),
+    "panel": ("AUTOCAM_PANEL_KEY",),         # the Onshape panel's link carries it (panel/)
 }
 ALL_KEYS = tuple(k for keys in GROUPS.values() for k in keys)
 

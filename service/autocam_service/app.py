@@ -17,7 +17,7 @@ from .restart import EXIT_RESTART, CodeWatch
 from .onshape.cache import OnshapeCache
 from .onshape.client import OnshapeClient, RequestsTransport
 from .onshape.export import Exporter, PollSchedule
-from .onshape.ledger import Ledger
+from .onshape.ledger import PANEL_RUN, Ledger
 from .run_state import RunStore
 from .runner import Runner, Services
 from .tracker.dryrun import DryRunTracker
@@ -77,6 +77,40 @@ def build_services(cfg: Config, *, env_file: Optional[Path], dry_run: bool, offl
     # A dry run keeps its own run state and "d" run ids: it never touches a real run, and vice versa.
     store = RunStore(cfg.paths.state / "dryrun", prefix="d") if dry_run else RunStore(cfg.paths.state)
     return Services(cfg, tracker, Queue(cfg.paths.queue).ensure(), store, ledger, exporter_for)
+
+
+def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bool:
+    """The Onshape panel (panel/): its server, and its tunnel when [panel] tunnel_dir is set. Off unless [panel]
+    enabled and AUTOCAM_PANEL_KEY is in .env. True if it started."""
+    if not cfg.panel.enabled:
+        return False
+    creds = load_credentials(env_file)
+    if creds.missing("panel") or creds.missing("trello"):
+        log.warning("panel: AUTOCAM_PANEL_KEY (or the Trello keys) isn't in .env, so the Onshape panel is off")
+        return False
+    from .panel.api import Names, PanelApp
+    from .panel.board import PanelBoard
+    from .panel.onshape_reads import PanelOnshape
+    from .panel.server import Tunnel, start_server
+
+    def client_for(max_calls: int) -> OnshapeClient:
+        return OnshapeClient(base_url=cfg.onshape.base_url, access_key=creds.get("ONSHAPE_ACCESS_KEY"),
+                             secret_key=creds.get("ONSHAPE_SECRET_KEY"), ledger=services.ledger,
+                             transport=RequestsTransport(timeout_s=30.0), run_id=PANEL_RUN, max_calls=max_calls,
+                             retry_after_max_wait_s=5.0)
+
+    p = cfg.panel
+    onshape = PanelOnshape(ledger=services.ledger, client_for=None if creds.missing("onshape") else client_for,
+                           cache_root=cfg.paths.cache, calls_per_day=p.onshape_calls_per_day,
+                           calls_per_year=p.onshape_calls_per_year, year_start=cfg.onshape.budget_year_start,
+                           parts_cache_s=p.parts_cache_s, assembly_cache_s=p.assembly_cache_s,
+                           max_assemblies=p.max_assemblies)
+    board = PanelBoard(trello_tracker(cfg, env_file), cfg, services.store)
+    app = PanelApp(cfg, creds.get("AUTOCAM_PANEL_KEY"), onshape, board, Names(cfg.paths.state / "panel_users.json"))
+    start_server(app, p.port)
+    if p.tunnel_dir:
+        Tunnel(Path(p.tunnel_dir), cfg.paths.state, cfg.paths.logs).keep_running()
+    return True
 
 
 def disable_quick_edit() -> None:

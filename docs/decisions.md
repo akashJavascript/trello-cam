@@ -881,3 +881,15 @@ now reach the stock bottom. `Fit:` lines read fractions and millimeters too (`1/
 Seen in Fusion (r038, a made-up 6 x 6 x 3/16 plate with a 2.0 in hole: no cached part has a round hole over 1.5 in):
 the program's cutout has its tabs, each lap opens the path 0.001 in, none has a tab, all to Z0.
 
+## 2026-11-01: the Onshape panel, Phase 1 (the user's choices)
+
+A "Send to AutoCAM" panel in Onshape, built into the service instead of the teammate's Node tool (its card format,
+call budget and temporary tunnel didn't fit). Choices: cards go straight to Ready for CAM, with a Send to Drafts
+switch; the quantity comes from the assemblies but stays changeable; no spares box; every option in one list; the
+student picks a missing material and AutoCAM sets it in Onshape; the style is BreadCompetition's (light only, since
+it sits in Onshape). Who sent a card: a name typed once, not Onshape sign-in (OAuth inside Onshape's frame is a day
+of fiddly work for little gain). Hosting: its own named Cloudflare tunnel on team5940.org (`autocam`), run on the
+laptop's Windows side by the service, apart from BreadCompetition's. The panel's Onshape calls have their own daily
+and yearly limits, counted apart from runs', so it can never use up a run's calls. A second card for a part that
+has one going is refused; its quantity can be changed instead.
+

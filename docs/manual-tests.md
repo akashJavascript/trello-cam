@@ -481,3 +481,18 @@ started by hand first, or the task's copy will say it's already running. Undo wi
 | 3 | The add-in starts with Fusion: `queue\worker_heartbeat.json` updates and the System card says "Fusion: running" | |
 | 4 | Reboot the PC (after someone logs in, or with automatic sign-in): the same, with no other steps | |
 | 5 | A card dragged into Ready for CAM after the reboot is nested without anyone touching the PC | |
+
+## The Onshape panel (`docs/panel.md`)
+
+After registering the extension in Onshape:
+
+| # | Check | Expect |
+|---|---|---|
+| 1 | Open a Part Studio's right panel, pick AutoCAM | The parts list, each with its status; one Onshape call in the ledger (`run_id` panel) |
+| 2 | Click a part in the CAD | It opens in the panel. If not, read "Onshape selection message" in `logs\service.log` and fix `selectedPart` in `panel.js` |
+| 3 | A part used in an assembly | Quantity starts at the assembly's count, "from <assembly> (n)" |
+| 4 | Send to Drafts | A card in Drafts with the link, Qty, Part ID and "Sent from the Onshape panel by <name>"; Nest and Tabs boxes as set. Archive it after |
+| 5 | A part with no material: pick 6061, send to Drafts | Onshape shows 6061 on the part, or the panel says it couldn't and the card has `Material: 6061` |
+| 6 | Send the same part again | Refused; Change qty works |
+| 7 | Open the panel from a document the team account can't see | "AutoCAM can't open this document" |
+

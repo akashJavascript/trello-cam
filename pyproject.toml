@@ -24,6 +24,9 @@ autocam = "autocam_service.cli:main"
 [tool.setuptools.packages.find]
 where = ["core", "service"]
 
+[tool.setuptools.package-data]
+autocam_service = ["panel/static/*"]   # the Onshape panel's page
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["core", "service", "fusion/autocam_addin"]

@@ -29,7 +29,7 @@ def test_missing_file_and_empty_values_count_as_missing(tmp_path):
     env = write_env(tmp_path, "ONSHAPE_ACCESS_KEY=\n")
     assert not load_credentials(env, environ={}).has("ONSHAPE_ACCESS_KEY")
     assert load_credentials(tmp_path / "nope.env", environ={}).missing() == [
-        "TRELLO_API_KEY", "TRELLO_TOKEN", "ONSHAPE_ACCESS_KEY", "ONSHAPE_SECRET_KEY"]
+        "TRELLO_API_KEY", "TRELLO_TOKEN", "ONSHAPE_ACCESS_KEY", "ONSHAPE_SECRET_KEY", "AUTOCAM_PANEL_KEY"]
 
 
 def test_require_names_missing_keys_without_values(tmp_path):

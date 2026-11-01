@@ -134,6 +134,15 @@ class TrelloTracker(Tracker):
     def download(self, attachment: Attachment) -> bytes:
         return self.http.download(attachment.url)
 
+    def last_comment(self, card_id: str) -> Optional[str]:
+        actions = self.http.call("GET", f"/cards/{card_id}/actions", {"filter": "commentCard", "limit": "1",
+                                                                     "fields": "data"})
+        for a in actions or []:
+            text = ((a.get("data") or {}).get("text") or "").strip()
+            if text:
+                return text
+        return None
+
     # writes
     def _move(self, card_id: str, list_key: str) -> None:
         self.http.call("PUT", f"/cards/{card_id}", {"idList": self._list_id(list_key)})
@@ -188,6 +197,13 @@ class TrelloTracker(Tracker):
             "POST", "/labels", {"name": name, "color": "red", "idBoard": board["idBoard"]})["id"]
         if label not in (board.get("idLabels") or []):
             self.http.call("POST", f"/cards/{card_id}/idLabels", {"value": label})
+
+    def _remove_label(self, card_id: str, name: str) -> None:
+        def norm(s: str) -> str:
+            return " ".join(s.lower().split())
+        for label in self.http.call("GET", f"/cards/{card_id}/labels", {"fields": "name"}) or []:
+            if norm(label.get("name") or "") == norm(name):
+                self.http.call("DELETE", f"/cards/{card_id}/idLabels/{label['id']}")
 
     # setup helpers
     def board_lists(self, board_id: str) -> List[Tuple[str, str]]:

@@ -180,8 +180,8 @@ class Runner:
             now=now, heartbeat=self.s.queue.read_heartbeat(), service_core=CORE_VERSION,
             queue_incoming=len(self.s.queue.pending()),
             queue_processing=len(list(self.s.queue.processing.glob("*.json"))),
-            month_calls=led.month_count(), month_soft=cfg.onshape.monthly_soft_calls,
-            year_calls=led.year_count(cfg.onshape.budget_year_start), year_cap=cfg.onshape.yearly_cap_calls,
+            month_calls=led.month_count(panel=False), month_soft=cfg.onshape.monthly_soft_calls,
+            year_calls=led.year_count(cfg.onshape.budget_year_start, panel=False), year_cap=cfg.onshape.yearly_cap_calls,
             latch=led.latched(), active_run=active.run_id if active else None, last_error=last_error,
             waiting_cards=self.waiting_count, next_run_in_s=self.watch.remaining_s(now), rush_cards=self.rush_count,
             season=self.season_text(now))
@@ -1255,8 +1255,8 @@ class Runner:
         exporter = self.s.exporter_for(run_id)
         requests, later = self._fit_budget(requests, exporter)
         estimate = self._estimate(requests, exporter)
-        decision = decide(estimate, month_used=self.s.ledger.month_count(),
-                          year_used=self.s.ledger.year_count(cfg.onshape.budget_year_start),
+        decision = decide(estimate, month_used=self.s.ledger.month_count(panel=False),
+                          year_used=self.s.ledger.year_count(cfg.onshape.budget_year_start, panel=False),
                           latched=self.s.ledger.latched() is not None, per_run_max=cfg.onshape.per_run_max_calls,
                           monthly_soft=cfg.onshape.monthly_soft_calls, yearly_cap=cfg.onshape.yearly_cap_calls)
         if decision.action == REFUSE and estimate > 0:
@@ -1274,7 +1274,7 @@ class Runner:
         # parts after the first usually need one status check each (Exporter.start keeps any problem for
         # _prepare to meet in order, as before).
         for req in requests:
-            if req.link is not None and not exporter.start(req.link, req.name):
+            if req.link is not None and not exporter.start(req.link, req.name, part_id=req.part_id):
                 break
 
         ready: List[ReadyPart] = []
@@ -1348,7 +1348,7 @@ class Runner:
         # Workspace links aren't pinned yet: count their pin call and assume nothing is cached.
         uncached_studios = sum(1 for link in studios.values() if link.is_workspace or exporter.cache.parts(link) is None)
         pins = sum(1 for link in studios.values() if link.is_workspace)
-        uncached_parts = sum(1 for r in linked if not exporter.is_cached(r.link, r.name))
+        uncached_parts = sum(1 for r in linked if not exporter.is_cached(r.link, r.name, r.part_id))
         return estimate_calls(uncached_parts, uncached_studios, self.cfg.onshape.calls_per_part_estimate) + pins
 
     def _fit_budget(self, requests: List[PartRequest], exporter: Exporter) -> Tuple[List[PartRequest], List[PartRequest]]:
@@ -1484,9 +1484,11 @@ class Runner:
     def _prepare(self, req: PartRequest, exporter: Exporter):
         """ReadyPart, or a problem string for the card."""
         if req.link is not None:
-            exported = exporter.export(req.link, req.name)
-            choice = resolve_material(exported.material, None, req.smoked, self.cfg.onshape.material_map,
-                                      self.cfg.materials)
+            exported = exporter.export(req.link, req.name, part_id=req.part_id)
+            # Onshape's material wins; a Material: line covers a part that has none there (the panel writes one
+            # when it couldn't set the material in Onshape)
+            choice = resolve_material(exported.material, req.material_hint, req.smoked,
+                                      self.cfg.onshape.material_map, self.cfg.materials)
             step_path, sha, part_id = exported.step_path, exported.step_sha256, exported.part_id
             mid = exported.microversion
         else:

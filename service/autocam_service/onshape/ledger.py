@@ -4,16 +4,21 @@ The enterprise shares 10,000 calls a year; only successful (2xx/3xx) calls count
 writes a `pending` line before it goes out and a `done` line after. A pending line with no done
 line (the service died mid-request) is counted as spent, so the count is never too low.
 A 402 from Onshape writes a latch file; every later call is refused until a human resets it.
+The Onshape panel's calls (run_id "panel") are counted apart from runs': each has its own limits in config.
 
 File format: one JSON object per line (append-only, fsync'd), in state/onshape_ledger.jsonl.
 """
 
 import json
 import os
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+
+PANEL_RUN = "panel"        # the run_id of every call the Onshape panel makes
+_WRITE = threading.Lock()   # the panel's threads and the service loop share one ledger file
 
 
 def utc_now() -> datetime:
@@ -47,6 +52,10 @@ class Ledger:
         self.clock = clock
 
     def _append(self, entry: Dict[str, Any]) -> None:
+        with _WRITE:
+            self._append_locked(entry)
+
+    def _append_locked(self, entry: Dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         torn = False
         if self.path.exists() and self.path.stat().st_size:
@@ -86,21 +95,29 @@ class Ledger:
                         continue  # a torn last line from a crash; its pending twin still counts
         return out
 
-    def billable_since(self, since: datetime) -> int:
+    def billable_since(self, since: datetime, panel: Optional[bool] = None) -> int:
+        """panel: None counts every call, True only the Onshape panel's, False only runs' (everything else)."""
         started: Dict[str, datetime] = {}
         billable: Dict[str, bool] = {}
         for e in self.entries():
             if e.get("phase") == "pending":
+                if panel is not None and (e.get("run_id") == PANEL_RUN) != panel:
+                    continue
                 started[e["id"]] = _parse(e["ts"])
             elif e.get("phase") == "done":
                 billable[e["id"]] = bool(e.get("billable"))
         return sum(1 for cid, ts in started.items() if ts >= since and billable.get(cid, True))
 
-    def month_count(self) -> int:
-        return self.billable_since(month_start(self.clock()))
+    def month_count(self, panel: Optional[bool] = None) -> int:
+        return self.billable_since(month_start(self.clock()), panel)
 
-    def year_count(self, year_start_mm_dd: str) -> int:
-        return self.billable_since(budget_year_start(self.clock(), year_start_mm_dd))
+    def year_count(self, year_start_mm_dd: str, panel: Optional[bool] = None) -> int:
+        return self.billable_since(budget_year_start(self.clock(), year_start_mm_dd), panel)
+
+    def day_count(self, panel: Optional[bool] = None) -> int:
+        """Since midnight UTC."""
+        now = self.clock().astimezone(timezone.utc)
+        return self.billable_since(now.replace(hour=0, minute=0, second=0, microsecond=0), panel)
 
     # ---- 402 latch
     def latched(self) -> Optional[Dict[str, Any]]:
