@@ -128,6 +128,14 @@ BAD_VARIANTS = [
     ("poly_template_on_t12", _set("templates", "poly_4mm", "tool", "t12_eighth_alu"),
      "polycarbonate never uses t12_eighth_alu"),
     ("default_tool_without_template", _delete("templates", "alu_4mm"), "no template uses t1_4mm_alu"),
+    # facing (the Face label)
+    ("face_too_deep", _set("face", "depth_in", 0.03), "face.depth_in: at most 0.02 in"),
+    ("face_tool_not_in_library", _set("face", "guid", "00000000-0000-0000-0000-000000000000"),
+     "face.guid: 00000000-0000-0000-0000-000000000000 is not in"),
+    ("face_tool_wrong_number", _set("face", "number", 3), "face.number: library says T2"),
+    ("face_tool_is_a_sheet_tool", _set("face", "guid", "e5dd75b2-ea23-4767-b10b-756a9444cc2e"),
+     "the face tool can't also be a sheet tool"),
+    ("face_label_like_another", _set("labels", "face", " rush "), "must all differ"),
     # structure and types
     ("unknown_key", _set("machine", "z_flor_in", 0.0), "machine.z_flor_in: unknown key"),
     ("unknown_section", _set("extras", {}), "extras: unknown key"),

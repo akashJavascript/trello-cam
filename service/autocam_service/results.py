@@ -3,6 +3,8 @@
 The service doesn't trust result.json's word that a .tap is safe: it re-runs the same guard, pause
 and cut-plan checks (autocam_core.sheetcheck) on the bytes it is about to upload, against its own
 copy of the job. It also checks that each part's numbers add up before a card is moved to Nested.
+A sheet's FACE program is checked the same way (check_face_program), and a sheet with parts that ask for
+facing is only cuttable with a FACE program that faces every one of their copies.
 """
 
 import hashlib
@@ -13,8 +15,21 @@ from typing import Dict, List, Optional, Tuple
 from autocam_core.hotfolder import Queue
 from autocam_core.schema import SchemaError
 from autocam_core.schema_job import Job
-from autocam_core.schema_result import Result, SheetResult, read_result
-from autocam_core.sheetcheck import SheetCheck, check_sheet_program
+from autocam_core.schema_result import ProgramResult, Result, SheetResult, read_result
+from autocam_core.sheetcheck import SheetCheck, check_face_program, check_sheet_program
+
+
+@dataclass(frozen=True)
+class VerifiedProgram:
+    """One of a sheet's other programs (the FACE program), re-checked like the sheet's own."""
+    program: ProgramResult
+    tap_bytes: Optional[bytes]
+    check: Optional[SheetCheck]
+    problems: Tuple[str, ...]
+
+    @property
+    def ok(self) -> bool:
+        return self.tap_bytes is not None and self.check is not None and self.check.passed and not self.problems
 
 
 @dataclass(frozen=True)
@@ -23,10 +38,16 @@ class VerifiedSheet:
     tap_bytes: Optional[bytes]
     check: Optional[SheetCheck]
     problems: Tuple[str, ...]           # why it can't be offered for cutting (empty if it can)
+    programs: Tuple[VerifiedProgram, ...] = ()   # run besides the main one (the FACE program, first)
 
     @property
     def cuttable(self) -> bool:
-        return self.tap_bytes is not None and self.check is not None and self.check.passed and not self.problems
+        return (self.tap_bytes is not None and self.check is not None and self.check.passed and not self.problems
+                and all(p.ok for p in self.programs))
+
+    @property
+    def face(self) -> Optional[VerifiedProgram]:
+        return next((p for p in self.programs if p.program.kind == "face"), None)
 
     @property
     def pause_count(self) -> int:
@@ -53,6 +74,28 @@ class IngestedJob:
         return path if path.is_file() else None
 
 
+def verify_program(folder: Path, job: Job, sheet: SheetResult, program: ProgramResult) -> VerifiedProgram:
+    if program.kind != "face":
+        return VerifiedProgram(program, None, None, (f"unknown kind of program {program.kind!r}",))
+    if not program.tap:
+        return VerifiedProgram(program, None, None, (f"the face program {program.name} wasn't offered for cutting",))
+    path = folder / program.tap
+    if not path.is_file():
+        return VerifiedProgram(program, None, None, (f"{program.tap} is missing from the job folder",))
+    data = path.read_bytes()
+    problems = []
+    if hashlib.sha256(data).hexdigest() != program.tap_sha256:
+        problems.append(f"{program.tap} changed after Fusion checked it")
+    check = check_face_program(data, job, sheet.thickness_in, {p.part_key: p.count for p in program.parts},
+                               sheet.by_hand)
+    problems += [f"face program: {p}" for p in check.problems()]
+    if job.face is None or program.tool_guid != job.face.tool.guid:
+        problems.append(f"the face program used tool GUID {program.tool_guid}, not the job's surfacing bit")
+    elif abs(program.depth_in - job.face.depth_in) > 1e-9:
+        problems.append(f"the face program skims {program.depth_in:g} in, not the job's {job.face.depth_in:g} in")
+    return VerifiedProgram(program, data, check, tuple(problems))
+
+
 def verify_sheet(folder: Path, job: Job, sheet: SheetResult) -> VerifiedSheet:
     if not sheet.tap:
         reasons = [e.msg for e in sheet.errors] or ["no program was posted for this sheet"]
@@ -70,7 +113,16 @@ def verify_sheet(folder: Path, job: Job, sheet: SheetResult) -> VerifiedSheet:
     tool = job.tooling.tools.get(sheet.tool)
     if tool is not None and sheet.tool_guid != tool.guid:
         problems.append(f"sheet used tool GUID {sheet.tool_guid}, expected {tool.guid}")
-    return VerifiedSheet(sheet, data, check, tuple(problems))
+    programs = tuple(verify_program(folder, job, sheet, p) for p in sheet.programs)
+    faces = [p.program for p in programs if p.program.kind == "face"]
+    faced = {p.part_key: counts[p.part_key] for p in job.parts if p.face and p.part_key in counts}
+    if len(faces) > 1:
+        problems.append(f"the sheet has {len(faces)} face programs")
+    if faced and not faces:
+        problems.append("parts on it ask for facing but the sheet has no face program")
+    elif faces and {p.part_key: p.count for p in faces[0].parts} != faced:
+        problems.append("the face program doesn't face exactly the copies that ask for it")
+    return VerifiedSheet(sheet, data, check, tuple(problems), programs)
 
 
 def part_consistency(job: Job, result: Result) -> Dict[str, Tuple[str, ...]]:

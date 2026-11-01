@@ -63,6 +63,11 @@ def _inside(x: float, y: float, poly: Sequence[Point]) -> bool:
     return hit
 
 
+def inside_polygon(x: float, y: float, poly: Sequence[Point]) -> bool:
+    """Is (x, y) inside the closed polyline (even-odd)?"""
+    return _inside(x, y, poly)
+
+
 def _edges(polys: Iterable[Sequence[Point]]) -> List[Tuple[float, float, float, float]]:
     out = []
     for poly in polys:

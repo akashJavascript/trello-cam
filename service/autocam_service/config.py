@@ -20,6 +20,7 @@ if sys.version_info >= (3, 11):
 else:  # WSL dev boxes still ship Python 3.10
     import tomli as tomllib
 
+from autocam_core.schema_job import MAX_FACE_DEPTH_IN
 from autocam_core.tapguard import SAFE_G, SAFE_M
 from autocam_core.toollib import ToolLibrary, ToolLibraryError
 
@@ -193,6 +194,20 @@ class Labels:
     smoked: str
     tool_eighth: str
     rush: str = "Rush"
+    face: str = "Face"
+
+
+@dataclass(frozen=True)
+class Face:
+    """The "Face" label: that part's top skimmed clean, in a FACE program run before the sheet's own (core
+    0.14.0). Its tool is identified by GUID only, like every tool, and must be the face template's."""
+    depth_in: float
+    guid: str
+    number: int
+    diameter_in: float
+    flute_in: float
+    cutter_label: str
+    template: Path
 
 
 @dataclass(frozen=True)
@@ -302,6 +317,7 @@ class Config:
     placeholders: Tuple[str, ...]  # dotted keys still set to ""
     warnings: Tuple[str, ...]
     tabs: Tabs = Tabs()
+    face: Optional[Face] = None
 
     def stock_types(self) -> List[Tuple[Material, float]]:
         return [(m, t) for m in self.materials.values() for t in m.thicknesses_in]
@@ -604,7 +620,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
 
     t = top.table("labels")
     labels = Labels(smoked=t.string("smoked", required=True), tool_eighth=t.string("tool_eighth", required=True),
-                    rush=t.string("rush", default="Rush"))
+                    rush=t.string("rush", default="Rush"), face=t.string("face", default="Face"))
     t.finish()
 
     t = top.table("onshape")
@@ -699,6 +715,15 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
     if t:
         t.finish()
 
+    face = None
+    if "face" in top.data:
+        t = top.table("face")
+        face = Face(depth_in=t.number("depth_in", positive=True), guid=t.string("guid", pattern=GUID_RE, required=True),
+                    number=t.integer("number", minimum=0), diameter_in=t.number("diameter_in", positive=True),
+                    flute_in=t.number("flute_in", positive=True), cutter_label=t.string("cutter_label", required=True),
+                    template=root / t.string("template", required=True))
+        t.finish()
+
     t = top.table("paths")
     paths = Paths(**{k: root / t.string(k, required=True) for k in ("queue", "cache", "state", "logs")})
     t.finish()
@@ -713,7 +738,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         tools=MappingProxyType(tools), tooling=MappingProxyType(tooling), holes=holes,
         op_tags=op_tags, templates=MappingProxyType(templates), labels=labels, onshape=onshape,
         trello=trello, fusion=fusion, tapguard=tapguard, fusion_team=fusion_team, status=status, paths=paths,
-        placeholders=tuple(_placeholders(data)), warnings=(), tabs=tabs,
+        placeholders=tuple(_placeholders(data)), warnings=(), tabs=tabs, face=face,
     )
     warnings: List[str] = []
     _cross_check(cfg, data, errors, warnings)
@@ -831,9 +856,35 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
             e(f"{where}.diameter_in: library says {lib.diameter_in:.5f} in, config says {tool.diameter_in}")
         if abs(lib.flute_length_in - tool.flute_in) > 0.002:
             e(f"{where}.flute_in: library says {lib.flute_length_in:.4f} in, config says {tool.flute_in}")
-    widest = max((t.diameter_in for t in cfg.tools.values()), default=0.0)
+    widest = max([t.diameter_in for t in cfg.tools.values()] + ([cfg.face.diameter_in] if cfg.face else []),
+                 default=0.0)
     if cfg.nest.part_spacing_in <= widest:
-        e("nest.part_spacing_in: must exceed the largest tool diameter")
+        e("nest.part_spacing_in: must exceed the largest tool diameter (the face tool's too)")
+
+    # Facing (the Face label): a skim with its own tool, checked against the library like any tool.
+    f = cfg.face
+    if f is not None:
+        if f.depth_in > MAX_FACE_DEPTH_IN:
+            e(f"face.depth_in: at most {MAX_FACE_DEPTH_IN} in (it skims a top clean; anything deeper is a pocket)")
+        thinnest = min((t for m in cfg.materials.values() for t in m.thicknesses_in), default=0.0)
+        if f.depth_in >= thinnest:
+            e("face.depth_in: must be less than the thinnest stock")
+        if f.guid in guids:
+            e("face.guid: the face tool can't also be a sheet tool")
+        if library is not None:
+            if f.guid not in library:
+                e(f"face.guid: {f.guid} is not in {cfg.fusion.tool_library.name}")
+            else:
+                lib = library.by_guid(f.guid)
+                if lib.number != f.number:
+                    e(f"face.number: library says T{lib.number} for this GUID, config says T{f.number}")
+                if abs(lib.diameter_in - f.diameter_in) > 0.0005:
+                    e(f"face.diameter_in: library says {lib.diameter_in:.5f} in, config says {f.diameter_in}")
+                if abs(lib.flute_length_in - f.flute_in) > 0.002:
+                    e(f"face.flute_in: library says {lib.flute_length_in:.4f} in, config says {f.flute_in}")
+        if not f.template.is_file():
+            warnings.append(f"face.template: {_rel(f.template, cfg.root)} not exported yet; the Face label is "
+                            "refused until it is")
 
     # Per-family tool choice (decision 13).
     templates_by_tool = {t.tool: t for t in cfg.templates.values()}
@@ -900,8 +951,9 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
         if not tpl.file.is_file():
             warnings.append(f"{where}.file: {_rel(tpl.file, cfg.root)} not exported yet")
 
-    if cfg.labels.smoked == cfg.labels.tool_eighth:
-        e("labels: smoked and tool_eighth must differ")
+    names = [_norm_label(n) for n in (cfg.labels.smoked, cfg.labels.tool_eighth, cfg.labels.rush, cfg.labels.face)]
+    if len(set(names)) != len(names):
+        e("labels: smoked, tool_eighth, rush and face must all differ")
 
     for name, key in cfg.onshape.material_map.items():
         if key not in cfg.materials:
@@ -963,6 +1015,10 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
     missing_m = sorted(needed_m - set(cfg.tapguard.allowed_m))
     if missing_m:
         e(f"tapguard.allowed_m: must include M{', M'.join(map(str, missing_m))}")
+
+
+def _norm_label(name: str) -> str:
+    return " ".join(name.lower().split())
 
 
 def _rel(p: Path, root: Path) -> str:

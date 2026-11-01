@@ -4,7 +4,8 @@
   no name at all). A quantity may end the title: `P-2011 x4`.
 - Description: a link to the Part Studio (its workspace or a version) and the quantity: `Qty: 4`, `Qty 4`,
   `Quantity: 4`, `x4` or `4x` on a line of its own. The quantity is required.
-- Labels: `Smoked` (smoked polycarbonate), `Tool 1/8` (force the 1/8 in endmill).
+- Labels: `Smoked` (smoked polycarbonate), `Tool 1/8` (force the 1/8 in endmill), `Face` (skim its top clean
+  first, in a program of its own).
 - Fallback: a .step attachment instead of a link, plus a `Material: ...` line.
 Anything wrong sends the card to Needs fixing with a short comment saying what to fix.
 """
@@ -45,7 +46,8 @@ the part's box, to cut from any piece anywhere on the bed (one copy; the card sa
 {tabs} (Already on a sheet? Change it and move the card back to Ready for CAM.)
 Need one part now? Add the {rush} label before moving it: it's nested at once (within a minute, after any run
 already going), on its own: an offcut or a new sheet, not a sheet waiting in Sheet review.
-Labels, if needed: {smoked} for smoked polycarbonate, {tool} to force the 1/8 in endmill.
+Labels, if needed: {smoked} for smoked polycarbonate, {tool} to force the 1/8 in endmill, {face} for a clean
+top (it's skimmed {face_depth} in off the top, in a program run before the sheet's).
 No Onshape? Attach a .step file and add a line like Material: 6061 (or 5052, PC).
 
 Offcuts: each one has a number (#4); write it on the piece when it goes on the rack. If a sheet card names an
@@ -78,6 +80,7 @@ class PartRequest:
     force_small_tool: bool
     tabs: bool = False                   # the card's "Hold it in with tabs" box (set by the runner)
     by_hand: bool = False                # "Nest this part" unticked: placed by hand (set by the runner)
+    face: bool = False                   # the Face label: its top skimmed clean first
 
 
 @dataclass(frozen=True)
@@ -95,7 +98,8 @@ def problem_comment(headline: str, problems) -> str:
                               f"\"{README_CARD}\" card in Drafts.)"
 
 
-def parse_card(card: Card, smoked_label: str = "Smoked", tool_label: str = "Tool 1/8") -> Union[PartRequest, CardProblem]:
+def parse_card(card: Card, smoked_label: str = "Smoked", tool_label: str = "Tool 1/8",
+               face_label: str = "Face") -> Union[PartRequest, CardProblem]:
     problems = []
     name = " ".join(card.name.split())
     title_qty = None
@@ -145,4 +149,5 @@ def parse_card(card: Card, smoked_label: str = "Smoked", tool_label: str = "Tool
     if problems:
         return CardProblem(card, tuple(problems))
     return PartRequest(card=card, name=name, qty=qty, link=link, step_attachment=step, material_hint=hint,
-                       smoked=smoked_label.lower() in labels, force_small_tool=tool_label.lower() in labels)
+                       smoked=smoked_label.lower() in labels, force_small_tool=tool_label.lower() in labels,
+                       face=face_label.strip().lower() in labels)

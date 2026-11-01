@@ -37,6 +37,9 @@ UNCONFIRMED = {
     "pocket_floors": "[pocket] (2D Adaptive): 'pockets' = CurveSelections.createNewPocketSelection on the floors",
     "pocket_selection": "[pocket]: each floor's outer loop as a chain, inside, when the pocket selection fails",
     "pocket_walls": "[pocketfinish] (2D Contour): each floor's outer loop as a chain, cut on the floor's side",
+    "face_setup": "a FACE setup on the sheet's stock solid (a second setup on one stock body)",
+    "face_tops": "[face] (2D Adaptive): each faced copy's top outer loop as a chain, inside; bottom height "
+                 "'from stock top' less the depth",
 }
 
 
@@ -186,6 +189,14 @@ def copy_op(setup, op, name: str) -> None:
     new.name = name
     if new.name != name:
         raise AdapterError(f"renaming the copy of {op.name} to {name!r} didn't stick")
+
+
+def face_depth(op, depth_in: float) -> None:
+    """[face]: from the stock top down to the stock top less the depth (the faced parts' tops are the stock top)."""
+    set_expr(op, "topHeight_mode", "'from stock top'")
+    _set_length(op, "topHeight_offset", 0.0)
+    set_expr(op, "bottomHeight_mode", "'from stock top'")
+    _set_length(op, "bottomHeight_offset", -depth_in)
 
 
 def cut_to_stock_bottom(op) -> None:

@@ -35,7 +35,7 @@ SYSTEM_DESC = "The auto-CAM service writes its status here, and comments when a 
 README_TITLE = README_CARD
 TEMPLATE_TITLE = "New part"
 TEMPLATE_DESC = "Paste the Part Studio link here\nQty: "
-LABEL_COLORS = {"smoked": "black", "tool_eighth": "orange", "rush": "red"}
+LABEL_COLORS = {"smoked": "black", "tool_eighth": "orange", "rush": "red", "face": "green"}
 
 
 def _norm(name: str) -> str:
@@ -59,7 +59,8 @@ class BoardSetup:
 
 def setup_board(http, *, board: Optional[str] = None, create: Optional[str] = None,
                 labels: Optional[Dict[str, str]] = None, workspace: Optional[str] = None,
-                nest_box: Tuple[str, str] = ("Nest", "Nest this part"), tabs_default: bool = False) -> BoardSetup:
+                nest_box: Tuple[str, str] = ("Nest", "Nest this part"), tabs_default: bool = False,
+                face_depth: float = 0.005) -> BoardSetup:
     """http: TrelloHttp. Either an existing board (id or short link) or a new board's name (in `workspace`)."""
     created: List[str] = []
     if create:
@@ -115,6 +116,8 @@ def setup_board(http, *, board: Optional[str] = None, create: Optional[str] = No
     card(README_TITLE, "inbox", FORMAT_HELP.format(smoked=labels.get("smoked", "Smoked"),
                                                    tool=labels.get("tool_eighth", "Tool 1/8"),
                                                    rush=labels.get("rush", "Rush"),
+                                                   face=labels.get("face", "Face"),
+                                                   face_depth=f"{face_depth:g}",
                                                    tabs=TABS_HELP[tabs_default]))
     template = card(TEMPLATE_TITLE, "inbox", TEMPLATE_DESC, template=True)
     box = nest_box[0]

@@ -2,6 +2,7 @@
 
 Sheet card title: what to load first, e.g. `6061 1/8in - 4 mm O-flute ALU - 5 parts - 23 min - r017 S1`.
 Description: LOAD (stock, cutter, clamps), RUN (program, stops, resume key), CUT ORDER, then details.
+A sheet with faced parts runs its FACE program first, with its own cutter: RUN lists both, in order.
 """
 
 from fractions import Fraction
@@ -44,6 +45,10 @@ def _clamp_edges(job: Job) -> str:
     return " and ".join(dict.fromkeys(edges)) + " edges only" if edges else "none"
 
 
+def _face(s):
+    return next((p for p in s.programs if p.kind == "face"), None)
+
+
 def sheet_title(job: Job, vs: VerifiedSheet, offcut_number: Optional[int] = None) -> str:
     s = vs.sheet
     n = sum(p.count for p in s.parts)
@@ -51,8 +56,13 @@ def sheet_title(job: Job, vs: VerifiedSheet, offcut_number: Optional[int] = None
         (f" offcut #{offcut_number}" if offcut_number else " offcut") if s.offcut_id else "")
     if s.by_hand:
         stock += " - placed by hand"
-    count = f"{n} part{'s' if n != 1 else ''}" + (f", run {s.repeat}x" if s.repeat > 1 else "")
-    bits = [stock, s.cutter_label, count, _minutes(s.machining_time_s), f"{job.run_id} S{s.index}"]
+    face = _face(s)
+    faced = sum(p.count for p in face.parts) if face else 0
+    count = (f"{n} part{'s' if n != 1 else ''}" + (f", {faced} faced" if faced and not s.by_hand else
+                                                   (", faced" if faced else ""))
+             + (f", run {s.repeat}x" if s.repeat > 1 else ""))
+    seconds = (s.machining_time_s or 0) + ((face.machining_time_s or 0) if face else 0)
+    bits = [stock, s.cutter_label, count, _minutes(seconds), f"{job.run_id} S{s.index}"]
     title = " - ".join(b for b in bits if b)
     return title if vs.cuttable else f"NOT CUTTABLE - {title}"
 
@@ -83,19 +93,24 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
     s = vs.sheet
     tool = job.tooling.tools[s.tool]
     m = job.material
+    face = _face(s)
     lines: List[str] = []
     if not vs.cuttable:
-        lines += ["NOT CUTTABLE. This sheet failed the checks:"] + [f"- {p}" for p in vs.problems] + [""]
+        problems = list(vs.problems) + [p for v in vs.programs for p in v.problems]
+        lines += ["NOT CUTTABLE. This sheet failed the checks:"] + [f"- {p}" for p in problems] + [""]
+    cutter = f"Cutter: {s.cutter_label} (T{tool.number})"
+    if face:
+        cutter = f"Cutters: {face.cutter_label} (T{face.tool_number}) to face, then {s.cutter_label} (T{tool.number})"
 
     if s.by_hand:
         lines += ["LOAD"] + _by_hand_load(job, vs, part_cards) + [
-            f"Cutter: {s.cutter_label} (T{tool.number}). Check the cutter itself: tool numbers are shared.",
+            f"{cutter}. Check the cutter itself: tool numbers are shared.",
             f"Mist: {'on' if m.use_mist else 'off'}."]
     else:
         lines += ["LOAD",
                   stock or f"Stock: {material_label(m)} {thickness_label(s.thickness_in)} ({s.thickness_in:g}), "
                            f"{job.sheet.width_in:g} x {job.sheet.length_in:g}",
-                  f"Cutter: {s.cutter_label} (T{tool.number}). Check the cutter itself: tool numbers are shared.",
+                  f"{cutter}. Check the cutter itself: tool numbers are shared.",
                   f"Clamps: {_clamp_edges(job)}. Mist: {'on' if m.use_mist else 'off'}."]
     for forced in s.tool_forced_by:
         name = part_cards.get(forced.part_key, (forced.part_key, ""))[0]
@@ -105,7 +120,17 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         n = vs.pause_count
         key = resume_key or "the continue key"
         run = f"Program: {program or s.tap}" + (f" (about {_minutes(s.machining_time_s)})" if s.machining_time_s else "")
-        lines += ["", "RUN", run]
+        lines += ["", "RUN"]
+        if face:
+            about = f" (about {_minutes(face.machining_time_s)})" if face.machining_time_s else ""
+            each = " on each copy, before cutting it" if s.by_hand and s.repeat > 1 else ""
+            lines += [f"1. Face first: load the {face.cutter_label} (T{face.tool_number}), measure it on the fixed "
+                      f"tool setter, and run {face.tap}{about}{each}. It skims {face.depth_in:g} in off the tops of the "
+                      "parts marked faced, nothing else.",
+                      f"2. Then load the {s.cutter_label} (T{tool.number}), measure it, and run {program or s.tap}"
+                      + (f" (about {_minutes(s.machining_time_s)})." if s.machining_time_s else ".")]
+        else:
+            lines.append(run)
         if s.by_hand and s.repeat > 1:
             name = part_cards.get(s.parts[0].part_key, (s.parts[0].part_key, ""))[0] if s.parts else "the part"
             lines.append(f"It cuts one {name}: run it {s.repeat} times, zeroing at a fresh spot each time.")
@@ -117,6 +142,7 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
                          "done. Keep hands off until the spindle stops at the end.")
 
     on_sheet = {p.part_key for p in s.parts}
+    faced = {p.part_key for p in face.parts} if face else set()
     tabbed = {p.part_key for p in job.parts if p.tabs} & on_sheet
     if vs.cuttable and tabbed == on_sheet:
         lines.append("Every part, and the slug in each of its cutouts, is held by small tabs: leave them in at the "
@@ -133,7 +159,8 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         counts[part_key] = counts.get(part_key, 0) + 1
         name = part_cards.get(part_key, (part_key, ""))[0]
         of = f" ({counts[part_key]} of {totals[part_key]})" if totals.get(part_key, 1) > 1 else ""
-        lines.append(f"{i}. {name}{of}" + (" - tabs" if part_key in tabbed else ""))
+        marks = [m for m, on in (("faced", part_key in faced), ("tabs", part_key in tabbed)) if on]
+        lines.append(f"{i}. {name}{of}" + "".join(f" - {m}" for m in marks))
 
     use = sheet_use(s)
     if use:
@@ -150,6 +177,9 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         details.append(f"Fusion file: {team.name} in {job.fusion_team.project or 'Fusion Team'}")
     if vs.cuttable and vs.check is not None:
         details.append(f"Lowest Z {vs.check.guard.min_z_in:.4f}in (Z0 = spoilboard). Run {job.run_id}.")
+        if vs.face is not None and vs.face.check is not None:
+            details.append(f"Face program: lowest Z {vs.face.check.guard.min_z_in:.4f}in, "
+                           f"{s.thickness_in - face.depth_in:.4f} asked.")
     return "\n".join(lines + ([""] + details if details else []))
 
 

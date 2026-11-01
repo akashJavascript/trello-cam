@@ -11,8 +11,8 @@ from autocam_core import CORE_VERSION, fixture
 from autocam_core.holes import HoleRules
 from autocam_core.schema import to_dict
 from autocam_core.schema_job import (
-    JOB_SCHEMA, FixtureSpec, FusionTeamSpec, GuardSettings, Job, MaterialSpec, NestSpec, OffcutSpec, OnshapeRef, PartSpec,
-    PauseSettings, PlateSpec, PostSpec, SheetSpec, TabSpec, ToolingSpec, ToolSpec, load_job,
+    JOB_SCHEMA, FaceSpec, FixtureSpec, FusionTeamSpec, GuardSettings, Job, MaterialSpec, NestSpec, OffcutSpec, OnshapeRef,
+    PartSpec, PauseSettings, PlateSpec, PostSpec, SheetSpec, TabSpec, ToolingSpec, ToolSpec, load_job,
 )
 
 from .batching import Batch
@@ -42,6 +42,17 @@ def _tool_spec(cfg: Config, tool: Tool) -> Optional[ToolSpec]:
                     flute_in=tool.flute_in, min_inside_radius_in=tool.min_inside_radius_in,
                     drill_sizes_in=tuple(cfg.holes.drill_sizes_in[tool.key]), cutter_label=tool.cutter_label,
                     template_key=template.key, template_path=fusion_path(template.file))
+
+
+def face_spec(cfg: Config) -> Optional[FaceSpec]:
+    """The face tool and depth for parts with the Face label; None until the face template exists."""
+    f = cfg.face
+    if f is None or not f.template.is_file():
+        return None
+    tool = ToolSpec(key="face", guid=f.guid, number=f.number, diameter_in=f.diameter_in, flute_in=f.flute_in,
+                    min_inside_radius_in=f.diameter_in / 2, drill_sizes_in=(), cutter_label=f.cutter_label,
+                    template_key="face", template_path=fusion_path(f.template))
+    return FaceSpec(depth_in=f.depth_in, tool=tool)
 
 
 def sheet_fixture(cfg: Config) -> fixture.Fixture:
@@ -78,7 +89,7 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
             source="onshape" if link else ("local" if req.card.id.startswith("local-") else "trello_attachment"),
             onshape=OnshapeRef(link.did, link.vid, link.eid, ready.onshape_part_id or "", link.url,
                                ready.onshape_microversion) if link else None,
-            force_small_tool=req.force_small_tool, tabs=req.tabs, by_hand=req.by_hand))
+            force_small_tool=req.force_small_tool, tabs=req.tabs, by_hand=req.by_hand, face=req.face))
     for n, spec in enumerate(carried, len(parts) + 1):
         parts.append(replace(spec, part_key=f"p{n:02d}"))
 
@@ -110,5 +121,6 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
         offcuts=tuple(offcuts),
         tabs=TabSpec(cfg.tabs.distance_in, cfg.tabs.min_per_contour, cfg.tabs.max_per_contour, cfg.tabs.at_points,
                      cfg.tabs.width_in, cfg.tabs.height_in),
+        face=face_spec(cfg),
     )
     return load_job(to_dict(job))  # same validation Fusion will apply

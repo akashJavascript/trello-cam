@@ -26,6 +26,10 @@ _COMMENT_ONLY = re.compile(r"^\[[^\[\]]*\]$")
 
 # Z is posted to 4 decimals; a through cut ends at the floor itself (Z0 = spoilboard).
 THROUGH_CUT_TOL_IN = 0.0005
+# A FACE program may go no deeper than the face depth, give or take one unit of the post's 4 decimals...
+FACE_FLOOR_TOL_IN = 0.0001
+# ...and must get within this of it (else it skims nothing, or less than asked).
+FACE_REACH_TOL_IN = 0.0005
 
 
 @dataclass(frozen=True)
@@ -141,6 +145,51 @@ def check_sheet_program(data: bytes, job: Job, thickness_in: float, tool_key: st
     pauses = verify(text, outer_order, pause_spec(job), after_last_part=job.pauses.after_last_part,
                     safe_z_in=spec.clamp_clear_z_in)
     return SheetCheck(report, pauses, problems)
+
+
+def face_floor(thickness_in: float, depth_in: float) -> float:
+    """The lowest Z a FACE program may reach: the stock top less the face depth (Z0 = spoilboard)."""
+    return max(0.0, thickness_in - depth_in - FACE_FLOOR_TOL_IN)
+
+
+def face_guard_spec(job: Job, thickness_in: float, by_hand: bool = False) -> GuardSpec:
+    """The sheet's guard (clamps, reach, rapids, mist), with the floor raised to the face depth and the surfacing
+    bit's radius."""
+    base = guard_spec(job, thickness_in, job.tooling.default, by_hand)
+    return replace(base, z_floor_in=face_floor(thickness_in, job.face.depth_in),
+                   tool_radius_in=job.face.tool.diameter_in / 2)
+
+
+def check_face_program(data: bytes, job: Job, thickness_in: float, part_counts: Mapping[str, int],
+                       by_hand: bool = False) -> SheetCheck:
+    """A sheet's FACE program (core 0.14.0): it skims the tops of the parts that ask for it, and nothing else. It
+    never goes deeper than the face depth (the guard's floor), gets to it, has no stops and cuts no outlines; it
+    lists only parts of the job that ask for facing. Whether the cutter stays over those parts is checked against
+    their outlines by the worker (the service has no geometry)."""
+    text = data.decode("ascii", errors="replace")
+    if job.face is None:
+        return SheetCheck(_failed(check_program(data, GuardSpec()), "the job has no face settings"), None,
+                          ("the job has no face settings",))
+    problems: List[str] = []
+    if not any(abs(thickness_in - t) <= 1e-9 for t in job.material.thicknesses_in):
+        problems.append(f"sheet thickness {thickness_in:g} in is not a {job.material.name} stock thickness")
+    faced = {p.part_key for p in job.parts if p.face}
+    if not part_counts:
+        problems.append("the face program lists no parts")
+    others = sorted(set(part_counts) - faced)
+    if others:
+        problems.append(f"the face program lists parts that don't ask for facing: {', '.join(others)}")
+    outlines = [m.group(1) for m in (_OUTER_LINE.match(l.strip()) for l in text.splitlines()) if m]
+    if outlines:
+        problems.append(f"the face program cuts outlines ({', '.join(outlines)})")
+    report = check_program(data, face_guard_spec(job, thickness_in, by_hand))
+    if report.m0_count:
+        report = _failed(report, f"the face program has {report.m0_count} M0; it never stops")
+    target = thickness_in - job.face.depth_in
+    if report.min_z_in is None or report.min_z_in > target + FACE_REACH_TOL_IN:
+        lowest = "no Z move" if report.min_z_in is None else f"lowest Z {report.min_z_in:.4f} in"
+        problems.append(f"the face program never gets to the face depth (Z{target:.4f}; {lowest})")
+    return SheetCheck(report, None, tuple(problems))
 
 
 def _failed(report: GuardReport, problem: str) -> GuardReport:

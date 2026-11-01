@@ -20,6 +20,7 @@ PAUSE_MODES = ("tap_text", "manual_nc")
 SOURCES = ("onshape", "trello_attachment", "local")
 
 Rect = Tuple[float, float, float, float]
+MAX_FACE_DEPTH_IN = 0.02          # facing skims a top clean; anything deeper is a pocket
 
 
 @dataclass(frozen=True)
@@ -145,6 +146,8 @@ class PartSpec:
     force_small_tool: bool
     tabs: bool = False                                 # hold it in with tabs (core 0.7.0)
     by_hand: bool = False                              # not nested: one copy alone, placed by hand (core 0.12.0)
+    face: bool = False                                 # its top skimmed clean first, in the sheet's FACE program
+                                                       # (core 0.14.0)
 
 
 @dataclass(frozen=True)
@@ -157,6 +160,14 @@ class TabSpec:
     at_points: bool = True                             # placed by tabs.place_tabs, else spread evenly by Fusion
     width_in: float = 0.0                              # set on each tabbed op; 0: the template's (core 0.11.0)
     height_in: float = 0.0                             # the shape is always the template's
+
+
+@dataclass(frozen=True)
+class FaceSpec:
+    """Parts with face=True get their tops skimmed `depth_in` deep before the sheet is cut: a program of its own
+    (the sheet's FACE program, run first) with the face tool, over those parts only (core 0.14.0)."""
+    depth_in: float
+    tool: ToolSpec                                     # its template has one [face] op, with this tool
 
 
 @dataclass(frozen=True)
@@ -193,6 +204,7 @@ class Job:
     parts: Tuple[PartSpec, ...]
     offcuts: Tuple[OffcutSpec, ...] = ()
     tabs: TabSpec = TabSpec()
+    face: Optional[FaceSpec] = None
 
     def validate(self) -> List[str]:
         e: List[str] = []
@@ -244,6 +256,16 @@ class Job:
             e.append("tabs.height_in: must be less than the stock thickness")
         if not 1 <= self.tabs.min_per_contour <= self.tabs.max_per_contour:
             e.append("tabs: need 1 <= min_per_contour <= max_per_contour")
+        if self.face is not None:
+            f = self.face
+            if not 0 < f.depth_in <= MAX_FACE_DEPTH_IN:
+                e.append(f"face.depth_in: must be more than 0 and at most {MAX_FACE_DEPTH_IN} in (a skim, not a cut)")
+            if f.depth_in >= min(self.material.thicknesses_in, default=0.0):
+                e.append("face.depth_in: must be less than the stock thickness")
+            if f.tool.key in t.tools:
+                e.append(f"face.tool: {f.tool.key} is one of the sheet tools")
+        if any(p.face for p in self.parts) and self.face is None:
+            e.append("parts ask for facing but the job has no face settings")
         if not self.parts:
             e.append("parts: empty")
         for p in self.parts:

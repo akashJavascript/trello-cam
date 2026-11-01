@@ -19,7 +19,7 @@ from autocam_core.names import comment_line
 from autocam_core.tabs import Seg
 
 from autocam_worker.adapter import (
-    BEARING, BORE, DRILL, INNER, OUTER, POCKET, POCKETFINISH, TAGS, Adapter, AdapterError, Arranged, Box, OpFill,
+    BEARING, BORE, DRILL, FACE, INNER, OUTER, POCKET, POCKETFINISH, TAGS, Adapter, AdapterError, Arranged, Box, OpFill,
     OpState, TemplateOp,
 )
 
@@ -32,7 +32,7 @@ def _tag(name: str) -> Optional[str]:
 
 
 class FakeAdapter(Adapter):
-    capabilities = frozenset({DRILL, BORE, BEARING, INNER, OUTER, POCKET, POCKETFINISH})
+    capabilities = frozenset({DRILL, BORE, BEARING, INNER, OUTER, POCKET, POCKETFINISH, FACE})
 
     def __init__(self):
         self.parts: Dict[str, Tuple[PartGeometry, Tuple[float, float]]] = {}
@@ -61,6 +61,8 @@ class FakeAdapter(Adapter):
         self.arrange_envelopes: List[Tuple[float, float, float, float]] = []
         self.finished: Optional[bool] = None
         self.fail_tab_points = False                   # set_tab_points refuses (like Fusion without the choice)
+        self.face_inset_in = 0.05                      # the face pass stays this far inside each faced copy's box
+        self.face_extra_depth_in = 0.0                 # ...and goes this much deeper than asked
 
     def register(self, step: Path, geometry: PartGeometry, size: Tuple[float, float]) -> None:
         self.parts[str(step)] = (geometry, size)
@@ -165,6 +167,11 @@ class FakeAdapter(Adapter):
                               "copies": list(copy_ids), "ops": [], "fills": {}, "outer": [], "deleted": [],
                               "tabs": {}, "tab_points": {}, "tab_size": {}}
 
+    def make_face_setup(self, sheet, face, copy_ids):
+        s = self.sheets[sheet]
+        self.make_sheet(face, s["origin"], s["size"][0], s["size"][1], s["t"], copy_ids)
+        self.sheets[face]["face_of"] = sheet
+
     def apply_template(self, sheet, template_path):
         ops = [TemplateOp(name, guid) for name, guid in json.loads(Path(template_path).read_text())]
         self.sheets[sheet]["ops"] = [o.name for o in ops]
@@ -237,6 +244,16 @@ class FakeAdapter(Adapter):
             if i == 0:
                 lines += ["S18000", "M3", "G4 X4."]
             tag = _tag(op)
+            if f"[{FACE}]" in op.lower():                # a skim inside each faced copy's box, at the face depth
+                fill = s["fills"][op]
+                z = t - fill.depth_in - self.face_extra_depth_in
+                ox, oy = s["origin"]
+                for cid, _ in fill.tops:
+                    b, m = self.boxes[cid], self.face_inset_in
+                    xa, ya, xb, yb = b.x0 - ox + m, b.y0 - oy + m, b.x1 - ox - m, b.y1 - oy - m
+                    lines += [f"G0 X{xa:.4f} Y{ya:.4f}", f"Z{retract:g}", f"G1 Z{z:.4f} F20.", f"G1 X{xb:.4f} F90.",
+                              f"G1 Y{yb:.4f}", f"G1 X{xa:.4f}", f"G1 Y{ya:.4f}", f"G0 Z{clear:g}"]
+                continue
             if tag == OUTER:
                 b = self.boxes[outer[op]]
                 ox, oy = s["origin"]

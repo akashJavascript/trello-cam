@@ -4,20 +4,21 @@ Programs are post-shaped text (see tests/fixtures/taps/README.md) with one `[out
 part copy; pauses are inserted with the production code and checked with autocam_core.sheetcheck.
 """
 
+from dataclasses import replace
 from typing import List, Optional
 
 from autocam_core import CORE_VERSION
 from autocam_core.errors import Issue
 from autocam_core.hotfolder import Queue
-from autocam_core.names import instance_id, program_name
+from autocam_core.names import face_program_name, instance_id, program_name
 from autocam_core.offcuts import beside_as_loaded, placement_for
 from autocam_core.pauses import insert
 from autocam_core.schema_job import read_job
 from autocam_core.schema_result import (
-    RESULT_SCHEMA, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary, PostResult, Result,
-    SheetPart, SheetResult, WorkerInfo, overall_status, result_json,
+    RESULT_SCHEMA, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary, PostResult, ProgramResult,
+    Result, SheetPart, SheetResult, WorkerInfo, overall_status, result_json,
 )
-from autocam_core.sheetcheck import check_sheet_program, pause_spec
+from autocam_core.sheetcheck import check_face_program, check_sheet_program, pause_spec
 
 
 def make_program(name: str, instances: List[str], thickness: float, mist: bool) -> str:
@@ -31,9 +32,23 @@ def make_program(name: str, instances: List[str], thickness: float, mist: bool) 
     return "\r\n".join(lines) + "\r\n"
 
 
+def make_face_program(name: str, slots: List[int], thickness: float, depth: float, mist: bool) -> str:
+    """A skim over the 3 x 3 in squares make_program cuts in these slots (k: the k-th copy along Y), the face
+    depth down."""
+    clear, retract = thickness + 2.0, thickness + 0.2
+    lines = [f"[{name}]"] + (["M11 C8"] if mist else []) + ["G90", "G20", "G53 Z", "[face tops]", "S18000", "M3",
+                                                            "G4 X4."]
+    for k in slots:
+        y = 2 + 4 * k
+        lines += [f"G0 X4.2 Y{y + 0.2:g}", f"G0 Z{retract:g}", f"G1 Z{thickness - depth:.4f} F20.", "G1 X6.8 F90.",
+                  f"G1 Y{y + 2.8:g}", "G1 X4.2", f"G0 Z{clear:g}"]
+    lines += (["M12 C8"] if mist else []) + ["G53 Z", "M5", "G53 P10"]
+    return "\r\n".join(lines) + "\r\n"
+
+
 def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optional[str] = None,
                     defer_part: Optional[str] = None, part_error: Optional[str] = None,
-                    shallow_outlines: bool = False, beside: bool = False) -> List[str]:
+                    shallow_outlines: bool = False, beside: bool = False, face_too_deep: bool = False) -> List[str]:
     """beside: report room beside the parts cut and fill an offcut's room beside earlier cuts first, like the
     real worker (off by default so the older tests' offcut cards keep their plain titles)."""
     processed = []
@@ -58,6 +73,31 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
             program = program.replace("G1 Z0. F20.", f"G1 Z{thickness:g} F20.")
         data = program.encode("ascii")
         check = check_sheet_program(data, job, thickness, tool, instances, {p.part_key: p.qty for p in placed})
+        programs = ()
+        faced = [p for p in placed if p.face]
+        if faced and job.face is not None:            # like the pipeline: a FACE program over the faced copies
+            face_name = face_program_name(name)
+            keys = {p.part_key for p in faced}
+            slots = [k for k, i in enumerate(instances) if i.rsplit("-", 1)[0] in keys]
+            face = make_face_program(face_name, slots, thickness, job.face.depth_in, job.material.use_mist)
+            if face_too_deep:
+                face = face.replace(f"Z{thickness - job.face.depth_in:.4f}", f"Z{thickness - 0.02:.4f}")
+            face_data = face.encode("ascii")
+            fc = check_face_program(face_data, job, thickness, {p.part_key: p.qty for p in faced})
+            face_tap = f"{face_name}.tap" if fc.passed else f"{face_name}.REJECTED.tap"
+            (claim.out_dir / face_tap).write_bytes(face_data)
+            fg = fc.guard
+            programs = (ProgramResult(
+                kind="face", name=face_name, runs="before", tool_guid=job.face.tool.guid,
+                cutter_label=job.face.tool.cutter_label, tool_number=job.face.tool.number,
+                tap=face_tap if fc.passed else None, tap_rejected=None if fc.passed else face_tap,
+                tap_bytes=len(face_data), tap_sha256=fg.sha256 if fc.passed else None,
+                guard=GuardSummary(fg.passed, fg.sha256, fg.floor_in, fg.min_z_in, fg.units, fg.offenders,
+                                   fg.clamp_violations, fg.problems),
+                machining_time_s=240.0, parts=tuple(SheetPart(p.part_key, p.qty) for p in faced),
+                depth_in=job.face.depth_in),)
+            if not fc.passed:                         # like the pipeline: the sheet isn't offered without it
+                check = replace(check, plan_problems=check.plan_problems + tuple(fc.problems()))
         tap_name = f"{name}.tap" if check.passed else f"{name}.REJECTED.tap"
         (claim.out_dir / tap_name).write_bytes(data)
         (claim.out_dir / f"{name}.png").write_bytes(b"\x89PNG fake preview")
@@ -104,7 +144,7 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
             errors=tuple(Issue("TAP_REJECTED", msg) for msg in check.problems()),
             warnings=(), notes=(), offcut_id=offcut.id if offcut else None,
             offcut_turned=turned, used_y_in=used_x, beside_used=beside_used, beside_left_in=beside_left,
-            parts_area_in2=9.0 * len(instances))       # 3 x 3 in each
+            parts_area_in2=9.0 * len(instances), programs=programs)       # 3 x 3 in each
         parts = []
         for p in job.parts:
             if p.part_key == part_error:

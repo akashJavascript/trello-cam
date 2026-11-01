@@ -44,6 +44,11 @@ class Rig:
             f.parent.mkdir(exist_ok=True)
             f.write_text(json.dumps([[name, guid] for name in ops]))
             t["file"] = str(f)
+        if "face" in data:                            # the face template: one [face] op with the face tool
+            f = tmp_path / "templates" / "face.f3dhsm-template"
+            f.parent.mkdir(exist_ok=True)
+            f.write_text(json.dumps([["[face] tops", (guid_for or {}).get("face", data["face"]["guid"])]]))
+            data["face"]["template"] = str(f)
         data["paths"] = {k: str(tmp_path / k) for k in ("queue", "cache", "state", "logs")}
         data["nest"].update({"part_spacing_in": 0.25, **nest})   # the tests' layouts assume 1/4 in, whatever the shop's is
         if team:
@@ -52,8 +57,8 @@ class Rig:
         self.fake = FakeAdapter()
         self.out = tmp_path / "out"
 
-    def job(self, parts, material="al6061"):
-        """parts: (name, qty, geometry, (w, h))"""
+    def job(self, parts, material="al6061", face=()):
+        """parts: (name, qty, geometry, (w, h)); face: names of the parts with the Face label"""
         ready = []
         for i, (name, qty, geometry, size) in enumerate(parts, 1):
             step = self.tmp / "steps" / f"{name}.step"
@@ -61,7 +66,7 @@ class Rig:
             step.write_bytes(f"ISO-10303-21; {name}".encode())
             self.fake.register(step, geometry, size)
             card = Card(f"local-{i}", name, "", None, "")
-            ready.append(ReadyPart(PartRequest(card, name, qty, None, None, material, False, False),
+            ready.append(ReadyPart(PartRequest(card, name, qty, None, None, material, False, False, face=name in face),
                                    material, step, sha256_file(step)))
         job = build_job(self.cfg, Batch(material, tuple((f"p{i:02d}", r) for i, r in enumerate(ready, 1))),
                         "r001", "2026-10-01T00:00:00Z")

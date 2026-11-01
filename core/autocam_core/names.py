@@ -36,6 +36,17 @@ def program_name(prefix: str, thickness_in: float, run_id: str, sheet_index: int
     return name
 
 
+FACE_SUFFIX = "_FACE"
+
+
+def face_program_name(sheet_program: str) -> str:
+    """The sheet's FACE program (core 0.14.0), e.g. 6061_0p25_r030_S1_FACE: run before the sheet's program."""
+    name = f"{sheet_program}{FACE_SUFFIX}"
+    if not is_safe_name(name):
+        raise ValueError(f"program name {name!r} has characters the post would strip")
+    return name
+
+
 def filter_comment(text: str) -> str:
     """What the post keeps of a comment (without the brackets)."""
     return "".join(c for c in text if c in COMMENT_CHARS)[:COMMENT_MAX]

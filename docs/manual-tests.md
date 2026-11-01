@@ -418,6 +418,20 @@ dump, or P-2015), as a card with its STEP attached so no Onshape calls are made.
 | 3 | Simulate: the pocket is cleared to its floor, including over the hole; the hole is cut after; nothing below a floor | |
 | 4 | A part with a raised island in a pocket goes to Needs fixing with "needs manual CAM ... island" | |
 
+### 15. Faced parts (2026-11-01)
+
+Needs the `face` code and `fusion/templates/face_6mm.f3dhsm-template` on the Fusion PC, and the add-in reloaded
+(core 0.14.0 does it). Run `autocam trello-setup` once so the board has the Face label and the how-to card
+mentions it. A plain plate as a Rush card with its STEP attached and the **Face** label (no Onshape calls).
+
+| # | Check | Result |
+|---|---|---|
+| 1 | The sheet card has two programs: `<sheet>_FACE.tap` and `<sheet>.tap`. Its RUN says to face first with the 6 mm 3-flute ALU (T2), then cut with the 4 mm. CUT ORDER marks the part "faced" | |
+| 2 | result.json lists `face_setup` and `face_tops` in the untested steps. In the Fusion file a second setup `<sheet>_FACE` has one op, `[face] tops`, with the 6 mm tool and only the faced parts' tops selected | |
+| 3 | Simulate the FACE setup: the whole top of each faced part is skimmed (inside corners and thin bits too), 0.005 in deep, the cutter's edge going at most about 0.1 in past the outline; nothing else is touched | |
+| 4 | The FACE program's lowest Z is the stock top less 0.005 (e.g. Z0.1825 on 3/16 stock) | |
+| 5 | At the machine: run the FACE program with T2 measured on the setter, then the sheet's program with its own cutter; the faced tops are clean and the parts are 0.005 in thinner | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

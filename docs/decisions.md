@@ -759,3 +759,31 @@ no-op (MultipleInstances IgnoreNew), so a stopped service is back within 5 minut
 `logs/service.log`; the System card shows whether it's alive. To stop it for a while: disable the task, then stop
 it. Fusion's task is unchanged (interactive, at logon: it needs the desktop). Registering an S4U task needs an
 administrator PowerShell. `ops/start-service.ps1` stays for running it by hand.
+
+## 2026-11-01: faced parts (the user's choice: per part, a clean top, 0.005 in, the 6 mm endmill)
+
+A **Face** label on a part card skims that part's top clean before it's cut, so the parts come out 0.005 in
+(`[face] depth_in`) thinner with a clean top. Built so a skim can only ever touch what asked for it:
+- **A program of its own, run first.** Each sheet with faced parts gets `<sheet>_FACE.tap`: a second Fusion setup on
+  the same stock solid and zero, so the main program and its checks are unchanged. The sheet card's RUN lists both
+  in order with their cutters. The FACE program has no stops; the options (without stopping, air test) apply to
+  the main program only.
+- **The tool:** the "6mm 3 flute Alu" endmill (T2), the user's choice over the 12 mm surfacing bit (T3) planned
+  first. It's a metric flat endmill with the same holder as the 4 mm cutters, so the face template carries it like
+  the other templates do and its GUID is checked the same way (the surfacing bit would have needed the tool set
+  through the API at run time). The library also has a "6mm single flute" (T9); T2 is the aluminum one.
+- **The template** (`face_6mm`, made by `make_face.py` from alu_4mm's `[pocket]` op): the same 2D Adaptive, whose
+  linking already passes the guard, on each faced copy's top outer loop as a chain. Radial stock to leave is
+  -0.45 x the tool diameter, so the cutter's edge runs up to 0.45 D (0.106 in) past the outline: the whole top is
+  covered, inside corners and thin bits included, while the cutter's center stays inside the outline. Optimal load
+  0.5 D (the library's 1.75 mm stepover is for full-depth clearing). Heights from the stock top, the bottom set to
+  the stock top less the depth by the automation.
+- **Checks (both sides):** the FACE program goes no deeper than the stock top less the depth (one posting unit,
+  0.0001 in, of slack), must reach it, has no M0 and no outlines, and lists only parts that ask for facing; the
+  sheet's guard (clamps, reach, rapids, mist) with T2's radius. The worker also checks every point where the cutter
+  is below the stock top is inside a faced part's outline, so the skim never reaches a part that didn't ask for it.
+  The service refuses a faced sheet with no FACE program, or one that doesn't face exactly the faced copies; a
+  FACE program that fails stops the whole sheet.
+- Depth is capped at 0.02 in in config and the job: deeper is a pocket, not a skim. Part spacing (0.5 in) keeps
+  neighbours clear of the 0.106 in overreach.
+- A part placed by hand gets its FACE program the same way, on its own box and zero (run it before each copy).

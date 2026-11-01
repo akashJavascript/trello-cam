@@ -50,7 +50,7 @@ from .autostart import ReadyWatch, box, signature, wants_nest
 from .batching import ReadyPart, make_batches
 from .cards import README_CARD, TITLE_QTY_RE, CardProblem, PartRequest, parse_card
 from .config import Config
-from .jobs import JobBuildError, build_job, sheet_fixture
+from .jobs import JobBuildError, build_job, face_spec, sheet_fixture
 from .materials import resolve_material
 from .offcuts import (SCRAP_HELP, OffcutStore, card_text, hand_cut_line, load_line, parse_hand_cuts, parse_scrap,
                       same_cut)
@@ -276,7 +276,7 @@ class Runner:
                                 for c in self.t.list_cards(key) if not c.is_template and c.name.strip() != README_CARD]
 
         def identity(card: Card):
-            parsed = parse_card(card, cfg.labels.smoked, cfg.labels.tool_eighth)
+            parsed = parse_card(card, cfg.labels.smoked, cfg.labels.tool_eighth, cfg.labels.face)
             if isinstance(parsed, CardProblem):           # still the same part: matched by its title alone
                 m = TITLE_QTY_RE.match(card.name.strip())
                 return " ".join((m["name"] if m else card.name).split()).casefold(), None
@@ -894,6 +894,8 @@ class Runner:
                 return "the program without stops failed its check (" + "; ".join(check.problems()) + ")"
             report, main, stops = check.guard, f"{stem}{NO_STOP_SUFFIX}.tap", False
         programs = {main: (data, report)}
+        for vp in vs.programs:                        # the FACE program stays as posted, whatever the options
+            programs[vp.program.tap] = (vp.tap_bytes, vp.check.guard)
         gap = self.cfg.machine.air_test_gap_in
         lift = sheet.thickness_in + gap
         if air:
@@ -935,11 +937,14 @@ class Runner:
 
         requests: List[PartRequest] = []
         for card in cards:
-            parsed = parse_card(card, cfg.labels.smoked, cfg.labels.tool_eighth)
+            parsed = parse_card(card, cfg.labels.smoked, cfg.labels.tool_eighth, cfg.labels.face)
             if not isinstance(parsed, CardProblem):
                 parsed = replace(parsed, tabs=box(card, cfg.trello.tabs_checklist, cfg.trello.tabs_item,
                                                   cfg.tabs.default),
                                  by_hand=not wants_nest(card, cfg.trello.nest_checklist, cfg.trello.nest_item))
+                if parsed.face and face_spec(cfg) is None:
+                    parsed = CardProblem(card, (f"The {cfg.labels.face} label needs the face template, which isn't "
+                                                "set up yet. Take the label off to cut it unfaced.",))
             if isinstance(parsed, CardProblem):
                 self._reject(state, card.id, parsed.comment(cfg.labels.smoked, cfg.labels.tool_eighth))
                 summary["rejected"] += 1
@@ -1090,9 +1095,14 @@ class Runner:
             specs = [p for p in specs if p.card_id not in renesting]
             if not all(Path(p.step).is_file() for p in specs):
                 continue
-            # a carried part keeps its STEP file but follows its card's tabs box now (no box: tabs.default)
-            specs = [replace(p, tabs=box(nested[p.card_id], t.tabs_checklist, t.tabs_item, self.cfg.tabs.default))
+            # a carried part keeps its STEP file but follows its card's tabs box (no box: tabs.default) and its
+            # Face label now
+            face = _label(self.cfg.labels.face)
+            specs = [replace(p, tabs=box(nested[p.card_id], t.tabs_checklist, t.tabs_item, self.cfg.tabs.default),
+                             face=face in {_label(l) for l in nested[p.card_id].labels})
                      for p in specs]
+            if any(p.face for p in specs) and face_spec(self.cfg) is None:
+                continue                              # can't face it any more: left as it is
             found[card_id] = (info, specs)
         while True:
             # parts also on a sheet that isn't open (cut and archived sheets are history: a part card can come
@@ -1414,6 +1424,9 @@ class Runner:
         if vs.cuttable:
             once(store, state, f"{key}:tap", lambda: self.t.attach_program(
                 card_id, vs.sheet.tap, vs.tap_bytes, vs.check.guard), WRITE_ATTEMPTS)
+            for vp in vs.programs:                    # the FACE program: checked like the sheet's own
+                once(store, state, f"{key}:{vp.program.kind}", lambda vp=vp: self.t.attach_program(
+                    card_id, vp.program.tap, vp.tap_bytes, vp.check.guard), WRITE_ATTEMPTS)
             once(store, state, f"{key}:checklist", lambda: self.t.add_checklist(
                 card_id, cfg.trello.checklist_name, cfg.trello.checklist), WRITE_ATTEMPTS)
             once(store, state, f"{key}:machine", lambda: self.t.add_checklist(

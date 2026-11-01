@@ -9,11 +9,18 @@ expects:
 | `alu_eighth.f3dhsm-template` | aluminum | `1/8 aluminum` (T12) |
 | `poly_4mm.f3dhsm-template` | polycarbonate | `4mm 0 flute Poly` |
 | `poly_eighth.f3dhsm-template` | polycarbonate | `1/8 polycarbonate` (T12) |
+| `face_6mm.f3dhsm-template` | any (the Face label) | `6mm 3 flute Alu` (T2) |
 
 **Only `alu_4mm` is built in Fusion.** The other three are made from it with `fusion/tools/make_templates/`
 (the same ops and settings, the other tool and its preset feeds from the pinned library); run those again
 whenever `alu_4mm` changes. Each one checks every swap's count, so a reworked `alu_4mm` stops it rather than
 half-converting it.
+
+`face_6mm` (`make_face.py`) is alu_4mm's `[pocket]` op alone, renamed `[face] tops`, with T2: the FACE program of a
+sheet with faced parts (its own setup; decisions, 2026-11-01). Radial stock to leave -0.45 x the tool diameter (the
+cutter's edge runs past each outline, its center stays inside), optimal load 0.5 D, heights from the stock top. It
+must hold exactly one op, tagged `[face]`, with the `[face]` tool's GUID; the automation selects the faced parts'
+tops and sets the depth.
 
 Build every template from the pinned library (`fusion/tools/5940_Tool_Library.tools`). Tool GUIDs change when a
 library is re-saved or copied, and the automation rejects any op whose tool GUID isn't the one in config. After

@@ -21,8 +21,13 @@
    part copy in cut order. Parts that ask for tabs (PartSpec.tabs) get tabs on their outline and their
    cutouts: a count per contour from its length, placed by tabs.place_tabs (straight edges clear of corners
    first) and given to Fusion as points; cutouts go in copies of the [inner] op, one per count.
+   A sheet with parts that ask for facing (PartSpec.face) also gets a FACE setup of its own on the same stock
+   and zero: the face template's one [face] op (its tool GUID checked) skims each of those copies' tops inside
+   its outline, job.face.depth_in deep. It posts as the sheet's FACE program, run first; the sheet isn't
+   offered without it.
 6. Post, insert the pauses, and check the final bytes with the check the service repeats
-   (sheetcheck.py). Failures are kept as *.REJECTED.tap.
+   (sheetcheck.py). Failures are kept as *.REJECTED.tap. A FACE program is checked the same way
+   (check_face_program: no deeper than the face depth) and its cutter must stay over the faced parts.
 7. Preview, .f3d, result.json.
 
 Pure Python: everything Fusion does goes through the Adapter (adapter.py).
@@ -45,22 +50,23 @@ from autocam_core.holes import ToolProfile
 from autocam_core.hotfolder import write_atomic
 from autocam_core.layout import Placed, plan_layout
 from autocam_core.offcuts import Placement, beside_as_loaded, placement_for, room_beside
-from autocam_core.names import instance_id, outer_op_name, program_name
+from autocam_core.names import face_program_name, instance_id, outer_op_name, program_name
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
 from autocam_core.plate import PlateAnalysis, analyze
-from autocam_core.preview import BADGE_MIN_PX, flatten, label_spot, pixels_per_unit, preview_size, to_pixels
+from autocam_core.preview import (BADGE_MIN_PX, flatten, inside_polygon, label_spot, pixels_per_unit, preview_size,
+                                  to_pixels)
 from autocam_core.tabs import outline_length, place_tabs, tab_count, walls_length
 from autocam_core.schema_job import Job, PartSpec, ToolSpec
 from autocam_core.schema_result import (
     RESULT_SCHEMA, FusionTeamResult, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary,
-    PostResult, Result, SheetPart, SheetResult, ToolForce, WorkerInfo, overall_status, result_json,
+    PostResult, ProgramResult, Result, SheetPart, SheetResult, ToolForce, WorkerInfo, overall_status, result_json,
 )
-from autocam_core.sheetcheck import check_sheet_program, pause_spec
+from autocam_core.sheetcheck import check_face_program, check_sheet_program, pause_spec
 from autocam_core.tooling import FeaturePlan, ToolNeed, part_tool, plan_features, sheet_tool
 from autocam_core.toolpoints import cutting_points
 
-from .adapter import (BEARING, BORE, DRILL, INNER, OUTER, POCKET, POCKETFINISH, TAGS, Adapter, AdapterError,
+from .adapter import (BEARING, BORE, DRILL, FACE, INNER, OUTER, POCKET, POCKETFINISH, TAGS, Adapter, AdapterError,
                       OpFill, Rect)
 
 RESULT = "result.json"
@@ -159,6 +165,9 @@ class _Sheet:
     notes: List[str] = field(default_factory=list)
     tab_points: Dict[str, List[Tuple[float, float]]] = field(default_factory=dict)   # op -> points, sheet X/Y
     result: Optional[SheetResult] = None
+    face_name: str = ""                       # its FACE setup and program, if parts on it ask for facing
+    face_tops: Tuple[Tuple[str, int], ...] = ()   # (copy id, top face id) of each faced copy
+    face_result: Optional[ProgramResult] = None
 
     def counts(self) -> Dict[str, int]:
         return dict(Counter(p.part_key for _, p in self.instances))
@@ -760,6 +769,8 @@ def _plan_sheets(adapter: Adapter, job: Job, sheets: List[_Sheet], parts: Dict[s
             for k in keys:
                 plan = plan_features(parts[k].analysis, profile(tool), job.holes)
                 missing = _missing_ops(plan, adapter.capabilities)
+                if parts[k].spec.face and FACE not in adapter.capabilities:
+                    missing.append(FACE)
                 problems = list(plan.errors)
                 if missing:
                     problems.append(Issue(E.NEEDS_MANUAL_CAM,
@@ -940,6 +951,37 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
             else:
                 sheet.warnings.append(Issue(E.OP_WARNING, f"{part.spec.name} is too small for tabs: it's cut free"))
     sheet.built = True
+    _build_face(adapter, job, sheet, parts)
+
+
+def _build_face(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> None:
+    """The sheet's FACE program, if parts on it ask for facing: a setup of its own on the sheet's stock and zero,
+    the face template's one [face] op (with the face tool, checked by GUID), each faced copy's top skimmed inside
+    its outline."""
+    faced = [placed for _, placed in sheet.instances if parts[placed.part_key].spec.face]
+    if not faced:
+        return
+    if job.face is None:
+        sheet.errors.append(Issue(E.TEMPLATE_PROBLEM, "parts ask for facing but the job has no face settings"))
+        return
+    tool = job.face.tool
+    name = face_program_name(sheet.name)
+    adapter.make_face_setup(sheet.name, name, [p.body_id for p in faced])
+    ops = adapter.apply_template(name, tool.template_path)
+    tagged = [o.name for o in ops if f"[{FACE}]" in o.name.lower()]
+    if len(ops) != 1 or len(tagged) != 1:
+        listed = ", ".join(repr(o.name) for o in ops) or "none"
+        sheet.errors.append(Issue(E.TEMPLATE_PROBLEM, f"the face template needs exactly one op, tagged [face] "
+                                                      f"(it has {listed})"))
+        return
+    if ops[0].tool_guid != tool.guid:
+        sheet.errors.append(Issue(E.TOOL_GUID_MISMATCH, f"the face op's tool is {ops[0].tool_guid or 'unreadable'}, "
+                                                        f"not the {tool.cutter_label} (GUID {tool.guid}); rebuild "
+                                                        "the face template (fusion/tools/make_templates/make_face.py)"))
+        return
+    sheet.face_tops = tuple((p.body_id, parts[p.part_key].analysis.up_face_id) for p in faced)
+    adapter.fill(name, tagged[0], OpFill(FACE, tops=sheet.face_tops, depth_in=job.face.depth_in))
+    sheet.face_name = name
 
 
 # ------------------------------------------------------------------ 6. post and check
@@ -1023,6 +1065,63 @@ def _post_sheet(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> Non
         tool_guid="", cutter_label="", template="", tap=tap, tap_rejected=rejected, tap_bytes=len(data),
         tap_sha256=g.sha256 if tap else None, guard=guard, pauses=pauses, machining_time_s=None, preview_png=None,
         parts=(), outer_order=sheet.outer_order, tool_forced_by=(), errors=(), warnings=(), notes=())
+
+
+def _face_counts(sheet: _Sheet, parts: Dict[str, _Part]) -> Dict[str, int]:
+    return dict(Counter(p.part_key for _, p in sheet.instances if parts[p.part_key].spec.face))
+
+
+def _post_face(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part], out_dir: Path) -> None:
+    """Post and check the sheet's FACE program: the check the service repeats (no deeper than the face depth, no
+    stops, no outlines), and every point where the cutter is below the stock top must be over a faced copy (inside
+    its outline): the skim never reaches a part that didn't ask for it, or the clamps. A failure stops the sheet."""
+    name = sheet.face_name
+    raw_dir = out_dir / "raw" / name
+    if raw_dir.exists():
+        shutil.rmtree(raw_dir)
+    raw_dir.mkdir(parents=True)
+    try:
+        posted = adapter.post(name, name, raw_dir, job.post.path, job.post.properties)
+    except AdapterError as e:
+        sheet.errors.append(Issue(E.POST_FAILED, f"posting the face program failed: {e}"))
+        return
+    data = posted.read_bytes()
+    text = data.decode("ascii", errors="surrogateescape")
+    counts = _face_counts(sheet, parts)
+    check = check_face_program(data, job, sheet.thickness_in, counts, sheet.by_hand)
+    problems = check.problems()
+    if check.passed:
+        try:
+            outlines = [flatten(adapter.loop_segments(cid, fid, None)) for cid, fid in sheet.face_tops]
+            ox, oy = sheet.origin
+            off = [(n, x, y) for n, x, y, _ in cutting_points(text, sheet.thickness_in)
+                   if not any(inside_polygon(x + ox, y + oy, poly) for poly in outlines)]
+        except AdapterError as e:
+            off = []
+            problems.append(f"couldn't check the face program against the parts' outlines: {e}")
+        if off:
+            where = "; ".join(f"line {n} (X{x:.4f} Y{y:.4f})" for n, x, y in off[:5])
+            problems.append(f"the face program's cutter leaves the faced parts: {where}")
+    ok = check.passed and not problems
+    tap, rejected = (f"{name}.tap", None) if ok else (None, f"{name}.REJECTED.tap")
+    write_atomic(out_dir / (tap or rejected), data)
+    try:
+        machining = adapter.machining_time(name)
+    except AdapterError as e:
+        machining = None
+        sheet.notes.append(f"face program: machining time unavailable: {e}")
+    g = check.guard
+    tool = job.face.tool
+    sheet.face_result = ProgramResult(
+        kind="face", name=name, runs="before", tool_guid=tool.guid, cutter_label=tool.cutter_label,
+        tool_number=tool.number, tap=tap, tap_rejected=rejected, tap_bytes=len(data),
+        tap_sha256=g.sha256 if tap else None,
+        guard=GuardSummary(g.passed, g.sha256, g.floor_in, g.min_z_in, g.units, g.offenders, g.clamp_violations,
+                           g.problems),
+        machining_time_s=machining, parts=tuple(SheetPart(k, n) for k, n in sorted(counts.items())),
+        depth_in=job.face.depth_in)
+    if not ok:
+        sheet.errors += [Issue(E.TAP_REJECTED, f"face program: {msg}") for msg in problems]
 
 
 # ------------------------------------------------------------------ the job
@@ -1123,20 +1222,23 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
     states = {}
     if built:
         try:
-            states = adapter.generate([s.name for s in built])
+            states = adapter.generate([s.name for s in built] + [s.face_name for s in built if s.face_name])
         except AdapterError as e:
             for s in built:
                 s.errors.append(Issue(E.OP_ERROR, f"toolpath generation failed: {e}"))
     for sheet in built:
-        if sheet.name not in states and not sheet.errors:
-            sheet.errors.append(Issue(E.OP_ERROR, "Fusion reported no toolpaths for this sheet"))
-        for st in states.get(sheet.name, []):
-            if st.error:
-                sheet.errors.append(Issue(E.OP_ERROR, f"{st.name}: {st.error}"))
-            elif not st.has_toolpath:
-                sheet.errors.append(Issue(E.OP_ERROR, f"{st.name}: no toolpath"))
-            elif st.warning:
-                sheet.warnings.append(Issue(E.OP_WARNING, f"{st.name}: {st.warning}"))
+        for setup in [sheet.name] + ([sheet.face_name] if sheet.face_name else []):
+            if setup not in states and not sheet.errors:
+                sheet.errors.append(Issue(E.OP_ERROR, f"Fusion reported no toolpaths for {setup}"))
+            for st in states.get(setup, []):
+                if st.error:
+                    sheet.errors.append(Issue(E.OP_ERROR, f"{st.name}: {st.error}"))
+                elif not st.has_toolpath:
+                    sheet.errors.append(Issue(E.OP_ERROR, f"{st.name}: no toolpath"))
+                elif st.warning:
+                    sheet.warnings.append(Issue(E.OP_WARNING, f"{st.name}: {st.warning}"))
+        if not sheet.errors and sheet.face_name:
+            _post_face(adapter, job, sheet, parts, out_dir)       # first: the sheet isn't offered without it
         if not sheet.errors:
             _post_sheet(adapter, job, sheet, out_dir)
 
@@ -1184,6 +1286,7 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             outer_order=sheet.outer_order, tool_forced_by=tuple(ToolForce(k, r) for k, r in sheet.forced),
             errors=_dedupe(sheet.errors), warnings=_dedupe(sheet.warnings), notes=tuple(sheet.notes),
             by_hand=sheet.by_hand, repeat=sheet.repeat,
+            programs=(sheet.face_result,) if sheet.face_result else (),
             **({} if sheet.by_hand else _sheet_use(job, sheet, parts))))
 
     f3d_name: Optional[str] = None

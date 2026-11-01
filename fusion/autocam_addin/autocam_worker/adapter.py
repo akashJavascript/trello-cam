@@ -24,6 +24,7 @@ Rect = Tuple[float, float, float, float]   # x0, y0, x1, y1
 POCKET, POCKETFINISH = "pocket", "pocketfinish"
 DRILL, BORE, BEARING, INNER, OUTER = "drill", "bore", "bearing", "inner", "outer"
 TAGS = (POCKET, POCKETFINISH, DRILL, BORE, BEARING, INNER, OUTER)
+FACE = "face"            # the face template's one op (its own setup, never in a sheet's template)
 
 
 class AdapterError(Exception):
@@ -71,6 +72,8 @@ class OpFill:
     holes: Tuple[Tuple[str, Tuple[int, ...]], ...] = ()     # drill/bore/bearing: (copy id, the hole's face ids)
     loops: Tuple[Tuple[str, int, int], ...] = ()            # inner: (copy id, face id, inner loop index)
     floors: Tuple[Tuple[str, int], ...] = ()                # pocket, pocketfinish: (copy id, floor face id)
+    tops: Tuple[Tuple[str, int], ...] = ()                  # face: (copy id, top face id), each skimmed inside
+    depth_in: float = 0.0                                   # its outline, this deep from the stock top
 
 
 class Adapter:
@@ -130,12 +133,17 @@ class Adapter:
         solid, and the work origin at the stock's bottom front-left corner."""
         raise NotImplementedError
 
+    def make_face_setup(self, sheet: str, face: str, copy_ids: Sequence[str]) -> None:
+        """A second setup for the sheet's FACE program, named `face`: the sheet's stock solid and work origin, these
+        copies (the faced ones) as models. From here on `face` is a sheet name like any other."""
+        raise NotImplementedError
+
     def apply_template(self, sheet: str, template_path: str) -> List[TemplateOp]:
         raise NotImplementedError
 
     def fill(self, sheet: str, op_name: str, fill: OpFill) -> None:
         """Select what the op cuts. Inner ops also get bottom height = stock bottom; pocket ops keep the
-        template's (the selected floor)."""
+        template's (the selected floor); the face op gets bottom height = stock top less fill.depth_in."""
         raise NotImplementedError
 
     def make_outer_ops(self, sheet: str, template_op: str, outlines: Sequence[Tuple[str, str, int]]) -> None:

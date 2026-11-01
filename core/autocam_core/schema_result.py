@@ -75,6 +75,26 @@ class ToolForce:
 
 
 @dataclass(frozen=True)
+class ProgramResult:
+    """A program a sheet needs besides its main one (core 0.14.0): kind "face" skims the tops of the faced parts
+    with the surfacing bit, run before the main program."""
+    kind: str                      # "face"
+    name: str                      # program name, e.g. 6061_0p25_r030_S1_FACE
+    runs: str                      # "before" the main program
+    tool_guid: str
+    cutter_label: str
+    tool_number: int
+    tap: Optional[str]             # None if not offered for cutting
+    tap_rejected: Optional[str]
+    tap_bytes: Optional[int]
+    tap_sha256: Optional[str]
+    guard: Optional[GuardSummary]
+    machining_time_s: Optional[float]
+    parts: Tuple[SheetPart, ...]   # the copies it works on
+    depth_in: float = 0.0          # face: how deep it skims
+
+
+@dataclass(frozen=True)
 class SheetResult:
     index: int
     name: str                      # program name, e.g. 6061_0p125_r017_S1
@@ -113,6 +133,8 @@ class SheetResult:
     # A part placed by hand (core 0.12.0): one copy, zeroed at its box's front-left corner, run `repeat` times
     by_hand: bool = False
     repeat: int = 1
+    # Programs run besides the main one, in order (core 0.14.0): the FACE program, before it
+    programs: Tuple[ProgramResult, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -172,6 +194,13 @@ class Result:
                 e.append(f"sheets.{s.index}: a .tap offered for cutting must have a passing guard report")
             if s.tap is not None and s.guard is not None and s.tap_sha256 != s.guard.sha256:
                 e.append(f"sheets.{s.index}: tap_sha256 doesn't match the guard report")
+            for p in s.programs:
+                if p.tap is not None and (p.guard is None or not p.guard.passed):
+                    e.append(f"sheets.{s.index}.{p.kind}: a .tap offered for cutting must have a passing guard report")
+                if p.tap is not None and p.guard is not None and p.tap_sha256 != p.guard.sha256:
+                    e.append(f"sheets.{s.index}.{p.kind}: tap_sha256 doesn't match the guard report")
+                if s.tap is not None and p.tap is None:
+                    e.append(f"sheets.{s.index}: offered for cutting without its {p.kind} program")
         return e
 
 

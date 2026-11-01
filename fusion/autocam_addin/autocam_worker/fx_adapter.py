@@ -15,13 +15,13 @@ from typing import Dict, List
 from autocam_core.schema_job import Job
 
 from . import fx_cam, fx_design, fx_geometry
-from .adapter import BEARING, BORE, DRILL, INNER, OUTER, POCKET, POCKETFINISH, Adapter, AdapterError, Box
+from .adapter import BEARING, BORE, DRILL, FACE, INNER, OUTER, POCKET, POCKETFINISH, Adapter, AdapterError, Box
 from .fx_cam import UNCONFIRMED
 from .fx_util import call, to_cm
 
 
 class FusionAdapter(Adapter):
-    capabilities = frozenset({DRILL, BORE, BEARING, INNER, OUTER, POCKET, POCKETFINISH})
+    capabilities = frozenset({DRILL, BORE, BEARING, INNER, OUTER, POCKET, POCKETFINISH, FACE})
 
     def __init__(self, app, job: Job, generate_timeout_s: float = 900.0):
         self.app = app
@@ -32,6 +32,7 @@ class FusionAdapter(Adapter):
         self.setups: Dict[str, object] = {}     # sheet -> setup
         self.tab_sketch: Dict[str, object] = {}  # sheet -> the sketch holding its tab points
         self.sheet_info: Dict[str, tuple] = {}  # sheet -> (origin, thickness, copy ids)
+        self.stocks: Dict[str, object] = {}     # sheet -> its stock solid
         self.used: List[str] = []
         self.run_notes: List[str] = []
 
@@ -106,6 +107,16 @@ class FusionAdapter(Adapter):
             self._used("multi_model_setup")
         self.setups[sheet] = fx_cam.make_setup(self.cam, sheet, models, stock, self.job.fusion_params["setup"])
         self.sheet_info[sheet] = (origin, thickness_in, list(copy_ids))
+        self.stocks[sheet] = stock
+
+    def make_face_setup(self, sheet, face, copy_ids):
+        self._used("face_setup")
+        if sheet not in self.stocks:
+            raise AdapterError(f"no stock for {sheet}")
+        models = [fx_design.body(self._occ(c)) for c in copy_ids]
+        self.setups[face] = fx_cam.make_setup(self.cam, face, models, self.stocks[sheet], self.job.fusion_params["setup"])
+        origin, thickness_in, _ = self.sheet_info[sheet]
+        self.sheet_info[face] = (origin, thickness_in, list(copy_ids))
 
     def apply_template(self, sheet, template_path):
         return fx_cam.apply_template(self._setup(sheet), template_path)
@@ -136,6 +147,13 @@ class FusionAdapter(Adapter):
             if how != "pocket selection":
                 self._used("pocket_selection")
             self.run_notes.append(f"{op_name}: pockets selected as {how}")
+        elif fill.tag == FACE:
+            self._used("face_tops")
+            loops = [fx_geometry.outer_loop(fx_design.face_by_id(self._occ(cid), fid)) for cid, fid in fill.tops]
+            selections = params["selections"]
+            call(f"{op_name}: select tops", fx_cam.select_loops, op, [], loops,
+                 selections.get("face", selections["pocket"]), self._used)
+            call(f"{op_name}: face depth", fx_cam.face_depth, op, fill.depth_in)
         elif fill.tag == POCKETFINISH:
             self._used("pocket_walls")
             loops = [fx_geometry.outer_loop(fx_design.face_by_id(self._occ(cid), fid)) for cid, fid in fill.floors]
@@ -264,6 +282,6 @@ def _as_adapter_error(name, method):
 
 
 for _name in ("begin", "import_step", "extract", "add_copy", "arrange", "box", "faces_up", "discard", "make_sheet",
-              "apply_template", "fill", "make_outer_ops", "delete_op", "generate", "post", "cuts_into_parts",
+              "make_face_setup", "apply_template", "fill", "make_outer_ops", "delete_op", "generate", "post", "cuts_into_parts",
               "machining_time", "preview", "export_f3d", "save_to_team", "finish"):
     setattr(FusionAdapter, _name, _as_adapter_error(_name, getattr(FusionAdapter, _name)))
