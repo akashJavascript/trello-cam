@@ -23,7 +23,7 @@ def test_a_hole_fit_is_cut_tight_with_a_lap_per_step(tmp_path):
     assert result.status == "ok", (result.sheets[0].errors, [p.errors for p in result.parts])
     (sheet,) = result.sheets
     s = rig.fake.sheets[sheet.name]
-    fit_op = "[bore] holes - fit p01"
+    fit_op = "[bore] holes (2)"                                          # the template's again, not renamed
     assert [cid for cid, _ in s["fills"][fit_op].holes] == ["p01.1", "p01.2"] and s["stock"][fit_op] == 0.003
     assert len(s["fills"]["[bore] holes"].holes) == 3                    # the 0.3 holes, not the fitted ones
     laps = [p for p in sheet.programs if p.kind == "fit"]

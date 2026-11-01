@@ -191,10 +191,7 @@ class FakeAdapter(Adapter):
     def op_names(self, sheet):
         return list(self.sheets[sheet]["ops"])
 
-    def rename_op(self, sheet, op_name, new_name):
-        s = self.sheets[sheet]
-        s["ops"][s["ops"].index(op_name)] = new_name
-        s["guids"][new_name] = s["guids"].pop(op_name)
+
 
     def fill(self, sheet, op_name, fill: OpFill):
         self.sheets[sheet]["fills"][op_name] = fill

@@ -144,9 +144,6 @@ class Adapter:
         """The op leaves this much radial stock (+: a hole smaller, an outline bigger), and none on the floor."""
         raise NotImplementedError
 
-    def rename_op(self, sheet: str, op_name: str, new_name: str) -> None:
-        raise NotImplementedError
-
     def op_names(self, sheet: str) -> List[str]:
         """The setup's ops, in order."""
         raise NotImplementedError

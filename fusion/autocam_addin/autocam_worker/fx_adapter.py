@@ -123,9 +123,6 @@ class FusionAdapter(Adapter):
     def op_names(self, sheet):
         return [o.name for o in fx_cam.ops(self._setup(sheet))]
 
-    def rename_op(self, sheet, op_name, new_name):
-        call(f"rename {op_name}", fx_cam.rename_op, self._setup(sheet), op_name, new_name)
-
     def set_radial_stock(self, sheet, op_name, stock_in):
         self._used("fit_stock")
         call(f"{op_name}: radial stock", fx_cam.radial_stock, fx_cam.op_by_name(self._setup(sheet), op_name), stock_in)
@@ -309,7 +306,7 @@ def _as_adapter_error(name, method):
 
 
 for _name in ("begin", "import_step", "extract", "add_copy", "arrange", "box", "faces_up", "discard", "make_sheet",
-              "make_extra_setup", "set_radial_stock", "rename_op", "op_names", "apply_template", "fill",
+              "make_extra_setup", "set_radial_stock", "op_names", "apply_template", "fill",
               "copy_op", "set_tabs", "set_tab_size", "set_tab_points", "loop_segments", "make_outer_ops", "delete_op", "generate", "post", "cuts_into_parts",
               "machining_time", "preview", "export_f3d", "save_to_team", "finish"):
     setattr(FusionAdapter, _name, _as_adapter_error(_name, getattr(FusionAdapter, _name)))

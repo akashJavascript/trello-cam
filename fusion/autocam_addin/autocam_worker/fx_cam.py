@@ -212,13 +212,6 @@ def radial_stock(op, inches: float) -> None:
         set_expr(op, "verticalStockToLeave", "0 in")
 
 
-def rename_op(setup, old: str, new: str) -> None:
-    op = op_by_name(setup, old)
-    op.name = new
-    if op.name != new:
-        raise AdapterError(f"renaming {old!r} to {new!r} didn't stick (reads {op.name!r})")
-
-
 def cut_to_stock_bottom(op) -> None:
     set_expr(op, "bottomHeight_mode", STOCK_BOTTOM)
     set_expr(op, "bottomHeight_offset", "0 in")

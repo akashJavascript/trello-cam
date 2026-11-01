@@ -985,18 +985,17 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     for tag, names in by_tag.items():
         if tag == OUTER:
             continue
-        for fit in sheet.fits:                       # fitted holes: their op again, from the template (not a copy:
-            if fit.kind == "hole" and fit.tag == tag:   # copying a bore op popped up a dialog in r032), alone, tight
-                name = f"{names[0]} - fit {fit.part_key}"
-                had = set(adapter.op_names(sheet.name))
-                added = [o.name for o in adapter.apply_template(sheet.name, tool.template_path) if o.name not in had]
+        for fit in sheet.fits:                       # fitted holes: their op again, from the template, alone, tight.
+            if fit.kind == "hole" and fit.tag == tag:   # Never renamed: renaming a Bore op with no holes selected
+                had = set(adapter.op_names(sheet.name))  # pops up "Failed to generate toolpath" in Fusion and holds
+                added = [o.name for o in adapter.apply_template(sheet.name, tool.template_path)   # the job (r035)
+                         if o.name not in had]
                 keep = next(o for o in added if _op_tag(o) == tag)
                 for o in added:
                     if o != keep:
                         adapter.delete_op(sheet.name, o)
-                adapter.rename_op(sheet.name, keep, name)
-                adapter.fill(sheet.name, name, OpFill(tag, holes=tuple(fit.holes)))
-                adapter.set_radial_stock(sheet.name, name, fit.stocks[0])
+                adapter.fill(sheet.name, keep, OpFill(tag, holes=tuple(fit.holes)))
+                adapter.set_radial_stock(sheet.name, keep, fit.stocks[0])
         if tag == INNER:
             # Tabbed parts' cutouts: a copy of the op per tab count, made before the op is filled, so each
             # copy starts empty; they land after it (and before the outlines).
