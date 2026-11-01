@@ -10,3 +10,6 @@ logs/
 *.egg-info/
 build/
 fusion/autocam_run/out/
+
+# editor settings Fusion writes next to add-ins and scripts
+.vscode/
