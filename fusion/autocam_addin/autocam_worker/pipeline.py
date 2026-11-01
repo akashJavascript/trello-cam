@@ -901,13 +901,15 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     if holes[BEARING] and BEARING not in by_tag and BORE in by_tag:
         holes[BORE] += holes[BEARING]
         holes[BEARING] = []
-        sheet.warnings.append(Issue(E.OP_WARNING, "the template has no [bearing] op; bearing holes are bored with [bore]"))
+        sheet.warnings.append(Issue(E.OP_WARNING, "the template has no [bearing] op; bearing holes are bored with [bore]"
+                                    + (" and holes.bearing_stock_in isn't applied" if job.holes.bearing_stock_in else "")))
 
     if tabbed and INNER not in by_tag:
         loops += [loop for group in tabbed.values() for loop in group]     # reported as a missing [inner] op
         tabbed = {}
+    stock = job.holes.bearing_stock_in or None             # press-fit tuning; 0 keeps the template's
     fills = {DRILL: OpFill(DRILL, holes=tuple(holes[DRILL])), BORE: OpFill(BORE, holes=tuple(holes[BORE])),
-             BEARING: OpFill(BEARING, holes=tuple(holes[BEARING])), INNER: OpFill(INNER, loops=tuple(loops)),
+             BEARING: OpFill(BEARING, holes=tuple(holes[BEARING]), stock_in=stock), INNER: OpFill(INNER, loops=tuple(loops)),
              POCKET: OpFill(POCKET, floors=tuple(floors)), POCKETFINISH: OpFill(POCKETFINISH, floors=tuple(floors))}
     for tag, fill in fills.items():
         wanted = len(fill.holes) + len(fill.loops) + len(fill.floors)

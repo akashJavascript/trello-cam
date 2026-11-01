@@ -129,6 +129,9 @@ class FusionAdapter(Adapter):
             self._used("drill_faces" if fill.tag == DRILL else "bore_faces")
             faces = [fx_design.face_by_id(self._occ(cid), fid) for cid, ids in fill.holes for fid in ids]
             call(f"{op_name}: select holes", fx_cam.select_hole_faces, op, faces, names)
+            if fill.tag == BEARING and fill.stock_in is not None:
+                self._used("bearing_stock")
+                call(f"{op_name}: radial stock", fx_cam.radial_stock, op, fill.stock_in)
         elif fill.tag == INNER:
             whole, single = self._inner_selection(fill.loops)
             if single:

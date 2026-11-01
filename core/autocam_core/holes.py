@@ -40,6 +40,7 @@ class HoleRules:
     bore_max_in: float
     bearing_sizes_in: Tuple[float, ...]
     bearing_tol_in: float
+    bearing_stock_in: float = 0.0      # radial stock the [bearing] op leaves: + tighter, - looser (core 0.15.0)
 
 
 @dataclass(frozen=True)

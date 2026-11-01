@@ -74,6 +74,7 @@ class OpFill:
     floors: Tuple[Tuple[str, int], ...] = ()                # pocket, pocketfinish: (copy id, floor face id)
     tops: Tuple[Tuple[str, int], ...] = ()                  # face: (copy id, top face id), each skimmed inside
     depth_in: float = 0.0                                   # its outline, this deep from the stock top
+    stock_in: Optional[float] = None                        # bearing: radial stock to leave (None: the template's)
 
 
 class Adapter:

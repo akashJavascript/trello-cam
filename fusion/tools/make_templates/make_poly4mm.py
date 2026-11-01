@@ -9,32 +9,33 @@ differ only in flute length, coolant and feeds). Run it again whenever alu_4mm c
 import sys
 src, dst = sys.argv[1], sys.argv[2]
 t = open(src, encoding="utf-8").read()
+N = t.count('<template description=')       # ops (6 before [bearing], 2026-11-01)
 ALU_GUID, POLY_GUID = "e5dd75b2-ea23-4767-b10b-756a9444cc2e", "b4521723-7c35-4121-b376-50f3db7bc3a0"
 ALU_PRESET, POLY_PRESET = "01017861-4063-8139-e570-c28889a60bd2", "abdbd17c-4b5c-7809-e16b-ca9fcabc6c5e"
 swaps = [
     ("<user-name>alu_4mm</user-name>", "<user-name>poly_4mm</user-name>", 1),
-    (f'guid="{ALU_GUID}"', f'guid="{POLY_GUID}"', 6),                       # each op's tool
-    (ALU_PRESET, POLY_PRESET, 12),                                            # toolPresetId + preset id
-    ("<description>4mm 0 flute Aluminum</description>", "<description>4mm 0 flute Poly</description>", 6),
-    ('<coolant mode="disabled"/>', '<coolant mode="air"/>', 6),             # the tool's own default (library)
-    ('flute-length="12"', 'flute-length="18"', 6),
+    (f'guid="{ALU_GUID}"', f'guid="{POLY_GUID}"', N),                       # each op's tool
+    (ALU_PRESET, POLY_PRESET, 2 * N),                                            # toolPresetId + preset id
+    ("<description>4mm 0 flute Aluminum</description>", "<description>4mm 0 flute Poly</description>", N),
+    ('<coolant mode="disabled"/>', '<coolant mode="air"/>', N),             # the tool's own default (library)
+    ('flute-length="12"', 'flute-length="18"', N),
     ('cutting-feedrate="1524.002816264" entry-feedrate="1524" exit-feedrate="1524"',
-     'cutting-feedrate="2540.001693769" entry-feedrate="2540" exit-feedrate="2540"', 5),
-    ('ramp-feedrate="1524"', 'ramp-feedrate="2540"', 5),
-    ('transition-feedrate="1524.002816264"', 'transition-feedrate="2540.001693769"', 5),
-    ('<parameter key="tool_coolant" value="disabled"/>', '<parameter key="tool_coolant" value="air"/>', 6),
-    ('<parameter key="tool_feedCutting" value="1524.0028162639564"/>', '<parameter key="tool_feedCutting" value="2540.0016937688974"/>', 6),
-    ('<parameter key="tool_feedEntry" value="1524"/>', '<parameter key="tool_feedEntry" value="2540"/>', 6),
-    ('<parameter key="tool_feedExit" value="1524"/>', '<parameter key="tool_feedExit" value="2540"/>', 6),
-    ('<parameter key="tool_feedRamp" value="1524"/>', '<parameter key="tool_feedRamp" value="2540"/>', 6),
-    ('<parameter key="tool_feedTransition" value="1524.0028162639564"/>', '<parameter key="tool_feedTransition" value="2540.0016937688974"/>', 6),
+     'cutting-feedrate="2540.001693769" entry-feedrate="2540" exit-feedrate="2540"', N - 1),
+    ('ramp-feedrate="1524"', 'ramp-feedrate="2540"', N - 1),
+    ('transition-feedrate="1524.002816264"', 'transition-feedrate="2540.001693769"', N - 1),
+    ('<parameter key="tool_coolant" value="disabled"/>', '<parameter key="tool_coolant" value="air"/>', N),
+    ('<parameter key="tool_feedCutting" value="1524.0028162639564"/>', '<parameter key="tool_feedCutting" value="2540.0016937688974"/>', N),
+    ('<parameter key="tool_feedEntry" value="1524"/>', '<parameter key="tool_feedEntry" value="2540"/>', N),
+    ('<parameter key="tool_feedExit" value="1524"/>', '<parameter key="tool_feedExit" value="2540"/>', N),
+    ('<parameter key="tool_feedRamp" value="1524"/>', '<parameter key="tool_feedRamp" value="2540"/>', N),
+    ('<parameter key="tool_feedTransition" value="1524.0028162639564"/>', '<parameter key="tool_feedTransition" value="2540.0016937688974"/>', N),
     # the ops' own copies of the tool's values (the op's coolant stays 'disabled': mist comes from the material)
-    ("<parameter expression=\"'4mm 0 flute Aluminum'\" name=\"tool_description\"/>", "<parameter expression=\"'4mm 0 flute Poly'\" name=\"tool_description\"/>", 6),
-    ('<parameter expression="12." name="tool_fluteLength"/>', '<parameter expression="18." name="tool_fluteLength"/>', 6),
-    ('<parameter expression="1524.00281626395645" name="tool_feedCutting"/>', '<parameter expression="2540.0016937688974" name="tool_feedCutting"/>', 5),
-    ('<parameter expression="1524." name="tool_feedEntry"/>', '<parameter expression="2540." name="tool_feedEntry"/>', 5),
-    ('<parameter expression="1524." name="tool_feedExit"/>', '<parameter expression="2540." name="tool_feedExit"/>', 5),
-    ('<parameter expression="1524." name="tool_feedRamp"/>', '<parameter expression="2540." name="tool_feedRamp"/>', 5),
+    ("<parameter expression=\"'4mm 0 flute Aluminum'\" name=\"tool_description\"/>", "<parameter expression=\"'4mm 0 flute Poly'\" name=\"tool_description\"/>", N),
+    ('<parameter expression="12." name="tool_fluteLength"/>', '<parameter expression="18." name="tool_fluteLength"/>', N),
+    ('<parameter expression="1524.00281626395645" name="tool_feedCutting"/>', '<parameter expression="2540.0016937688974" name="tool_feedCutting"/>', N - 1),
+    ('<parameter expression="1524." name="tool_feedEntry"/>', '<parameter expression="2540." name="tool_feedEntry"/>', N - 1),
+    ('<parameter expression="1524." name="tool_feedExit"/>', '<parameter expression="2540." name="tool_feedExit"/>', N - 1),
+    ('<parameter expression="1524." name="tool_feedRamp"/>', '<parameter expression="2540." name="tool_feedRamp"/>', N - 1),
 ]
 for old, new, n in swaps:
     got = t.count(old)

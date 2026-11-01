@@ -162,6 +162,8 @@ bore_min_tol_in = 0.002
 bore_max_in = 1.5          # inclusive; larger round holes go to [inner]
 bearing_sizes_in = [1.125, 0.875]
 bearing_tol_in = 0.010
+bearing_stock_in = 0.0     # press-fit tuning: radial stock the [bearing] op leaves. + makes bearing holes tighter,
+                           # - looser (0.0005 = 0.001 on the diameter); at most 0.01 either way; 0 = as modeled
 
 [holes.drill_sizes_in]
 t1_4mm_alu = [0.156, 0.159]

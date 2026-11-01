@@ -11,7 +11,7 @@ expects:
 | `poly_eighth.f3dhsm-template` | polycarbonate | `1/8 polycarbonate` (T12) |
 | `face_6mm.f3dhsm-template` | any (the Face label) | `6mm 3 flute Alu` (T2) |
 
-**Only `alu_4mm` is built in Fusion.** The other three are made from it with `fusion/tools/make_templates/`
+**Only `alu_4mm` is built in Fusion** (its `[bearing]` op was added by `add_bearing.py`). The other three are made from it with `fusion/tools/make_templates/`
 (the same ops and settings, the other tool and its preset feeds from the pinned library); run those again
 whenever `alu_4mm` changes. Each one checks every swap's count, so a reworked `alu_4mm` stops it rather than
 half-converting it.
@@ -43,6 +43,10 @@ building the templates, run `dump_params` on a part with each template applied a
   - `[pocketfinish]` (optional) is a **2D Contour** on each pocket floor's outline at the floor: no stock to
     leave, no tabs. Without it, the adaptive's walls are the finished walls.
   - A pocket with a raised island in it still goes back for manual CAM.
+  - `[bearing]` is the `[bore]` op with a finishing pass (0.005 in radial), for the bearing sizes in config
+    (`holes.bearing_sizes_in`). It was added to alu_4mm by `make_templates/add_bearing.py` (2026-11-01), so the other
+    templates have it too. Press fits are tuned in config, not here: `holes.bearing_stock_in` is the radial stock it
+    leaves (+ tighter, - looser), set on every sheet.
   - Selections don't matter: the automation selects the geometry for every op on every sheet.
 - **One tool:**
   - Every op uses the template's single tool. The automation checks the tool GUID.

@@ -128,6 +128,7 @@ BAD_VARIANTS = [
     ("poly_template_on_t12", _set("templates", "poly_4mm", "tool", "t12_eighth_alu"),
      "polycarbonate never uses t12_eighth_alu"),
     ("default_tool_without_template", _delete("templates", "alu_4mm"), "no template uses t1_4mm_alu"),
+    ("bearing_stock_too_big", _set("holes", "bearing_stock_in", -0.02), "holes.bearing_stock_in: at most 0.01"),
     # facing (the Face label)
     ("face_too_deep", _set("face", "depth_in", 0.03), "face.depth_in: at most 0.02 in"),
     ("face_tool_not_in_library", _set("face", "guid", "00000000-0000-0000-0000-000000000000"),

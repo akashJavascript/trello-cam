@@ -24,6 +24,7 @@ from autocam_core.schema_job import MAX_FACE_DEPTH_IN
 from autocam_core.tapguard import SAFE_G, SAFE_M
 from autocam_core.toollib import ToolLibrary, ToolLibraryError
 
+MAX_BEARING_STOCK_IN = 0.01
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = REPO_ROOT / "config" / "autocam.toml"
 
@@ -179,6 +180,7 @@ class Holes:
     bearing_sizes_in: Tuple[float, ...]
     bearing_tol_in: float
     drill_sizes_in: Mapping[str, Tuple[float, ...]]
+    bearing_stock_in: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -610,6 +612,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         bore_max_in=t.number("bore_max_in", positive=True),
         bearing_sizes_in=t.numbers("bearing_sizes_in"),
         bearing_tol_in=t.number("bearing_tol_in", positive=True),
+        bearing_stock_in=t.number("bearing_stock_in", default=0.0),
         drill_sizes_in=MappingProxyType(drill_sizes),
     )
     t.finish()
@@ -943,6 +946,8 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
     for s in cfg.holes.bearing_sizes_in:
         if not cfg.holes.bore_min_in <= s <= cfg.holes.bore_max_in:
             e(f"holes.bearing_sizes_in: {s} is outside the bore range")
+    if abs(cfg.holes.bearing_stock_in) > MAX_BEARING_STOCK_IN:
+        e(f"holes.bearing_stock_in: at most {MAX_BEARING_STOCK_IN} in either way (a fit, not a size change)")
 
     if set(cfg.op_tags) != set(OP_TAGS):
         e(f"cam.op_tags: must list exactly {', '.join(OP_TAGS)}")

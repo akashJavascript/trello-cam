@@ -353,3 +353,21 @@ def test_team_save_failure_or_no_folder_still_delivers_the_job(tmp_path):
     rig = Rig(tmp_path / "b", team=("", ""))
     result = rig.run(rig.job([("gusset", 1, plate(), (4.0, 4.0))]))
     assert rig.fake.saved_to_team == [] and any("no Fusion Team folder" in n for n in result.notes)
+
+
+def test_bearing_holes_get_the_bearing_op_and_its_press_fit_stock(tmp_path):
+    import dataclasses
+    rig = Rig(tmp_path)
+    job = rig.job([("retainer", 1, plate(holes=(1.125, 0.25)), (5.0, 3.0))])
+    result = rig.run(job)
+    s = rig.fake.sheets[result.sheets[0].name]
+    assert len(s["fills"]["[bearing] holes"].holes) == 1 and s["fills"]["[bearing] holes"].stock_in is None
+    assert len(s["fills"]["[bore] holes"].holes) == 1
+    assert not any("no [bearing] op" in w.msg for w in result.sheets[0].warnings)
+
+    (tmp_path / "tight").mkdir()
+    rig = Rig(tmp_path / "tight")
+    job = rig.job([("retainer", 1, plate(holes=(1.125, 0.25)), (5.0, 3.0))])
+    job = dataclasses.replace(job, holes=dataclasses.replace(job.holes, bearing_stock_in=0.0005))
+    result = rig.run(job)
+    assert rig.fake.sheets[result.sheets[0].name]["fills"]["[bearing] holes"].stock_in == 0.0005

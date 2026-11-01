@@ -39,6 +39,7 @@ UNCONFIRMED = {
     "pocket_walls": "[pocketfinish] (2D Contour): each floor's outer loop as a chain, cut on the floor's side",
     # face_setup and face_tops ([face] on each faced copy's top outer loop, from the stock top down by the depth)
     # work in Fusion (r029, 2026-11-01); still reported until a sheet with them has been cut.
+    "bearing_stock": "[bearing] (Bore): useStockToLeave + stockToLeave = holes.bearing_stock_in",
     "face_setup": "a FACE setup on the sheet's stock solid (a second setup on one stock body)",
     "face_tops": "[face] (2D Adaptive): each faced copy's top outer loop as a chain, inside; bottom height "
                  "'from stock top' less the depth",
@@ -199,6 +200,12 @@ def face_depth(op, depth_in: float) -> None:
     _set_length(op, "topHeight_offset", 0.0)
     set_expr(op, "bottomHeight_mode", "'from stock top'")
     _set_length(op, "bottomHeight_offset", -depth_in)
+
+
+def radial_stock(op, inches: float) -> None:
+    """The op leaves this much on the walls (Bore: + a smaller hole, - a bigger one)."""
+    set_expr(op, "useStockToLeave", "true")
+    _set_length(op, "stockToLeave", inches)
 
 
 def cut_to_stock_bottom(op) -> None:
