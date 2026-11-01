@@ -17,7 +17,12 @@ def fit_card(cid="c1", line="Fit: 0.5 hole", qty=2, name="plate"):
 def test_fit_lines():
     assert parse_fit("Fit: 1.125 hole") == ("hole", 1.125) and parse_fit("fit: hole .875") == ("hole", 0.875)
     assert parse_fit("Fit: outline") == ("outline", 0.0) and parse_fit("Qty: 2") is None
+    assert parse_fit("Fit: 1/2 hole") == ("hole", 0.5)                     # not a 1 in hole
+    assert parse_fit("Fit: 1-1/8 hole") == ("hole", 1.125) == parse_fit("Fit: 1 1/8 hole")
+    assert parse_fit('Fit: 3/4" hole') == ("hole", 0.75)
+    assert parse_fit("Fit: 22 mm hole") == ("hole", 0.8661)
     assert "isn't a fit AutoCAM knows" in parse_fit("Fit: snug")
+    assert "isn't a fit AutoCAM knows" in parse_fit("Fit: 1/0 hole")
     assert "More than one Fit: line" in parse_fit("Fit: outline\nFit: 1 hole")
 
 

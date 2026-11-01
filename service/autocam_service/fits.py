@@ -1,7 +1,8 @@
 """Fit series (core 0.16.0; the user's choice 2026-11-01): a part card's "Fit:" line, the stocks each run leaves,
 and what was learned from the sheet cards' Fit checklists.
 
-    Fit: 1.125 hole       the part's bored holes of that size (within holes.bearing_tol_in)
+    Fit: 1.125 hole       the part's bored holes of that size (within holes.bearing_tol_in); 1/2, 1-1/8 and
+                          22 mm work too
     Fit: outline          its outline (+ stock: the part bigger)
 
 The sheet's program leaves `start` of radial stock on that feature, and each lap program after it leaves step less
@@ -18,7 +19,20 @@ from typing import Dict, Optional, Tuple, Union
 from autocam_core.hotfolder import write_atomic
 
 _FIT = re.compile(r"^[ \t>\-*]*fit[ \t*]*[:=][ \t]*(.+?)[ \t*]*$", re.IGNORECASE | re.MULTILINE)
-_SIZE = re.compile(r"(\d+(?:\.\d*)?|\.\d+)")
+# a size: 0.5, .875, 1/2, 1-1/8 or 1 1/8 (inches, an optional in or "), or 22 mm
+_SIZE = re.compile(r"(?:(\d+)[ -])?(\d+)\s*/\s*(\d+)|(\d+(?:\.\d*)?|\.\d+)\s*(mm)?")
+MM_PER_IN = 25.4
+
+
+def _size(said: str):
+    m = _SIZE.search(said)
+    if not m:
+        return None
+    if m.group(3):                                   # a fraction, maybe after a whole number
+        whole = int(m.group(1)) if m.group(1) else 0
+        return whole + int(m.group(2)) / int(m.group(3)) if int(m.group(3)) else None
+    value = float(m.group(4))
+    return value / MM_PER_IN if m.group(5) else value
 
 Fit = Tuple[str, float]              # ("hole", diameter) or ("outline", 0.0)
 
@@ -33,9 +47,9 @@ def parse_fit(text: str) -> Union[None, Fit, str]:
     said = found[0].lower()
     if "outline" in said:
         return ("outline", 0.0)
-    m = _SIZE.search(said)
-    if m and float(m.group(1)) > 0:
-        return ("hole", float(m.group(1)))
+    d = _size(said)
+    if d and d > 0:
+        return ("hole", round(d, 4))
     return f'"Fit: {found[0]}" isn\'t a fit AutoCAM knows: write Fit: 1.125 hole (that hole size) or Fit: outline.'
 
 
