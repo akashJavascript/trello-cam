@@ -843,3 +843,30 @@ Press fits are tuned without Fusion: `holes.bearing_stock_in` is the radial stoc
 (+ tighter, - looser; 0.0005 = 0.001 in on the diameter; at most 0.01; 0 keeps the template's, which leaves none).
 Seen in Fusion (r030, r031): the lap took exactly 0.005, and 0.002 of stock made the hole 0.004 smaller across.
 
+## 2026-11-01: fit series (the user's choice: one feature per part, tuned at the machine; can be switched off)
+
+A part card's `Fit: 1.125 hole` (its bored holes of that size) or `Fit: outline` line: that feature is cut tight by
+the sheet's program (`[fit] start_in`, 0.003 in radial: a hole smaller, the part bigger), and the sheet gets lap
+programs, `<sheet>_FIT<n>_<k>`, each leaving `step_in` (0.001) less, down to 0.001 loose (`laps` 4). Same cutter and
+zero, run after the program one at a time until it fits. Copies of a part share a series. `[fit] enabled` turns it
+off. The simple version: fitted parts are always held by tabs and stay in at their stop, since the laps run after
+the outline (a lap is light: 0.001 in). Drilled holes can't be fitted, and parts placed by hand aren't yet.
+- **Fusion:** the fitted holes get their own `[bore]`/`[bearing]` op (the template applied again in the sheet's setup,
+  the other ops it brings deleted); an outline fit sets the stock on the copy's `[outer]` ops. Each lap is a setup of
+  its own on the sheet's stock and zero with only that op (outline laps with the same tabs at the same points),
+  posted and checked before the main program, so a failing lap stops the sheet.
+- **Checks:** `check_fit_program` (the sheet's guard and tool, no stops, only fitted parts, an outline lap's outlines
+  exactly the fitted copies and each to the bottom), the gouge check, and the service wants every lap with the stocks
+  the job asked for.
+- **Learning:** the sheet card has a Fit checklist (which run fit, or still tight after the last). Ticking one keeps
+  that stock per material and hole size (or part, for an outline) in `state/fits.json`, and the next series is
+  centred on it: the program two steps tight, the laps from one tight to two loose.
+- **Learned in Fusion on the way** (r032-r036):
+  - A 2D Contour's axial stock to leave follows its radial by default: 0.002 radial stopped an outline 0.002 above
+    Z0 (the depth check caught it). Fitted ops set the axial to 0.
+  - Renaming a Bore op that has no holes selected yet makes Fusion regenerate it, and it fails with a modal
+    "Failed to generate toolpath" dialog that holds the job until someone clicks OK. Found with the new call trace
+    (`fusion_calls.log` in each job folder). Hole ops are never renamed now; the fitted one keeps "[bearing] holes
+    (2)".
+  - Op names an applied template brings get " (2)", " (3)" across the whole document; renamed outline ops may repeat.
+
