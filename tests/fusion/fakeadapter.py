@@ -178,9 +178,23 @@ class FakeAdapter(Adapter):
         self.sheets[sheet].setdefault("stock", {})[op_name] = stock_in
 
     def apply_template(self, sheet, template_path):
-        ops = [TemplateOp(name, guid) for name, guid in json.loads(Path(template_path).read_text())]
-        self.sheets[sheet]["ops"] = [o.name for o in ops]
-        return ops
+        s = self.sheets[sheet]
+        for name, guid in json.loads(Path(template_path).read_text()):
+            new, n = name, 1
+            while new in s["ops"]:                 # like Fusion: a taken name gets " (2)"
+                n += 1
+                new = f"{name} ({n})"
+            s["ops"].append(new)
+            s.setdefault("guids", {})[new] = guid
+        return [TemplateOp(name, s["guids"][name]) for name in s["ops"] if name in s.get("guids", {})]
+
+    def op_names(self, sheet):
+        return list(self.sheets[sheet]["ops"])
+
+    def rename_op(self, sheet, op_name, new_name):
+        s = self.sheets[sheet]
+        s["ops"][s["ops"].index(op_name)] = new_name
+        s["guids"][new_name] = s["guids"].pop(op_name)
 
     def fill(self, sheet, op_name, fill: OpFill):
         self.sheets[sheet]["fills"][op_name] = fill

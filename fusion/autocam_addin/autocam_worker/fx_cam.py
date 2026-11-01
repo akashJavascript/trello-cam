@@ -204,9 +204,19 @@ def face_depth(op, depth_in: float) -> None:
 
 
 def radial_stock(op, inches: float) -> None:
-    """The op leaves this much on the walls (Bore: + a smaller hole, - a bigger one)."""
+    """The op leaves this much on the walls (Bore: + a smaller hole, - a bigger one), and nothing on the floor: a 2D
+    Contour's axial stock follows the radial by default (r033: 0.002 radial stopped an outline 0.002 above Z0)."""
     set_expr(op, "useStockToLeave", "true")
     _set_length(op, "stockToLeave", inches)
+    if op.parameters.itemByName("verticalStockToLeave") is not None:
+        set_expr(op, "verticalStockToLeave", "0 in")
+
+
+def rename_op(setup, old: str, new: str) -> None:
+    op = op_by_name(setup, old)
+    op.name = new
+    if op.name != new:
+        raise AdapterError(f"renaming {old!r} to {new!r} didn't stick (reads {op.name!r})")
 
 
 def cut_to_stock_bottom(op) -> None:

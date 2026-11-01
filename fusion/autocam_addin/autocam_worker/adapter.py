@@ -141,10 +141,19 @@ class Adapter:
         raise NotImplementedError
 
     def set_radial_stock(self, sheet: str, op_name: str, stock_in: float) -> None:
-        """The op leaves this much radial stock (+: a hole smaller, an outline bigger)."""
+        """The op leaves this much radial stock (+: a hole smaller, an outline bigger), and none on the floor."""
+        raise NotImplementedError
+
+    def rename_op(self, sheet: str, op_name: str, new_name: str) -> None:
+        raise NotImplementedError
+
+    def op_names(self, sheet: str) -> List[str]:
+        """The setup's ops, in order."""
         raise NotImplementedError
 
     def apply_template(self, sheet: str, template_path: str) -> List[TemplateOp]:
+        """Add the template's ops at the end of the setup; returns every op in the setup (an op whose name is
+        taken gets a new one from Fusion, like "[bore] holes (2)")."""
         raise NotImplementedError
 
     def fill(self, sheet: str, op_name: str, fill: OpFill) -> None:

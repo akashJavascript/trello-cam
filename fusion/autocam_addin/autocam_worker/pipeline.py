@@ -985,10 +985,16 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     for tag, names in by_tag.items():
         if tag == OUTER:
             continue
-        for fit in sheet.fits:                       # fitted holes: a copy of their op (made before it's filled,
-            if fit.kind == "hole" and fit.tag == tag:   # like the tab copies), left tight by the first stock
+        for fit in sheet.fits:                       # fitted holes: their op again, from the template (not a copy:
+            if fit.kind == "hole" and fit.tag == tag:   # copying a bore op popped up a dialog in r032), alone, tight
                 name = f"{names[0]} - fit {fit.part_key}"
-                adapter.copy_op(sheet.name, names[0], name)
+                had = set(adapter.op_names(sheet.name))
+                added = [o.name for o in adapter.apply_template(sheet.name, tool.template_path) if o.name not in had]
+                keep = next(o for o in added if _op_tag(o) == tag)
+                for o in added:
+                    if o != keep:
+                        adapter.delete_op(sheet.name, o)
+                adapter.rename_op(sheet.name, keep, name)
                 adapter.fill(sheet.name, name, OpFill(tag, holes=tuple(fit.holes)))
                 adapter.set_radial_stock(sheet.name, name, fit.stocks[0])
         if tag == INNER:
