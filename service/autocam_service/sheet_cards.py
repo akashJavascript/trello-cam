@@ -245,10 +245,12 @@ def fit_lines(f: dict, s) -> List[str]:
     what = f"{f['name']}'s {f['feature']}" + ("s" if hole and f["copies"] > 1 else "") + copies
     tight, fits = ("tight", "too tight") if hole else ("big", "too big")
     laps = ", then ".join(f"{p.tap} ({p.stock_in:+.4g})" for p in f["laps"])
+    slug = (" Its slug is held by tabs: after the program, break the slug out by hand (the first lap also takes the "
+            "tab stubs off the wall), then try the fit." if f["laps"][0].cutout else " After the program, try the fit.")
     return [f"FIT {f['series']}: {what}",
             f"The program cuts it {f['fit'].stocks_in[0]:.4g} in {tight} (radial) and leaves {f['name']} in, held by "
-            f"tabs: don't take it out at its stop. After the program, try the fit. Still {fits}? Run the next lap, "
-            f"with the same cutter and zero, and try again: {laps}.",
+            f"tabs: don't take it out at its stop.{slug} Still {fits}? Run the next lap, with the same cutter and "
+            f"zero, and try again: {laps}.",
             f"Stop at the first one that fits and tick it under \"{f['checklist']}\": the next sheet with it starts "
             "there."]
 

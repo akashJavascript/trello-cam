@@ -93,7 +93,7 @@ def _sub(tmp_path, name):
     return tmp_path / name
 
 
-def test_a_hole_over_the_bore_range_is_fitted_as_a_cutout_with_its_slug_tabbed(tmp_path):
+def test_a_hole_over_the_bore_range_is_fitted_as_a_cutout_with_its_slug_tabbed_then_laps_without(tmp_path):
     rig = Rig(tmp_path)
     job = rig.job([("hub", 1, plate(holes=(2.0, 0.5)), (6.0, 6.0))], fits={"hub": ("hole", 2.0)})
     result = rig.run(job)
@@ -103,12 +103,14 @@ def test_a_hole_over_the_bore_range_is_fitted_as_a_cutout_with_its_slug_tabbed(t
     fit_op = "[inner] cutouts (2)"                                         # the template's [inner] again, alone
     assert [cid for cid, _, _ in s["fills"][fit_op].loops] == ["p01.1"] and s["stock"][fit_op] == 0.003
     assert "[inner] cutouts" not in s["fills"] or not s["fills"]["[inner] cutouts"].loops   # it's not cut twice
-    points = s["tab_points"][fit_op]
-    assert points                                                         # the slug is held
+    assert s["tab_points"][fit_op]                                        # the slug is held through the program
     laps = [p for p in sheet.programs if p.kind == "fit"]
-    assert [p.stock_in for p in laps] == list(STOCKS[1:]) and all(p.tap for p in laps)
+    assert [p.stock_in for p in laps] == list(STOCKS[1:]) and all(p.tap and p.cutout for p in laps)
     for p in laps:
         lap = rig.fake.sheets[p.name]
         assert lap["ops"] == ["[inner] cutouts"] and lap["stock"]["[inner] cutouts"] == p.stock_in
-        assert lap["tab_points"]["[inner] cutouts"] == points           # the same tabs: the slug never comes free
+        assert not lap["tab_points"] and not lap["tabs"]                  # the slug's out by then: a full lap
+    from autocam_service.sheet_cards import fit_lines, fit_series
+    [series] = fit_series(job, sheet)
+    assert "break the slug out by hand" in " ".join(fit_lines(series, sheet))
     assert rig.service_view(job, result).sheets[0].cuttable

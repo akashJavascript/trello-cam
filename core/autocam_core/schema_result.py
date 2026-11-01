@@ -97,6 +97,7 @@ class ProgramResult:
     series: int = 0                    # which fit series on the sheet (1, 2, ...)
     lap: int = 0                       # 1, 2, ... in the order they're run
     feature: str = ""                  # e.g. "1.125 hole", "outline"
+    cutout: bool = False               # a hole cut as a cutout: its laps run once its slug is taken out by hand
 
 
 @dataclass(frozen=True)

@@ -152,7 +152,9 @@ class _Fit:
     stocks: Tuple[float, ...]
     holes: List[Tuple[str, Tuple[int, ...]]] = field(default_factory=list)   # (copy id, face ids)
     loops: List[Tuple[str, int, int]] = field(default_factory=list)          # holes cut as cutouts: (copy, face, loop)
-    tabs: int = 0                                                            # ...and the tabs on each
+    tabs: int = 0                                                            # ...the tabs that hold each slug (in the
+                                                                             # sheet's program only: the slug comes
+                                                                             # out by hand before the laps)
     instances: List[Tuple[str, str, int]] = field(default_factory=list)      # outline: (instance, copy id, face id)
     laps: List[str] = field(default_factory=list)
     results: List[ProgramResult] = field(default_factory=list)
@@ -1083,8 +1085,8 @@ def _build_fits(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Par
             if fit.kind == "hole":
                 adapter.fill(name, keep, OpFill(fit.tag, holes=tuple(fit.holes), loops=tuple(fit.loops)))
                 adapter.set_radial_stock(name, keep, stock)
-                if fit.loops and fit.tabs:            # the same tabs, so the lap doesn't cut the slug free
-                    _tab_op(adapter, job, sheet, keep, fit.loops, fit.tabs, tool.diameter_in, setup=name)
+                # A cutout's lap has no tabs: its slug was taken out by hand after the sheet's program (the team's
+                # way), and the full lap also takes the broken tab stubs off the wall.
             else:
                 adapter.make_outer_ops(name, keep, [(outer_op_name(inst), cid, fid) for inst, cid, fid in fit.instances])
                 n = _outline_tabs(job, part, tool.diameter_in)
@@ -1312,7 +1314,7 @@ def _post_fits(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> None
                 guard=GuardSummary(g.passed, g.sha256, g.floor_in, g.min_z_in, g.units, g.offenders,
                                    g.clamp_violations, g.problems),
                 machining_time_s=machining, parts=tuple(SheetPart(k, n) for k, n in counts.items()),
-                stock_in=stock, series=fit.series, lap=lap, feature=fit.feature))
+                stock_in=stock, series=fit.series, lap=lap, feature=fit.feature, cutout=bool(fit.loops)))
             if not ok:
                 sheet.errors += [Issue(E.TAP_REJECTED, f"{name}: {msg}") for msg in problems]
                 return
