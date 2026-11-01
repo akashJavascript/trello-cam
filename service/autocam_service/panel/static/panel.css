@@ -104,6 +104,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .notice.info { background: var(--surface-container); color: var(--on-surface-variant); }
 
 .parts { display: flex; flex-direction: column; }
+.group > .link-btn { align-self: flex-start; margin-top: 8px; }
 .part-row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 8px; margin: 0 -8px; border-radius: 10px; border: 0; background: transparent; text-align: left; cursor: pointer; }
 .part-row:hover { background: var(--surface-low); }
 .part-row .name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

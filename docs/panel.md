@@ -11,7 +11,8 @@ preview), cut, or sent back with the reason.
 ## What a student sees
 
 - **The parts list:** every solid part in the Part Studio, each with its status (Not sent, In Drafts, Waiting to
-  nest, On r034 S2, Cut, Sent back).
+  nest, On r034 S2, Cut, Sent back). Parts in a material AutoCAM doesn't cut (belts, PLA, steel) wait behind a
+  "more" link.
 - **A part with no card yet (or one that was cut):** its material, the quantity, the options and Send.
   - **Quantity** starts at how many of that part the document's assemblies use (the biggest count; a dropdown when
     there's more than one assembly), and can be changed. Only assemblies in the same document are counted.
@@ -108,5 +109,5 @@ Changing the key later: change `.env` (the service restarts by itself) and the A
   "Onshape selection message"). Until that's checked, students pick the part from the panel's list.
 - **Setting a material:** the request follows Onshape's metadata docs with a material object copied from a part
   that has it. Not yet tried on a live part; if it fails, the card's `Material:` line covers it and the panel says so.
-- **Assembly counts** follow Onshape's documented assembly definition (occurrences, subassemblies). Not yet seen on
-  a real robot assembly.
+- **Assembly counts** follow Onshape's documented assembly definition (occurrences, subassemblies). Seen working on
+  the P-2011 document (2026-11-01: P-2011 x1 in Shooter, 3 calls); not yet on a big robot assembly.

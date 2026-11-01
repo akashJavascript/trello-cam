@@ -141,6 +141,7 @@
     sent: null,            // /api/send's answer
     notice: "",
     changing: null,        // {qty} while changing a card's quantity
+    showOther: false,      // the list's parts in materials AutoCAM doesn't cut
     busy: false
   };
 
@@ -297,11 +298,18 @@
     if (st.boardError) add(bodyEl, notice("info", null, st.boardError));
     add(bodyEl, h("p", { class: "muted" }, "Select a part to send it."));
     if (!st.parts.length) { add(bodyEl, h("p", { class: "muted" }, "This Part Studio has no parts yet.")); return; }
-    add(bodyEl, group("In this Part Studio", h("div", { class: "parts" }, st.parts.map(function (p) {
+    // parts in a material AutoCAM doesn't cut (belts, PLA, steel) wait behind a link, unless they have a card
+    var cut = st.parts.filter(function (p) { return !p.material || p.material.key || p.chip.status !== "none"; });
+    var other = st.parts.filter(function (p) { return cut.indexOf(p) < 0; });
+    function row(p) {
       return h("button", { class: "part-row", type: "button", onclick: function () { openPart(p.id); } },
         h("span", { class: "name" }, p.name),
         p.chip.label ? chip(p.chip.label, p.chip.status) : null);
-    }))));
+    }
+    var list = h("div", { class: "parts" }, cut.map(row), S.showOther ? other.map(row) : null);
+    var more = other.length ? h("button", { class: "link-btn", type: "button", onclick: function () { S.showOther = !S.showOther; render(); } },
+      S.showOther ? "Hide parts in other materials" : other.length + " more in materials AutoCAM doesn't cut") : null;
+    add(bodyEl, group("In this Part Studio", list, more));
   }
 
   function renderPart() {
