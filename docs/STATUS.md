@@ -77,6 +77,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   elsewhere suspends it (one session per account); a separate account for the laptop would end that.
 
 ### Built, not yet seen on the machine or the real board
+- **Bearing holes** (2026-11-01): their own `[bearing]` op in every template, the bore with a 0.005 in finishing lap;
+  press fits tuned in config (`holes.bearing_stock_in`, radial: + tighter, - looser). **Work in Fusion** (r030, r031:
+  0.002 in made the hole 0.004 smaller across); none cut yet. Tune it from the first real bearing's fit.
 - **Faced parts** (2026-11-01): a **Face** label on a part card skims its top 0.005 in clean in a FACE program of the
   sheet's own, run first with the 6 mm 3-flute ALU (T2), then the sheet's program. Checked both sides: no deeper
   than the face depth, the cutter over faced parts only. **Works in Fusion** (r029: Z0.1825 on 3/16, the whole
@@ -114,7 +117,6 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 - **Brief leftovers** (small each): clamp-strip blocks in the Fusion setup so the simulation shows them; the
   "stock/cutter loaded" and "clamps as shown" items back in the required Review checklist; lowest Z per sheet
   in the run summary; a parts checklist on sheet cards.
-- **A separate `[bearing]` op** in the template, for press-fit tuning (now bored with `[bore]`).
 - **Even fewer Onshape calls:** one export per Part Studio (the add-in splits the bodies), and not
   exporting parts again after an edit elsewhere in the document (needs a geometry fingerprint from Onshape,
   confirmed with real calls first). Decisions, 2026-10-04.

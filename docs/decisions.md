@@ -831,3 +831,15 @@ Everything since M0 had been on `m1-offline`, with a short branch per Fusion tes
 the scouting laptop runs and new work goes on; the others were all fully in it and were deleted. A change that needs a Fusion run
 still gets a short branch, checked out on the laptop for the test and deleted once `main` has it.
 
+## 2026-11-01: bearing holes get their own op, and press fits are tuned in config (the user's ask: no Fusion)
+
+Bearing holes (`holes.bearing_sizes_in`) used to be bored with `[bore]` (a warning on every sheet with one), so
+their size couldn't be tuned apart from every other bore. Now every template has a `[bearing]` op: `[bore]`'s
+settings plus a finishing lap, so the final size comes from one light (0.005 in radial) pass at full depth rather
+than the roughing helix. It's added to alu_4mm by `make_templates/add_bearing.py` (an exact text change, checked),
+and the other templates are made from alu_4mm as before (the generators now count ops instead of assuming six; a
+test checks each committed template is exactly what its generator makes). Fusion was never opened by hand.
+Press fits are tuned without Fusion: `holes.bearing_stock_in` is the radial stock `[bearing]` leaves on each sheet
+(+ tighter, - looser; 0.0005 = 0.001 in on the diameter; at most 0.01; 0 keeps the template's, which leaves none).
+Seen in Fusion (r030, r031): the lap took exactly 0.005, and 0.002 of stock made the hole 0.004 smaller across.
+

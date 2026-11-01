@@ -39,7 +39,7 @@ UNCONFIRMED = {
     "pocket_walls": "[pocketfinish] (2D Contour): each floor's outer loop as a chain, cut on the floor's side",
     # face_setup and face_tops ([face] on each faced copy's top outer loop, from the stock top down by the depth)
     # work in Fusion (r029, 2026-11-01); still reported until a sheet with them has been cut.
-    "bearing_stock": "[bearing] (Bore): useStockToLeave + stockToLeave = holes.bearing_stock_in",
+    "bearing_stock": "[bearing] (Bore): useStockToLeave + stockToLeave = holes.bearing_stock_in",   # works (r031)
     "face_setup": "a FACE setup on the sheet's stock solid (a second setup on one stock body)",
     "face_tops": "[face] (2D Adaptive): each faced copy's top outer loop as a chain, inside; bottom height "
                  "'from stock top' less the depth",

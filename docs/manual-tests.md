@@ -434,6 +434,14 @@ mentions it. A plain plate as a Rush card with its STEP attached and the **Face*
 | 4 | The FACE program's lowest Z is the stock top less 0.005 (e.g. Z0.1825 on 3/16 stock) | r029: Z0.1825; cutter edge 0.06-0.11 in past the outline all round, center inside |
 | 5 | At the machine: run the FACE program with T2 measured on the setter, then the sheet's program with its own cutter; the faced tops are clean and the parts are 0.005 in thinner | |
 
+### 16. Bearing fits (2026-11-01)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | A part with a bearing hole: the sheet has a `[bearing holes]` op after `[bore holes]`, and no "no [bearing] op" warning | r030 (P-2015): yes; the finishing lap 0.005 in out from the roughing helix |
+| 2 | `holes.bearing_stock_in = 0.002`: the finishing lap comes in 0.002 | r031: 0.3613 -> 0.3593 |
+| 3 | Cut a bearing hole and press a real bearing in. Too tight: lower `bearing_stock_in` (more negative); too loose: raise it. Record the value that fits, per material | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)
