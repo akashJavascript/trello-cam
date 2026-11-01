@@ -1,6 +1,6 @@
 # Status
 
-_Last updated 2026-11-01 (branch `m1-offline`)._
+_Last updated 2026-11-01 (branch `main`)._
 
 ## Where things are
 
@@ -75,9 +75,6 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   signs in by itself. Left: the reboot test
   (`docs/manual-tests.md` → M5). The laptop's Fusion runs on the user's Autodesk account, so Fusion opened
   elsewhere suspends it (one session per account); a separate account for the laptop would end that.
-
-### Decisions waiting on you
-- **Merge `m1-offline` into `main`:** everything since M0 is on the branch.
 
 ### Built, not yet seen on the machine or the real board
 - **Faced parts** (2026-11-01): a **Face** label on a part card skims its top 0.005 in clean in a FACE program of the

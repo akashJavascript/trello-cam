@@ -6,7 +6,7 @@ Record per-call API results in `docs/fusion-api-status.md`.
 
 ## M1.0: API probe, parameter dumps, Phase 1 smoke test
 
-**Where:** Fusion on a Windows PC that can see `C:\dev\frc-autocam`, with branch `m1-offline` checked out.
+**Where:** Fusion on a Windows PC that can see `C:\dev\frc-autocam`, with branch `main` checked out (`m1-offline` until 2026-11-01).
 All three scripts only read the repo, and they write their output inside it. The probe and dump scripts change
 nothing in Fusion documents. The Phase 1 script creates a new document of its own.
 
@@ -96,7 +96,7 @@ Second run: answered the bottom height, Manual NC and op reordering, and found t
 `isGroundToParent`. Version 3 (2026-10-01, `out\20261001-155657`): answered the rest of Arrange (clearing
 ground-to-parent, the STEP import path, parts that don't fit, a second sheet, which way up). Done.
 
-1. `git pull` on the Fusion PC (branch `m1-offline`).
+1. `git pull` on the Fusion PC (branch `main`).
 2. Add `C:\dev\frc-autocam\fusion\tools\pipeline_probe2` and run it. Pick the same smoke template when asked.
    Scratch documents open and close; it saves nothing.
 3. Paste the output of:

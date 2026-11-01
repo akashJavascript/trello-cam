@@ -824,3 +824,10 @@ starts no Fusion run (`own_programs.py`, runner `own_programs`; `[hand_cuts] pla
 - Not done: no preview picture or machining time on the card, one program per card, not counted in the season's
   stock tally, and AutoCAM's nested parts don't share the piece with it in the same run.
 
+## 2026-11-01: one branch, `main` (the user's choice)
+
+Everything since M0 had been on `m1-offline`, with a short branch per Fusion test (`pockets`, `poly4mm`,
+`handcuts`, `face`). `main` was moved up to `m1-offline` (a fast-forward: it held nothing else) and is now the branch
+the scouting laptop runs and new work goes on; the others were all fully in it, so they can go. A change that needs a Fusion run
+still gets a short branch, checked out on the laptop for the test and deleted once `main` has it.
+
