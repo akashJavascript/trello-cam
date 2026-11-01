@@ -6,6 +6,7 @@ entity token, so a reference that went stale after a timeline change is found ag
 
 import functools
 import sys
+import time
 
 import adsk.core
 import adsk.fusion
@@ -35,6 +36,7 @@ class FusionAdapter(Adapter):
         self.stocks: Dict[str, object] = {}     # sheet -> its stock solid
         self.used: List[str] = []
         self.run_notes: List[str] = []
+        self.trace: List[str] = []              # every adapter call, timed (the job folder's fusion_calls.log)
 
     def _used(self, key: str) -> None:
         if UNCONFIRMED[key] not in self.used:
@@ -281,20 +283,33 @@ class FusionAdapter(Adapter):
             call("close document", self.doc.close, False)
 
 
+def _stamp() -> str:
+    t = time.time()
+    return time.strftime("%H:%M:%S", time.localtime(t)) + f".{int(t * 1000) % 1000:03d}"
+
+
 def _as_adapter_error(name, method):
-    """Any Fusion exception becomes an AdapterError naming the step, so one part or one sheet fails, not the job."""
+    """Any Fusion exception becomes an AdapterError naming the step, so one part or one sheet fails, not the job.
+    Each call is also traced with the local time, to line up with Fusion's own log (a dialog it pops up, say)."""
     @functools.wraps(method)
-    def wrapper(*args, **kwargs):
+    def wrapper(self, *args, **kwargs):
+        what = ", ".join(repr(a)[:60] for a in args if isinstance(a, (str, int, float)))
+        self.trace.append(f"{_stamp()} {name}({what})")
         try:
-            return method(*args, **kwargs)
-        except AdapterError:
+            return method(self, *args, **kwargs)
+        except AdapterError as e:
+            self.trace.append(f"{_stamp()}   -> {e}")
             raise
         except Exception as e:  # noqa: BLE001 - Fusion raises RuntimeError and friends
+            self.trace.append(f"{_stamp()}   -> {type(e).__name__}: {e}")
             raise AdapterError(f"{name}: {type(e).__name__}: {e}") from None
+        finally:
+            self.trace.append(f"{_stamp()}   done {name}")
     return wrapper
 
 
 for _name in ("begin", "import_step", "extract", "add_copy", "arrange", "box", "faces_up", "discard", "make_sheet",
-              "make_extra_setup", "set_radial_stock", "rename_op", "op_names", "apply_template", "fill", "make_outer_ops", "delete_op", "generate", "post", "cuts_into_parts",
+              "make_extra_setup", "set_radial_stock", "rename_op", "op_names", "apply_template", "fill",
+              "copy_op", "set_tabs", "set_tab_size", "set_tab_points", "loop_segments", "make_outer_ops", "delete_op", "generate", "post", "cuts_into_parts",
               "machining_time", "preview", "export_f3d", "save_to_team", "finish"):
     setattr(FusionAdapter, _name, _as_adapter_error(_name, getattr(FusionAdapter, _name)))

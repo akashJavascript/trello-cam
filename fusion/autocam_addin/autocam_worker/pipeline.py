@@ -1324,6 +1324,9 @@ def process_job(job: Job, adapter: Adapter, out_dir: Path, *, attempt: int = 1, 
                 adapter.finish(keep_open)
             finally:
                 (out_dir / LOG).write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+                trace = getattr(adapter, "trace", None)
+                if trace:                             # every Fusion call, timed (fx_adapter)
+                    (out_dir / "fusion_calls.log").write_text("\n".join(trace) + "\n", encoding="utf-8")
     finally:
         setattr(sys, _RUNNING, None)
     problems = result.validate()
