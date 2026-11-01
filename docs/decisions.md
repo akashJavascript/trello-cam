@@ -870,3 +870,14 @@ the outline (a lap is light: 0.001 in). Drilled holes can't be fitted, and parts
     (2)".
   - Op names an applied template brings get " (2)", " (3)" across the whole document; renamed outline ops may repeat.
 
+## 2026-11-01: fits on holes cut as cutouts (the user: a required feature), the team's way
+
+A round hole over the bore range (1.5 in), or a small one that's contoured, is cut by `[inner]`, so a `Fit:` line for
+it gets that op from the template again, alone and tight. The team's way of fitting such a hole: cut it with tabs,
+break the slug out by hand, then run stock-to-leave contours until it fits. So the sheet's program keeps the slug
+tabbed, the card says to break it out first, and the laps are full contours with no tabs (the first one also takes
+the tab stubs off the wall). Outline fits keep their tabs in every lap (the part has to stay held). Every lap must
+now reach the stock bottom. `Fit:` lines read fractions and millimeters too (`1/2` was read as a 1 in hole).
+Seen in Fusion (r038, a made-up 6 x 6 x 3/16 plate with a 2.0 in hole: no cached part has a round hole over 1.5 in):
+the program's cutout has its tabs, each lap opens the path 0.001 in, none has a tab, all to Z0.
+

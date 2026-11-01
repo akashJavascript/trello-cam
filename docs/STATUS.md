@@ -79,7 +79,8 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 ### Built, not yet seen on the machine or the real board
 - **Fit series** (2026-11-01): a part card's `Fit: 1.125 hole` or `Fit: outline` line gets that feature cut 0.003 tight,
   with lap programs taking 0.001 more each, run one by one at the machine; the run that fit is ticked on the sheet card
-  and the next series starts there. **Works in Fusion** (r034, r036, no dialogs since r036); not cut yet
+  and the next series starts there. Holes over 1.5 in too (cut as cutouts: the slug comes out by hand, then the laps,
+  which have no tabs). **Works in Fusion** (r034, r036, r038; no dialogs since r036); not cut yet
   (`docs/manual-tests.md` → M3 section 17). `[fit] enabled` switches it off.
 - **Bearing holes** (2026-11-01): their own `[bearing]` op in every template, the bore with a 0.005 in finishing lap;
   press fits tuned in config (`holes.bearing_stock_in`, radial: + tighter, - looser). **Work in Fusion** (r030, r031:

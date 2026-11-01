@@ -448,6 +448,7 @@ mentions it. A plain plate as a Rush card with its STEP attached and the **Face*
 |---|---|---|
 | 1 | A card with `Fit: 1.125 hole` (or the part's bearing size): its sheet card has the program and 4 laps `..._FIT1_1` to `_4`, RUN says to leave the part in and run the laps one by one, and a Fit checklist | r034, r036 (P-2015, 0.88 hole): laps 0.3593 -> 0.3623 in path radius; no dialog in r036 |
 | 2 | `Fit: outline`: the laps cut only that part's outline, with the same tabs, each to Z0 | r034 (P-2014): 0.001 per side per lap |
+| 2b | `Fit: 2 hole` on a hole over 1.5 in (cut as a cutout): the program keeps its slug tabbed; the laps have no tabs, each 0.001 bigger, all to Z0; the card says to break the slug out first | r038 (a made-up 2 in hole) |
 | 3 | Cut one: run the program, try the fit (a bearing, a shaft or the mating part), run laps until it fits, tick it. The next sheet with that fit starts two steps above it | |
 
 ## M5: status card, start at logon, reboot test on the shop PC
