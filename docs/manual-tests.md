@@ -426,10 +426,10 @@ mentions it. A plain plate as a Rush card with its STEP attached and the **Face*
 
 | # | Check | Result |
 |---|---|---|
-| 1 | The sheet card has two programs: `<sheet>_FACE.tap` and `<sheet>.tap`. Its RUN says to face first with the 6 mm 3-flute ALU (T2), then cut with the 4 mm. CUT ORDER marks the part "faced" | |
-| 2 | result.json lists `face_setup` and `face_tops` in the untested steps. In the Fusion file a second setup `<sheet>_FACE` has one op, `[face] tops`, with the 6 mm tool and only the faced parts' tops selected | |
+| 1 | The sheet card has two programs: `<sheet>_FACE.tap` and `<sheet>.tap`. Its RUN says to face first with the 6 mm 3-flute ALU (T2), then cut with the 4 mm. CUT ORDER marks the part "faced" | r029 (P-2014, 2026-11-01): both attached; title "1 part, 1 faced - 5 min"; RUN steps 1 and 2 as described |
+| 2 | result.json lists `face_setup` and `face_tops` in the untested steps. In the Fusion file a second setup `<sheet>_FACE` has one op, `[face] tops`, with the 6 mm tool and only the faced parts' tops selected | r029: both listed, status ok, no warnings. The Fusion file is still to be looked at |
 | 3 | Simulate the FACE setup: the whole top of each faced part is skimmed (inside corners and thin bits too), 0.005 in deep, the cutter's edge going at most about 0.1 in past the outline; nothing else is touched | |
-| 4 | The FACE program's lowest Z is the stock top less 0.005 (e.g. Z0.1825 on 3/16 stock) | |
+| 4 | The FACE program's lowest Z is the stock top less 0.005 (e.g. Z0.1825 on 3/16 stock) | r029: Z0.1825; cutter edge 0.06-0.11 in past the outline all round, center inside |
 | 5 | At the machine: run the FACE program with T2 measured on the setter, then the sheet's program with its own cutter; the faced tops are clean and the parts are 0.005 in thinner | |
 
 ## M5: status card, start at logon, reboot test on the shop PC

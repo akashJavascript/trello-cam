@@ -82,8 +82,8 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 ### Built, not yet seen on the machine or the real board
 - **Faced parts** (2026-11-01): a **Face** label on a part card skims its top 0.005 in clean in a FACE program of the
   sheet's own, run first with the 6 mm 3-flute ALU (T2), then the sheet's program. Checked both sides: no deeper
-  than the face depth, the cutter over faced parts only. Tested offline; see `docs/manual-tests.md` → M3 section 15
-  for the Fusion run.
+  than the face depth, the cutter over faced parts only. **Works in Fusion** (r029: Z0.1825 on 3/16, the whole
+  top covered, every check passed); not simulated by eye or cut yet (`docs/manual-tests.md` → M3 section 15).
 - **Part labels on the preview** (2026-10-04): numbered badges and names, in the middle of parts that are
   mostly cutouts. Work in Fusion (test jobs lbl1, lbl2); not on a real sheet card yet (M3 section 13).
 - **Duplicate part cards and "did you mean"** for a wrong part name: tested offline (M3 section 12).
