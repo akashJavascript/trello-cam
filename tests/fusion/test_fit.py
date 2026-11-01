@@ -91,3 +91,24 @@ def test_the_service_wants_every_lap(tmp_path):
 def _sub(tmp_path, name):
     (tmp_path / name).mkdir()
     return tmp_path / name
+
+
+def test_a_hole_over_the_bore_range_is_fitted_as_a_cutout_with_its_slug_tabbed(tmp_path):
+    rig = Rig(tmp_path)
+    job = rig.job([("hub", 1, plate(holes=(2.0, 0.5)), (6.0, 6.0))], fits={"hub": ("hole", 2.0)})
+    result = rig.run(job)
+    assert result.status == "ok", (result.sheets[0].errors, [p.errors for p in result.parts])
+    (sheet,) = result.sheets
+    s = rig.fake.sheets[sheet.name]
+    fit_op = "[inner] cutouts (2)"                                         # the template's [inner] again, alone
+    assert [cid for cid, _, _ in s["fills"][fit_op].loops] == ["p01.1"] and s["stock"][fit_op] == 0.003
+    assert "[inner] cutouts" not in s["fills"] or not s["fills"]["[inner] cutouts"].loops   # it's not cut twice
+    points = s["tab_points"][fit_op]
+    assert points                                                         # the slug is held
+    laps = [p for p in sheet.programs if p.kind == "fit"]
+    assert [p.stock_in for p in laps] == list(STOCKS[1:]) and all(p.tap for p in laps)
+    for p in laps:
+        lap = rig.fake.sheets[p.name]
+        assert lap["ops"] == ["[inner] cutouts"] and lap["stock"]["[inner] cutouts"] == p.stock_in
+        assert lap["tab_points"]["[inner] cutouts"] == points           # the same tabs: the slug never comes free
+    assert rig.service_view(job, result).sheets[0].cuttable

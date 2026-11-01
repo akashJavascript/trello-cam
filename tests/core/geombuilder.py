@@ -1,5 +1,6 @@
 """Build PartGeometry the way the Fusion extractor will report it, for offline tests."""
 
+import math
 from typing import Dict, List, Tuple
 
 from autocam_core.geometry import Face, PartGeometry
@@ -33,8 +34,9 @@ class PlateBuilder:
         return fid
 
     def _cyl(self, r: float, center, sweep: float, z0: float, z1: float, concave: bool = True) -> int:
+        area = r * math.radians(sweep) * (z1 - z0)          # a real wall: its length around is r x the angle
         return self._face(kind="cylinder", z0=z0, z1=z1, radius_in=r, axis_dot=1.0, concave=concave,
-                          center_in=tuple(center), sweep_deg=sweep)
+                          center_in=tuple(center), sweep_deg=sweep, area=area)
 
     def _loop(self, face_id: int, walls) -> None:
         self.loops.setdefault(face_id, []).append(tuple(walls))

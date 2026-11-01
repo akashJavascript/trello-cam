@@ -219,6 +219,8 @@ def check_fit_program(data: bytes, job: Job, thickness_in: float, tool_key: str,
         report = _failed(report, f"the fit lap has {report.m0_count} M0; laps never stop")
     if report.min_z_in is None:
         problems.append("the fit lap has no Z move")
+    elif report.min_z_in > job.guard.z_floor_in + THROUGH_CUT_TOL_IN:   # every fitted feature goes through
+        problems.append(f"the fit lap never reaches the stock bottom (lowest Z {report.min_z_in:.4f} in)")
     return SheetCheck(report, None, tuple(problems))
 
 

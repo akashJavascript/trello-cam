@@ -151,6 +151,8 @@ class _Fit:
     tag: str                                  # the op that cuts it: BORE or BEARING for holes, OUTER
     stocks: Tuple[float, ...]
     holes: List[Tuple[str, Tuple[int, ...]]] = field(default_factory=list)   # (copy id, face ids)
+    loops: List[Tuple[str, int, int]] = field(default_factory=list)          # holes cut as cutouts: (copy, face, loop)
+    tabs: int = 0                                                            # ...and the tabs on each
     instances: List[Tuple[str, str, int]] = field(default_factory=list)      # outline: (instance, copy id, face id)
     laps: List[str] = field(default_factory=list)
     results: List[ProgramResult] = field(default_factory=list)
@@ -813,20 +815,24 @@ def _plan_sheets(adapter: Adapter, job: Job, sheets: List[_Sheet], parts: Dict[s
     return sheets
 
 
-def _fit_holes(part: _Part, plan: FeaturePlan, job: Job) -> Tuple[str, List[int]]:
-    """A hole fit's holes on the part: (BORE or BEARING, indexes into through_holes)."""
+def _fit_holes(part: _Part, plan: FeaturePlan, job: Job) -> Tuple[str, List[int], List[Any]]:
+    """A hole fit's holes on the part: (BORE, BEARING or INNER, indexes into through_holes, and for INNER the
+    loops: holes over the bore range, and small contoured ones, are cut as cutouts)."""
     d = part.spec.fit.diameter_in
     through = part.analysis.through_holes
     near = lambda i: abs(through[i].diameter_in - d) <= job.holes.bearing_tol_in + 1e-9
     bore, bearing = [i for i in plan.bore if near(i)], [i for i in plan.bearing if near(i)]
-    return (BEARING, bearing) if bearing else (BORE, bore)
+    if bearing or bore:
+        return (BEARING, bearing, []) if bearing else (BORE, bore, [])
+    loops = [l for l in plan.inner_loops if l.hole is not None and near(l.hole)]
+    return INNER, [l.hole for l in loops], loops
 
 
 def _fit_problems(part: _Part, plan: FeaturePlan, job: Job) -> List[Issue]:
     fit = part.spec.fit
     if fit is None or fit.kind != "hole":
         return []
-    _, found = _fit_holes(part, plan, job)
+    _, found, _ = _fit_holes(part, plan, job)
     if found:
         return []
     through = part.analysis.through_holes
@@ -939,19 +945,30 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
         plan = sheet.plans[part.key]
         through = part.analysis.through_holes
         fitted: Set[int] = set()
+        fitted_loops: Set[Tuple[int, int]] = set()
         if part.spec.fit is not None:
             f = part.spec.fit
             if part.key not in fits:
                 feature = f"{f.diameter_in:g} hole" if f.kind == "hole" else "outline"
                 fits[part.key] = _Fit(len(fits) + 1, part.key, f.kind, feature, OUTER, tuple(f.stocks_in))
             if f.kind == "hole":
-                tag, found = _fit_holes(part, plan, job)
-                fits[part.key].tag = tag
-                fits[part.key].holes += [(placed.body_id, through[i].face_ids) for i in found]
+                tag, found, found_loops = _fit_holes(part, plan, job)
+                fit = fits[part.key]
+                fit.tag = tag
+                if tag == INNER:                      # cut as a cutout: its loops, and the tabs that hold its slug
+                    fit.loops += [(placed.body_id, l.face_id, l.index) for l in found_loops]
+                    fitted_loops = {(l.face_id, l.index) for l in found_loops}
+                    if part.spec.tabs and found_loops:
+                        fit.tabs = _tabs_for(job, part, walls_length(part.analysis.geometry,
+                                                                      found_loops[0].wall_face_ids), tool_d)
+                else:
+                    fit.holes += [(placed.body_id, through[i].face_ids) for i in found]
                 fitted = set(found)
         for tag, indexes in ((DRILL, plan.drill), (BORE, plan.bore), (BEARING, plan.bearing)):
             holes[tag] += [(placed.body_id, through[i].face_ids) for i in indexes if i not in fitted]
         for loop in plan.inner_loops:
+            if (loop.face_id, loop.index) in fitted_loops:
+                continue                              # a fitted hole: its own op, below
             n = _tabs_for(job, part, walls_length(part.analysis.geometry, loop.wall_face_ids), tool_d) \
                 if part.spec.tabs else 0
             (tabbed.setdefault(n, []) if n else loops).append((placed.body_id, loop.face_id, loop.index))
@@ -994,8 +1011,10 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
                 for o in added:
                     if o != keep:
                         adapter.delete_op(sheet.name, o)
-                adapter.fill(sheet.name, keep, OpFill(tag, holes=tuple(fit.holes)))
+                adapter.fill(sheet.name, keep, OpFill(tag, holes=tuple(fit.holes), loops=tuple(fit.loops)))
                 adapter.set_radial_stock(sheet.name, keep, fit.stocks[0])
+                if fit.loops and fit.tabs:            # the slug stays held, through every lap too
+                    _tab_op(adapter, job, sheet, keep, fit.loops, fit.tabs, tool_d)
         if tag == INNER:
             # Tabbed parts' cutouts: a copy of the op per tab count, made before the op is filled, so each
             # copy starts empty; they land after it (and before the outlines).
@@ -1048,7 +1067,8 @@ def _build_fits(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Par
     tool = job.tooling.tools[sheet.tool_key]
     for fit in sheet.fits:
         part = parts[fit.part_key]
-        copies = sorted({cid for cid, _ in fit.holes} | {cid for _, cid, _ in fit.instances})
+        copies = sorted({cid for cid, _ in fit.holes} | {cid for cid, _, _ in fit.loops}
+                        | {cid for _, cid, _ in fit.instances})
         for lap, stock in enumerate(fit.stocks[1:], 1):
             name = fit_program_name(sheet.name, fit.series, lap)
             adapter.make_extra_setup(sheet.name, name, copies)
@@ -1061,8 +1081,10 @@ def _build_fits(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Par
                 if o != keep:
                     adapter.delete_op(name, o)
             if fit.kind == "hole":
-                adapter.fill(name, keep, OpFill(fit.tag, holes=tuple(fit.holes)))
+                adapter.fill(name, keep, OpFill(fit.tag, holes=tuple(fit.holes), loops=tuple(fit.loops)))
                 adapter.set_radial_stock(name, keep, stock)
+                if fit.loops and fit.tabs:            # the same tabs, so the lap doesn't cut the slug free
+                    _tab_op(adapter, job, sheet, keep, fit.loops, fit.tabs, tool.diameter_in, setup=name)
             else:
                 adapter.make_outer_ops(name, keep, [(outer_op_name(inst), cid, fid) for inst, cid, fid in fit.instances])
                 n = _outline_tabs(job, part, tool.diameter_in)
@@ -1250,7 +1272,8 @@ def _post_fits(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> None
     tool = job.tooling.tools[sheet.tool_key]
     for fit in sheet.fits:
         outer = tuple(inst for inst, _, _ in fit.instances)
-        counts = {fit.part_key: len({cid for cid, _ in fit.holes} | {cid for _, cid, _ in fit.instances})}
+        counts = {fit.part_key: len({cid for cid, _ in fit.holes} | {cid for cid, _, _ in fit.loops}
+                                    | {cid for _, cid, _ in fit.instances})}
         for lap, (name, stock) in enumerate(zip(fit.laps, fit.stocks[1:]), 1):
             raw_dir = out_dir / "raw" / name
             if raw_dir.exists():
