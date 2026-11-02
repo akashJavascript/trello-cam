@@ -183,8 +183,8 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         if small:
             about = f" (about {_minutes(small.machining_time_s)})" if small.machining_time_s else ""
             steps.append(f"{'Then' if steps else 'First'} cut what only the {small.cutter_label} can: load it "
-                         f"(T{small.tool_number}), measure it, and run {small.tap}{about}{each}. It cuts "
-                         f"{small.feature or 'the small holes and cutouts'}, nothing else; leave the sheet where it is.")
+                         f"(T{small.tool_number}), measure it, and run {small.tap}{about}{each}. It cuts only the "
+                         f"{small.feature or 'small holes and cutouts'}; leave the sheet where it is.")
         if steps:
             steps.append(f"Then load the {s.cutter_label} (T{tool.number}), measure it, and run {program or s.tap}"
                          + (f" (about {_minutes(s.machining_time_s)})." if s.machining_time_s else ".")

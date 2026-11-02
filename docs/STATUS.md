@@ -113,6 +113,10 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   were CAM'd (one call per document when nothing changed; a comment on the sheet when a part did), and "I CAM'd it
   myself" sends a part's own program from the panel (guard-checked, on a card linked to the part; an "Own
   program:" line marks it for own_programs).
+- **More than one cutter per part** (core 0.19.0, 2026-11-01): small through holes (an 8-32's 0.136) and cutouts
+  with corners too tight for the 4 mm go in a short `<sheet>_SMALL` program with the 1/8 in, run first; the sheet
+  stays on the 4 mm, outlines last. Only a tight outline or pocket corner (or the Tool 1/8 label) still puts a
+  sheet on the 1/8. **Works in Fusion** (r052: P-2011 with 0.136 holes, the 1/8 drilled just those); not cut yet.
 - **CAD changed** (2026-11-01, from the teammate's panel): a part that changed in Onshape after it was CAM'd, on a
   sheet not cut yet, gets the **CAD changed** label on its card and its sheet card, and on its card a box "Cut it as
   it was CAM'd" (or the panel's "Cut it as it is"). Ticking it, or nesting the part again, takes the labels off; a part

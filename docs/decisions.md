@@ -900,6 +900,22 @@ Onshape's bend table, on the sheet card. No 3/32 in stock. Scribing the bend lin
 default. A top split into faces in one plane (every flat pattern's is, along its bends) is cut as one outline for every
 part, not only bent ones: the old refusal existed only because the outline came from one face.
 
+## 2026-11-01: more than one cutter per part (core 0.19.0; the user's "bigger idea" #1)
+
+The brief's "later option" (decision 21: an 8-32 hole moves a whole aluminum sheet to the 1/8 in) done per feature.
+A part whose only problems for the 4 mm are **through holes too small for it** and **cutouts with an inside corner
+too tight for it** is split (`tooling.split_features`): those go in the sheet's `<sheet>_SMALL` program with the
+1/8 in, run just before the sheet's own, and the sheet stays on the 4 mm with its outlines last (so a part is only
+freed by the last program, with its stops). Two programs because the post allows one tool per program; the fixed
+tool setter makes the swap quick. Still the whole part on the 1/8 in (and its whole sheet, as before): a tight
+corner on the outline or in a pocket, a blind hole, or the Tool 1/8 label. The SMALL program is a setup of its own
+on the sheet's stock and zero with the small tool's template (its GUIDs checked), filled only with those features
+(tabbed parts' tight cutouts keep their tabs), the other ops deleted untouched. Checked both sides
+(`check_small_program`: the small tool's guard, through to Z0, no outlines, no stops) plus the tool center never in a
+part; a failure stops the sheet, since its parts would miss those holes. `[tooling.<family>] split = true` (false:
+as before). Seen in Fusion: r052, P-2011 with its two 0.156 holes made 0.136: the 1/8 in drills just those two (5 s),
+the 4 mm does the other 47 features and the outline.
+
 ## 2026-11-01: CAD changed, with an accept step (from the teammate's panel)
 
 A part that changed in Onshape after it was CAM'd, while its sheet isn't cut: the **CAD changed** label (purple) on

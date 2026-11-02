@@ -1647,14 +1647,14 @@ def _post_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
 
 
 def _small_feature(sheet: _Sheet, parts: Dict[str, _Part]) -> str:
-    """What the small-tool program cuts, for the sheet card: e.g. "P-2014: 4 holes; Plate: 1 cutout"."""
+    """What the small-tool program cuts, for the sheet card: e.g. "4 holes in P-2014; 1 cutout in Plate"."""
     out = []
     for key, plan in sorted(sheet.small_plans.items()):
         holes = len(plan.drill) + len(plan.bore) + len(plan.bearing) + sum(1 for l in plan.inner_loops if l.hole is not None)
         cutouts = sum(1 for l in plan.inner_loops if l.hole is None)
         bits = ([f"{holes} hole{'s' if holes != 1 else ''}"] if holes else []) + \
                ([f"{cutouts} cutout{'s' if cutouts != 1 else ''}"] if cutouts else [])
-        out.append(f"{parts[key].spec.name}: {' and '.join(bits)}")
+        out.append(f"{' and '.join(bits)} in {parts[key].spec.name}")
     return "; ".join(out)
 
 

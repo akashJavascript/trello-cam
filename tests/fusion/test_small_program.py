@@ -33,7 +33,7 @@ def test_small_holes_get_their_own_eighth_program_and_the_sheet_stays_on_the_4mm
     name = small_program_name(sheet.name)
     assert (small.kind, small.name, small.runs, small.tap) == ("small", name, "before", f"{name}.tap")
     assert small.tool_number == job.tooling.tools[EIGHTH].number and small.tool_guid == job.tooling.tools[EIGHTH].guid
-    assert [(p.part_key, p.count) for p in small.parts] == [("p01", 2)] and small.feature == "bracket: 2 holes"
+    assert [(p.part_key, p.count) for p in small.parts] == [("p01", 2)] and small.feature == "2 holes in bracket"
     s = rig.fake.sheets[name]
     assert s["face_of"] == sheet.name and s["copies"] == ["p01.1", "p01.2"]
     assert len(s["fills"]["[drill] holes"].holes) == 4                          # 2 holes x 2 copies, drilled with the 1/8
@@ -46,7 +46,7 @@ def test_small_holes_get_their_own_eighth_program_and_the_sheet_stays_on_the_4mm
     assert vs.cuttable and all(p.ok for p in vs.programs)
     desc = sheet_description(job, view, vs, resume_key="F1", part_cards={"p01": ("Bracket", ""), "p02": ("Spacer", "")})
     assert f"1. First cut what only the {small.cutter_label} can: load it (T{small.tool_number}), measure it, and run {name}.tap" in desc
-    assert "It cuts bracket: 2 holes, nothing else" in desc and "It cuts everything else, outlines last." in desc
+    assert "It cuts only the 2 holes in bracket; leave the sheet where it is." in desc and "It cuts everything else, outlines last." in desc
 
 
 def test_a_tight_cutout_goes_in_the_small_program_with_its_tabs(tmp_path):

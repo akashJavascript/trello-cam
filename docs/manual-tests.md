@@ -451,6 +451,14 @@ mentions it. A plain plate as a Rush card with its STEP attached and the **Face*
 | 2b | `Fit: 2 hole` on a hole over 1.5 in (cut as a cutout): the program keeps its slug tabbed; the laps have no tabs, each 0.001 bigger, all to Z0; the card says to break the slug out first | r038 (a made-up 2 in hole) |
 | 3 | Cut one: run the program, try the fit (a bearing, a shaft or the mating part), run laps until it fits, tick it. The next sheet with that fit starts two steps above it | |
 
+### 17c. More than one cutter per part (2026-11-01)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | A part with an 8-32 hole (0.136) and plain parts: the sheet is on the 4 mm and has `<sheet>_SMALL.tap`; RUN says the 1/8 in first, then the 4 mm, outlines last | r052 (P-2011 with its 0.156 holes made 0.136): yes, 2 G81s in the SMALL program, none in the 4 mm one |
+| 2 | A cutout with a corner under 2 mm radius goes in the SMALL program (with its tabs, if the part has tabs); a tight outline corner still puts the sheet on the 1/8 | offline tests |
+| 3 | At the machine: run the SMALL program with T12 measured, swap to T1 without moving the sheet, run the sheet's; the small holes line up with the rest | |
+
 ### 17b. CAD changed (2026-11-01)
 
 | # | Check | Result |
