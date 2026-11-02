@@ -3,6 +3,7 @@ own endmill in the sheet's program or with the chamfer mill (T16) in a SCRIBE pr
 choice, 2026-11-01: both, off unless asked; 10 to 15 thou deep). Scribing never holds a sheet up."""
 
 import json
+import math
 from dataclasses import replace
 
 from autocam_core.names import face_program_name, scribe_program_name
@@ -15,6 +16,10 @@ from rig import Rig, plate
 T16 = "915d08db-80ad-44e2-8fd5-6b9ed2129f59"
 BEND = {"name": "Bend D", "angle_deg": 90.0, "direction": "down", "radius_in": 0.05, "order": 1}
 X, WIDTH = 2.9165, 0.167                          # the bend zone: 3 in from the left, 0.167 in wide
+
+
+def strokes_length(path):
+    return sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(path, path[1:]))
 
 
 def bent_plate(axis_z=1.0):
@@ -58,16 +63,14 @@ def test_the_endmill_scribes_in_the_sheets_own_program_before_the_outlines(tmp_p
     fill = s["fills"]["[scribe] bend lines"]
     assert fill.tag == "scribe" and fill.depth_in == 0.012
     assert abs(fill.stock_in - (-(0.15748 / 2 - 0.001))) < 1e-9      # the center on the line ('off' is refused)
-    lines = [p for p in fill.paths if len(p) == 2]
-    letters = [p for p in fill.paths if len(p) > 2]
-    assert len(lines) == 2 and len(letters) == 2                      # one bend and its letter on each of two copies
+    lines = [p for p in fill.paths if strokes_length(p) > 1.0]
+    strokes = [p for p in fill.paths if strokes_length(p) < 1.0]
+    assert len(lines) == 2 and len(strokes) == 2 * 8 and fill.letters == 16   # a D (8 strokes) beside each copy's bend
     for (x0, y0), (x1, y1) in lines:
         box = rig.fake.boxes[next(c for c in s["copies"] if abs(rig.fake.boxes[c].x0 + X + WIDTH / 2 - x0) < 1e-9)]
         assert x0 == x1 and {y0 - box.y0, y1 - box.y0} == {0.0, 4.0}
-    for letter in letters:                                            # Bend D is down, scribed on the flat's top: D
-        assert len(letter) == 9 and letter[0] == letter[-1]
-        assert all(abs(x - lines[0][0][0]) > 0.0835 + 0.109 for x, _ in letter) or \
-            all(abs(x - lines[1][0][0]) > 0.0835 + 0.109 for x, _ in letter)        # clear of the bend zone
+    for stroke in strokes:                                            # clear of the bend zones, one stroke per chain
+        assert len(stroke) == 2 and min(abs(x - ln[0][0]) for ln in lines for x, _ in stroke) > 0.0835 + 0.109
     assert [(p.part_key, p.count) for p in sheet.scribed] == [("p01", 2)] and sheet.programs == ()
     text = (rig.out / sheet.tap).read_text()
     assert "[scribe bend lines]" in text and "Z0.1130" in text                            # 1/8 in less 0.012
@@ -193,21 +196,33 @@ def test_a_part_flipped_over_gets_u_for_a_down_bend(tmp_path):
     (sheet,) = result.sheets
     assert result.status == "ok", sheet.warnings
     fill = rig.fake.sheets[scribe_program_name(sheet.name)]["fills"]["[scribe] bend lines"]
-    (letter,) = [p for p in fill.paths if len(p) > 2]
-    assert len(letter) == 8 and letter[0] != letter[-1]               # U: open
-    xs = [x for x, _ in letter]
+    strokes = [p for p in fill.paths if strokes_length(p) < 1.0]
+    assert len(strokes) == 7                                          # U: 7 strokes, open
+    xs = [x for p in strokes for x, _ in p]
     assert max(xs) - min(xs) <= 0.25 + 1e-9                           # the chamfer mill's small letter
 
 
 def test_no_letter_without_room_or_when_bends_alike_go_opposite_ways(tmp_path):
     rig = Rig(tmp_path)
     (sheet,) = rig.run(bent_job(rig, size=(6.0, 0.6))).sheets        # too narrow for a 0.8 in tall endmill letter
-    assert sheet.tap is not None and [p for p in rig.fake.sheets[sheet.name]["fills"]["[scribe] bend lines"].paths
-                                      if len(p) > 2] == []
+    assert sheet.tap is not None and len(rig.fake.sheets[sheet.name]["fills"]["[scribe] bend lines"].paths) == 2
     assert any("not every bend line has its U or D (no room" in w.msg for w in sheet.warnings)
     assert bend_letter(0.167, [(90.0, 0.05, "down"), (90.0, 0.05, "up")], 0.125, True) is None
     assert bend_letter(0.167, [(90.0, 0.05, "down"), (45.0, 0.5, "up")], 0.125, True) == "D"
     assert bend_letter(0.167, [(90.0, 0.05, "up")], 0.125, None) is None
+
+
+def test_an_outline_that_fails_with_scribing_gets_cut_without_it(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.break_with_scribe = {"[outer] p01-1", "[outer] p01-2"}
+    job = bent_job(rig)
+    result = rig.run(job)
+    (sheet,) = result.sheets
+    assert sheet.tap is not None and sheet.errors == () and sheet.scribed == ()
+    assert rig.fake.sheets[sheet.name]["suppressed"] == ["[scribe] bend lines"]
+    assert rig.fake.generated[-1] == [sheet.name]                     # generated again without it
+    assert any("Failed to write Job File" in w.msg and "mark them by hand on bracket" in w.msg for w in sheet.warnings)
+    assert [vs.cuttable for vs in rig.service_view(job, result).sheets] == [True]
 
 
 def test_only_bent_parts_are_scribed(tmp_path):

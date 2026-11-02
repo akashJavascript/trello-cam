@@ -50,8 +50,8 @@ UNCONFIRMED = {
                     "top down by the depth",
     "scribe_tool": "Operation.tool = Tool.createFromJson(the library's chamfer mill), then its preset's feeds and "
                    "speeds, coolant left disabled",
-    "scribe_letters": "a U or D beside each bend line: one chain of connected sketch lines (closed for the D), in the "
-                      "same [scribe] op",
+    "scribe_letters": "a U or D beside each bend line: each stroke a sketch line and chain of its own, 0.002 in "
+                      "short of the next (one chain of connected lines failed, r048), in the same [scribe] op",
 }
 
 

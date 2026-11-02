@@ -68,6 +68,8 @@ class FakeAdapter(Adapter):
         self.scribe_extra_depth_in = 0.0               # ...and this much deeper than asked
         self.fail_set_tool = False
         self.fail_scribe_fill = False
+        self.break_with_scribe: Set[str] = set()       # ops that fail while a [scribe] op is in their setup (r048)
+        self.generated: List[List[str]] = []
 
     def register(self, step: Path, geometry: PartGeometry, size: Tuple[float, float]) -> None:
         self.parts[str(Path(step))] = (geometry, size)
@@ -266,8 +268,13 @@ class FakeAdapter(Adapter):
 
     def generate(self, sheets):
         self._shift(self.move_on_generate)
-        return {name: [OpState(op, *self.op_states.get(op, (True, None, None))) for op in self.sheets[name]["ops"]]
-                for name in sheets}
+        self.generated.append(list(sheets))
+
+        def state(name, op):
+            if op in self.break_with_scribe and any(o.startswith("[scribe]") for o in self.sheets[name]["ops"]):
+                return OpState(op, False, "Failed to write Job File.", None)
+            return OpState(op, *self.op_states.get(op, (True, None, None)))
+        return {name: [state(name, op) for op in self.sheets[name]["ops"]] for name in sheets}
 
     def _center(self, s: dict, cid: str) -> Tuple[float, float]:
         b = self.boxes[cid]

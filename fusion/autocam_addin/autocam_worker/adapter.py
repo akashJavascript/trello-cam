@@ -81,6 +81,7 @@ class OpFill:
                                                                 # polylines the tool center follows, one chain each,
                                                                 # from the stock top down by depth_in (stock_in:
                                                                 # almost minus the radius Fusion offsets it by)
+    letters: int = 0                                            # scribe: how many of the paths are letter strokes
     stock_in: Optional[float] = None                        # bearing: radial stock to leave (None: the template's)
 
 

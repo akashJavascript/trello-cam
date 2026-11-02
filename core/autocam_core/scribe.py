@@ -206,6 +206,23 @@ def letter_path(ch: str, center: Point, up: Point, w: float, h: float) -> Path:
                   center[1] + (u - 0.5) * w * right[1] + (v - 0.5) * h * up[1]) for u, v in STROKES[ch])
 
 
+STROKE_GAP_IN = 0.002      # each stroke stops this short of the next: lines of their own, never one chain of
+                           # connected sketch lines (r048: that came back "missing selections" and broke the next op)
+
+
+def letter_strokes(ch: str, center: Point, up: Point, w: float, h: float) -> List[Path]:
+    """The letter (letter_path) as separate straight strokes, each a path of its own, not quite touching."""
+    pts = letter_path(ch, center, up, w, h)
+    out = []
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        length = math.hypot(x1 - x0, y1 - y0)
+        if length <= 4 * STROKE_GAP_IN:
+            continue
+        g = STROKE_GAP_IN / length
+        out.append(((x0 + g * (x1 - x0), y0 + g * (y1 - y0)), (x1 - g * (x1 - x0), y1 - g * (y1 - y0))))
+    return out
+
+
 def letter_box(center: Point, up: Point, w: float, h: float) -> List[Point]:
     """The w x h box at center, its top toward `up`, as a polygon."""
     right = (up[1], -up[0])

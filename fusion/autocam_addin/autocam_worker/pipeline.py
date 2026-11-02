@@ -42,6 +42,7 @@ Pure Python: everything Fusion does goes through the Adapter (adapter.py).
 
 import hashlib
 import json
+import math
 import shutil
 import sys
 from collections import Counter
@@ -70,8 +71,9 @@ from autocam_core.schema_result import (
     RESULT_SCHEMA, FusionTeamResult, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary,
     PostResult, ProgramResult, Result, SheetPart, SheetResult, ToolForce, WorkerInfo, overall_status, result_json,
 )
-from autocam_core.scribe import (Line, bend_letter, bend_strips, distance_to_line, in_sections, letter_box, letter_path,
-                                 mark_spot, off_the_lines, path_segments, scribe_sections, tip_radius_in)
+from autocam_core.scribe import (Line, bend_letter, bend_strips, distance_to_line, in_sections, letter_box,
+                                 letter_strokes, mark_spot, off_the_lines, path_segments, scribe_sections,
+                                 tip_radius_in)
 from autocam_core.sheetcheck import (check_face_program, check_fit_program, check_scribe_program, check_sheet_program,
                                      pause_spec)
 from autocam_core.tooling import FeaturePlan, ToolNeed, part_tool, plan_features, sheet_tool
@@ -1198,8 +1200,7 @@ def _copy_paths(adapter: Adapter, job: Job, sheet: _Sheet, part: _Part, copy_id:
         if spot is None:
             no_letter.append(f"no room for a {w:.2g} x {h:.2g} in letter beside a line")
             continue
-        path = letter_path(letter, spot[0], spot[1], w, h)
-        paths.append(path)
+        paths += letter_strokes(letter, spot[0], spot[1], w, h)
         taken.append(letter_box(spot[0], spot[1], w + 2 * clear, h + 2 * clear))
     return paths, "", no_letter
 
@@ -1240,6 +1241,17 @@ def _scribe_groups(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _
     return groups, {key: len(per_copy) for key, per_copy in found.items()}
 
 
+def _letters(paths) -> int:
+    """How many of a scribe op's paths are letter strokes (a bend line runs the part's whole width; a stroke is
+    under an inch)."""
+    return sum(1 for (x0, y0), (x1, y1) in (p[:2] for p in paths if len(p) == 2) if math.hypot(x1 - x0, y1 - y0) < 1.0)
+
+
+def _scribe_failed(st) -> bool:
+    """A scribe op that didn't make its toolpath, or made it without all its chains (r048)."""
+    return bool(st.error) or not st.has_toolpath or "missing selections" in (st.warning or "")
+
+
 def _asks_scribe(job: Job, sheet: _Sheet, parts: Dict[str, _Part], way: str) -> bool:
     return job.scribe is not None and any(parts[p.part_key].spec.scribe == way for _, p in sheet.instances)
 
@@ -1259,7 +1271,7 @@ def _build_sheet_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[s
         tool = job.tooling.tools[sheet.tool_key]
         try:
             adapter.copy_op(sheet.name, outer_op, name)
-            adapter.fill(sheet.name, name, OpFill(SCRIBE, paths=tuple(lines),
+            adapter.fill(sheet.name, name, OpFill(SCRIBE, paths=tuple(lines), letters=_letters(lines),
                                                   depth_in=_scribe_depth(job, job.scribe.depth_in, faced),
                                                   stock_in=-(tool.diameter_in / 2 - SCRIBE_EPS_IN)))
         except AdapterError as e:
@@ -1317,7 +1329,7 @@ def _build_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _P
         for faced in made:
             op = scribe_op_name(faced)
             adapter.set_tool(name, op, s.chamfer_tool_json)
-            adapter.fill(name, op, OpFill(SCRIBE, paths=tuple(groups[faced]),
+            adapter.fill(name, op, OpFill(SCRIBE, paths=tuple(groups[faced]), letters=_letters(groups[faced]),
                                           depth_in=_scribe_depth(job, s.chamfer_depth_in, faced),
                                           stock_in=-max(tip_radius_in(s.chamfer_tool_json) - SCRIBE_EPS_IN, 0.0)))
     except AdapterError as e:
@@ -1719,21 +1731,28 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             for s in built:
                 s.errors.append(Issue(E.OP_ERROR, f"toolpath generation failed: {e}"))
     for sheet in built:
-        for st in states.get(sheet.name, []):         # scribing that won't generate: taken out, marked by hand
-            if st.name in sheet.scribe_ops and (st.error or not st.has_toolpath):
-                _suppress(adapter, sheet, sheet.name, st.name)
-                if st.name not in sheet.suppressed:
-                    continue
-                keys = [k for k in sheet.scribed if bool(parts[k].spec.face) == st.name.endswith(" faced")]
-                sheet.warnings.append(Issue(E.OP_WARNING, f"bend lines not scribed ({st.error or 'no toolpath'}): "
-                                                          f"mark them by hand on "
-                                                          f"{', '.join(parts[k].spec.name for k in keys)}"))
-                sheet.scribe_ops.pop(st.name)
-                for k in keys:
-                    sheet.scribed.pop(k, None)
+        mine = states.get(sheet.name, [])
+        broken = [st for st in mine if st.name in sheet.scribe_ops and _scribe_failed(st)]
+        others = [st for st in mine if st.name not in sheet.scribe_ops and (st.error or not st.has_toolpath)]
+        if sheet.scribe_ops and (broken or others):
+            # Scribing that won't generate, or a sheet whose other ops failed with it there (a broken scribe op
+            # left the outline after it "Failed to write Job File", r048): all of it taken out, the sheet
+            # generated again without it, its bends marked by hand.
+            why = "; ".join(f"{st.name}: {(st.error or st.warning or 'no toolpath').strip()}" for st in broken + others)
+            names = ", ".join(parts[k].spec.name for k in sheet.scribed)
+            for name in list(sheet.scribe_ops):
+                _suppress(adapter, sheet, sheet.name, name)
+            sheet.scribe_ops.clear()
+            sheet.scribed.clear()
+            sheet.warnings.append(Issue(E.OP_WARNING, f"bend lines not scribed ({why}): mark them by hand on {names}"))
+            if others and not sheet.errors:
+                try:
+                    states[sheet.name] = adapter.generate([sheet.name]).get(sheet.name, [])
+                except AdapterError as e:
+                    sheet.errors.append(Issue(E.OP_ERROR, f"toolpath generation without the scribing failed: {e}"))
         states[sheet.name] = [st for st in states.get(sheet.name, []) if st.name not in sheet.suppressed]
         if sheet.scribe_counts:
-            bad = [st for st in states.get(sheet.scribe_name, []) if st.error or not st.has_toolpath]
+            bad = [st for st in states.get(sheet.scribe_name, []) if _scribe_failed(st)]
             if sheet.scribe_name not in states or bad:
                 _drop_scribe(sheet, parts, "; ".join(f"{st.name}: {st.error or 'no toolpath'}" for st in bad)
                              or "Fusion reported no toolpaths for it")

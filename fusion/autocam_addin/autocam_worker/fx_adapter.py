@@ -198,7 +198,7 @@ class FusionAdapter(Adapter):
                 self.scribe_sketch[sheet] = sk
             lines = self.scribe_sketch[sheet].sketchCurves.sketchLines
             chains = []
-            if any(len(path) > 2 for path in fill.paths):
+            if fill.letters:
                 self._used("scribe_letters")
             for path in fill.paths:                      # each path its own chain of connected sketch lines
                 closed = len(path) > 2 and path[0] == path[-1]
