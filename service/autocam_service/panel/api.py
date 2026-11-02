@@ -12,6 +12,8 @@
     POST /api/renest                         a card on a sheet back to Ready for CAM (nest the new version)
     GET  /api/assembly?d&wvm&w&e[&fresh][&u] an assembly's parts (its flattened BOM), each with its card's status
     POST /api/send-many                      cards for the ticked parts of an assembly
+    POST /api/send-program                   a part someone CAM'd themselves: its .tap on a card linked to the part,
+                                             checked by the guard first; AutoCAM places it (own_programs.py)
     POST /api/send                           make its card (or make a sent-back or Drafts card over)
     POST /api/qty                            change a card's quantity
     POST /api/me                             remember a student's name for their Onshape user id
@@ -36,9 +38,12 @@ from urllib.parse import urlsplit
 
 from autocam_core.hotfolder import write_atomic
 
+from autocam_core.tapguard import GuardSpec, check_program
+
 from ..cards import MAX_QTY
 from ..config import Config, Material
 from ..fits import parse_fit
+from ..handprograms import PROGRAM_SUFFIXES, footprint, parse_cutter
 from ..tracker.base import Card
 from . import checks
 from .board import ACTIVE, PanelBoard, Send, read_part_card
@@ -54,12 +59,18 @@ ID_RE = re.compile(r"^[0-9a-f]{24}$")
 PART_RE = re.compile(r"^[A-Za-z0-9_.+/=-]{1,64}$")
 USER_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 MAX_BODY = 16 * 1024
+MAX_PROGRAM_BODY = 4 * 1024 * 1024        # /api/send-program carries the .tap
+PROGRAM_PATH = "/api/send-program"
 SELECTION_LOGS_PER_DAY = 30
 MAX_ASSEMBLY_SEND = 60
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
        "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
        "frame-ancestors https://*.onshape.com https://onshape.com; base-uri 'none'; form-action 'none'")
 LIST_NAMES = {"inbox": "Drafts", "ready_for_cam": "Ready for CAM"}
+
+
+def body_limit(path: str) -> int:
+    return MAX_PROGRAM_BODY if path == PROGRAM_PATH else MAX_BODY
 
 
 @dataclass
@@ -157,8 +168,8 @@ class PanelApp:
             given = query.get("key", "") if path == "/api/preview" else headers.get("x-autocam-key", "")
             if not self._key_ok(given):
                 return _json(403, {"error": "This isn't AutoCAM's panel link (the key is wrong). Ask a mentor."})
-            if len(body) > MAX_BODY:
-                return _json(413, {"error": "That's too much text."})
+            if len(body) > body_limit(path):
+                return _json(413, {"error": "That's too big." if path == PROGRAM_PATH else "That's too much text."})
             data = json.loads(body.decode("utf-8")) if method == "POST" and body else {}
             if not isinstance(data, dict):
                 raise Refused(400, "Bad request")
@@ -166,6 +177,7 @@ class PanelApp:
                      ("GET", "/api/qty"): self.qty, ("GET", "/api/check"): self.check, ("POST", "/api/send"): self.send,
                      ("GET", "/api/changed"): self.changed, ("POST", "/api/renest"): self.renest,
                      ("GET", "/api/assembly"): self.assembly, ("POST", "/api/send-many"): self.send_many,
+                     ("POST", PROGRAM_PATH): self.send_program,
                      ("POST", "/api/qty"): self.change_qty, ("POST", "/api/me"): self.me,
                      ("POST", "/api/selection"): self.selection}.get((method, path))
             if path == "/api/preview" and method == "GET":
@@ -233,7 +245,7 @@ class PanelApp:
                              and o.family == m.family and o.name == m.name), None)
             if name is not None:
                 out[key] = {"value": key, "label": material_label(m), "onshape": name, "family": m.family,
-                            "smoked": m.color == "smoked"}
+                            "smoked": m.color == "smoked", "thicknesses": list(m.thicknesses_in)}
         return out
 
     def _part_material(self, part: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -599,6 +611,77 @@ class PanelApp:
         log.info("panel: %s sent %s x%d to %s: %s", sender, name, qty, LIST_NAMES[where], card.url)
         return {"card": self._detail(card, where), "list": LIST_NAMES[where],
                 "material": {"setInOnshape": set_in_onshape, "why": why, "line": line}}
+
+    def send_program(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        """Someone CAM'd the part themselves: their .tap goes on a card linked to the part (Material, Thickness and
+        an "Own program:" line), and AutoCAM picks it a spot (own_programs.py). The guard checks it here first for
+        what doesn't depend on where it goes (codes, units, nothing below Z0, the park); the placed copy gets the full
+        check (clamps, reach) before it's ever on a sheet card. Never into Ready to cut, like every card."""
+        self._rate_limit()
+        did, wvm, wvmid, eid = self._studio(d)
+        pid = self._part_id(d)
+        sender = self._sender(d)
+        part = self._find(did, wvm, wvmid, eid, pid)
+        name = part.get("name") or pid
+        prog = d.get("program") if isinstance(d.get("program"), dict) else {}
+        filename = re.sub(r"[^A-Za-z0-9_. -]+", "_", Path(str(prog.get("filename") or "")).name).strip() or "program.tap"
+        if not filename.lower().endswith(PROGRAM_SUFFIXES):
+            raise Refused(400, "Pick your program: a .tap (or .nc) file.")
+        data = str(prog.get("text") or "").encode("utf-8")
+        if not data.strip():
+            raise Refused(400, "That program is empty.")
+        if len(data) > self.cfg.trello.attachment_limit_mb * 1024 * 1024:
+            raise Refused(400, f"That program is bigger than Trello takes ({self.cfg.trello.attachment_limit_mb:g} MB).")
+
+        have = self._part_material(part)
+        key = have["key"] if have and have["key"] else str(d.get("material") or "")
+        if key not in self.cfg.materials:
+            raise Refused(400, "Pick the part's material.")
+        m = self.cfg.materials[key]
+        try:
+            thickness = float(d.get("thickness"))
+        except (TypeError, ValueError):
+            raise Refused(400, "Pick the plate's thickness.") from None
+        stock = next((s for s in m.thicknesses_in if abs(s - thickness) < 0.0005), None)
+        if stock is None:
+            raise Refused(400, f"{thickness:g} in isn't a stock thickness of {material_label(m)}.")
+        cutter_said = clean_text(d.get("cutter"), 20)
+        cutter_in, why = parse_cutter(f"Cutter: {cutter_said}") if cutter_said else (None, [])
+        if why:
+            raise Refused(400, why[0])
+
+        cfg = self.cfg
+        spec = GuardSpec(z_floor_in=cfg.machine.z_floor_in, allowed_g=frozenset(cfg.tapguard.allowed_g),
+                         allowed_m=frozenset(cfg.tapguard.allowed_m), park=cfg.machine.park)
+        report = check_program(data, spec)
+        if not report.passed:
+            raise Refused(400, "AutoCAM's safety check stopped your program: " + report.summary()[:400])
+        box, problems, _ = footprint(data, stock, cutter_in or cfg.hand_cuts.cutter_in)
+        if problems or box is None:
+            raise Refused(400, (problems or ["AutoCAM couldn't tell where your program cuts."])[0])
+
+        cards = self.board.part_cards(fresh=True)
+        going = self.board.for_part(did, eid, pid, name, cards)
+        if going is not None and going.status in ACTIVE:
+            raise Refused(409, "This part already has a card.", kind="duplicate", card=self.board.detail(going))
+        from .checks import inches                       # 3/16 in for the Thickness: line
+        lines = [f"https://{self._host(d.get('server'))}/documents/{did}/{wvm}/{wvmid}/e/{eid}", f"Part ID: {pid}",
+                 f"Material: {material_line(m)}", f"Thickness: {inches(stock).replace(' in', '')}"]
+        if cutter_in:
+            lines.append(f"Cutter: {cutter_said}")
+        lines += ["Own program: the attached program, CAM'd by hand (AutoCAM places it and checks the placed copy)",
+                  f"Sent from the Onshape panel by {sender}"]
+        notes = clean_text(d.get("notes"), 300)
+        if notes:
+            lines.append(f"Note: {notes}")
+        t = self.board.t
+        card = t.create_card("inbox", name, "\n".join(lines))       # in Drafts until the program is on it
+        t.attach_program(card.id, filename, data, report)
+        t.move(card.id, "ready_for_cam")
+        self.board.invalidate()
+        log.info("panel: %s sent their own program for %s (%s): %s", sender, name, filename, card.url)
+        return {"card": self._detail(t.get_card(card.id), "ready_for_cam"), "list": "Ready for CAM", "own": True,
+                "material": {"setInOnshape": False, "why": "", "line": ""}}
 
     def _detail(self, card: Card, list_key: str) -> Dict[str, Any]:
         pc = read_part_card(card, {"inbox": "drafts", "ready_for_cam": "queued"}.get(list_key, "queued"))

@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Callable, List, Optional
 from urllib.parse import parse_qsl, urlsplit
 
-from .api import MAX_BODY, PanelApp
+from .api import PanelApp, body_limit
 
 log = logging.getLogger("autocam.panel")
 
@@ -37,7 +37,7 @@ def _handler(app: PanelApp):
             parts = urlsplit(self.path)
             query = dict(parse_qsl(parts.query, keep_blank_values=True))
             length = int(self.headers.get("Content-Length") or 0)
-            body = self.rfile.read(min(length, MAX_BODY + 1)) if length else b""
+            body = self.rfile.read(min(length, body_limit(parts.path) + 1)) if length else b""
             headers = {k.lower(): v for k, v in self.headers.items()}
             resp = app.handle(method, parts.path, query, headers, body)
             self.send_response(resp.status)

@@ -55,7 +55,7 @@ from .cards import (MATERIAL_RE, README_CARD, STEP_SUFFIXES, TITLE_QTY_RE, CardP
 from .offcuts import _number as _scrap_number
 from .config import Config
 from .handprograms import ProgramCut, footprint, is_program, parse_cutter, program_cuts
-from .own_programs import find_spot, parse_thickness, placed_name, program_attachments, shift_program
+from .own_programs import OWN_PROGRAM_RE, find_spot, parse_thickness, placed_name, program_attachments, shift_program
 from .fits import FitStore, key as fit_key, parse_fit, stocks as fit_stocks
 from .jobs import JobBuildError, build_job, face_spec, fit_spec, sheet_fixture
 from .materials import resolve_material
@@ -871,9 +871,12 @@ class Runner:
 
     # ------------------------------------------------------------ own programs (option 3)
     def _own_program_card(self, card: Card) -> bool:
-        """A part card carrying someone's own program instead of a part: a .tap, no Onshape link, no STEP file."""
+        """A part card carrying someone's own program instead of a part: a .tap, and no Onshape link and no STEP
+        file, or an "Own program:" line (the Onshape panel's cards link the part too)."""
         if not self.cfg.hand_cuts.place_programs or not program_attachments(card):
             return False
+        if OWN_PROGRAM_RE.search(card.desc or ""):
+            return True
         return not first_onshape_url(card.desc or "") and not any(
             a.name.lower().endswith(STEP_SUFFIXES) for a in card.attachments)
 

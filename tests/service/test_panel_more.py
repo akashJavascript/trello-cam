@@ -191,3 +191,89 @@ def test_sending_an_assembly_makes_a_card_per_part_from_its_own_part_studio(tmp_
     assert other[:3] == [f"https://cad.onshape.com/documents/{OTHER}/v/{'6' * 24}/e/{'5' * 24}", "Qty: 3", "Part ID: JQX"]
     assert made["P-2014 gusset"].desc.startswith(f"{STUDIO_W}\nQty: 4\nPart ID: JHD")
     assert len([u for _, u, _, _ in p.transport.sent if "/bom" in u]) == 1         # one call for the whole assembly
+
+
+# ---------------------------------------------------------------- changed before it's cut (the service checks)
+
+from autocam_service.panel.precut import PrecutWatch                                  # noqa: E402
+
+
+def precut_panel(tmp_path, now_state, then, now):
+    on = Card("a" * 24, "P-2014 gusset", f"{STUDIO_W}\nQty: 2\nPart ID: JHD", "nested", "https://t/on")
+    transport = FakeTransport([("GET", "/currentmicroversion", [resp(body={"microversion": now_state})] * 3),
+                               ("GET", f"/m/{MID}/e/{E}/partid/JHD/bodydetails", [resp(body=then)]),
+                               ("GET", f"/w/{W}/e/{E}/partid/JHD/bodydetails", [resp(body=now)])])
+    p = Panel(tmp_path, transport=transport, cards=[on, Card(SHEET, "6061 - 25 min - r034 S1", "", "ready_to_cut", "u")])
+    p.h.store.register_sheet(SHEET, "r034", True, [on.id], job="r034-al6061", material="al6061", thickness_in=0.125,
+                             index=1, url="u", extra={"label": "r034 S1"})
+    p.h.store.save_job("r034-al6061", json.dumps({"run_id": "r034", "parts": [{
+        "card_id": on.id, "name": "P-2014 gusset", "onshape": {"did": D, "vid": W, "eid": E, "part_id": "JHD",
+                                                               "url": STUDIO_W, "microversion": MID}}]}))
+    return p, PrecutWatch(p.onshape, p.board, p.h.store, p.t)
+
+
+def test_a_sheet_in_ready_to_cut_is_told_when_a_part_changed(tmp_path):
+    then = plate_body(rectangle(4, 2), 0.125, [(1, 1, 0.25)])
+    now = plate_body(rectangle(4, 2), 0.125, [(1, 1, 0.5)])
+    p, watch = precut_panel(tmp_path, "8" * 24, then, now)
+    assert watch.tick() == 1
+    [said] = p.t.comments_on(SHEET)
+    assert "P-2014 gusset was changed in Onshape after this sheet was CAM'd (1 hole added, 1 hole removed)" in said
+    calls = len(p.transport.sent)
+    assert watch.tick() == 0 and len(p.transport.sent) == calls                   # checked once per sheet program
+
+
+def test_an_unchanged_document_costs_one_call(tmp_path):
+    body = plate_body(rectangle(4, 2), 0.125, [(1, 1, 0.25)])
+    p, watch = precut_panel(tmp_path, MID, body, body)
+    assert watch.tick() == 0 and p.t.comments_on(SHEET) == []
+    assert [u.split("/api/v10")[1] for _, u, _, _ in p.transport.sent] == [f"/documents/d/{D}/w/{W}/currentmicroversion"]
+
+
+def test_out_of_calls_the_sheet_is_checked_later(tmp_path):
+    body = plate_body(rectangle(4, 2), 0.125, [(1, 1, 0.25)])
+    p, watch = precut_panel(tmp_path, "8" * 24, body, body)
+    p.onshape.calls_per_day = 0
+    assert watch.tick() == 0 and p.transport.sent == []
+    p.onshape.calls_per_day = 60
+    watch.tick()
+    assert len(p.transport.sent) == 3                                               # state, then, now
+
+
+# ---------------------------------------------------------------- "I CAM'd it myself" from the panel
+
+from test_handprograms import program                                                # noqa: E402
+
+
+def send_program(p, data, **kw):
+    body = {**Q, "p": "JHD", "name": "Maya", "thickness": 0.1875, "server": "https://cad.onshape.com",
+            "program": {"filename": "P-2014.tap", "text": data.decode("ascii")}, **kw}
+    return p.call("POST", "/api/send-program", body=body)
+
+
+def test_an_own_program_goes_on_a_card_linked_to_the_part(tmp_path):
+    p = Panel(tmp_path)
+    status, r = send_program(p, program(), cutter="")
+    assert status == 200 and r["own"] and r["list"] == "Ready for CAM"
+    [card] = card_in(p, "ready_for_cam")
+    assert card.desc.split("\n")[:5] == [STUDIO_W, "Part ID: JHD", "Material: 6061", "Thickness: 3/16",
+                                         "Own program: the attached program, CAM'd by hand (AutoCAM places it and "
+                                         "checks the placed copy)"]
+    assert [name for cid, name, _ in p.t.files.values() if cid == card.id] == ["P-2014.tap"]
+    seen = p.t.get_card(card.id)
+    assert p.h.runner._own_program_card(seen)                                     # placed, not nested
+    assert seen.id not in [c.id for c in p.h.runner.ready_cards()]
+    assert p.call("GET", "/api/part", {**Q, "p": "JHD"})[1]["card"]["status"] == "queued"
+
+
+def test_an_own_program_the_guard_stops_never_reaches_trello(tmp_path):
+    p = Panel(tmp_path)
+    status, r = send_program(p, program(z_cut="-0.05"))
+    assert status == 400 and r["error"].startswith("AutoCAM's safety check stopped your program: goes below Z0")
+    status, r = send_program(p, program(units="G21"))
+    assert status == 400
+    status, r = send_program(p, program(), thickness=0.21)
+    assert status == 400 and "isn't a stock thickness" in r["error"]
+    status, r = send_program(p, program(), program={"filename": "notes.txt", "text": "G0"})
+    assert status == 400 and ".tap" in r["error"]
+    assert card_in(p, "ready_for_cam") == [] and card_in(p, "inbox") == [] and p.t.files == {}

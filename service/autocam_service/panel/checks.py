@@ -204,7 +204,8 @@ def check(geom: PartGeometry, cfg: Config, material_key: Optional[str],
     notes += [note(i) for i in a.warnings]
     if not a.errors and len(a.top_face_ids) > 1:
         problems.append(explain(E.Issue(E.NEEDS_MANUAL_CAM, "split"), 0, stock, name, small))
-    out: Dict[str, Any] = {"thickness": inches(a.stock_thickness_in or a.measured_thickness_in), "cutter": "",
+    out: Dict[str, Any] = {"thickness": inches(a.stock_thickness_in or a.measured_thickness_in), "stock_in": a.stock_thickness_in,
+                           "cutter": "",
                            "cutterWhy": "", "features": "", "needMaterial": False,
                            "use": use(cfg, material_key, a.stock_thickness_in, extra), "pick": picks(a, cfg, None, extra)}
     if not problems:

@@ -1,7 +1,8 @@
 """Someone's own program, placed by AutoCAM (option 3, the user's choice 2026-11-01; [hand_cuts] place_programs).
 
 A card in Ready for CAM with a .tap attached instead of an Onshape link or a STEP file, plus Material and
-Thickness lines (and Cutter: if it's over 1/4 in), is a part someone CAM'd themselves. AutoCAM doesn't CAM it: it
+Thickness lines (and Cutter: if it's over 1/4 in), is a part someone CAM'd themselves. So is one with a link to
+the part and an "Own program:" line (the Onshape panel sends them that way, so the card follows the part). AutoCAM doesn't CAM it: it
 finds the program a spot (find_spot: room beside earlier cuts on an offcut, an offcut's free stretch, or a new
 sheet; the smallest that fits, the way round the offcut was last cut if it can), makes a copy of the program moved
 there (shift_program: its zero becomes the piece's front-left corner, like AutoCAM's own sheets), checks that copy
@@ -20,6 +21,7 @@ from autocam_core.tapguard import parse_code
 from .handprograms import PROGRAM_SUFFIXES
 
 SUFFIX = "_PLACED"
+OWN_PROGRAM_RE = re.compile(r"^[ \t>\-*]*own[ \t]*program[ \t*]*[:=]", re.IGNORECASE | re.MULTILINE)
 _THICKNESS = re.compile(r"^[ \t>\-*]*thickness[ \t*]*[:=][ \t]*(.+?)[ \t*]*$", re.IGNORECASE | re.MULTILINE)
 _XY = re.compile(r"(?<![A-Z])([XY])( *)([+-]?(?:\d+\.?\d*|\.\d+))")
 _LINE = re.compile(r"([^\r\n]*)(\r\n|\n|$)")

@@ -326,22 +326,24 @@ class PanelBoard:
     def flag_changed(self, pc: PartCard, name: str, what: List[str], key: str) -> int:
         """Comment once on each sheet the card is on that isn't cut yet: its part changed after it was CAM'd.
         Returns how many sheets were told."""
-        try:
-            flags = dict(json.loads(self.flags_file.read_text(encoding="utf-8")))
-        except (OSError, ValueError):
-            flags = {}
-        told = 0
-        for sid, e in self.sheets_of(pc.card.id):
-            if e.get("cut") or flags.get(f"{sid}:{pc.card.id}") == key:
-                continue
-            self.t.comment(sid, f"{name} was changed in Onshape after this sheet was CAM'd ({', '.join(what)}). Check "
-                                "it before cutting; the Onshape panel can nest the new version.")
-            flags[f"{sid}:{pc.card.id}"] = key
-            told += 1
-        if told:
+        return sum(self.flag_sheet(sid, pc.card.id, name, what, key) for sid, e in self.sheets_of(pc.card.id)
+                   if not e.get("cut"))
+
+    def flag_sheet(self, sheet_id: str, card_id: str, name: str, what: List[str], key: str) -> bool:
+        """One comment on the sheet card per change of this part (`key`: its shape now)."""
+        with self._lock:
+            try:
+                flags = dict(json.loads(self.flags_file.read_text(encoding="utf-8")))
+            except (OSError, ValueError):
+                flags = {}
+            if flags.get(f"{sheet_id}:{card_id}") == key:
+                return False
+            self.t.comment(sheet_id, f"{name} was changed in Onshape after this sheet was CAM'd ({', '.join(what)}). "
+                                     "Check it before cutting; the Onshape panel can nest the new version.")
+            flags[f"{sheet_id}:{card_id}"] = key
             self.flags_file.parent.mkdir(parents=True, exist_ok=True)
             write_atomic(self.flags_file, (json.dumps(flags, indent=1) + "\n").encode("utf-8"))
-        return told
+            return True
 
     def renest(self, pc: PartCard) -> Card:
         """A card on a sheet back to Ready for CAM, so the next run nests its part as it is now."""

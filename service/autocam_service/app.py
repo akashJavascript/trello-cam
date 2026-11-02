@@ -91,6 +91,7 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
     from .panel.api import Names, PanelApp
     from .panel.board import PanelBoard
     from .panel.onshape_reads import PanelOnshape
+    from .panel.precut import PrecutWatch
     from .panel.server import Tunnel, start_server
 
     def client_for(max_calls: int) -> OnshapeClient:
@@ -105,9 +106,11 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
                            calls_per_year=p.onshape_calls_per_year, year_start=cfg.onshape.budget_year_start,
                            parts_cache_s=p.parts_cache_s, assembly_cache_s=p.assembly_cache_s,
                            max_assemblies=p.max_assemblies)
-    board = PanelBoard(trello_tracker(cfg, env_file), cfg, services.store)
+    tracker = trello_tracker(cfg, env_file)
+    board = PanelBoard(tracker, cfg, services.store)
     app = PanelApp(cfg, creds.get("AUTOCAM_PANEL_KEY"), onshape, board, Names(cfg.paths.state / "panel_users.json"))
     start_server(app, p.port)
+    PrecutWatch(onshape, board, services.store, tracker).keep_running()   # changed before it's cut
     if p.tunnel_dir:
         Tunnel(Path(p.tunnel_dir), cfg.paths.state, cfg.paths.logs).keep_running()
     return True

@@ -122,6 +122,7 @@ class PanelOnshape:
         self._assemblies: Dict[Tuple[str, str, str], _Entry] = {}
         self._shapes: Dict[Tuple[str, ...], Tuple[PartGeometry, Dict[str, Any]]] = {}
         self._elements: Dict[Tuple[str, str, str], _Entry] = {}
+        self._states: Dict[Tuple[str, str], _Entry] = {}
         self._boms: Dict[Tuple[str, str, str, str], _Entry] = {}
 
     # ---- limits
@@ -228,6 +229,27 @@ class PanelOnshape:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 write_atomic(path, json.dumps({"geometry": found[0].to_dict(), "extra": found[1]}).encode("utf-8"))
             return found
+
+    # ---- a workspace's current state (one call says whether anything in the document changed)
+    def current_microversion(self, did: str, wid: str) -> str:
+        key = (did, wid)
+        with self._lock:
+            hit = self._states.get(key)
+            if hit is not None and self.clock() - hit.at < 60:
+                return hit.value
+            client = self._client()
+            try:
+                data = client.get_json(f"{API}/documents/d/{did}/w/{wid}/currentmicroversion",
+                                       purpose="panel_microversion")
+            except BudgetExceeded as e:
+                raise OutOfCalls(str(e)) from e
+            except OnshapeError as e:
+                if e.status in (403, 404):
+                    raise NoAccess(str(e)) from e
+                raise PanelOnshapeError(f"Onshape didn't say the workspace's state ({e.status or 'no answer'}).") from e
+            mid = str((data or {}).get("microversion") or "")
+            self._states[key] = _Entry(self.clock(), mid)
+            return mid
 
     # ---- the document's tabs, and an assembly's bill of materials
     def elements(self, did: str, wvm: str, wvmid: str, fresh: bool = False) -> List[Dict[str, Any]]:

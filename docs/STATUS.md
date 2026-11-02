@@ -94,6 +94,10 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   version), sending a whole assembly from its BOM, marks in the parts list, the machine queue, cost and sheet use
   (WCP's sheet prices in `[costs]`, 70% of a sheet used), and fits by clicking a hole (waits on Onshape's selection
   messages).
+- **Panel, third batch** (2026-11-01): sheets in Ready to cut are checked by the service for parts changed since they
+  were CAM'd (one call per document when nothing changed; a comment on the sheet when a part did), and "I CAM'd it
+  myself" sends a part's own program from the panel (guard-checked, on a card linked to the part; an "Own
+  program:" line marks it for own_programs).
 - **Fit series** (2026-11-01): a part card's `Fit: 1.125 hole` or `Fit: outline` line gets that feature cut 0.003 tight,
   with lap programs taking 0.001 more each, run one by one at the machine; the run that fit is ticked on the sheet card
   and the next series starts there. Holes over 1.5 in too (cut as cutouts: the slug comes out by hand, then the laps,

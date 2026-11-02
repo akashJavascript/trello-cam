@@ -587,12 +587,13 @@
   function renderSent() {
     var r = S.sent, f = S.form, d = S.detail;
     var drafts = r.list === "Drafts";
-    add(bodyEl, notice("good", "Sent to " + r.list, drafts ? "Move it to Ready for CAM when it's ready." : "It's nested about 2 minutes after the last card arrives."));
+    add(bodyEl, notice("good", "Sent to " + r.list, r.own ? "AutoCAM picks your program a spot and puts it in Sheet review, checked."
+      : drafts ? "Move it to Ready for CAM when it's ready." : "It's nested about 2 minutes after the last card arrives."));
     if (r.material && r.material.line) {
       add(bodyEl, notice("info", null, "Onshape didn't take the material (" + (r.material.why || "no reason given") + "), so the card says Material: " + r.material.line + "."));
     }
-    var chips = [chip("Qty " + f.qty, "event")];
-    if (f.tabs) chips.push(chip("Tabs"));
+    var chips = r.own ? [chip("Own program", "event")] : [chip("Qty " + f.qty, "event")];
+    if (f.tabs && !r.own) chips.push(chip("Tabs"));
     if (!f.nest) chips.push(chip("Placed by hand"));
     if (f.face) chips.push(chip("Face"));
     if (f.fitKind !== "none") chips.push(chip(f.fitKind === "outline" ? "Fit outline" : "Fit " + f.fitSize + " hole"));
@@ -644,18 +645,23 @@
     } else {
       from = h("div", { class: "from" }, q.note ? q.note : "no assembly here uses it");
     }
-    add(bodyEl, group("Quantity", h("div", { class: "line" }, stepper(f.qty, function (n) { f.qty = n; f.qtyBy = "you"; render(); }), from),
-      q && q.assemblies.length && q.note && f.qtyBy !== "you" ? h("span", { class: "hint" }, q.note) : null));
+    if (f.own) {
+      add(bodyEl, ownProgramGroup(f, m));
+    } else {
+      add(bodyEl, group("Quantity", h("div", { class: "line" }, stepper(f.qty, function (n) { f.qty = n; f.qtyBy = "you"; render(); }), from),
+        q && q.assemblies.length && q.note && f.qtyBy !== "you" ? h("span", { class: "hint" }, q.note) : null));
+    }
 
     // options, all in one list
     var fitted = f.fitKind !== "none";
     var poly = (m && m.key && m.family === "polycarbonate");
-    var opts = [
+    var ownSwitch = switchLine("I CAM'd it myself", f.own, function (v) { f.own = v; f.error = ""; render(); });
+    var opts = f.own ? [ownSwitch] : [
       switchLine("Hold it in with tabs", f.tabs || fitted, function (v) { f.tabs = v; render(); }, fitted),
       switchLine("Nest it with other parts", f.nest || fitted, function (v) { f.nest = v; render(); }, fitted)
     ];
-    if (st.face) opts.push(switchLine("Face the top", f.face, function (v) { f.face = v; render(); }));
-    if (st.fit) {
+    if (st.face && !f.own) opts.push(switchLine("Face the top", f.face, function (v) { f.face = v; render(); }));
+    if (st.fit && !f.own) {
       var fsel = h("select", { class: "select", id: "fit", onchange: function () { f.fitKind = fsel.value; render(); } },
         [["none", "None"], ["hole", "A hole"], ["outline", "Outline"]].map(function (o) {
           return h("option", { value: o[0], selected: f.fitKind === o[0] ? "selected" : null }, o[1]);
@@ -668,9 +674,12 @@
         opts.push(h("div", { class: "line" }, h("span", { class: "name" }, "Hole size (in, or mm)"), size));
       }
     }
-    opts.push(switchLine("Rush", f.rush, function (v) { f.rush = v; render(); }));
-    if (poly) opts.push(switchLine("Smoked", f.smoked, function (v) { f.smoked = v; render(); }));
-    opts.push(switchLine("Send to Drafts", f.drafts, function (v) { f.drafts = v; render(); }));
+    if (!f.own) opts.push(switchLine("Rush", f.rush, function (v) { f.rush = v; render(); }));
+    if (poly && !f.own) opts.push(switchLine("Smoked", f.smoked, function (v) { f.smoked = v; render(); }));
+    if (!f.own) {
+      opts.push(switchLine("Send to Drafts", f.drafts, function (v) { f.drafts = v; render(); }));
+      opts.push(ownSwitch);
+    }
     var notes = h("textarea", { class: "textarea", placeholder: "Notes for the CAM person", "aria-label": "Notes", maxlength: "300",
       oninput: function () { f.notes = notes.value; } });
     notes.value = f.notes;
@@ -685,13 +694,46 @@
       nameInput = h("input", { class: "input wide", type: "text", placeholder: "Your name (it goes on the card)", maxlength: "40", "aria-label": "Your name" });
       add(actionEl, nameInput);
     }
-    var label = S.editing ? (f.drafts ? "Save in Drafts" : "Send again") : (f.drafts ? "Send to Drafts" : "Send to Ready for CAM");
-    add(actionEl, h("button", { class: "btn btn-primary", type: "button", disabled: S.busy || (pickMaterial && !f.material),
+    var label = f.own ? "Send my program" : S.editing ? (f.drafts ? "Save in Drafts" : "Send again") : (f.drafts ? "Send to Drafts" : "Send to Ready for CAM");
+    add(actionEl, h("button", { class: "btn btn-primary", type: "button", disabled: S.busy || (pickMaterial && !f.material) || (f.own && !f.program),
       onclick: function () { send(nameInput); } }, S.busy ? "Sending…" : label));
     if (S.user) {
       add(actionEl, h("div", { class: "as" }, "Sending as " + S.user + " · ",
         h("button", { class: "link-btn", type: "button", onclick: function () { S.user = ""; stored("name", ""); render(); } }, "change")));
     }
+  }
+
+  // "I CAM'd it myself": the program, the plate's thickness, and the cutter if it's over 1/4 in
+  function ownProgramGroup(f, m) {
+    var key = (m && m.key) || f.material;
+    var mat = (S.studio.materials || []).filter(function (o) { return o.value === key; })[0];
+    var sizes = mat ? mat.thicknesses : [];
+    if (f.thickness === undefined && S.check && S.check.stock_in) f.thickness = S.check.stock_in;
+    var file = h("input", { type: "file", accept: ".tap,.nc", "aria-label": "Your program", class: "file-in",
+      onchange: function () {
+        var pick = file.files && file.files[0];
+        if (!pick) return;
+        var reader = new FileReader();
+        reader.onload = function () { f.program = { filename: pick.name, text: String(reader.result || ""), size: pick.size }; render(); };
+        reader.readAsText(pick);
+      } });
+    var thick = h("select", { class: "select", "aria-label": "Thickness", onchange: function () { f.thickness = parseFloat(thick.value); render(); } },
+      h("option", { value: "" }, "Pick"),
+      sizes.map(function (s) { return h("option", { value: String(s), selected: Math.abs((f.thickness || 0) - s) < 1e-6 ? "selected" : null }, fraction(s)); }));
+    var cutter = h("select", { class: "select", "aria-label": "Cutter", onchange: function () { f.cutter = cutter.value; } },
+      [["", "1/4 in or smaller"], ["3/8", "3/8 in"], ["1/2", "1/2 in"]].map(function (o) {
+        return h("option", { value: o[0], selected: (f.cutter || "") === o[0] ? "selected" : null }, o[1]); }));
+    return group("Your program",
+      h("div", { class: "line" }, f.program ? h("span", { class: "name" }, f.program.filename,
+        h("span", { class: "sub" }, Math.max(1, Math.round(f.program.size / 1024)) + " KB")) : h("span", { class: "name" }, "Pick the .tap you made"),
+        h("label", { class: "btn btn-secondary file-btn" }, f.program ? "Change" : "Choose", file)),
+      h("div", { class: "line" }, h("span", { class: "name" }, "Plate thickness"), thick),
+      h("div", { class: "line" }, h("span", { class: "name" }, "Cutter"), cutter),
+      h("span", { class: "hint" }, "Zero X/Y at the part's front-left corner and Z0 on the spoilboard. AutoCAM picks a spot, moves your program there and checks it."));
+  }
+  function fraction(x) {
+    var names = { "0.0625": "1/16 in", "0.125": "1/8 in", "0.1875": "3/16 in", "0.25": "1/4 in" };
+    return names[String(x)] || x + " in";
   }
 
   // the design checks: AutoCAM's own rules on the part's shape (panel/checks.py)
@@ -729,6 +771,7 @@
       if (!typed) { f.error = "Type your name first (it goes on the card)."; render(); return; }
       S.user = typed; stored("name", typed);
     }
+    if (f.own) return sendProgram();
     var fitted = f.fitKind !== "none";
     var body = where({
       p: S.partId, qty: f.qty, nest: f.nest || fitted, tabs: f.tabs || fitted, face: f.face, rush: f.rush,
@@ -747,6 +790,25 @@
       } else {
         f.error = err.message;
       }
+      render();
+    });
+  }
+
+  function sendProgram() {
+    var f = S.form, d = S.detail;
+    if (!f.thickness) { f.error = "Pick the plate's thickness."; render(); return; }
+    f.error = ""; S.busy = true; render();
+    api("POST", "/api/send-program", where({
+      p: S.partId, thickness: f.thickness, cutter: f.cutter || "", material: f.material, notes: f.notes,
+      program: { filename: f.program.filename, text: f.program.text }, u: ctx.u, name: S.user, server: ctx.server
+    })).then(function (r) {
+      S.busy = false; S.sent = r; d.card = r.card;
+      quietRefresh();
+      render();
+    }, function (err) {
+      S.busy = false;
+      if (err.data && err.data.kind === "duplicate" && err.data.card) { d.card = err.data.card; S.notice = err.message; }
+      else f.error = err.message;
       render();
     });
   }

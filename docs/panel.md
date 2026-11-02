@@ -47,6 +47,16 @@ preview), cut, or sent back with the reason.
   Onshape since it was CAM'd (r034): 2 holes added", or "Onshape still matches what was CAM'd in r034". A sheet not
   cut yet gets one comment saying so, and the panel offers "Nest the new version" (the card goes back to Ready for
   CAM). A moved part isn't a change; a moved hole is.
+- **Checked again before it's cut** (2026-11-01, `panel/precut.py`): when one of AutoCAM's sheets reaches Ready to
+  cut, the service itself checks each part on it that was CAM'd from a workspace, once per sheet program: one call
+  asks the workspace's state; the same state as when it was CAM'd means nothing in that document changed. Otherwise
+  the shapes then and now are compared, and a part that really changed gets one comment on the sheet card. The
+  panel's calls; out of calls, it's tried again later.
+- **"I CAM'd it myself"** (a switch in the options): pick the .tap, the plate's thickness (filled in from the check)
+  and the cutter if it's over 1/4 in. The guard checks the program first for what doesn't depend on where it goes
+  (codes, inch units, nothing below Z0, the park), so a bad one never reaches Trello. It goes on a card linked to the
+  part with Material, Thickness and an "Own program:" line, and AutoCAM places it like any own program (a spot,
+  the program moved there, the full check, a card in Sheet review). The card follows the part in the panel.
 - **Fits by clicking:** clicking a round hole that isn't drilled, or a wall of the outline, in the CAD sets the Fit
   (Onshape face ids from the shape read for the check). Waits on what Onshape's SELECTION messages really hold.
 - **A whole assembly:** the second extension (context Assembly, `&kind=assembly` on its link) lists the assembly's
