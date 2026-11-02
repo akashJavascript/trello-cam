@@ -89,7 +89,8 @@ def test_if_fusion_wont_take_points_it_spreads_the_same_number_evenly(tmp_path):
     rig.fake.fail_tab_points = True
     tabbed = with_cutouts("bracket", [5.0])
     job = rig.job([("bracket", 1, tabbed, (8.0, 6.0))])
-    job = dataclasses.replace(job, parts=(dataclasses.replace(job.parts[0], tabs=True),))
+    job = dataclasses.replace(job, parts=(dataclasses.replace(job.parts[0], tabs=True),),
+                              tabs=dataclasses.replace(job.tabs, width_in=0.3, height_in=0.0394, wide_max_tier=0))
     result = rig.run(job)
     [sheet] = result.sheets
     assert sheet.tap and not sheet.errors
