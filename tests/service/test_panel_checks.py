@@ -57,6 +57,12 @@ def test_a_thickness_that_isnt_stock():
     assert "Make it 1/8 in" in r["problems"][0]["fix"]
 
 
+def test_a_block_isnt_a_plate_with_mistakes_in_it():
+    r = check(geom(rectangle(2, 2), 1.145), CFG, None)
+    assert r["problems"] == [{"title": "This isn't a plate (1.145 in thick).",
+                              "fix": "AutoCAM cuts flat plates up to 1/4 in thick. This part gets made another way."}]
+
+
 def test_a_hole_too_small_for_any_cutter():
     r = check(geom(rectangle(4, 2), 0.125, [(1, 1, 0.1)]), CFG, "al6061")
     assert not r["ok"]

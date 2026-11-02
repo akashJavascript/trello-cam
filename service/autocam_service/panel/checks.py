@@ -17,6 +17,7 @@ from autocam_core.tooling import part_tool, plan_features
 
 from ..config import Config, Tool
 
+NOT_PLATE_MARGIN_IN = 0.25      # this much thicker than the thickest stock: not a plate at all (a block, a printed part)
 FRACTIONS = {0.0625: "1/16", 0.125: "1/8", 0.1875: "3/16", 0.25: "1/4", 0.375: "3/8", 0.5: "1/2"}
 FEATURE_WORDS = (("drill", "drilled"), ("bore", "bored"), ("bearing", "bearing"), ("inner", "cut out"),
                  ("pockets", "pocket"))
@@ -136,6 +137,14 @@ def note(issue) -> str:
     return issue.msg[:1].upper() + issue.msg[1:] + "."
 
 
+def _not_a_plate(thickness: float, stock: Tuple[float, ...]) -> Optional[List[Dict[str, str]]]:
+    """A part far thicker than any stock isn't a plate with a mistake in it: one line, not a list of its faces."""
+    if stock and thickness > max(stock) + NOT_PLATE_MARGIN_IN:
+        return [{"title": f"This isn't a plate ({thickness:.3f} in thick).",
+                 "fix": f"AutoCAM cuts flat plates up to {inches(max(stock))} thick. This part gets made another way."}]
+    return None
+
+
 def check(geom: PartGeometry, cfg: Config, material_key: Optional[str]) -> Dict[str, Any]:
     """{"ok", "problems": [{"title", "fix"}], "notes": [...], "thickness", "cutter", "cutterWhy", "features",
     "needMaterial"}. Without a material the shape is checked against every stock size and the cutter waits."""
@@ -144,7 +153,8 @@ def check(geom: PartGeometry, cfg: Config, material_key: Optional[str]) -> Dict[
     if material_key is None:
         stock = tuple(sorted({t for m in cfg.materials.values() for t in m.thicknesses_in}))
         a = analyze(geom, stock, cfg.plate.thickness_tol_in)
-        problems = [explain(i, a.measured_thickness_in, stock, "Stock", None) for i in a.errors]
+        problems = _not_a_plate(a.measured_thickness_in, stock) or \
+            [explain(i, a.measured_thickness_in, stock, "Stock", None) for i in a.errors]
         return {"ok": not problems, "problems": problems, "notes": [note(i) for i in a.warnings],
                 "thickness": inches(a.stock_thickness_in or a.measured_thickness_in), "cutter": "", "cutterWhy": "",
                 "features": "", "needMaterial": True}
@@ -157,7 +167,8 @@ def check(geom: PartGeometry, cfg: Config, material_key: Optional[str]) -> Dict[
     name = f"{m.name} aluminum" if m.family == "aluminum" else "Polycarbonate" if m.family == "polycarbonate" \
         else m.name
     a: PlateAnalysis = analyze(geom, stock, cfg.plate.thickness_tol_in)
-    problems += [explain(i, a.measured_thickness_in, stock, name, small) for i in a.errors]
+    problems += _not_a_plate(a.measured_thickness_in, stock) or \
+        [explain(i, a.measured_thickness_in, stock, name, small) for i in a.errors]
     notes += [note(i) for i in a.warnings]
     if not a.errors and len(a.top_face_ids) > 1:
         problems.append(explain(E.Issue(E.NEEDS_MANUAL_CAM, "split"), 0, stock, name, small))
