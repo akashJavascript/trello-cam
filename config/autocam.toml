@@ -393,8 +393,8 @@ board_cache_s = 30              # Trello lists read for each part's status
 sends_per_minute = 20
 
 [costs]                         # the Onshape panel's cost and sheet use estimate. Prices: WCP's for a 24 x 48 in sheet
-                                # (wcproducts.com, read 2026-11-01; the user's choice). A thickness WCP doesn't sell has
-                                # no price: the panel shows only its share of a sheet
+                                # (wcproducts.com, read 2026-11-01; the user's choice), else another vendor's (named on
+                                # the line). A thickness with no price shows only its share of a sheet
 nest_efficiency = 0.7           # the share of a sheet that ends up as parts (the user: 10% under the first guess, 0.8)
 
 [costs.sheet_prices.al6061]     # 6061-T6: WCP-1313, WCP-1315, WCP-1316, WCP-1317
@@ -406,11 +406,14 @@ nest_efficiency = 0.7           # the share of a sheet that ends up as parts (th
 [costs.sheet_prices.al5052]     # 5052-H32: WCP-1311 (WCP sells no 1/8 in 5052)
 "0.0625" = 99.99
 
-[costs.sheet_prices.pc_clear]   # clear polycarbonate: WCP-0294, WCP-0196 (no 1/16 or 3/16 in)
+[costs.sheet_prices.pc_clear]   # clear polycarbonate: WCP-0294, WCP-0196; WCP has no 1/16 or 3/16 in
+"0.0625" = 33.57                # EasyRuler Plastic (easyrulerplastic.com, pc0060x24x48), read 2026-11-01
 "0.125" = 54.99
+"0.1875" = 50.57                # EasyRuler Plastic (pc0177x24x48, 0.177 in), read 2026-11-01
 "0.25" = 79.99
 
-[costs.sheet_prices.pc_smoked]  # gray tinted polycarbonate: WCP-0885, WCP-0295
+[costs.sheet_prices.pc_smoked]  # gray tinted polycarbonate: WCP-0885, WCP-0295; WCP has no 1/16 in (no 3/16 found)
+"0.0625" = 38.67                # EasyRuler Plastic (pcsmg0060x24x48, smoke grey), read 2026-11-01
 "0.125" = 74.99
 "0.25" = 99.99
 
