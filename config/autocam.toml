@@ -388,13 +388,17 @@ distance_in = 2.5               # about one tab per this much contour (outline o
                                 # (triangular) is the template's: the API can't set the shape
 width_in = 0                    # 0: the template's (one cutter, 0.157 in). The user wants 0.3 in; it works with every
                                 # tab on straight edges (r060, r063, r064). Tabs on curves crashed Fusion at either width
-                                # (r059, r061, r062, r065; once fine, r058). Held at 0 until the user picks what curvy
-                                # cutouts get (2026-11-02): with 0.3 in, wide_max_tier and the per-setup rule apply
+                                # (r059, r061, r062, r065; once fine, r058). Held at 0 until the cut-free rule below
+                                # passes on tsize1's plates; with 0.3 in, wide_max_tier and the per-setup rule apply
 height_in = 0.0394              # above the bottom: 1 mm, what the template had (0 for either: the template's)
 wide_max_tier = 0               # tabs wider than the cutter go only where the cutter's whole climb over them is on one
                                 # straight edge (tabs.place_tabs tier 0); a contour without room for its tabs gets the
                                 # template's width. A wide tab whose ramp ran into a corner, fillet or curve crashed
                                 # Fusion (tsize1, r054, r059); with every one on room for its ramp it didn't (r060)
+free_max_in = 2.0               # beside 0.3 in tabs, a tabbed cutout with no straight edge for its tabs (a round hole
+                                # cut as a cutout, a small rounded slot) and at most this across is cut free, no tabs,
+                                # so the rest of the sheet keeps 0.3 in (the user's pick, 2026-11-02; the sheet card
+                                # says so). Bigger ones, fitted slugs and curvy outlines keep that sheet at 0.157 in
 min_per_contour = 2             # every tabbed outline and cutout gets at least this many (fewer only if they
 max_per_contour = 6             # don't fit: a tiny cutout gets none)
 at_points = true                # placed on straight edges clear of corners where possible (tabs.place_tabs);

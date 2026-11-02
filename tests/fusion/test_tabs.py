@@ -150,3 +150,69 @@ def test_a_sheet_with_a_cutout_that_needs_tabs_on_a_curve_keeps_the_templates_wi
     assert set(fake["tab_size"].values()) == {(0.0, 0.0394)}                   # the template's width everywhere
     assert len(fake["tab_points"]["[inner] cutouts - 2 tabs each"]) == 4         # the round ones still get theirs
     assert any("needs tabs on a curve" in n for n in sheet.notes)
+
+
+def wide_job(rig, free_max_in):
+    job = rig.job([("bracket", 1, with_cutouts("bracket", [5.0, 5.0]), (8.0, 6.0))])
+    return dataclasses.replace(job, parts=(dataclasses.replace(job.parts[0], tabs=True),),
+                               tabs=dataclasses.replace(job.tabs, width_in=0.3, height_in=0.0394, wide_max_tier=0,
+                                                        free_max_in=free_max_in))
+
+
+def test_small_curved_cutouts_are_cut_free_so_the_rest_get_wide_tabs(tmp_path):
+    # The user's pick (2026-11-02): a round cutout has no straight edge for a tab, and a tab on a curve beside
+    # 0.3 in tabs crashed Fusion (r061, r062). One this small is cut free instead, and the sheet keeps 0.3 in.
+    rig = Rig(tmp_path)
+    rig.fake.round_loops = True                                                  # 0.5 in circles
+    result = rig.run(wide_job(rig, free_max_in=2.0))
+    [sheet] = result.sheets
+    assert sheet.tap and not sheet.errors
+    [fake] = rig.fake.sheets.values()
+    assert not any(op.startswith("[inner] cutouts - ") for op in fake["ops"])   # no tabbed copy of [inner]
+    assert len(fake["fills"]["[inner] cutouts"].loops) == 2                      # both in the plain, untabbed op
+    assert fake["tab_size"]["[outer] p01-1"] == (0.3, 0.0394)
+    [warning] = [w.msg for w in sheet.warnings if "cut free" in w.msg]
+    assert warning.startswith("2 small curved cutouts cut free with no tabs") and "0.50 in across" in warning
+    assert "p01-1 (2)" in warning and "loose slugs" in warning
+
+
+def test_curved_cutouts_over_the_size_limit_keep_their_tabs_and_the_templates_width(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.round_loops = True
+    result = rig.run(wide_job(rig, free_max_in=0.4))                             # the circles are 0.5 in across
+    [sheet] = result.sheets
+    [fake] = rig.fake.sheets.values()
+    assert "[inner] cutouts - 2 tabs each" in fake["ops"]
+    assert set(fake["tab_size"].values()) == {(0.0, 0.0394)}
+    assert not any("cut free" in w.msg for w in sheet.warnings)
+
+
+def test_cutouts_with_straight_edges_are_never_cut_free(tmp_path):
+    rig = Rig(tmp_path)                                                          # 0.5 in squares: narrow tabs fit
+    result = rig.run(wide_job(rig, free_max_in=2.0))
+    [fake] = rig.fake.sheets.values()
+    assert "[inner] cutouts - 2 tabs each (narrow tabs)" in fake["ops"]
+    assert not any("cut free" in w.msg for w in result.sheets[0].warnings)
+
+
+def test_nothing_is_cut_free_when_something_else_keeps_the_setup_narrow():
+    # A curvy outline (or a fitted slug) needs tabs on a curve too: the setup stays at the template's width, so
+    # cutting the small cutouts free would gain nothing. They keep their tabs.
+    import math
+    from autocam_core.tabs import Seg
+    from autocam_worker import pipeline
+
+    circle = [Seg("curve", tuple((0.25 * math.cos(2 * math.pi * k / 48), 0.25 * math.sin(2 * math.pi * k / 48))
+                                 for k in range(49)))]
+
+    class Loops:
+        def loop_segments(self, cid, fid, index):
+            return circle
+
+    tabs = TabSpec(width_in=0.3, wide_max_tier=0, free_max_in=2.0)
+    fake_job = type("J", (), {"tabs": tabs})()
+    sheet = type("S", (), {"notes": [], "warnings": [], "instances": [], "name": "S1"})()
+    tabbed = {2: [("c1", 1, 0), ("c1", 1, 1)]}
+    loops = []
+    wide = pipeline._wide_setup(Loops(), fake_job, sheet, tabbed, loops, [(("c1", 1, None), 2)], 0.157, "S1")
+    assert not wide and tabbed == {2: [("c1", 1, 0), ("c1", 1, 1)]} and loops == [] and not sheet.warnings

@@ -87,6 +87,7 @@ class Tabs:
     width_in: float = 0.0
     height_in: float = 0.0
     wide_max_tier: int = 4       # tabs wider than the cutter only on spots this good or better (tabs.place_tabs)
+    free_max_in: float = 0.0     # beside wide tabs, curvy cutouts this small are cut free (0: never)
 
 
 @dataclass(frozen=True)
@@ -793,7 +794,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                 at_points=t.boolean("at_points"),
                 width_in=t.number("width_in", minimum=0, default=0.0),
                 height_in=t.number("height_in", minimum=0, default=0.0),
-                wide_max_tier=t.integer("wide_max_tier", minimum=0, default=4)) if t else Tabs()
+                wide_max_tier=t.integer("wide_max_tier", minimum=0, default=4),
+                free_max_in=t.number("free_max_in", minimum=0, default=0.0)) if t else Tabs()
     if t:
         t.finish()
 

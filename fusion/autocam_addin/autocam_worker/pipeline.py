@@ -70,7 +70,7 @@ from autocam_core.pauses import PauseError, insert
 from autocam_core.plate import PlateAnalysis, analyze
 from autocam_core.preview import (BADGE_MIN_PX, flatten, inside_polygon, label_spot, pixels_per_unit, preview_size,
                                   to_pixels)
-from autocam_core.tabs import outline_length, place_tabs, tab_count, walls_length
+from autocam_core.tabs import Seg, outline_length, place_tabs, tab_count, walls_length
 from autocam_core.schema_job import Job, PartSpec, ToolSpec
 from autocam_core.schema_result import (
     RESULT_SCHEMA, FusionTeamResult, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary,
@@ -937,6 +937,54 @@ def _decide_wide(adapter: Adapter, job: Job, sheet: _Sheet, contours: Sequence[T
     return True
 
 
+def _across(segs: Sequence[Seg]) -> float:
+    """How big a contour is: its box's longer side (inches)."""
+    pts = [pt for seg in segs for pt in seg.points]
+    if not pts:
+        return 0.0
+    return max(max(x for x, _ in pts) - min(x for x, _ in pts), max(y for _, y in pts) - min(y for _, y in pts))
+
+
+def _wide_setup(adapter: Adapter, job: Job, sheet: _Sheet, tabbed: Dict[int, List[Tuple[str, int, Optional[int]]]],
+                loops: List[Tuple[str, int, Optional[int]]],
+                others: Sequence[Tuple[Tuple[str, int, Optional[int]], int]], tool_d: float, what: str) -> bool:
+    """Whether a setup takes wide tabs (_decide_wide over its tabbed cutouts and `others`: outlines, fitted slugs).
+    The user's pick (2026-11-02): a tabbed cutout with no straight edge for its tabs (a round hole cut as a cutout,
+    a small rounded slot) and at most [tabs] free_max_in across is cut free, without tabs, if that's what lets the
+    rest of the setup have wide tabs; it moves from `tabbed` to `loops`. Bigger ones, fitted slugs (their fit is
+    tried with the slug held) and outlines still keep the whole setup at the template's width."""
+    cutouts = [(c, n) for n, group in tabbed.items() for c in group]
+    free: List[Tuple[Tuple[str, int, Optional[int]], float]] = []
+    if _wide(job, tool_d) and job.tabs.at_points and job.tabs.free_max_in > 0:
+        try:
+            for c, n in cutouts:
+                segs = adapter.loop_segments(*c)
+                size = _across(segs)
+                if size <= job.tabs.free_max_in + 1e-6 and \
+                        len(place_tabs(segs, n, tool_d, tool_d, max_tier=NARROW_MAX_TIER)) < n:
+                    free.append((c, size))
+        except AdapterError:
+            free = []
+    freed = {c for c, _ in free}
+    wide = _decide_wide(adapter, job, sheet, [x for x in cutouts if x[0] not in freed] + list(others), tool_d, what)
+    if wide and free:
+        for n in list(tabbed):
+            tabbed[n] = [c for c in tabbed[n] if c not in freed]
+            if not tabbed[n]:
+                del tabbed[n]
+        loops += [c for c, _ in free]
+        names = {placed.body_id: inst for inst, placed in sheet.instances}
+        by_inst = Counter(names.get(c[0], c[0]) for c, _ in free)
+        who = ", ".join(f"{inst} ({k})" if k > 1 else inst for inst, k in sorted(by_inst.items()))
+        biggest = max(size for _, size in free)
+        prefix = "" if what == sheet.name else f"{what}: "
+        sheet.warnings.append(Issue(E.OP_WARNING, f"{prefix}{len(free)} small curved cutout{'s' if len(free) != 1 else ''} "
+                                    f"cut free with no tabs (no straight edge for a tab; up to {biggest:.2f} in "
+                                    f"across), so the rest get {job.tabs.width_in:g} in tabs: {who}. Watch for loose "
+                                    "slugs"))
+    return wide
+
+
 def _tabbed_cutouts(adapter: Adapter, job: Job, sheet: _Sheet, where: str, base_op: str,
                     tabbed: Dict[int, List[Tuple[str, int, Optional[int]]]], tool_d: float,
                     setup: Optional[str] = None, wide: bool = False) -> None:
@@ -1124,14 +1172,13 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
         loops += [loop for group in tabbed.values() for loop in group]     # reported as a missing [inner] op
         tabbed = {}
     if _wide(job, tool_d):                                 # every tabbed contour on the sheet decides its tab width
-        every = [(c, n) for n, group in tabbed.items() for c in group]
-        every += [(c, fit.tabs) for fit in fits.values() if fit.tabs for c in fit.loops]
+        others = [(c, fit.tabs) for fit in fits.values() if fit.tabs for c in fit.loops]
         for _, placed in sheet.instances:
             part = parts[placed.part_key]
             n = _outline_tabs(job, part, tool_d) if part.spec.tabs else 0
             if n:
-                every.append(((placed.body_id, outline_face(part), None), n))
-        sheet.wide_tabs = _decide_wide(adapter, job, sheet, every, tool_d, sheet.name)
+                others.append(((placed.body_id, outline_face(part), None), n))
+        sheet.wide_tabs = _wide_setup(adapter, job, sheet, tabbed, loops, others, tool_d, sheet.name)
     stock = job.holes.bearing_stock_in or None             # press-fit tuning; 0 keeps the template's
     fills = {DRILL: OpFill(DRILL, holes=tuple(holes[DRILL])), BORE: OpFill(BORE, holes=tuple(holes[BORE])),
              BEARING: OpFill(BEARING, holes=tuple(holes[BEARING]), stock_in=stock), INNER: OpFill(INNER, loops=tuple(loops)),
@@ -1315,8 +1362,7 @@ def _build_small(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     if tabbed and INNER not in by_tag:
         loops += [loop for group in tabbed.values() for loop in group]
         tabbed = {}
-    sheet.small_wide_tabs = _decide_wide(adapter, job, sheet, [(c, n) for n, g in tabbed.items() for c in g], tool_d,
-                                         name)
+    sheet.small_wide_tabs = _wide_setup(adapter, job, sheet, tabbed, loops, [], tool_d, name)
     fills = {DRILL: OpFill(DRILL, holes=tuple(holes[DRILL])), BORE: OpFill(BORE, holes=tuple(holes[BORE])),
              BEARING: OpFill(BEARING, holes=tuple(holes[BEARING])), INNER: OpFill(INNER, loops=tuple(loops))}
     for tag, fill in fills.items():
