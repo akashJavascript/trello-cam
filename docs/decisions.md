@@ -900,6 +900,24 @@ Onshape's bend table, on the sheet card. No 3/32 in stock. Scribing the bend lin
 default. A top split into faces in one plane (every flat pattern's is, along its bends) is cut as one outline for every
 part, not only bent ones: the old refusal existed only because the outline came from one face.
 
+## 2026-11-01: Onshape webhooks and part pictures (the user is an enterprise admin)
+
+- **Webhooks, one per document workspace** with parts on a sheet in Sheet review or Ready to cut
+  (`panel/hooks.py`). A company-wide webhook was the plan, but Onshape refuses model changes at that level
+  ("lifecycle.changed event is not supported at enterprise level"). Event `onshape.model.lifecycle.changed`,
+  collapseEvents, filter `{$DocumentId} = ... && {$WorkspaceId} = ...`, calling
+  `<public_url>/api/onshape-hook/<AUTOCAM_WEBHOOK_SECRET>`: the address is its password (Onshape can't send the
+  panel's key), and the server's log writes it as `<secret>`. Made when a sheet first needs it (one call), listed
+  once a day (one call), removed a week after no sheet on the board needs it (one call); events cost nothing. An
+  element Onshape says changed is checked once nobody has touched it for 5 minutes; a sheet whose documents all have
+  webhooks gets the periodic check only every 72 h instead of 12. Seen working 2026-11-01: registered for Part 13's
+  document, Onshape's validation and a ping came through the tunnel (200). A real edit's event is still to be seen.
+- **Part pictures:** Onshape's shaded isometric view of each part on a sheet on the board (as it was CAM'd: the job's
+  microversion), 300 x 300, attached to its card as the cover. One panel call per part state, cached for good, three
+  per tick at most. Seen working: Part 13.
+- Not done: the Manufacturing property (the user changed their mind). The enterprise's API usage on the System card
+  waits on finding where Onshape exposes it (the public API has no endpoint for it).
+
 ## 2026-11-01: more than one cutter per part (core 0.19.0; the user's "bigger idea" #1)
 
 The brief's "later option" (decision 21: an 8-32 hole moves a whole aluminum sheet to the 1/8 in) done per feature.

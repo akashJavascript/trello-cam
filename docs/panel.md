@@ -61,6 +61,10 @@ preview), cut, or sent back with the reason.
   **"I'll place it myself"** AutoCAM doesn't pick a spot: the program goes in Sheet review as it is, with the area
   its cutter covers, for the operator to zero on any piece big enough (a "Place it myself" line on a Trello card
   does the same).
+- **Webhooks and pictures** (2026-11-01, `panel/hooks.py`, `panel/pictures.py`): Onshape calls
+  `/api/onshape-hook/<AUTOCAM_WEBHOOK_SECRET>` when a document with parts on a sheet changes (one webhook per
+  document workspace, made and removed by the service), so CAD changed shows within minutes; each part card on a
+  sheet gets Onshape's picture of the part as its cover. `[panel] webhooks`, `pictures`, `webhook_fallback_hours`.
 - **CAD changed** (2026-11-01): a part that changed after it was CAM'd shows "CAD changed" in the list and on its
   status, with **Nest the new version** and **Cut it as it is** (the same as ticking the box on its card; either
   takes the CAD changed labels off its card and sheet card). See `docs/decisions.md`.
