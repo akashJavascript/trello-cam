@@ -386,9 +386,9 @@ place_programs = true           # a card in Ready for CAM with someone's own .ta
 default = true                  # the box starts ticked on new part cards (the user's choice, 2026-10-03)
 distance_in = 2.5               # about one tab per this much contour (outline or cutout); their shape
                                 # (triangular) is the template's: the API can't set the shape
-width_in = 0.3                  # the user's choice (2026-11-01; about twice the cutter: a triangular tab is full
-                                # height only in its middle). 0: the template's (one cutter, 0.157 in). 0.3 in crashed
-                                # Fusion before tabs were kept on one edge (job tsize1, 2026-10-03); retried with tsize2
+width_in = 0                    # 0: the template's (one cutter, 0.157 in). 0.3 in (the user's choice) crashes Fusion
+                                # in toolpath generation: tsize1 (2026-10-03, twice) and r054 (2026-11-01, with tabs
+                                # kept on one edge), the same 4 plates. Don't use it without a passing test job
 height_in = 0.0394              # above the bottom: 1 mm, what the template had (0 for either: the template's)
 min_per_contour = 2             # every tabbed outline and cutout gets at least this many (fewer only if they
 max_per_contour = 6             # don't fit: a tiny cutout gets none)
