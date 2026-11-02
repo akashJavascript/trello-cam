@@ -16,13 +16,17 @@ preview), cut, or sent back with the reason.
 - **A part with no card yet (or one that was cut):** its material, the quantity, the options and Send.
   - **Quantity** starts at how many of that part the document's assemblies use (the biggest count; a dropdown when
     there's more than one assembly), and can be changed. Only assemblies in the same document are counted.
-  - **Options**, in one list: Hold it in with tabs, Nest it with other parts, Face the top, Use the 1/8 in endmill
+  - **Options**, in one list: Hold it in with tabs, Nest it with other parts, Face the top, Cut all of it with the 1/8 in endmill
     (the Tool 1/8 label), Fit (a hole size or the outline), Rush, Smoked (for polycarbonate), Send to Drafts, I CAM'd
     it myself, and notes.
   - **No material in Onshape:** the student picks one, and AutoCAM sets it on the part in Onshape. If Onshape
     refuses (or the tab is a version), the card gets a `Material:` line instead, which the run reads.
   - **Who:** each student types their name once. It's kept for their Onshape user id (`state/panel_users.json`)
     and goes on every card ("Sent from the Onshape panel by ..."). There's no Onshape sign-in (the user's choice).
+- **Two cutters** (2026-11-01): the check says what a run does with `[tooling] split`: a part whose only small
+  features are through holes or tight-cornered cutouts stays on the 4 mm, with those on the 1/8 in first ("4 mm
+  endmill (the 0.136 in hole first on the 1/8 in endmill)"). Only a tight outline or pocket corner, or the "Cut all of
+  it with the 1/8 in endmill" switch (the Tool 1/8 label), puts the whole part on the 1/8 in.
 - **Design checks** (built 2026-11-01): opening a part checks it with AutoCAM's own plate rules (`plate.py`,
   `tooling.py`), the ones a run applies after the STEP export, on its shape from Onshape (`panel/geometry.py`, one
   `bodydetails` call per part per state of the Part Studio, kept on disk). It says either "AutoCAM can cut this" with

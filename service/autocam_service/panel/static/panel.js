@@ -784,7 +784,7 @@
       switchLine("Nest it with other parts", f.nest || fitted, function (v) { f.nest = v; render(); }, fitted)
     ];
     if (st.face && !f.own) opts.push(switchLine("Face the top", f.face, function (v) { f.face = v; render(); }));
-    if (!f.own) opts.push(switchLine("Use the 1/8 in endmill", f.tool18, function (v) { f.tool18 = v; render(); }));
+    if (!f.own) opts.push(switchLine("Cut all of it with the 1/8 in endmill", f.tool18, function (v) { f.tool18 = v; render(); }));
     if (st.scribe && d.part.bent && !f.own) {
       var ssel = h("select", { class: "select", id: "scribe", onchange: function () { f.scribe = ssel.value; render(); } },
         [["", "No"], ["endmill", "With the endmill"], ["chamfer", "With the chamfer mill"]].map(function (o) {

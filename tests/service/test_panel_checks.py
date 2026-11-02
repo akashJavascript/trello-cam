@@ -43,11 +43,20 @@ def test_a_plate_auto_cam_can_cut():
 
 
 def test_a_hole_that_needs_the_eighth_is_a_fact_not_a_problem():
-    r = check(geom(rectangle(4, 2), 0.1875, [(1, 1, 0.13)]), CFG, "al6061")
+    r = check(geom(rectangle(4, 2), 0.1875, [(1, 1, 0.13), (3, 1, 0.25)]), CFG, "al6061")
     assert r["ok"] and r["problems"] == []
-    assert (r["cutter"], r["cutterWhy"]) == ("1/8 in endmill", "a 0.130 in hole needs it")
+    # what a run does ([tooling] split, core 0.19.0): the 4 mm, with just that hole on the 1/8 in first
+    assert (r["cutter"], r["cutterWhy"]) == ("4 mm endmill", "the 0.130 in hole first on the 1/8 in endmill")
+    assert r["features"] == "1 bored, 1 cut out"                       # the 0.130 in one contoured by the 1/8 in
     assert "Make" not in every_text(r) and "change" not in every_text(r).lower()   # never asked to change it
     assert r["notes"] == ["The 0.130 in hole is contoured: check its fit."]
+
+
+def test_without_the_split_the_whole_part_is_on_the_eighth():
+    raw = copy.deepcopy(RAW)
+    raw["tooling"]["aluminum"]["split"] = False
+    r = check(geom(rectangle(4, 2), 0.1875, [(1, 1, 0.13)]), parse_config(raw, root=REPO_ROOT), "al6061")
+    assert r["ok"] and (r["cutter"], r["cutterWhy"]) == ("1/8 in endmill", "a 0.130 in hole needs it")
 
 
 def test_a_thickness_that_isnt_stock():
@@ -92,7 +101,7 @@ def test_the_panel_checks_a_part_with_one_call_per_state_of_the_part_studio(tmp_
     transport = FakeTransport([("GET", "/bodydetails", [resp(body=body)] * 2), ("GET", "/parts/", [resp(body=parts)] * 5)])
     p = Panel(tmp_path, transport=transport)
     status, r = p.call("GET", "/api/check", {**Q, "p": "JHD"})
-    assert status == 200 and r["ok"] and r["cutter"] == "1/8 in endmill"
+    assert status == 200 and r["ok"] and r["cutter"] == "4 mm endmill" and "1/8 in" in r["cutterWhy"]
     status, r = p.call("GET", "/api/check", {**Q, "p": "JHD", "m": "al5052"})     # another material: no call
     assert not r["ok"] and "isn't a stock size" in r["problems"][0]["title"]
     assert [u for _, u, _, _ in transport.sent if "bodydetails" in u] == [

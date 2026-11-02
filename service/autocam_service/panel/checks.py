@@ -13,7 +13,7 @@ from autocam_core import errors as E
 from autocam_core.geometry import PartGeometry
 from autocam_core.holes import CONTOUR_ROOM_IN, DRILL, HoleRules, ToolProfile, classify
 from autocam_core.plate import PlateAnalysis, analyze
-from autocam_core.tooling import part_tool, plan_features
+from autocam_core.tooling import Split, part_tool, plan_features
 
 from ..config import Config, Tool
 
@@ -67,6 +67,20 @@ def _why_small(reason: str) -> str:
     if "inside corner" in reason:
         return "a tight inside corner needs it"
     return ""
+
+
+def _split_why(a: PlateAnalysis, split: Split, small: Tool) -> str:
+    """What goes on the small endmill first when the part is split (core 0.19.0's "more than one cutter")."""
+    sizes = sorted({round(a.through_holes[i].diameter_in, 3) for i in split.holes})
+    bits = []
+    if split.holes:
+        n = len(split.holes)
+        bits.append(f"the {sizes[0]:.3f} in hole" if n == 1 else
+                    f"{n} {sizes[0]:.3f} in holes" if len(sizes) == 1 else f"{n} small holes")
+    if split.loops:
+        n = len(split.loops)
+        bits.append("a tight-cornered cutout" if n == 1 else f"{n} tight-cornered cutouts")
+    return f"{' and '.join(bits)} first on the {cutter_name(small)}"
 
 
 def _number(text: str) -> Optional[float]:
@@ -237,19 +251,29 @@ def check(geom: PartGeometry, cfg: Config, material_key: Optional[str],
         rules = hole_rules(cfg)
         need = part_tool(a, family=m.family, default=_profile(cfg, default),
                          small=_profile(cfg, small_ready) if small_ready else None, rules=rules, force_small=False,
-                         strict_inside_radius=cfg.plate.strict_inside_radius)
+                         strict_inside_radius=cfg.plate.strict_inside_radius, split=tooling.split)
         problems += [explain(i, a.measured_thickness_in, stock, name, small) for i in need.errors]
         notes += [note(i) for i in need.warnings]
         if need.tool is not None:
             tool = cfg.tools[need.tool]
             out["cutter"] = cutter_name(tool)
-            if need.tool != default.key and need.reasons:
-                out["cutterWhy"] = _why_small(need.reasons[0])
             out["pick"] = picks(a, cfg, tool, extra)
-            plan = plan_features(a, _profile(cfg, tool), rules)
-            problems += [explain(i, a.measured_thickness_in, stock, name, small) for i in plan.errors]
-            notes += [note(i) for i in plan.warnings]
-            counts = plan.counts()
+            if need.split is not None and small_ready is not None:
+                # what a run does ([tooling] split): the sheet stays on the 4 mm; only these go in a short
+                # 1/8 in program run first
+                out["cutterWhy"] = _split_why(a, need.split, small_ready)
+                plans = [plan_features(a, _profile(cfg, tool), rules, without=need.split),
+                         plan_features(a, _profile(cfg, small_ready), rules, only=need.split)]
+            else:
+                if need.tool != default.key and need.reasons:
+                    out["cutterWhy"] = _why_small(need.reasons[0])
+                plans = [plan_features(a, _profile(cfg, tool), rules)]
+            counts: Dict[str, int] = {}
+            for plan in plans:
+                problems += [explain(i, a.measured_thickness_in, stock, name, small) for i in plan.errors]
+                notes += [note(i) for i in plan.warnings]
+                for k, n in plan.counts().items():
+                    counts[k] = counts.get(k, 0) + n
             out["features"] = ", ".join(f"{counts[k]} {word}" for k, word in FEATURE_WORDS if counts.get(k))
     out.update(ok=not problems, problems=problems, notes=list(dict.fromkeys(notes)))
     return out
