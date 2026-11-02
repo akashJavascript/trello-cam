@@ -28,7 +28,7 @@ preview), cut, or sent back with the reason.
   the stock thickness, cutter and features (2 drilled, 20 bored, ...), or what would send it back, each with a fix:
   a thickness that isn't stock (and the nearest that is), chamfers, rounded top edges, 3D faces, pockets from both
   sides, a hole or inside corner too small for any cutter, a pocket with an island, a split top. Notes: sharp inside
-  corners, holes cut around their edge. A feature that only needs the 1/8 in endmill isn't a problem: it says
+  corners, contoured holes (check the fit). A feature that only needs the 1/8 in endmill isn't a problem: it says
   "1/8 in endmill (a 0.130 in hole needs it)" and never asks for a change (the user's choice). Without a material,
   the shape is checked against every stock size until one is picked. Checked against Fusion on P-2011's real
   version: the same thickness, cutter and 2 drilled, 20 bored, 2 bearing, 25 cut out.

@@ -47,6 +47,7 @@ def test_a_hole_that_needs_the_eighth_is_a_fact_not_a_problem():
     assert r["ok"] and r["problems"] == []
     assert (r["cutter"], r["cutterWhy"]) == ("1/8 in endmill", "a 0.130 in hole needs it")
     assert "Make" not in every_text(r) and "change" not in every_text(r).lower()   # never asked to change it
+    assert r["notes"] == ["The 0.130 in hole is contoured: check its fit."]
 
 
 def test_a_thickness_that_isnt_stock():

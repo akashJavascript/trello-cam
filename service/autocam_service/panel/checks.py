@@ -132,8 +132,7 @@ def note(issue) -> str:
                 "dogbones if something fits into them.")
     if issue.code == E.HOLE_CONTOURED:
         size = _number(issue.msg)
-        return f"The {size:.3f} in hole is cut around its edge, not drilled or bored: check its fit." if size \
-            else "A hole is cut around its edge: check its fit."
+        return f"The {size:.3f} in hole is contoured: check its fit." if size else "A hole is contoured: check its fit."
     return issue.msg[:1].upper() + issue.msg[1:] + "."
 
 
