@@ -463,6 +463,7 @@ with `Scribe: chamfer mill`.
 | 3 | A part whose scribing can't be made is still cut, with "mark them by hand" under CHECK | r040, r045, r046 (while it was being fixed): yes, the sheet posted each time |
 | 4 | Look at both in the Fusion file (simulate): the endmill line centered on the bend, the chamfer line a fine V; nothing else touched | |
 | 5 | At the machine: run one of each on scrap. The line is down the middle of the bend zone; bend on it in the brake and check the flange length | |
+| 6 | A U or D beside each line, readable, clear of holes and edges; bending the way it says gives the part in the CAD | r050 (endmill): a U 0.59 x 0.78 in centered beside the line (Part 13 lay bottom-up, Bend D is down); r051 (chamfer mill): a 0.18 x 0.25 in U, within 0.0001 in, 15 s. Cut and bent: |
 
 ## M5: status card, start at logon, reboot test on the shop PC
 

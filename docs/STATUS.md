@@ -89,8 +89,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   sheet's endmill as a `[scribe]` op in the sheet's program, before the outlines, or with the 45 degree chamfer mill
   (T16) in a `<sheet>_SCRIBE` program run before the sheet's. Seen in Fusion on Part 13: r044 (endmill, within
   0.0009 in of the line) and r047 (chamfer, within 0.0001 in, guard passed, attached and in RUN). Never holds a sheet
-  up: a part whose lines can't be found or scribed gets "mark them by hand". Not cut yet. Which way to bend isn't
-  marked on the part (an arrow is the user's next ask).
+  up: a part whose lines can't be found or scribed gets "mark them by hand". Not cut yet. Beside each line a U or D
+  says which way the flange goes from the scribed face (r050: Part 13 lay bottom-up, so its "down" Bend D got a U),
+  where a letter fits clear of holes, edges and bends.
 - **The Onshape panel, Phase 1** (2026-11-01, `docs/panel.md`): "Send to AutoCAM" in a Part Studio's right panel
   makes part cards in AutoCAM's format (Ready for CAM, or Drafts), with the quantity counted from the document's
   assemblies, the options in one list, the material set in Onshape when it has none, and each part's status

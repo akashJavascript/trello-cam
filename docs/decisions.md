@@ -924,5 +924,18 @@ part, not only bent ones: the old refusal existed only because the outline came 
   checks every scribing point is within 0.002 in of a bend line, and keeps scribing out of the "tool center in a
   part" check.
 - **Never holds a sheet up:** a part whose lines can't be found, or whose scribe op or program fails, is cut anyway
-  with a CHECK line to mark its bends by hand.
+  with a CHECK line to mark its bends by hand. If any other op on the sheet fails with scribing there (a broken
+  scribe op left the outline after it "Failed to write Job File", r048), the scribing is suppressed and the sheet
+  generated again without it.
+- **U or D beside each line** (the user: "just do the U or D"): U, the flange comes up toward the scribed face (it
+  ends up inside the bend); D, away. Onshape's bend table says up/down from the flat pattern's top, the exported
+  STEP's +Z: checked on Part 13's real bent body (its row of 0.256 in holes sits off-center across the bend and is
+  mirrored between the flat seen from +Z and the bent part seen from inside the bend, on both flanges, so the
+  flat's top is outside its "down" Bend D). The extractor records which side of the STEP is up
+  (`PartGeometry.axis_z`; Fusion keeps the file's coordinates: r048 imported Part 13 exactly at the STEP's box).
+  Each letter's strokes are separate sketch lines, 0.002 in apart (one chain of connected lines came back "missing
+  selections", r048). Letter size: 0.18 x 0.25 in with the chamfer mill, five cutters tall with the endmill. It goes
+  at the first of a few spots along the line, either side, where its box (grown by the cutter's radius and a margin)
+  is on the part clear of holes, edges and every bend zone. No room, or two bends of the same size going opposite
+  ways (which strip is which can't be told): no letter, a CHECK line, and the bend list still says.
 
