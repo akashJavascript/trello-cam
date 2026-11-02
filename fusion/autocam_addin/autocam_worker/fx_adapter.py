@@ -185,7 +185,11 @@ class FusionAdapter(Adapter):
                  selections.get("face", selections["pocket"]), self._used)
             call(f"{op_name}: face depth", fx_cam.face_depth, op, fill.depth_in)
         elif fill.tag == SCRIBE:
+            # Its settings before its selection: an op deleted after its chains were set to sketch lines crashed
+            # Fusion's next toolpath generation (r041, r042); one deleted before that didn't (r040).
             self._used("scribe_lines")
+            self.trace.append(f"{_stamp()}   scribe: params")
+            call(f"{op_name}: scribe", fx_cam.scribe_params, op, fill.depth_in, self.trace.append)
             self.trace.append(f"{_stamp()}   scribe: sketch")
             if sheet not in self.scribe_sketch:
                 root = self.design.rootComponent
@@ -197,8 +201,6 @@ class FusionAdapter(Adapter):
                          adsk.core.Point3D.create(to_cm(x1), to_cm(y1), 0)) for x0, y0, x1, y1 in fill.lines]
             self.trace.append(f"{_stamp()}   scribe: select {len(made)} lines")
             call(f"{op_name}: select bend lines", fx_cam.select_lines, op, made, params["selections"]["contour"])
-            self.trace.append(f"{_stamp()}   scribe: params")
-            call(f"{op_name}: scribe", fx_cam.scribe_params, op, fill.depth_in, self.trace.append)
         elif fill.tag == POCKETFINISH:
             self._used("pocket_walls")
             loops = [fx_geometry.outer_loop(fx_design.face_by_id(self._occ(cid), fid)) for cid, fid in fill.floors]
