@@ -60,6 +60,7 @@ from .own_programs import (OWN_PROGRAM_RE, PLACE_MYSELF_RE, find_spot, parse_thi
 from .fits import FitStore, key as fit_key, parse_fit, stocks as fit_stocks
 from .jobs import JobBuildError, build_job, face_spec, fit_spec, sheet_fixture
 from .materials import resolve_material
+from .panel.usage import TEAM_USAGE_FILE, card_line as team_usage_line
 from .offcuts import (SCRAP_HELP, OffcutStore, card_text, hand_cut_line, load_line, parse_hand_cuts, parse_scrap,
                       same_cut)
 from .onshape.budget import REFUSE, WARN, decide, estimate_calls
@@ -185,7 +186,7 @@ class Runner:
             year_calls=led.year_count(cfg.onshape.budget_year_start, panel=False), year_cap=cfg.onshape.yearly_cap_calls,
             latch=led.latched(), active_run=active.run_id if active else None, last_error=last_error,
             waiting_cards=self.waiting_count, next_run_in_s=self.watch.remaining_s(now), rush_cards=self.rush_count,
-            season=self.season_text(now))
+            season=self.season_text(now), team_usage=team_usage_line(cfg.paths.state / TEAM_USAGE_FILE, now))
 
     def season_text(self, now: datetime) -> str:
         """The System card's stock tally (tally.py): sheet cards that went to Cut since status.season_start."""

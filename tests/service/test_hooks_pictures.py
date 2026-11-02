@@ -45,15 +45,15 @@ def test_only_the_secret_address_takes_events_and_only_model_changes_are_kept(tm
     assert secret_ok(HOOK_PREFIX + SECRET, SECRET) and not secret_ok(HOOK_PREFIX + SECRET, "")
 
 
-def test_quiet_means_nobody_changed_it_for_five_minutes(tmp_path):
+def test_quiet_means_nobody_changed_it_for_two_minutes(tmp_path):
     clock = Clock()
     inbox = ChangeInbox(tmp_path / "changes.json", clock=clock)
     inbox.note(event())
-    clock.t += 200
+    clock.t += 100
     inbox.note(event())                                   # still being edited
-    clock.t += 200
+    clock.t += 100
     assert inbox.quiet() == set()
-    clock.t += 200
+    clock.t += 30
     assert inbox.quiet() == {(D, W, E)}
     inbox.forget(inbox.quiet())
     assert inbox.quiet(0) == set()

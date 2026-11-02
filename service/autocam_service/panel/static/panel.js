@@ -207,6 +207,7 @@
       S.studio = st;
       if (st.user) { S.user = st.user; stored("name", st.user); }
       if (S.mode === "loading" || S.mode === "error") S.mode = "list";
+      startAuto(st.autoRefreshS);
       render();
     }, function (err) {
       S.mode = "error";
@@ -216,24 +217,76 @@
   }
 
   function loadAssembly(fresh) {
-    return api("GET", "/api/assembly", where({ fresh: fresh ? "1" : "", u: ctx.u })).then(function (a) {
-      S.asm = a;
-      if (a.user) { S.user = a.user; stored("name", a.user); }
-      if (!S.asmOpts) S.asmOpts = { tabs: a.tabsDefault, nest: true, face: false, rush: false, drafts: false };
-      var sel = {};
-      a.items.forEach(function (i) {
-        var old = S.asmSel[i.key];
-        // ticked to start: this document's parts with no card (another document's are often bought parts)
-        sel[i.key] = { on: i.sendable && (old ? old.on : i.here && i.chip.status === "none"), qty: old ? old.qty : Math.max(1, i.qty) };
-      });
-      S.asmSel = sel;
-      S.mode = "assembly";
-      render();
-    }, function (err) {
+    return api("GET", "/api/assembly", where({ fresh: fresh ? "1" : "", u: ctx.u })).then(showAssembly, function (err) {
       S.mode = "error";
       S.error = { text: err.message, kind: err.data && err.data.kind };
       render();
     }).then(function () { refreshBtn.classList.remove("spin"); });
+  }
+
+  function showAssembly(a) {
+    S.asm = a;
+    if (a.user) { S.user = a.user; stored("name", a.user); }
+    if (!S.asmOpts) S.asmOpts = { tabs: a.tabsDefault, nest: true, face: false, rush: false, drafts: false };
+    var sel = {};
+    a.items.forEach(function (i) {
+      var old = S.asmSel[i.key];
+      // ticked to start: this document's parts with no card (another document's are often bought parts)
+      sel[i.key] = { on: i.sendable && (old ? old.on : i.here && i.chip.status === "none"), qty: old ? old.qty : Math.max(1, i.qty) };
+    });
+    S.asmSel = sel;
+    S.mode = "assembly";
+    startAuto(a.autoRefreshS);
+    render();
+  }
+
+  // ---------------------------------------------------------------- refreshing by itself
+  // Every autoRefreshS seconds while the panel is open and someone's been using it in the last half hour: the
+  // statuses from Trello. cached=1 means the server never calls Onshape for these (the parts list stays the last
+  // one read; Refresh reads it again). Nothing changes while someone's typing, sending or editing.
+  var autoTimer = null;
+  var lastTouch = Date.now();
+  var IDLE_MS = 30 * 60 * 1000;
+  ["pointerdown", "pointermove", "keydown", "wheel"].forEach(function (ev) {
+    document.addEventListener(ev, function () {
+      var idle = Date.now() - lastTouch > IDLE_MS;
+      lastTouch = Date.now();
+      if (idle) autoRefresh();                     // back after a long break: catch up now
+    }, { passive: true });
+  });
+  function startAuto(seconds) {
+    if (autoTimer || !seconds) return;
+    autoTimer = setInterval(autoRefresh, Math.max(5, seconds) * 1000);
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) autoRefresh(); });
+  }
+  function typing() {
+    var a = document.activeElement;
+    return !!a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT");
+  }
+  function leaveAlone() {
+    return document.hidden || S.busy || typing() || Date.now() - lastTouch > IDLE_MS;
+  }
+  function autoRefresh() {
+    if (!autoTimer || leaveAlone()) return;
+    if (S.mode === "list") {
+      api("GET", "/api/studio", where({ cached: "1", u: ctx.u })).then(function (st) {
+        if (st.stale || S.mode !== "list" || leaveAlone()) return;
+        S.studio = st;
+        render();
+      }, function () {});
+    } else if (S.mode === "assembly") {
+      api("GET", "/api/assembly", where({ cached: "1", u: ctx.u })).then(function (a) {
+        if (!a.stale && S.mode === "assembly" && !leaveAlone()) showAssembly(a);
+      }, function () {});
+    } else if (S.mode === "part" && S.partId && S.detail && !S.editing && !S.changing && !S.sent) {
+      var id = S.partId;
+      api("GET", "/api/part", where({ p: id, cached: "1" })).then(function (r) {
+        if (r.stale || S.partId !== id || S.mode !== "part" || S.editing || S.changing || S.sent || leaveAlone()) return;
+        if (!S.detail || JSON.stringify(r.card) === JSON.stringify(S.detail.card)) return;
+        S.detail = r;
+        render();
+      }, function () {});
+    }
   }
 
   function openPart(id, keepNotice) {

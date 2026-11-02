@@ -116,7 +116,21 @@ are shares of the enterprise's 10,000 a year; config-check refuses more than tha
 | Changed since it was CAM'd | 1 for the CAM'd state (kept for good), plus the check's | |
 | A whole assembly (its bill of materials) | 1 (+1 for the document's tabs) | 10 min |
 | Setting a material | 1 | |
+| The whole team's API count, for the System card | 1 a day (`team_usage_hours`) | until the next day |
 | Status, sending, changing a quantity | 0 (Trello only) | |
+| The panel refreshing itself (every `auto_refresh_s`, 15 s) | 0: Trello only, parts as last read | |
+
+**Refreshing by itself** (2026-11-01, the user asked for everything to refresh faster): an open panel re-reads the
+statuses every 15 s (`[panel] auto_refresh_s`), and right away when it's shown again. Those requests carry `cached=1`,
+so the server answers from the last parts list (or BOM) it read and never calls Onshape; Refresh still reads the
+parts again. It waits while someone's typing, sending or editing, and stops after 30 minutes with nobody using the
+panel. The Trello reads behind it are shared by every open panel (`board_cache_s`, 10 s).
+
+**The whole team's count** (`panel/usage.py`): Onshape's API has no documented call for the enterprise's usage, so
+AutoCAM reads the one the enterprise admin's Developer page uses (`GET /api/v14/metrics/api/summary`, startDate = the
+cycle's start, ownerId = `[panel] company_id`). The System card shows it ("45 of 10,000 this year, which ends Oct 9,
+2027"; seen in the browser 2026-11-01). If AutoCAM's keys aren't allowed to read it, it tries again a week later and
+the card leaves the line out.
 
 When the panel's calls for the day are used up, it says so and students make cards on Trello as before.
 `python -m autocam_service ledger` shows the panel's count.
@@ -142,30 +156,31 @@ cloudflared --config <empty file> tunnel --origincert ~/.cloudflared/cert.pem ro
 
 (Without `--config`, `route dns` uses `config.yml`'s tunnel, BreadCompetition's, whatever tunnel is named.)
 
-## Registering it in Onshape (once, by someone signed in to the team's Onshape)
+## Registering it in Onshape (done 2026-11-01)
 
-Onshape's docs: an extension belongs to an OAuth application, even one that never uses OAuth.
+Registered by Claude in Chrome with the user's enterprise admin account (the user asked). The key in the two Action
+URLs is pasted by a person, never typed by Claude:
 
-1. Go to https://dev-portal.onshape.com and sign in with an account in the 5940 enterprise (an admin, so it can be
-   given to the whole team).
-2. **OAuth applications > Create new OAuth application.** Name `AutoCAM`; primary format `com.team5940.autocam`;
-   summary "Send parts to AutoCAM"; redirect URL `https://autocam.team5940.org/`; the least permission it offers
-   (read). The panel never uses the OAuth tokens.
-3. In the application: **Extensions > Add extension.** Name `AutoCAM`; location **Element right panel**; context
-   **Part Studio**; icon: any square image; Action URL (with the key from the laptop's `.env`):
+- **Where:** the developer portal on the enterprise's own address, https://5940.onshape.com/appstore/dev-portal
+  (dev-portal.onshape.com asks for a cad.onshape.com sign-in, which 5940 accounts don't have). It says it will be
+  deprecated soon; the apps move to Enterprise settings > Developer > OAuth applications.
+- **OAuth application** `AutoCAM (Team 5940)`, id 6ae825e829c607f888d8b81d, format `com.team5940.autocam`,
+  Integrated Cloud App, redirect `https://autocam.team5940.org/`, permission "read your documents" only. Its OAuth
+  secret was shown once and not kept: the panel never uses OAuth.
+- **Two extensions**, both Element right panel with the AutoCAM icon (an SVG, required): context *Inside part
+  studio* and *Inside assembly*. Action URL (the assembly one ends `&kind=assembly`):
 
-   ```
-   https://autocam.team5940.org/panel?key=<AUTOCAM_PANEL_KEY>&documentId={$documentId}&workspaceOrVersion={$workspaceOrVersion}&workspaceOrVersionId={$workspaceOrVersionId}&elementId={$elementId}
-   ```
+  ```
+  https://autocam.team5940.org/panel?key=<AUTOCAM_PANEL_KEY>&documentId={$documentId}&workspaceOrVersion={$workspaceOrVersion}&workspaceOrVersionId={$workspaceOrVersionId}&elementId={$elementId}
+  ```
 
-   Onshape adds `server`, `userId` and `companyId` to it by itself.
-4. Make it available to the team: an enterprise admin can assign the app to users or teams in Developer Settings
-   (Onshape's docs), or create a private store entry for it and subscribe.
-5. For whole assemblies, add a second extension to the same application: the same fields, but context
-   **Assembly** and the same Action URL with `&kind=assembly` on the end.
-6. Open a Part Studio (or an assembly), open the right panel, and pick AutoCAM.
+  Onshape adds `server`, `userId` and `companyId` to it by itself.
+- **The team:** a private App Store entry (category CAM, Team visibility *All enterprise users*; not public: that
+  needs PTC's development agreement). Each student opens the App Store on 5940.onshape.com, finds AutoCAM, and
+  presses Subscribe (free). Then the AutoCAM button is in every Part Studio's and assembly's right panel.
 
-Changing the key later: change `.env` (the service restarts by itself) and the Action URL together.
+Changing the key later: change `.env` (the service restarts by itself) and both Action URLs together (portal >
+the app > Extensions > Edit).
 
 ## Not confirmed yet
 

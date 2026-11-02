@@ -97,9 +97,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   assemblies, the options in one list, the material set in Onshape when it has none, and each part's status
   (waiting, on a sheet with its preview, cut, sent back and why). Served by the service on 127.0.0.1:8770, public as
   https://autocam.team5940.org through its own Cloudflare tunnel; its own Onshape call limits. Tested offline (an
-  e2e test sends a card through a whole run) and in a browser with fakes. Left: registering the extension in
-  Onshape (needs a team Onshape login), then confirming selection messages, the material write and assembly counts
-  on real documents. A `Part ID:` line (new, written by the panel, works on typed cards too) finds a part by its id
+  e2e test sends a card through a whole run) and in a browser with fakes. Registered in Onshape 2026-11-01 (app
+  `AutoCAM (Team 5940)`, Part Studio and assembly extensions, private App Store entry for all enterprise users;
+  `docs/panel.md`). Left: confirming selection messages, the material write and assembly counts on real documents. A `Part ID:` line (new, written by the panel, works on typed cards too) finds a part by its id
   before its name.
 - **Panel design checks** (2026-11-01): opening a part runs AutoCAM's own plate rules on its shape from Onshape
   (one `bodydetails` call per part per Part Studio state) and says "AutoCAM can cut this" or what would send it back,
@@ -117,6 +117,10 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   parts on a sheet on the board tells AutoCAM within minutes when a part changed (CAD changed); each part card gets
   Onshape's picture of the part as its cover. Both seen working (registration, a ping through the tunnel, Part
   13's picture); a real edit's event still to be seen. `AUTOCAM_WEBHOOK_SECRET` in the laptop's `.env`.
+- **Faster refresh** (2026-11-01, the user asked): the service reads Trello every 15 s (was 60), runs start 1 min
+  after the last card (was 2), the open panel refreshes its statuses every 15 s without Onshape calls, and CAD
+  changed checks run 2 min after an edit stops (was 5). The System card shows the whole team's Onshape API count from
+  the admin Developer page's endpoint, once a day (if AutoCAM's keys may read it).
 - **More than one cutter per part** (core 0.19.0, 2026-11-01): small through holes (an 8-32's 0.136) and cutouts
   with corners too tight for the 4 mm go in a short `<sheet>_SMALL` program with the 1/8 in, run first; the sheet
   stays on the 4 mm, outlines last. Only a tight outline or pocket corner (or the Tool 1/8 label) still puts a

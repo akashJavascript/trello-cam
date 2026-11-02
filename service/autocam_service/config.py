@@ -249,6 +249,11 @@ class Panel:
     webhooks: bool = True                # Onshape's company webhook tells AutoCAM what changed (panel/hooks.py)
     webhook_fallback_hours: float = 72.0  # with the webhook working, the periodic check above is only this often
     pictures: bool = True                # a picture of each part on its card (panel/pictures.py)
+    auto_refresh_s: int = 15             # an open panel re-reads its statuses this often (Trello only; 0: never)
+    check_every_s: int = 30              # the before-cut check's loop (Trello reads; Onshape only when it's due)
+    change_quiet_s: int = 120            # a webhook-reported change is checked once nobody has touched it this long
+    company_id: str = ""                 # the Onshape enterprise's id, for its API count (panel/usage.py)
+    team_usage_hours: float = 24.0       # read the whole team's API count this often for the System card (0: never)
 
 
 @dataclass(frozen=True)
@@ -840,7 +845,12 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                       change_check_hours=t.number("change_check_hours", positive=True, default=12.0),
                       webhooks=t.boolean("webhooks", default=True),
                       webhook_fallback_hours=t.number("webhook_fallback_hours", positive=True, default=72.0),
-                      pictures=t.boolean("pictures", default=True))
+                      pictures=t.boolean("pictures", default=True),
+                      auto_refresh_s=t.integer("auto_refresh_s", minimum=0, default=15),
+                      check_every_s=t.integer("check_every_s", minimum=10, default=30),
+                      change_quiet_s=t.integer("change_quiet_s", minimum=30, default=120),
+                      company_id=t.string("company_id", default=""),
+                      team_usage_hours=t.number("team_usage_hours", minimum=0, default=24.0))
         t.finish()
 
     costs = Costs()

@@ -918,6 +918,26 @@ part, not only bent ones: the old refusal existed only because the outline came 
 - Not done: the Manufacturing property (the user changed their mind). The enterprise's API usage on the System card
   waits on finding where Onshape exposes it (the public API has no endpoint for it).
 
+## 2026-11-01: everything refreshes faster (the user: "can you make everything refresh itself faster")
+
+Only Trello reads got more frequent; Onshape calls don't go up.
+
+- **The service reads the board every 15 s** (`trello.poll_interval_s`, was 60): about 11 Trello reads a pass with
+  nothing happening, under 1 a second, where Trello allows 10 a second per token. Fusion's results are picked up just
+  as fast. **A run starts 1 minute after the last card arrives** (`start_delay_s`, was 2), still enough to drag
+  several cards into one run. **The System card's time** is rewritten every 2 minutes (`update_every_s`, was 10).
+- **The Onshape panel refreshes itself** every 15 s (`[panel] auto_refresh_s`) with `cached=1`: statuses from Trello,
+  the parts as last read, never an Onshape call. It leaves the page alone while someone's typing, sending or
+  editing, and stops after 30 minutes unused. Trello reads behind it are kept 10 s (`board_cache_s`, was 30) and
+  shared by every open panel.
+- **CAD changed shows sooner:** the before-cut loop runs every 30 s (`check_every_s`, was 2 min) and an
+  Onshape-reported change is checked after 2 quiet minutes (`change_quiet_s`, was 5). Each check is still one call
+  per document state, so a longer quiet time saves calls while someone's mid-edit; 2 minutes was the compromise.
+  New webhooks and part pictures get made sooner too (same per-pass limits).
+- **The whole team's API count on the System card** (#6 of the admin list): the enterprise admin's Developer page
+  reads `GET /api/v14/metrics/api/summary` (found in its requests). AutoCAM reads it once a day through the panel's
+  limits (`panel/usage.py`); if its keys can't, it leaves the line out and tries again in a week.
+
 ## 2026-11-01: more than one cutter per part (core 0.19.0; the user's "bigger idea" #1)
 
 The brief's "later option" (decision 21: an 8-32 hole moves a whole aluminum sheet to the 1/8 in) done per feature.

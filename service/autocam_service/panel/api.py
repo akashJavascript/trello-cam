@@ -283,8 +283,16 @@ class PanelApp:
         return part
 
     def studio(self, q: Dict[str, str]) -> Dict[str, Any]:
+        """cached=1 is the page's own refresh every few seconds: statuses from Trello, parts only from the last read
+        (no Onshape call ever; {"stale": true} when there's none)."""
         did, wvm, wvmid, eid = self._studio(q)
-        parts = self._solids(self.onshape.parts(did, wvm, wvmid, eid, fresh=q.get("fresh") == "1"))
+        if q.get("cached") == "1":
+            raw = self.onshape.cached_parts(did, wvm, wvmid, eid)
+            if raw is None:
+                return {"stale": True}
+        else:
+            raw = self.onshape.parts(did, wvm, wvmid, eid, fresh=q.get("fresh") == "1")
+        parts = self._solids(raw)
         board_error, cards = "", None
         try:
             cards = self.board.part_cards(fresh=q.get("fresh") == "1")
@@ -304,7 +312,7 @@ class PanelApp:
                 "user": self.names.get(uid) if USER_RE.match(uid or "") else "",
                 "materials": list(self._materials().values()), "fit": self.cfg.fit.enabled,
                 "face": self.cfg.face is not None, "scribe": self.cfg.scribe is not None,
-                "tabsDefault": self.cfg.tabs.default,
+                "tabsDefault": self.cfg.tabs.default, "autoRefreshS": self.cfg.panel.auto_refresh_s,
                 "callsLeft": self.onshape.calls_left(), "maxQty": MAX_QTY}
 
     def _queue(self) -> Optional[Dict[str, Any]]:
@@ -320,7 +328,11 @@ class PanelApp:
     def assembly(self, q: Dict[str, str]) -> Dict[str, Any]:
         """The assembly's parts from its BOM (one call): the ones AutoCAM cuts first, each with its count and card."""
         did, wvm, wvmid, eid = self._studio(q)
-        rows = self.onshape.bom(did, wvm, wvmid, eid, fresh=q.get("fresh") == "1")
+        cached = q.get("cached") == "1"                  # the page's own refresh: no Onshape call (see studio)
+        rows = self.onshape.cached_bom(did, wvm, wvmid, eid) if cached else \
+            self.onshape.bom(did, wvm, wvmid, eid, fresh=q.get("fresh") == "1")
+        if rows is None:
+            return {"stale": True}
         board_error, cards = "", None
         try:
             cards = self.board.part_cards(fresh=q.get("fresh") == "1")
@@ -343,13 +355,14 @@ class PanelApp:
         items.sort(key=lambda i: (not i["here"], _natural(i["name"])))
         name = ""
         try:
-            name = next((e.get("name") or "" for e in self.onshape.elements(did, wvm, wvmid) if e.get("id") == eid), "")
+            tabs = (self.onshape.cached_elements(did, wvm, wvmid) or []) if cached else self.onshape.elements(did, wvm, wvmid)
+            name = next((e.get("name") or "" for e in tabs if e.get("id") == eid), "")
         except PanelOnshapeError:
             pass
         uid = q.get("u", "")
         return {"name": name, "items": items, "boardError": board_error, "queue": self._queue(), "face": self.cfg.face is not None,
                 "user": self.names.get(uid) if USER_RE.match(uid or "") else "", "tabsDefault": self.cfg.tabs.default,
-                "maxQty": MAX_QTY, "callsLeft": self.onshape.calls_left()}
+                "maxQty": MAX_QTY, "callsLeft": self.onshape.calls_left(), "autoRefreshS": self.cfg.panel.auto_refresh_s}
 
     def send_many(self, d: Dict[str, Any]) -> Dict[str, Any]:
         """Cards for the ticked parts of an assembly, each in the format a typed card has (its own Part Studio's
@@ -414,7 +427,13 @@ class PanelApp:
     def part(self, q: Dict[str, str]) -> Dict[str, Any]:
         did, wvm, wvmid, eid = self._studio(q)
         pid = self._part_id(q)
-        part = self._find(did, wvm, wvmid, eid, pid)
+        if q.get("cached") == "1":                       # the page's own refresh: no Onshape call (see studio)
+            part = next((p for p in self._solids(self.onshape.cached_parts(did, wvm, wvmid, eid) or [])
+                         if p["partId"] == pid), None)
+            if part is None:
+                return {"stale": True}
+        else:
+            part = self._find(did, wvm, wvmid, eid, pid)
         pc = self.board.for_part(did, eid, pid, part.get("name") or "", self.board.part_cards())
         return {"part": {"id": pid, "name": part.get("name") or "", "material": self._part_material(part),
                          "bent": self._flat(did, wvm, wvmid, eid, pid) is not None},

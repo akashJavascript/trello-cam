@@ -28,6 +28,7 @@ class Health:
     next_run_in_s: Optional[float] = None
     rush_cards: int = 0                      # waiting cards with the Rush label
     season: str = ""                         # the stock tally line (tally.py)
+    team_usage: str = ""                     # the whole enterprise's API count (panel/usage.py)
 
 
 def heartbeat_age_s(now: datetime, heartbeat: Optional[Dict[str, Any]]) -> Optional[float]:
@@ -104,6 +105,8 @@ def render(h: Health, stale_after_s: float, with_time: bool = True) -> str:
     lines = [_fusion(h, stale_after_s), run, cards,
              f"Onshape calls: {h.month_calls} this month (warning at {h.month_soft}), "
              f"{h.year_calls} of {h.year_cap} this budget year."]
+    if h.team_usage:
+        lines.append(h.team_usage)
     if h.season:
         lines.append(h.season)
     if h.latch:

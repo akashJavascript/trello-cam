@@ -27,7 +27,7 @@ from .onshape_reads import PanelOnshape, PanelOnshapeError
 log = logging.getLogger("autocam.panel")
 
 EVENT = "onshape.model.lifecycle.changed"
-QUIET_S = 300.0              # an element is checked once nobody has changed it for this long
+QUIET_S = 120.0              # an element is checked once nobody has changed it for this long ([panel] change_quiet_s)
 MAX_PENDING = 500            # elements kept at most (anything past this is dropped: only a flood gets there)
 CHECK_EVERY_S = 24 * 3600.0  # the webhook is checked to be there this often
 RETRY_S = 3600.0             # after a failure, tried again this often: a call each time

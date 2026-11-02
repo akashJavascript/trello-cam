@@ -173,6 +173,7 @@ class PanelOnshape:
             return data
 
     def cached_parts(self, did: str, wvm: str, wvmid: str, eid: str) -> Optional[List[Dict[str, Any]]]:
+        """The last parts list read, however old (None: never read). Never calls Onshape."""
         hit = self._parts.get((did, wvm, wvmid, eid))
         return None if hit is None else hit.value
 
@@ -274,6 +275,15 @@ class PanelOnshape:
             found = [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
             self._elements[key] = _Entry(self.clock(), found)
             return found
+
+    def cached_elements(self, did: str, wvm: str, wvmid: str) -> Optional[List[Dict[str, Any]]]:
+        hit = self._elements.get((did, wvm, wvmid))
+        return None if hit is None else hit.value
+
+    def cached_bom(self, did: str, wvm: str, wvmid: str, aid: str) -> Optional[List[Dict[str, Any]]]:
+        """The last BOM read, however old (None: never read). Never calls Onshape."""
+        hit = self._boms.get((did, wvm, wvmid, aid))
+        return None if hit is None else hit.value
 
     def bom(self, did: str, wvm: str, wvmid: str, aid: str, fresh: bool = False) -> List[Dict[str, Any]]:
         """An assembly's parts, flattened (subassemblies counted in): [{"did", "wvm", "wvmid", "eid", "pid", "name",
@@ -435,6 +445,10 @@ class PanelOnshape:
                     raise NoAccess(str(e)) from e
                 raise PanelOnshapeError(f"Onshape didn't {what} ({e.status or 'no answer'}: "
                                         f"{str(e).split(': ', 1)[-1][:160]}).") from e
+
+    def raw_get(self, path: str, query: Dict[str, str], purpose: str, what: str) -> Any:
+        """One GET counted like the panel's other calls (usage.py's team API count)."""
+        return self._call(what, lambda c: c.get_json(path, query=query, purpose=purpose))
 
     def webhooks(self) -> List[Dict[str, Any]]:
         """The webhooks AutoCAM's keys registered."""

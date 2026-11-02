@@ -250,10 +250,10 @@ retry_after_max_wait_s = 60.0   # a longer Retry-After stops the run instead of 
 
 [trello]
 board_id = "6ac00269a17b9c9e14cca924"   # https://trello.com/b/fsuTYbO3/5940-autocam
-poll_interval_s = 60
+poll_interval_s = 15             # how often the service reads the board (was 60; the user asked for faster, 2026-11-01)
 attachment_limit_mb = 10        # Trello Free plan limit
 job_timeout_s = 3600            # service gives up waiting for a Fusion job after this
-start_delay_s = 120             # a run starts this long after the last card arrived in Ready for CAM
+start_delay_s = 60              # a run starts this long after the last card arrived in Ready for CAM (was 120)
 nest_checklist = "Nest"         # part cards: one item, ticked by default; untick it and runs skip the card
 nest_item = "Nest this part"
 options_checklist = "Options"   # sheet cards, both unticked to start; the service applies them within a minute
@@ -360,7 +360,7 @@ project = "5940 BREAD"          # in Brock's hub
 folder = "AutoCAM test"         # must exist; nested folders as "a/b"
 
 [status]                        # the System card's description (M5)
-update_every_s = 600            # rewritten this often while the service runs, and whenever something changes
+update_every_s = 120            # rewritten this often while the service runs, and whenever something changes
 fusion_stale_after_s = 300      # no heartbeat from the add-in for this long: Fusion or the add-in isn't running
 season_start = "09-01"          # the stock tally counts sheets cut since this day (MM-DD) each year
 
@@ -405,7 +405,7 @@ onshape_calls_per_year = 1500   # counted apart from runs' yearly_cap_calls; bot
 parts_cache_s = 600             # a Part Studio's parts list is read again after this long (or on Refresh)
 assembly_cache_s = 1800         # the document's assemblies, for "how many does the robot use"
 max_assemblies = 4              # quantities are counted in at most this many assemblies of the document
-board_cache_s = 30              # Trello lists read for each part's status
+board_cache_s = 10              # Trello lists read for each part's status (shared by every open panel)
 sends_per_minute = 20
 change_check_hours = 12         # sheets in Sheet review are compared with Onshape this often (one call per document
                                 # state; Ready to cut sheets once each, when they get there)
@@ -414,6 +414,12 @@ webhooks = true                 # Onshape webhooks say what changed, within minu
                                 # AUTOCAM_WEBHOOK_SECRET in .env
 webhook_fallback_hours = 72     # with the webhook working, the check above happens only this often
 pictures = true                 # a picture of each part (Onshape's shaded view, one call each) on its card
+auto_refresh_s = 15             # an open panel re-reads the statuses this often by itself (Trello only, never Onshape;
+                                # it stops after 30 min with nobody using it). 0: only on Refresh
+check_every_s = 30              # the before-cut check's loop: Trello reads; Onshape only when a check is due
+change_quiet_s = 120            # an Onshape-reported change is checked once nobody has edited that tab this long
+company_id = "652459d6412ce911b57afb73"   # Team 5940 BREAD's Onshape enterprise
+team_usage_hours = 24           # the whole team's Onshape API count on the System card: one call a day (0: off)
 
 [costs]                         # the Onshape panel's cost and sheet use estimate. Prices: WCP's for a 24 x 48 in sheet
                                 # (wcproducts.com, read 2026-11-01; the user's choice), else another vendor's (named on

@@ -24,19 +24,24 @@ from ..run_state import RunStore
 from ..tracker.base import Tracker
 from .board import PanelBoard
 from .geometry import differences, shape_key
-from .hooks import ChangeInbox, WebhookSetup, touches
+from .hooks import QUIET_S, ChangeInbox, WebhookSetup, touches
 from .onshape_reads import OutOfCalls, PanelOnshape, PanelOnshapeError
 from .pictures import PictureWatch
+from .usage import TeamUsage
 
 log = logging.getLogger("autocam.panel")
 
-CHECK_EVERY_S = 120.0
+CHECK_EVERY_S = 30.0
 
 
 class PrecutWatch:
     def __init__(self, onshape: PanelOnshape, board: PanelBoard, store: RunStore, tracker: Tracker,
                  inbox: Optional[ChangeInbox] = None, hooks: Optional[WebhookSetup] = None,
-                 pictures: Optional[PictureWatch] = None):
+                 pictures: Optional[PictureWatch] = None, every_s: float = CHECK_EVERY_S,
+                 quiet_s: float = QUIET_S, usage: Optional[TeamUsage] = None):
+        self.usage = usage                    # the whole team's API count for the System card (usage.py)
+        self.every_s = every_s                # the loop's pause ([panel] check_every_s)
+        self.quiet_s = quiet_s                # a reported change waits this long for edits to stop ([panel] change_quiet_s)
         self.onshape = onshape
         self.board = board
         self.store = store
@@ -74,7 +79,7 @@ class PrecutWatch:
                 self.hooks.ensure(wanted)
             except Exception as e:  # noqa: BLE001 - tried again later
                 log.info("panel: the Onshape webhooks: %s", e)
-        told = self.inbox.quiet() if self.inbox is not None else set()   # Onshape said these changed
+        told = self.inbox.quiet(self.quiet_s) if self.inbox is not None else set()   # Onshape said these changed
         changed = 0
         states: Dict[Tuple[str, str], Optional[str]] = {}   # one call per document state per tick
         for list_key, cards in lists.items():
@@ -115,6 +120,11 @@ class PrecutWatch:
                 self.pictures.tick(open_ids)
             except Exception as e:  # noqa: BLE001 - tried again next time
                 log.info("panel: part pictures: %s", e)
+        if self.usage is not None:
+            try:
+                self.usage.tick()
+            except Exception as e:  # noqa: BLE001 - the System card line is a nicety
+                log.info("panel: the team's API count: %s", e)
         return changed
 
     def _refs(self, info) -> List[Dict[str, Any]]:
@@ -170,7 +180,7 @@ class PrecutWatch:
                     self.tick()
                 except Exception:  # noqa: BLE001 - try again next time
                     log.exception("panel: the before-cut check failed")
-                sleep(CHECK_EVERY_S)
+                sleep(self.every_s)
 
         thread = threading.Thread(target=loop, name="panel-precut", daemon=True)
         thread.start()

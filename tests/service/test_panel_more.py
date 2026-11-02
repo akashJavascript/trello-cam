@@ -327,3 +327,35 @@ def test_an_own_program_placed_by_hand_from_the_panel(tmp_path):
     p.h.runner.own_programs()
     [sheet] = [c for c in p.t.cards.values() if c.list_key == "sheet_review"]
     assert "placed by hand - own program P-2014.tap - P-2014 gusset" in sheet.name
+
+
+# ---------------------------------------------------------------- the page's own refresh (2026-11-01, the user asked
+# for everything to refresh faster): every few seconds, statuses only, and never an Onshape call
+
+def test_the_pages_own_refresh_never_calls_onshape(tmp_path):
+    on = Card("a" * 24, "P-2014 gusset", f"{STUDIO_W}\nQty: 2\nPart ID: JHD", "ready_for_cam", "https://t/a")
+    p = Panel(tmp_path, cards=[on])
+    cached = {**Q, "cached": "1"}
+    assert p.call("GET", "/api/studio", cached)[1] == {"stale": True}          # nothing read yet: the page waits
+    assert p.call("GET", "/api/part", {**cached, "p": "JHD"})[1] == {"stale": True}
+    assert p.onshape_calls() == []
+    first = p.call("GET", "/api/studio", Q)[1]
+    assert first["autoRefreshS"] == 15 and len(p.onshape_calls()) == 1
+    p.clock.t += 3600                                  # long past when a normal read would ask Onshape again
+    p.t._move(on.id, "nested")
+    rows = {r["name"]: r["chip"]["status"] for r in p.call("GET", "/api/studio", cached)[1]["parts"]}
+    assert rows["P-2014 gusset"] != "queued" and set(rows) == {r["name"] for r in first["parts"]}
+    assert p.call("GET", "/api/part", {**cached, "p": "JHD"})[1]["card"] is not None
+    assert len(p.onshape_calls()) == 1
+
+
+def test_an_assemblys_own_refresh_never_calls_onshape(tmp_path):
+    p = assembly_panel(tmp_path)
+    assert p.call("GET", "/api/assembly", {**Q, "cached": "1"})[1] == {"stale": True}
+    assert p.transport.sent == []
+    p.call("GET", "/api/assembly", Q)
+    calls = len(p.transport.sent)
+    p.clock.t += 3600
+    a = p.call("GET", "/api/assembly", {**Q, "cached": "1"})[1]
+    assert a["name"] == "Intake" and len(a["items"]) == 6 and a["autoRefreshS"] == 15
+    assert len(p.transport.sent) == calls

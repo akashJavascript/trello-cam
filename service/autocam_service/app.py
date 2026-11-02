@@ -121,8 +121,13 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
                    inbox=inbox, hook_secret=secret)
     start_server(app, p.port)
     pictures = PictureWatch(onshape, services.store, tracker) if p.pictures else None
-    PrecutWatch(onshape, board, services.store, tracker, inbox=inbox, hooks=hooks,
-                pictures=pictures).keep_running()                    # changed before it's cut, pictures
+    usage = None
+    if p.company_id and p.team_usage_hours > 0 and not creds.missing("onshape"):
+        from .panel.usage import TEAM_USAGE_FILE, TeamUsage
+        usage = TeamUsage(onshape, p.company_id, cfg.paths.state / TEAM_USAGE_FILE, p.team_usage_hours)
+    PrecutWatch(onshape, board, services.store, tracker, inbox=inbox, hooks=hooks, pictures=pictures,
+                every_s=p.check_every_s, quiet_s=p.change_quiet_s, usage=usage).keep_running()
+    # (changed before it's cut, pictures, the team's API count)
     if p.tunnel_dir:
         Tunnel(Path(p.tunnel_dir), cfg.paths.state, cfg.paths.logs).keep_running()
     return True
