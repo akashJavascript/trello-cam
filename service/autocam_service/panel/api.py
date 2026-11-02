@@ -330,7 +330,7 @@ class PanelApp:
         except PanelOnshapeError:
             pass
         uid = q.get("u", "")
-        return {"name": name, "items": items, "boardError": board_error, "queue": self._queue(),
+        return {"name": name, "items": items, "boardError": board_error, "queue": self._queue(), "face": self.cfg.face is not None,
                 "user": self.names.get(uid) if USER_RE.match(uid or "") else "", "tabsDefault": self.cfg.tabs.default,
                 "maxQty": MAX_QTY, "callsLeft": self.onshape.calls_left()}
 
@@ -341,7 +341,8 @@ class PanelApp:
         did, wvm, wvmid, eid = self._studio(d)
         sender = self._sender(d)
         nest, tabs = bool(d.get("nest", True)), bool(d.get("tabs", self.cfg.tabs.default))
-        drafts = bool(d.get("drafts"))
+        drafts, rush = bool(d.get("drafts")), bool(d.get("rush"))
+        face = bool(d.get("face")) and self.cfg.face is not None
         wanted = d.get("items") if isinstance(d.get("items"), list) else []
         rows = {f"{r['did']}/{r['eid']}/{r['pid']}": r for r in self.onshape.bom(did, wvm, wvmid, eid)}
         cards = self.board.part_cards(fresh=True)
@@ -367,7 +368,7 @@ class PanelApp:
                 if going is not None and going.status in ACTIVE:
                     raise Refused(409, "already has a card")
                 s = Send(did=r["did"], wvm=r["wvm"], wvmid=r["wvmid"], eid=r["eid"], pid=r["pid"], name=r["name"],
-                         host=host, qty=qty, nest=nest, tabs=tabs, drafts=drafts, sender=sender)
+                         host=host, qty=qty, nest=nest, tabs=tabs, face=face, rush=rush, drafts=drafts, sender=sender)
                 card = self.board.write(s)
                 results.append({"key": key, "name": name, "sent": True, "url": card.url})
             except Refused as e:
@@ -604,8 +605,8 @@ class PanelApp:
         face = bool(d.get("face")) and self.cfg.face is not None
         s = Send(did=did, wvm=wvm, wvmid=wvmid, eid=eid, pid=pid, name=name, host=self._host(d.get("server")),
                  qty=qty, nest=nest, tabs=tabs, face=face, rush=bool(d.get("rush")), smoked=smoked,
-                 drafts=bool(d.get("drafts")), material_line=line, fit_line=fit_line, sender=sender,
-                 notes=clean_text(d.get("notes"), 300))
+                 tool_eighth=bool(d.get("tool_eighth")), drafts=bool(d.get("drafts")), material_line=line,
+                 fit_line=fit_line, sender=sender, notes=clean_text(d.get("notes"), 300))
         card = self.board.write(s, existing)
         where = "inbox" if s.drafts else "ready_for_cam"
         log.info("panel: %s sent %s x%d to %s: %s", sender, name, qty, LIST_NAMES[where], card.url)

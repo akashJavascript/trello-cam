@@ -4,6 +4,7 @@ marks in the parts list, faces to click for a fit, cost and sheet use, and sendi
 import copy
 import json
 
+from autocam_service.cards import parse_card
 from autocam_service.config import parse_config
 from autocam_service.panel.checks import check
 from autocam_service.panel.geometry import differences, read_body, shape_key, solid_body
@@ -277,3 +278,39 @@ def test_an_own_program_the_guard_stops_never_reaches_trello(tmp_path):
     status, r = send_program(p, program(), program={"filename": "notes.txt", "text": "G0"})
     assert status == 400 and ".tap" in r["error"]
     assert card_in(p, "ready_for_cam") == [] and card_in(p, "inbox") == [] and p.t.files == {}
+
+
+# ---------------------------------------------------------------- making a card over keeps what it said
+
+def test_a_drafts_card_made_over_starts_from_it_and_keeps_what_the_panel_doesnt_write(tmp_path):
+    typed = Card("b" * 24, "P-2014 gusset", f"{STUDIO_W}\nQty: 3\nFit: 1.125 hole\nNote: deburr\nmake it from the "
+                                            "scrap pile", "inbox", "https://t/d", ("Face", "Tool 1/8"))
+    p = Panel(tmp_path, cards=[typed])
+    p.t.add_checklist(typed.id, "Nest", ["Nest this part"], checked=False)
+    form = p.call("GET", "/api/part", {**Q, "p": "JHD"})[1]["card"]["form"]
+    assert form == {"qty": 3, "face": True, "rush": False, "smoked": False, "tool_eighth": True, "nest": False,
+                    "tabs": True, "fit": {"kind": "hole", "size": 1.125}, "notes": "deburr",
+                    "kept": ["make it from the scrap pile"]}
+    status, _ = p.call("POST", "/api/send", body={**Q, "p": "JHD", "card": typed.id, "qty": 3, "name": "Maya",
+                                                   "face": True, "tool_eighth": True, "nest": True, "notes": "deburr",
+                                                   "fit": {"kind": "hole", "size": "1.125"}})
+    assert status == 200
+    card = p.t.get_card(typed.id)
+    lines = card.desc.split("\n")
+    assert lines[-1] == "make it from the scrap pile" and lines.count("Fit: 1.125 hole") == 1
+    assert lines.count("Note: deburr") == 1 and sum(1 for ln in lines if ln.startswith("Qty")) == 1
+    assert set(card.labels) == {"Face", "Tool 1/8"} and card.list_key == "ready_for_cam"
+
+
+def test_the_eighth_switch_and_an_assemblys_face_and_rush(tmp_path):
+    (tmp_path / "asm").mkdir()
+    p = Panel(tmp_path)
+    assert p.send(tool_eighth=True)[0] == 200
+    [card] = card_in(p, "ready_for_cam")
+    assert "Tool 1/8" in card.labels and parse_card(p.t.get_card(card.id)).force_small_tool
+    a = assembly_panel(tmp_path / "asm")
+    keys = {i["name"]: i["key"] for i in a.call("GET", "/api/assembly", Q)[1]["items"]}
+    a.call("POST", "/api/send-many", body={**Q, "name": "Siddhi", "face": True, "rush": True,
+                                            "items": [{"key": keys["P-2014 gusset"], "qty": 4}]})
+    [made] = [c for c in card_in(a, "ready_for_cam") if c.name == "P-2014 gusset"]
+    assert set(made.labels) == {"Face", "Rush"}

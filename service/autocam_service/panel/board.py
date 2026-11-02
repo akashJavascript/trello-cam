@@ -20,8 +20,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from autocam_core.hotfolder import write_atomic
 
-from ..cards import PART_ID_RE, QTY_LINE_RES, README_CARD, TITLE_QTY_RE, _plain
+from ..autostart import box
+from ..cards import MATERIAL_RE, PART_ID_RE, QTY_LINE_RES, README_CARD, TITLE_QTY_RE, _plain
 from ..config import Config
+from ..fits import _FIT, parse_fit
+from ..own_programs import OWN_PROGRAM_RE
 from ..onshape.urls import LinkError, first_onshape_url, parse_link
 from ..run_state import RunStore
 from ..tracker.base import Card, Tracker
@@ -98,6 +101,7 @@ class Send:
     face: bool = False
     rush: bool = False
     smoked: bool = False
+    tool_eighth: bool = False      # the Tool 1/8 label: the 1/8 in endmill even when the 4 mm could cut it
     drafts: bool = False
     material_line: str = ""        # e.g. "6061": only when Onshape doesn't have the material
     fit_line: str = ""             # e.g. "1.125 hole" or "outline"
@@ -105,7 +109,25 @@ class Send:
     notes: str = ""                # one line
 
 
-def card_desc(s: Send) -> str:
+SENT_BY_RE = re.compile(r"^\s*Sent from the Onshape panel by ", re.IGNORECASE)
+NOTE_RE = re.compile(r"^\s*Note\s*:\s*(.*)$", re.IGNORECASE)
+
+
+def _panel_line(line: str) -> bool:
+    """A line the panel writes itself (so a card made over doesn't get it twice)."""
+    plain = _plain(line)
+    return bool(first_onshape_url(line) or any(rx.match(plain) for rx in QTY_LINE_RES) or PART_ID_RE.match(plain)
+                or MATERIAL_RE.match(plain) or _FIT.match(plain) or SENT_BY_RE.match(plain) or NOTE_RE.match(plain)
+                or OWN_PROGRAM_RE.match(plain))
+
+
+def kept_lines(desc: str) -> List[str]:
+    """What someone typed on a card that the panel doesn't write: kept, below the panel's lines, when the panel
+    makes the card over."""
+    return [ln for ln in (desc or "").split("\n") if ln.strip() and not _panel_line(ln)]
+
+
+def card_desc(s: Send, keep: Optional[List[str]] = None) -> str:
     lines = [f"https://{s.host}/documents/{s.did}/{s.wvm}/{s.wvmid}/e/{s.eid}", f"Qty: {s.qty}", f"Part ID: {s.pid}"]
     if s.material_line:
         lines.append(f"Material: {s.material_line}")
@@ -114,7 +136,7 @@ def card_desc(s: Send) -> str:
     lines.append(f"Sent from the Onshape panel by {s.sender or 'someone'}")
     if s.notes:
         lines.append(f"Note: {s.notes}")
-    return "\n".join(lines)
+    return "\n".join(lines + list(keep or []))
 
 
 def with_qty(desc: str, qty: int) -> str:
@@ -207,6 +229,8 @@ class PanelBoard:
     def detail(self, pc: PartCard) -> Dict[str, Any]:
         """Everything the panel shows about a part's card."""
         out: Dict[str, Any] = {**self.chip(pc), "card": pc.card.id, "url": pc.card.url, "qty": pc.qty, "sheets": []}
+        if pc.status in ("drafts", "back"):
+            out["form"] = self.settings(pc)              # "Edit and send" / "Send again" start from the card
         sheets = self.sheets_of(pc.card.id) if pc.status in ("sheet", "cut") else []
         lists = []
         for sid, e in sheets:
@@ -241,6 +265,20 @@ class PanelBoard:
         out["steps"] = [{"t": t, "w": w, "state": "done" if i < done else "now" if i == now else "todo"}
                         for i, (t, w) in enumerate(steps)]
         return out
+
+    def settings(self, pc: PartCard) -> Dict[str, Any]:
+        """What the card says now, to start the panel's form from when it's made over (Drafts, sent back)."""
+        card, tc, lb = pc.card, self.cfg.trello, self.cfg.labels
+        labels = {norm(l) for l in card.labels}
+        fit = parse_fit(card.desc)
+        notes = [m.group(1).strip() for m in (NOTE_RE.match(_plain(ln)) for ln in (card.desc or "").split("\n")) if m]
+        return {"qty": pc.qty, "face": norm(lb.face) in labels, "rush": norm(lb.rush) in labels,
+                "smoked": norm(lb.smoked) in labels, "tool_eighth": norm(lb.tool_eighth) in labels,
+                "nest": box(card, tc.nest_checklist, tc.nest_item, True),
+                "tabs": box(card, tc.tabs_checklist, tc.tabs_item, self.cfg.tabs.default),
+                "fit": ({"kind": "outline"} if fit[0] == "outline" else {"kind": "hole", "size": fit[1]})
+                if isinstance(fit, tuple) else {"kind": "none"},
+                "notes": " / ".join(n for n in notes if n), "kept": kept_lines(card.desc)}
 
     def reason(self, card_id: str) -> str:
         """Why a card was sent back: its newest comment (AutoCAM's), without the closing how-to line."""
@@ -356,7 +394,7 @@ class PanelBoard:
         """A new part card, or `existing` (sent back) made over with this form and moved to its list."""
         t, tc, labels = self.t, self.cfg.trello, self.cfg.labels
         target = "inbox" if s.drafts else "ready_for_cam"
-        desc = card_desc(s)
+        desc = card_desc(s, kept_lines(existing.card.desc) if existing is not None else None)
         if existing is None:
             card = t.create_card(target, s.name, desc)
         else:
@@ -367,7 +405,8 @@ class PanelBoard:
         t.add_checklist(card.id, tc.nest_checklist, [tc.nest_item], checked=s.nest)
         t.add_checklist(card.id, tc.tabs_checklist, [tc.tabs_item], checked=s.tabs)
         have = {norm(l) for l in card.labels}
-        for name, on in ((labels.face, s.face), (labels.rush, s.rush), (labels.smoked, s.smoked)):
+        for name, on in ((labels.face, s.face), (labels.rush, s.rush), (labels.smoked, s.smoked),
+                         (labels.tool_eighth, s.tool_eighth)):
             if on and norm(name) not in have:
                 t.add_label(card.id, name)
             elif not on and norm(name) in have:

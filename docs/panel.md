@@ -63,10 +63,13 @@ preview), cut, or sent back with the reason.
   parts from its bill of materials (one call, subassemblies counted in): this document's parts AutoCAM cuts first
   and ticked (parts from other documents are often bought ones, so they start unticked), with their
   counts, the rest saying why not (no material, not a material AutoCAM cuts, configured, already has a card).
-  Send makes a card per ticked part, linking its own Part Studio (a version for parts from other documents).
+  Send makes a card per ticked part, linking its own Part Studio (a version for parts from other documents), with
+  Tabs, Nest, Face and Rush for all of them; a fit is set on one part, from its Part Studio.
 - **A part that already has a card:** its status. A second card is refused; the quantity can be changed instead
   (a card already on a sheet goes back to Ready for CAM and is nested again). A card in Drafts can be edited and
-  sent; a sent-back card shows why and can be sent again (the same card, made over).
+  sent; a sent-back card shows why and can be sent again (the same card, made over). Made over, a card starts the
+  form from what it says (quantity, labels, Fit, the boxes, notes), and lines someone typed that the panel doesn't
+  write are kept below the panel's.
 
 ## The card it writes
 

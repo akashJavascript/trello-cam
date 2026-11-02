@@ -175,10 +175,16 @@
   };
 
   function newForm(card) {
+    var c = card && card.form;                 // a Drafts or sent-back card: start from what it says
+    if (c) {
+      return { qty: c.qty || 1, qtyBy: "you", asm: 0, tabs: c.tabs, nest: c.nest, face: c.face,
+        fitKind: c.fit.kind, fitSize: c.fit.kind === "hole" ? String(c.fit.size) : "", rush: c.rush, drafts: false,
+        smoked: c.smoked, tool18: c.tool_eighth, material: "", notes: c.notes || "", error: "", kept: c.kept || [] };
+    }
     return fromAssembly({
       qty: card && card.qty ? card.qty : 1, qtyBy: card && card.qty ? "you" : "asm", asm: 0,
       tabs: S.studio ? S.studio.tabsDefault : true, nest: true, face: false, fitKind: "none", fitSize: "",
-      rush: false, drafts: false, smoked: false, material: "", notes: "", error: ""
+      rush: false, drafts: false, smoked: false, tool18: false, material: "", notes: "", error: ""
     });
   }
   function fromAssembly(f) {
@@ -213,7 +219,7 @@
     return api("GET", "/api/assembly", where({ fresh: fresh ? "1" : "", u: ctx.u })).then(function (a) {
       S.asm = a;
       if (a.user) { S.user = a.user; stored("name", a.user); }
-      if (!S.asmOpts) S.asmOpts = { tabs: a.tabsDefault, nest: true, drafts: false };
+      if (!S.asmOpts) S.asmOpts = { tabs: a.tabsDefault, nest: true, face: false, rush: false, drafts: false };
       var sel = {};
       a.items.forEach(function (i) {
         var old = S.asmSel[i.key];
@@ -438,7 +444,10 @@
     add(bodyEl, group("Options",
       switchLine("Hold them in with tabs", o.tabs, function (v) { o.tabs = v; render(); }),
       switchLine("Nest them with other parts", o.nest, function (v) { o.nest = v; render(); }),
-      switchLine("Send to Drafts", o.drafts, function (v) { o.drafts = v; render(); })));
+      a.face ? switchLine("Face their tops", o.face, function (v) { o.face = v; render(); }) : null,
+      switchLine("Rush", o.rush, function (v) { o.rush = v; render(); }),
+      switchLine("Send to Drafts", o.drafts, function (v) { o.drafts = v; render(); }),
+      h("span", { class: "hint" }, "A fit is set on one part, from its Part Studio.")));
 
     var chosen = a.items.filter(function (i) { return i.sendable && S.asmSel[i.key].on; });
     actionEl.hidden = false;
@@ -466,7 +475,7 @@
     S.busy = true; render();
     api("POST", "/api/send-many", where({
       items: chosen.map(function (i) { return { key: i.key, qty: S.asmSel[i.key].qty }; }),
-      tabs: o.tabs, nest: o.nest, drafts: o.drafts, name: S.user, u: ctx.u, server: ctx.server
+      tabs: o.tabs, nest: o.nest, face: o.face, rush: o.rush, drafts: o.drafts, name: S.user, u: ctx.u, server: ctx.server
     })).then(function (r) {
       S.busy = false; S.asmResult = r;
       loadAssembly(false);
@@ -596,6 +605,7 @@
     if (f.tabs && !r.own) chips.push(chip("Tabs"));
     if (!f.nest) chips.push(chip("Placed by hand"));
     if (f.face) chips.push(chip("Face"));
+    if (f.tool18 && !r.own) chips.push(chip("1/8 in endmill"));
     if (f.fitKind !== "none") chips.push(chip(f.fitKind === "outline" ? "Fit outline" : "Fit " + f.fitSize + " hole"));
     if (f.rush) chips.push(chip("Rush"));
     add(bodyEl, partHead(d.part, chips));
@@ -661,6 +671,7 @@
       switchLine("Nest it with other parts", f.nest || fitted, function (v) { f.nest = v; render(); }, fitted)
     ];
     if (st.face && !f.own) opts.push(switchLine("Face the top", f.face, function (v) { f.face = v; render(); }));
+    if (!f.own) opts.push(switchLine("Use the 1/8 in endmill", f.tool18, function (v) { f.tool18 = v; render(); }));
     if (st.fit && !f.own) {
       var fsel = h("select", { class: "select", id: "fit", onchange: function () { f.fitKind = fsel.value; render(); } },
         [["none", "None"], ["hole", "A hole"], ["outline", "Outline"]].map(function (o) {
@@ -684,6 +695,9 @@
       oninput: function () { f.notes = notes.value; } });
     notes.value = f.notes;
     opts.push(notes);
+    if (f.kept && f.kept.length && !f.own) {
+      opts.push(h("span", { class: "hint" }, "Also kept from the card: " + f.kept.join(" / ")));
+    }
     add(bodyEl, group("Options", opts));
 
     // action: who's sending, and Send
@@ -774,7 +788,7 @@
     if (f.own) return sendProgram();
     var fitted = f.fitKind !== "none";
     var body = where({
-      p: S.partId, qty: f.qty, nest: f.nest || fitted, tabs: f.tabs || fitted, face: f.face, rush: f.rush,
+      p: S.partId, qty: f.qty, nest: f.nest || fitted, tabs: f.tabs || fitted, face: f.face, rush: f.rush, tool_eighth: !!f.tool18,
       drafts: f.drafts, smoked: f.smoked, material: f.material, fit: { kind: f.fitKind, size: f.fitSize },
       notes: f.notes, u: ctx.u, name: S.user, server: ctx.server, card: S.editing && d.card ? d.card.card : ""
     });
