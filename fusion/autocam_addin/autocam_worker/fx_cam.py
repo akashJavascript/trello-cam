@@ -245,18 +245,35 @@ _FEEDS = (("tool_spindleSpeed", "n", "rpm"), ("tool_rampSpindleSpeed", "n_ramp",
           ("tool_feedRamp", "v_f_ramp", "feed"), ("tool_feedTransition", "v_f_transition", "feed"))
 
 
+def _tool_fields(want: dict, got: dict):
+    """(field, the library's, the op's) for what identifies a tool: kind, units, size, angle, tip and number."""
+    g1, g2 = want.get("geometry") or {}, got.get("geometry") or {}
+    num = lambda d: round(float(d), 6) if isinstance(d, (int, float)) else d
+    out = [(k, want.get(k), got.get(k)) for k in ("type", "unit", "description")]
+    out += [(f"geometry.{k}", num(g1.get(k)), num(g2.get(k))) for k in ("DC", "TA", "tip-diameter", "NOF", "LCF")]
+    out.append(("number", (want.get("post-process") or {}).get("number"), (got.get("post-process") or {}).get("number")))
+    return out
+
+
 def set_tool(op, tool_json: str) -> str:
     """The op's tool from its library entry, and that entry's preset feeds and speeds (in the tool's own units);
     coolant stays as the op had it (disabled: mist is the post's). Returns how the feeds were set, for the run
-    notes. Raises AdapterError unless the op's tool reads back with the entry's GUID."""
+    notes. Raises AdapterError unless the op's tool reads back as that entry (kind, units, size, angle, number)."""
     data = json.loads(tool_json)
     tool = call("Tool.createFromJson", adsk.cam.Tool.createFromJson, tool_json)
     coolant = op.parameters.itemByName("tool_coolant")
     keep = coolant.expression if coolant is not None else None
     call(f"{op.name}: tool", setattr, op, "tool", tool)
-    got = tool_guid(op)
-    if got != data.get("guid"):
-        raise AdapterError(f"{op.name}: the tool reads back as {got or 'unreadable'}, not {data.get('guid')}")
+    # Fusion gives a tool made from JSON a GUID of its own (r045: {d5341d90-...} for the library's 915d08db-...), so
+    # the op's tool is checked against the library entry by what makes it that tool instead.
+    try:
+        now = json.loads(op.tool.toJson())
+    except Exception as e:  # noqa: BLE001
+        raise AdapterError(f"{op.name}: the tool can't be read back: {e}") from None
+    wrong = [k for k, a, b in _tool_fields(data, now) if a != b]
+    if wrong:
+        raise AdapterError(f"{op.name}: the tool reads back different in {', '.join(wrong)} "
+                           f"({'; '.join(f'{k} {a!r} -> {b!r}' for k, a, b in _tool_fields(data, now) if a != b)})")
     preset = ((data.get("start-values") or {}).get("presets") or [{}])[0]
     unit = "mm/min" if data.get("unit") == "millimeters" else "in/min"
     done = []
@@ -270,7 +287,8 @@ def set_tool(op, tool_json: str) -> str:
             done.append(f"{name} {p.expression}")
     if keep is not None:
         set_expr(op, "tool_coolant", keep)
-    return f"{op.name}: tool {data.get('description') or data.get('guid')}, feeds set ({', '.join(done)})"
+    return (f"{op.name}: tool {data.get('description') or data.get('guid')} (as {tool_guid(op)}), feeds set "
+            f"({', '.join(done)})")
 
 
 def radial_stock(op, inches: float) -> None:

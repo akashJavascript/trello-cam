@@ -193,7 +193,7 @@ class Adapter:
 
     def set_tool(self, sheet: str, op_name: str, tool_json: str) -> None:
         """The op cuts with this tool (its entry in the pinned tool library) and that tool's preset feeds and speeds.
-        Raises AdapterError unless the op's tool reads back with the tool's GUID."""
+        Raises AdapterError unless the op's tool reads back as that entry (Fusion gives it a GUID of its own)."""
         raise NotImplementedError
 
     def set_tab_points(self, sheet: str, op_name: str, points: Sequence[Tuple[float, float]]) -> None:
