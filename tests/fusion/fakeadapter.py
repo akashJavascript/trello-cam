@@ -291,10 +291,11 @@ class FakeAdapter(Adapter):
                 fill = s["fills"][op]
                 z = t - fill.depth_in - self.scribe_extra_depth_in
                 ox, oy = s["origin"]
-                for x0, y0, x1, y1 in fill.lines:
-                    d = self.scribe_off_in
-                    lines += [f"G0 X{x0 - ox + d:.4f} Y{y0 - oy:.4f}", f"Z{retract:g}", f"G1 Z{z:.4f} F20.",
-                              f"G1 X{x1 - ox + d:.4f} Y{y1 - oy:.4f} F60.", f"G0 Z{clear:g}"]
+                d = self.scribe_off_in
+                for path in fill.paths:
+                    (x0, y0), rest = path[0], path[1:]
+                    lines += [f"G0 X{x0 - ox + d:.4f} Y{y0 - oy:.4f}", f"Z{retract:g}", f"G1 Z{z:.4f} F20."]
+                    lines += [f"G1 X{x - ox + d:.4f} Y{y - oy:.4f} F60." for x, y in rest] + [f"G0 Z{clear:g}"]
                 continue
             if f"[{FACE}]" in op.lower():                # a skim inside each faced copy's box, at the face depth
                 fill = s["fills"][op]

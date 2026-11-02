@@ -77,9 +77,10 @@ class OpFill:
     floors: Tuple[Tuple[str, int], ...] = ()                # pocket, pocketfinish: (copy id, floor face id)
     tops: Tuple[Tuple[str, int], ...] = ()                  # face: (copy id, top face id), each skimmed inside
     depth_in: float = 0.0                                   # its outline, this deep from the stock top (scribe too)
-    lines: Tuple[Tuple[float, float, float, float], ...] = ()   # scribe: bend lines (design X/Y), the tool center
-                                                                # along each, from the stock top down by depth_in
-                                                                # (stock_in: almost minus the tool's radius)
+    paths: Tuple[Tuple[Tuple[float, float], ...], ...] = ()   # scribe: bend lines and U/D letters (design X/Y),
+                                                                # polylines the tool center follows, one chain each,
+                                                                # from the stock top down by depth_in (stock_in:
+                                                                # almost minus the radius Fusion offsets it by)
     stock_in: Optional[float] = None                        # bearing: radial stock to leave (None: the template's)
 
 
@@ -162,7 +163,7 @@ class Adapter:
     def fill(self, sheet: str, op_name: str, fill: OpFill) -> None:
         """Select what the op cuts. Inner ops also get bottom height = stock bottom; pocket ops keep the
         template's (the selected floor); the face op gets bottom height = stock top less fill.depth_in. A scribe
-        op (a copy of the template's [outer]) follows fill.lines with its tool center: radial stock fill.stock_in
+        op (a copy of the template's [outer]) follows fill.paths with its tool center: radial stock fill.stock_in
         (almost minus the tool's radius: Fusion refuses compensation 'off', r041-r043), no leads, ramps, tabs or
         extra passes, from the stock top down to fill.depth_in below it, in one pass."""
         raise NotImplementedError

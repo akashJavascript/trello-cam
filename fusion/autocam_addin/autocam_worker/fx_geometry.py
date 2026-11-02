@@ -220,4 +220,4 @@ def extract(name: str, occ) -> PartGeometry:
                         center_in=(to_in(_along(geom.origin, u)), to_in(_along(geom.origin, w))),
                         sweep_deg=min(360.0, math.degrees(f.area / (r * height))) if r > 0 and height > TOL_CM else 0.0)
         out.append(Face(**data))
-    return PartGeometry(name, 1, to_in(z1 - z0), tuple(out), _sharp_inside_corners(body, axis))
+    return PartGeometry(name, 1, to_in(z1 - z0), tuple(out), _sharp_inside_corners(body, axis), axis_z=axis.z)

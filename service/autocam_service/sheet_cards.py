@@ -225,8 +225,9 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
             lines.append(f"- {part_cards.get(p.part_key, (p.name, ''))[0]}: {bend_text(p.bends)}"
                          + (f" ({m.name} can crack at a tight bend: check it)" if m.name == "6061" else ""))
         if any(p.part_key in scribed for p in bent):
-            lines.append("Scribed parts have a line down the middle of each bend on the side that was up: line "
-                         "that up with the brake.")
+            lines.append("Scribed parts have a line down the middle of each bend on the side that was up, with a U or "
+                         "D beside it: U, bend the flange up toward the scribed side (it ends up inside the bend); D, "
+                         "bend it away. Line the scribed line up with the brake.")
 
     use = sheet_use(s)
     if use:

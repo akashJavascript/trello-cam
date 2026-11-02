@@ -3,9 +3,10 @@ own endmill in the sheet's program or with the chamfer mill (T16) in a SCRIBE pr
 choice, 2026-11-01: both, off unless asked; 10 to 15 thou deep). Scribing never holds a sheet up."""
 
 import json
+from dataclasses import replace
 
 from autocam_core.names import face_program_name, scribe_program_name
-from autocam_core.scribe import in_sections, scribe_sections
+from autocam_core.scribe import bend_letter, in_sections, scribe_sections
 from autocam_core.toolpoints import cutting_points
 from autocam_service.sheet_cards import sheet_description
 from geombuilder import PlateBuilder
@@ -16,12 +17,13 @@ BEND = {"name": "Bend D", "angle_deg": 90.0, "direction": "down", "radius_in": 0
 X, WIDTH = 2.9165, 0.167                          # the bend zone: 3 in from the left, 0.167 in wide
 
 
-def bent_plate():
-    """A 6 x 4 in flat whose top is split along its one bend: flat, strip, flat (face ids 1, 7, 8)."""
+def bent_plate(axis_z=1.0):
+    """A 6 x 4 in flat whose top is split along its one bend: flat, strip, flat (face ids 1, 7, 8). axis_z: +1 its
+    up side is the flat pattern's top (the STEP's +Z), -1 its bottom."""
     b = PlateBuilder("bracket")
     z = b._face(kind="plane", z0=0.125, z1=0.125, normal_dot=1.0, area=0.67)
     f = b._face(kind="plane", z0=0.125, z1=0.125, normal_dot=1.0, area=11.67)
-    return b.build(), (b.top, z, f)
+    return replace(b.build(), axis_z=axis_z), (b.top, z, f)
 
 
 def top_loops(ids, w=6.0, h=4.0):
@@ -35,10 +37,10 @@ def top_loops(ids, w=6.0, h=4.0):
                 ("e2", (x1, h), (x1, 0), True)]}
 
 
-def bent_job(rig, way="endmill", face=(), qty=2, lines=True):
-    geom, ids = bent_plate()
-    job = rig.job([("bracket", qty, geom, (6.0, 4.0)), ("spacer", 1, plate(), (3.0, 3.0))], face=face,
-                  bends={"bracket": [BEND]}, scribe={"bracket": way})
+def bent_job(rig, way="endmill", face=(), qty=2, lines=True, axis_z=1.0, bends=(BEND,), size=(6.0, 4.0)):
+    geom, ids = bent_plate(axis_z)
+    job = rig.job([("bracket", qty, geom, size), ("spacer", 1, plate(), (3.0, 3.0))], face=face,
+                  bends={"bracket": list(bends)}, scribe={"bracket": way})
     if lines:
         rig.fake.tops[str(rig.tmp / "steps" / "bracket.step")] = top_loops(ids)
     return job
@@ -54,11 +56,18 @@ def test_the_endmill_scribes_in_the_sheets_own_program_before_the_outlines(tmp_p
     s = rig.fake.sheets[sheet.name]
     assert s["ops"].index("[scribe] bend lines") < min(s["ops"].index(n) for n, _, _ in s["outer"])
     fill = s["fills"]["[scribe] bend lines"]
-    assert fill.tag == "scribe" and fill.depth_in == 0.012 and len(fill.lines) == 2       # one bend, two copies
+    assert fill.tag == "scribe" and fill.depth_in == 0.012
     assert abs(fill.stock_in - (-(0.15748 / 2 - 0.001))) < 1e-9      # the center on the line ('off' is refused)
-    for x0, y0, x1, y1 in fill.lines:
+    lines = [p for p in fill.paths if len(p) == 2]
+    letters = [p for p in fill.paths if len(p) > 2]
+    assert len(lines) == 2 and len(letters) == 2                      # one bend and its letter on each of two copies
+    for (x0, y0), (x1, y1) in lines:
         box = rig.fake.boxes[next(c for c in s["copies"] if abs(rig.fake.boxes[c].x0 + X + WIDTH / 2 - x0) < 1e-9)]
         assert x0 == x1 and {y0 - box.y0, y1 - box.y0} == {0.0, 4.0}
+    for letter in letters:                                            # Bend D is down, scribed on the flat's top: D
+        assert len(letter) == 9 and letter[0] == letter[-1]
+        assert all(abs(x - lines[0][0][0]) > 0.0835 + 0.109 for x, _ in letter) or \
+            all(abs(x - lines[1][0][0]) > 0.0835 + 0.109 for x, _ in letter)        # clear of the bend zone
     assert [(p.part_key, p.count) for p in sheet.scribed] == [("p01", 2)] and sheet.programs == ()
     text = (rig.out / sheet.tap).read_text()
     assert "[scribe bend lines]" in text and "Z0.1130" in text                            # 1/8 in less 0.012
@@ -176,6 +185,29 @@ def test_a_scribe_op_that_cant_be_set_up_is_left_out_not_deleted(tmp_path):
     assert rig.fake.sheets[sheet.name]["suppressed"] == ["[scribe] bend lines"]
     assert any("bad chain" in w.msg and "Part" not in w.msg and "bracket" in w.msg for w in sheet.warnings)
     assert "[scribe" not in (rig.out / sheet.tap).read_text()
+
+
+def test_a_part_flipped_over_gets_u_for_a_down_bend(tmp_path):
+    rig = Rig(tmp_path)
+    result = rig.run(bent_job(rig, "chamfer", axis_z=-1.0, qty=1))
+    (sheet,) = result.sheets
+    assert result.status == "ok", sheet.warnings
+    fill = rig.fake.sheets[scribe_program_name(sheet.name)]["fills"]["[scribe] bend lines"]
+    (letter,) = [p for p in fill.paths if len(p) > 2]
+    assert len(letter) == 8 and letter[0] != letter[-1]               # U: open
+    xs = [x for x, _ in letter]
+    assert max(xs) - min(xs) <= 0.25 + 1e-9                           # the chamfer mill's small letter
+
+
+def test_no_letter_without_room_or_when_bends_alike_go_opposite_ways(tmp_path):
+    rig = Rig(tmp_path)
+    (sheet,) = rig.run(bent_job(rig, size=(6.0, 0.6))).sheets        # too narrow for a 0.8 in tall endmill letter
+    assert sheet.tap is not None and [p for p in rig.fake.sheets[sheet.name]["fills"]["[scribe] bend lines"].paths
+                                      if len(p) > 2] == []
+    assert any("not every bend line has its U or D (no room" in w.msg for w in sheet.warnings)
+    assert bend_letter(0.167, [(90.0, 0.05, "down"), (90.0, 0.05, "up")], 0.125, True) is None
+    assert bend_letter(0.167, [(90.0, 0.05, "down"), (45.0, 0.5, "up")], 0.125, True) == "D"
+    assert bend_letter(0.167, [(90.0, 0.05, "up")], 0.125, None) is None
 
 
 def test_only_bent_parts_are_scribed(tmp_path):

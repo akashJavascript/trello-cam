@@ -43,6 +43,8 @@ class PartGeometry:
     thickness_in: float             # oriented bounding box extent along the plate axis
     faces: Tuple[Face, ...]
     sharp_inside_corners: int = 0   # through-thickness concave edges with no radius (counted by the extractor)
+    axis_z: float = 0.0             # the plate axis's Z in the STEP file's own frame (+1: up is the file's +Z side,
+                                    # a flat pattern's top; 0: not known). Bent parts' U/D marks need it (core 0.18.0)
 
     def flipped(self) -> "PartGeometry":
         """The same part turned over: heights measured from the other side, normals reversed.
@@ -53,7 +55,7 @@ class PartGeometry:
         faces = tuple(
             replace(f, z_min_in=t - f.z_max_in, z_max_in=t - f.z_min_in, normal_dot=-f.normal_dot)
             for f in self.faces)
-        return replace(self, faces=faces)
+        return replace(self, faces=faces, axis_z=-self.axis_z)
 
     def face(self, face_id: int) -> Face:
         for f in self.faces:
@@ -70,4 +72,5 @@ class PartGeometry:
             name=data["name"], solid_bodies=int(data["solid_bodies"]), thickness_in=float(data["thickness_in"]),
             faces=tuple(Face.from_dict(f) for f in data["faces"]),
             sharp_inside_corners=int(data.get("sharp_inside_corners", 0)),
+            axis_z=float(data.get("axis_z", 0.0)),
         )

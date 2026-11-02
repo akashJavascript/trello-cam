@@ -197,10 +197,21 @@ class FusionAdapter(Adapter):
                 sk.name = f"BEND LINES {sheet}"
                 self.scribe_sketch[sheet] = sk
             lines = self.scribe_sketch[sheet].sketchCurves.sketchLines
-            made = [call("bend line", lines.addByTwoPoints, adsk.core.Point3D.create(to_cm(x0), to_cm(y0), 0),
-                         adsk.core.Point3D.create(to_cm(x1), to_cm(y1), 0)) for x0, y0, x1, y1 in fill.lines]
-            self.trace.append(f"{_stamp()}   scribe: select {len(made)} lines")
-            call(f"{op_name}: select bend lines", fx_cam.select_lines, op, made, params["selections"]["contour"])
+            chains = []
+            if any(len(path) > 2 for path in fill.paths):
+                self._used("scribe_letters")
+            for path in fill.paths:                      # each path its own chain of connected sketch lines
+                closed = len(path) > 2 and path[0] == path[-1]
+                pts = [adsk.core.Point3D.create(to_cm(x), to_cm(y), 0) for x, y in (path[:-1] if closed else path)]
+                made = []
+                for nxt in pts[1:]:
+                    made.append(call("bend line", lines.addByTwoPoints, made[-1].endSketchPoint if made else pts[0], nxt))
+                if closed:
+                    made.append(call("bend line", lines.addByTwoPoints, made[-1].endSketchPoint,
+                                     made[0].startSketchPoint))
+                chains.append(made)
+            self.trace.append(f"{_stamp()}   scribe: select {len(chains)} chains")
+            call(f"{op_name}: select bend lines", fx_cam.select_lines, op, chains, params["selections"]["contour"])
         elif fill.tag == POCKETFINISH:
             self._used("pocket_walls")
             loops = [fx_geometry.outer_loop(fx_design.face_by_id(self._occ(cid), fid)) for cid, fid in fill.floors]

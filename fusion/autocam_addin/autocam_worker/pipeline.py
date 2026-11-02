@@ -70,8 +70,8 @@ from autocam_core.schema_result import (
     RESULT_SCHEMA, FusionTeamResult, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary,
     PostResult, ProgramResult, Result, SheetPart, SheetResult, ToolForce, WorkerInfo, overall_status, result_json,
 )
-from autocam_core.scribe import (Line, bend_centerlines, distance_to_line, in_sections, off_the_lines, scribe_sections,
-                                 tip_radius_in)
+from autocam_core.scribe import (Line, bend_letter, bend_strips, distance_to_line, in_sections, letter_box, letter_path,
+                                 mark_spot, off_the_lines, path_segments, scribe_sections, tip_radius_in)
 from autocam_core.sheetcheck import (check_face_program, check_fit_program, check_scribe_program, check_sheet_program,
                                      pause_spec)
 from autocam_core.tooling import FeaturePlan, ToolNeed, part_tool, plan_features, sheet_tool
@@ -1157,35 +1157,86 @@ def _scribe_depth(job: Job, depth_in: float, faced: bool) -> float:
     return depth_in + (job.face.depth_in if faced and job.face is not None else 0.0)
 
 
+def _letter_size(job: Job, sheet: _Sheet, way: str, depth_in: float) -> Tuple[float, float, float]:
+    """(width, height, clearance) of the U/D beside a line: small with the chamfer mill (its line is 2 x the depth
+    wide), five cutters tall with the sheet's endmill."""
+    if way == "chamfer":
+        return 0.18, 0.25, depth_in + 0.03
+    d = job.tooling.tools[sheet.tool_key].diameter_in
+    return 3.75 * d, 5 * d, d / 2 + 0.03
+
+
+def _copy_paths(adapter: Adapter, job: Job, sheet: _Sheet, part: _Part, copy_id: str, way: str
+                ) -> Tuple[List[Tuple[Tuple[float, float], ...]], str, List[str]]:
+    """One copy's bend lines and their U/D letters as paths (design X/Y), why it can't be scribed (""), and why some
+    of its bends got no letter."""
+    faces = adapter.top_edges(copy_id, tuple(part.analysis.top_face_ids))
+    bends = part.spec.bends
+    strips, why = bend_strips(faces, [(b.angle_deg, b.radius_in) for b in bends], part.analysis.measured_thickness_in)
+    if why:
+        return [], why, []
+    paths = [((ln[0], ln[1]), (ln[2], ln[3])) for ln, _ in strips]
+    axis_z = part.analysis.geometry.axis_z if part.analysis.geometry is not None else 0.0
+    top = None if abs(axis_z) < 0.5 else axis_z > 0
+    depth = _scribe_depth(job, job.scribe.depth_in if way == "endmill" else job.scribe.chamfer_depth_in,
+                          part.spec.face)
+    w, h, clear = _letter_size(job, sheet, way, depth)
+    outline = flatten(adapter.loop_segments(copy_id, outline_face(part), None))
+    geom = part.analysis.geometry
+    holes = [flatten(adapter.loop_segments(copy_id, fid, i)) for fid in part.analysis.top_face_ids
+             for i in range(len(geom.face(fid).inner_loops))]
+    taken: List[List[Tuple[float, float]]] = []
+    no_letter: List[str] = []
+    for ln, width in strips:
+        letter = bend_letter(width, [(b.angle_deg, b.radius_in, b.direction) for b in bends],
+                             part.analysis.measured_thickness_in, top)
+        if letter is None:
+            no_letter.append("which face is up isn't known" if top is None else
+                             "bends alike go opposite ways, so which is which can't be told")
+            continue
+        spot = mark_spot(ln, width / 2, w, h, clear, outline, holes, strips, taken)
+        if spot is None:
+            no_letter.append(f"no room for a {w:.2g} x {h:.2g} in letter beside a line")
+            continue
+        path = letter_path(letter, spot[0], spot[1], w, h)
+        paths.append(path)
+        taken.append(letter_box(spot[0], spot[1], w + 2 * clear, h + 2 * clear))
+    return paths, "", no_letter
+
+
 def _scribe_groups(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part], way: str
-                   ) -> Tuple[Dict[bool, List[Line]], Dict[str, int]]:
-    """The bend lines of the copies on the sheet whose part asks to be scribed `way`, by faced or not, and how
-    many copies of each part that is. A part whose lines can't be found on every copy isn't scribed: a sheet
-    warning says to mark its bends by hand."""
-    found: Dict[str, List[Tuple[Line, ...]]] = {}
+                   ) -> Tuple[Dict[bool, List[Tuple[Tuple[float, float], ...]]], Dict[str, int]]:
+    """The bend lines and U/D letters (as paths) of the copies on the sheet whose part asks to be scribed `way`, by
+    faced or not, and how many copies of each part that is. A part whose lines can't be found on every copy isn't
+    scribed: a sheet warning says to mark its bends by hand; one with bends left unlettered gets a warning too."""
+    found: Dict[str, List[List[Tuple[Tuple[float, float], ...]]]] = {}
     missed: Dict[str, str] = {}
+    unlettered: Dict[str, str] = {}
     for _, placed in sheet.instances:
         part = parts[placed.part_key]
         if part.spec.scribe != way or part.key in missed:
             continue
         try:
-            faces = adapter.top_edges(placed.body_id, tuple(part.analysis.top_face_ids))
+            paths, why, no_letter = _copy_paths(adapter, job, sheet, part, placed.body_id, way)
         except AdapterError as e:
-            missed[part.key] = f"its top couldn't be read: {e}"
-            continue
-        lines, why = bend_centerlines(faces, [(b.angle_deg, b.radius_in) for b in part.spec.bends],
-                                      part.analysis.measured_thickness_in)
+            paths, why, no_letter = [], f"its top couldn't be read: {e}", []
         if why:
             missed[part.key] = why
-        else:
-            found.setdefault(part.key, []).append(lines)
+            continue
+        found.setdefault(part.key, []).append(paths)
+        if no_letter and part.key not in unlettered:
+            unlettered[part.key] = no_letter[0]
     for key, why in missed.items():
         found.pop(key, None)
         sheet.warnings.append(Issue(E.OP_WARNING, f"{parts[key].spec.name}: its bend lines aren't scribed ({why}). "
                                                   "Mark them by hand."))
-    groups: Dict[bool, List[Line]] = {}
+    for key, why in unlettered.items():
+        if key in found:
+            sheet.warnings.append(Issue(E.OP_WARNING, f"{parts[key].spec.name}: not every bend line has its U or D "
+                                                      f"({why}): the bend list says which way"))
+    groups: Dict[bool, List[Tuple[Tuple[float, float], ...]]] = {}
     for key, per_copy in found.items():
-        groups.setdefault(bool(parts[key].spec.face), []).extend(ln for lines in per_copy for ln in lines)
+        groups.setdefault(bool(parts[key].spec.face), []).extend(p for paths in per_copy for p in paths)
     return groups, {key: len(per_copy) for key, per_copy in found.items()}
 
 
@@ -1208,7 +1259,7 @@ def _build_sheet_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[s
         tool = job.tooling.tools[sheet.tool_key]
         try:
             adapter.copy_op(sheet.name, outer_op, name)
-            adapter.fill(sheet.name, name, OpFill(SCRIBE, lines=tuple(lines),
+            adapter.fill(sheet.name, name, OpFill(SCRIBE, paths=tuple(lines),
                                                   depth_in=_scribe_depth(job, job.scribe.depth_in, faced),
                                                   stock_in=-(tool.diameter_in / 2 - SCRIBE_EPS_IN)))
         except AdapterError as e:
@@ -1217,7 +1268,7 @@ def _build_sheet_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[s
             sheet.warnings.append(Issue(E.OP_WARNING, f"bend lines not scribed ({e}): mark them by hand on "
                                                       f"{', '.join(parts[k].spec.name for k in keys)}"))
             continue
-        sheet.scribe_ops[name] = tuple(lines)
+        sheet.scribe_ops[name] = tuple(path_segments(lines))
         sheet.scribed.update({k: counts[k] for k in keys})
 
 
@@ -1266,7 +1317,7 @@ def _build_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _P
         for faced in made:
             op = scribe_op_name(faced)
             adapter.set_tool(name, op, s.chamfer_tool_json)
-            adapter.fill(name, op, OpFill(SCRIBE, lines=tuple(groups[faced]),
+            adapter.fill(name, op, OpFill(SCRIBE, paths=tuple(groups[faced]),
                                           depth_in=_scribe_depth(job, s.chamfer_depth_in, faced),
                                           stock_in=-max(tip_radius_in(s.chamfer_tool_json) - SCRIBE_EPS_IN, 0.0)))
     except AdapterError as e:
@@ -1279,7 +1330,7 @@ def _build_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _P
             sheet.errors.append(Issue(E.OP_ERROR, f"the scribe setup {name} couldn't be emptied: {e2}"))
         return
     sheet.scribe_name = name
-    sheet.scribe_lines = tuple(ln for faced in made for ln in groups[faced])
+    sheet.scribe_lines = tuple(path_segments([p for faced in made for p in groups[faced]]))
     sheet.scribe_counts = counts
 
 
@@ -1598,6 +1649,17 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
         if not part.ok:
             _drop(adapter, part, log)
             log(f"{part.key}: rejected: {'; '.join(i.msg for i in part.errors)}")
+        elif part.spec.scribe and part.analysis.geometry is not None:
+            # Which face its U/D letters assume is up: checkable against the STEP (a flat lies on its XY plane,
+            # its top at +Z) as long as Fusion kept the file's coordinates, which the box at import shows.
+            z = part.analysis.geometry.axis_z
+            try:
+                b = adapter.box(part.copies[0])
+                where = f"imported at X {b.x0:.3f} to {b.x1:.3f}, Y {b.y0:.3f} to {b.y1:.3f}, Z {b.z0:.3f} to {b.z1:.3f}"
+            except AdapterError as e:
+                where = f"box unreadable: {e}"
+            notes.append(f"{part.spec.name}: up on the machine is its flat's "
+                         f"{'top (+Z)' if z > 0.5 else 'bottom (-Z)' if z < -0.5 else 'unknown side'} ({where})")
 
     for part in parts.values():
         if not part.ok:

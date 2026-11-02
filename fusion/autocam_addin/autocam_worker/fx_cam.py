@@ -50,6 +50,8 @@ UNCONFIRMED = {
                     "top down by the depth",
     "scribe_tool": "Operation.tool = Tool.createFromJson(the library's chamfer mill), then its preset's feeds and "
                    "speeds, coolant left disabled",
+    "scribe_letters": "a U or D beside each bend line: one chain of connected sketch lines (closed for the D), in the "
+                      "same [scribe] op",
 }
 
 
@@ -209,14 +211,14 @@ def face_depth(op, depth_in: float) -> None:
     _set_length(op, "bottomHeight_offset", -depth_in)
 
 
-def select_lines(op, curves, contour_param: str) -> None:
-    """Each curve (a sketch line) as an open chain of its own: the tool center follows it (compensation off)."""
+def select_lines(op, chains, contour_param: str) -> None:
+    """Each list of connected sketch lines (a bend line, a letter) as a chain of its own, in order."""
     value = _contours(op, contour_param)
     sels = value.getCurveSelections()
     sels.clear()
-    for curve in curves:
+    for curves in chains:
         chain = sels.createNewChainSelection()
-        chain.inputGeometry = [curve]       # isOpenAllowed is read-only (r040, 2026-11-01): an open line stays open
+        chain.inputGeometry = list(curves)  # isOpenAllowed is read-only (r040, 2026-11-01): an open line stays open
     value.applyCurveSelections(sels)
 
 
