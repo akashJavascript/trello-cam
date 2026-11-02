@@ -184,7 +184,10 @@ Tabs at points and the shape (2026-10-03, test jobs `tpts1`-`tpts4`, `ttri1`):
   simulation (`SubtractiveStockGenerator` -> `ToolpathToNCStreamBinder::onCircularMove` ->
   `ToolSpaceGeometrySimulator::onLinear`), on both attempts of `tsize1`. 0.157 in never did. Placement now
   keeps tabs on one edge, and 0.3 in **still crashed** Fusion in `generate()` on the same 4 plates
-  (r054, 2026-11-01, right after `set_tab_points`). Kept at the template's 0.157 in.
+  (r054, 2026-11-01, right after `set_tab_points`). Found 2026-11-02: it's a tab whose ramp (its width plus a cutter
+  diameter each side) runs into a corner, fillet or curve; 0.3 in tabs all on room for their ramp generated fine (r060).
+  `[tabs] wide_max_tier = 0` keeps them there. After a crash Fusion's "Recovered Documents" window blocks generation
+  silently until closed; the add-in closes it (fx_util.wait_for).
 
 Since the tab counts (2026-10-03): `tabPositioning` = 'tabCount' with `tabsPerContour` (the template's own
 parameter, 1 there), on outline ops and on copies of the `[inner]` op (`fx_cam.copy_op`:

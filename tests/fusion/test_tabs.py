@@ -47,7 +47,7 @@ def test_every_cutout_gets_tabs_by_its_length_however_short(tmp_path):
     plain = with_cutouts("spacer", [5.0])
     job = rig.job([("bracket", 1, tabbed, (8.0, 6.0)), ("spacer", 1, plain, (4.0, 4.0))])
     job = dataclasses.replace(job, parts=(dataclasses.replace(job.parts[0], tabs=True), job.parts[1]),
-                              tabs=dataclasses.replace(job.tabs, width_in=0.3, height_in=0.0394))
+                              tabs=dataclasses.replace(job.tabs, width_in=0.3, height_in=0.0394, wide_max_tier=4))
     result = rig.run(job)
     [sheet] = result.sheets
     assert sheet.tap and not sheet.errors
@@ -94,8 +94,9 @@ def test_if_fusion_wont_take_points_it_spreads_the_same_number_evenly(tmp_path):
     [sheet] = result.sheets
     assert sheet.tap and not sheet.errors
     [fake] = rig.fake.sheets.values()
-    assert fake["tabs"] == {"[inner] cutouts - 2 tabs each": 2, "[outer] p01-1": 6} and fake["tab_points"] == {}
+    assert fake["tabs"] == {"[inner] cutouts - 2 tabs each (narrow tabs)": 2, "[outer] p01-1": 6} and fake["tab_points"] == {}
     assert any("tabs at points didn't work" in n and "spread evenly by Fusion instead" in n for n in sheet.notes)
+    assert fake["tab_size"]["[outer] p01-1"][0] < 0.2       # Fusion's own spots can be on curves: never 0.3 in there
 
 
 def test_the_preview_gets_label_spots_for_every_part(tmp_path):
@@ -112,3 +113,21 @@ def test_the_preview_gets_label_spots_for_every_part(tmp_path):
     assert names[order["p01-1"]] == ("gusset", "1/2") and names[order["p01-2"]] == ("gusset", "2/2")
     assert names[order["p02-1"]] == ("bracket", "")
     assert all(0 < s["x"] < 1000 and 0 < s["y"] < 1600 and s["room"] > 0 for s in spots["labels"])
+
+
+def test_wide_tabs_only_where_their_ramp_has_room_else_the_templates(tmp_path):
+    # 2026-11-02: 0.3 in tabs crashed Fusion's stock simulation whenever one's ramp ran into a corner, fillet or
+    # curve (tsize1, r054, r059) and never with every one on room for its whole ramp (r060). The fake's cutouts are
+    # 0.5 in squares: no room for a 0.3 in tab's ramp, so they keep the template's width in an op of their own.
+    rig = Rig(tmp_path)
+    job = rig.job([("bracket", 1, with_cutouts("bracket", [5.0, 5.0]), (8.0, 6.0))])
+    job = dataclasses.replace(job, parts=(dataclasses.replace(job.parts[0], tabs=True),),
+                              tabs=dataclasses.replace(job.tabs, width_in=0.3, height_in=0.0394, wide_max_tier=0))
+    result = rig.run(job)
+    [sheet] = result.sheets
+    assert sheet.tap and not sheet.errors
+    [fake] = rig.fake.sheets.values()
+    inner = [op for op in fake["ops"] if op.startswith("[inner]")]
+    assert "[inner] cutouts - 2 tabs each (narrow tabs)" in inner and "[inner] cutouts - 2 tabs each" not in inner
+    assert fake["tab_size"]["[inner] cutouts - 2 tabs each (narrow tabs)"] == (0.0, 0.0394)    # the template's width
+    assert fake["tab_size"]["[outer] p01-1"] == (0.3, 0.0394) and len(fake["tab_points"]["[outer] p01-1"]) == 6

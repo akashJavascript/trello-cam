@@ -301,7 +301,8 @@ class FusionAdapter(Adapter):
             raise AdapterError(f"{op_name}: isSuppressed didn't stick")
 
     def generate(self, sheets):
-        return fx_cam.generate(self.cam, {s: self._setup(s) for s in sheets}, self.timeout, self._used)
+        return fx_cam.generate(self.cam, {s: self._setup(s) for s in sheets}, self.timeout, self._used,
+                               lambda line: self.trace.append(f"{_stamp()} {line}"))
 
     def post(self, sheet, program_name, folder, post_path, properties):
         self._used("post_properties")

@@ -949,6 +949,22 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - **Quantities from 2 assemblies** (`max_assemblies`, was 4): 1 + 2 calls per document per 30 minutes.
 - Not changed (offered): `assembly_cache_s` and `parts_cache_s`.
 
+## 2026-11-02: 0.3 in tabs work, on straight edges with room for the ramp (the user: "fix why 0.3 doesn't work")
+
+- **The cause:** Fusion's stock simulation (`SubtractiveStockGenerator` -> `onCircularMove`) crashes when a wide tab's
+  ramp runs into a corner, a fillet or a curve. The cutter climbs over a tab across its width plus a cutter diameter
+  each side (0.46 in for a 0.3 in tab with the 4 mm), and placement only kept the tab itself on an edge, away from
+  sharp corners. Every crash had tabs across corners, joins or on curves (tsize1, r054, r059); with every tab on a
+  spot with room for its whole ramp on one straight run, the same four plates generated fine (r060).
+- **The fix:** `[tabs] wide_max_tier = 0`: tabs wider than the cutter only on tier 0 spots, which now need that whole
+  climb on one straight run (measured to its ends, fillets included). A cutout without room for its tabs goes in
+  its own op with the template's width ("[inner] cutouts - 2 tabs each (narrow tabs)"); an outline or fitted
+  feature without room gets the template's width for its op. Each op's spots by tier go in fusion_calls.log.
+- **A trap found on the way:** after a crash, Fusion shows "Recovered Documents" over the first document, and while
+  it's up toolpaths never generate, with no error (r055-r058 sat in generate; one closed it and r058 finished).
+  The add-in now clicks its Close (fx_util.wait_for, close_recovered.ps1, UI Automation) when a generation hasn't
+  finished after 20 s; the recovered files stay under File > Recover Documents. The earlier "0.3 in hangs" were this.
+
 ## 2026-11-01: configured parts (the user picked it from the old panel's list)
 
 - **The configuration lives in the card's link** (`?configuration=`, as Onshape's address bar has it), not a new

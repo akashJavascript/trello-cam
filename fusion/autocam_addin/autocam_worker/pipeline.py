@@ -899,17 +899,62 @@ def _op_tag(name: str) -> Optional[str]:
     return found[0] if len(found) == 1 else None
 
 
+def _wide(job: Job, tool_d: float) -> bool:
+    """Tabs wider than the cutter: Fusion's stock simulation crashes when one's ramp runs into a corner, fillet or
+    curve (0.3 in: tsize1, r054, r059), and never did with them all on spots with room for the whole ramp (r060)."""
+    return job.tabs.width_in > tool_d * 1.05 and job.tabs.wide_max_tier < 4
+
+
+def _room_for_wide(adapter: Adapter, job: Job, contour: Tuple[str, int, Optional[int]], n: int, tool_d: float) -> bool:
+    cid, fid, index = contour
+    return len(place_tabs(adapter.loop_segments(cid, fid, index), n, tool_d, job.tabs.width_in,
+                          max_tier=job.tabs.wide_max_tier)) >= n
+
+
+def _tabbed_cutouts(adapter: Adapter, job: Job, sheet: _Sheet, where: str, base_op: str,
+                    tabbed: Dict[int, List[Tuple[str, int, Optional[int]]]], tool_d: float,
+                    setup: Optional[str] = None) -> None:
+    """Tabbed parts' cutouts: a copy of `base_op` per tab count, made before it's filled, so each copy starts empty.
+    With wide tabs, cutouts without room for them on safe spots get their own copy with the template's width."""
+    for n, group in sorted(tabbed.items()):
+        wide_ok, narrow = list(group), []
+        if _wide(job, tool_d) and job.tabs.at_points:
+            try:
+                fits = [_room_for_wide(adapter, job, g, n, tool_d) for g in group]
+                wide_ok = [g for g, ok in zip(group, fits) if ok]
+                narrow = [g for g, ok in zip(group, fits) if not ok]
+            except AdapterError:
+                wide_ok, narrow = [], list(group)      # couldn't read the contours: the template's width is safe
+        label = f"{base_op} - {n} tab{'s' if n != 1 else ''} each"
+        for loops, name, width in ((wide_ok, label, None), (narrow, f"{label} (narrow tabs)", 0.0)):
+            if not loops:
+                continue
+            adapter.copy_op(where, base_op, name)
+            adapter.fill(where, name, OpFill(INNER, loops=tuple(loops)))
+            _tab_op(adapter, job, sheet, name, list(loops), n, tool_d, setup=setup, width=width)
+
+
 def _tab_op(adapter: Adapter, job: Job, sheet: _Sheet, op_name: str,
             contours: Sequence[Tuple[str, int, Optional[int]]], per_contour: int, tool_d: float,
-            setup: Optional[str] = None) -> None:
+            setup: Optional[str] = None, width: Optional[float] = None) -> None:
     """Tabs on one contour op: `per_contour` on each of its contours (copy id, face id, inner loop index or None
     for the outer loop), placed by tabs.place_tabs and given to Fusion as points; if that fails, Fusion spreads
     the same number evenly (and the sheet card says so). setup: another setup of the sheet (a fit lap): the same
     tabs there, nothing recorded twice."""
     where = setup or sheet.name
-    if job.tabs.width_in or job.tabs.height_in:
+    w = job.tabs.width_in if width is None else width     # width: 0.0 for the template's (cutouts without room)
+    wide = width is None and _wide(job, tool_d)
+    if wide and job.tabs.at_points:
         try:
-            adapter.set_tab_size(where, op_name, job.tabs.width_in, job.tabs.height_in)
+            if not all(_room_for_wide(adapter, job, c, per_contour, tool_d) for c in contours):
+                w, wide = 0.0, False                  # an outline or fitted feature without room: all narrow
+                sheet.notes.append(f"{op_name}: the template's tab width (no room for {job.tabs.width_in:g} in tabs "
+                                   "on straight edges)")
+        except AdapterError:
+            w, wide = 0.0, False
+    if w or job.tabs.height_in:
+        try:
+            adapter.set_tab_size(where, op_name, w, job.tabs.height_in)
         except AdapterError as e:
             sheet.warnings.append(Issue(E.OP_WARNING, f"{op_name}: the tab size stayed the template's ({e})"))
     if job.tabs.at_points:
@@ -917,10 +962,9 @@ def _tab_op(adapter: Adapter, job: Job, sheet: _Sheet, op_name: str,
             points = []
             on_lines = clear = 0
             tiers = [0] * 5
-            wide = job.tabs.width_in > tool_d * 1.05            # wider than the cutter: maybe not on curves
             for cid, fid, index in contours:
                 placed = place_tabs(adapter.loop_segments(cid, fid, index), per_contour, tool_d,
-                                    job.tabs.width_in or tool_d, max_tier=job.tabs.wide_max_tier if wide else 4)
+                                    w or tool_d, max_tier=job.tabs.wide_max_tier if wide else 4)
                 points += [(p.x, p.y) for p in placed]
                 on_lines += sum(p.on_line for p in placed)
                 clear += sum(p.clear_of_corners for p in placed)
@@ -940,6 +984,12 @@ def _tab_op(adapter: Adapter, job: Job, sheet: _Sheet, op_name: str,
         except AdapterError as e:
             sheet.notes.append(f"{where} {op_name}: tabs at points didn't work ({e}); {per_contour} per contour, "
                                "spread evenly by Fusion instead")
+    if w > tool_d * 1.05:                             # Fusion's own spots can be on curves: never wide there
+        try:
+            adapter.set_tab_size(where, op_name, tool_d, job.tabs.height_in)
+            sheet.notes.append(f"{op_name}: tabs spread by Fusion, so one cutter wide ({tool_d:.3f} in)")
+        except AdapterError as e:
+            sheet.warnings.append(Issue(E.OP_WARNING, f"{op_name}: couldn't narrow the tabs Fusion spreads ({e})"))
     adapter.set_tabs(where, op_name, per_contour)
 
 
@@ -1068,13 +1118,10 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
                 if fit.loops and fit.tabs:            # the slug stays held, through every lap too
                     _tab_op(adapter, job, sheet, keep, fit.loops, fit.tabs, tool_d)
         if tag == INNER:
-            # Tabbed parts' cutouts: a copy of the op per tab count, made before the op is filled, so each
-            # copy starts empty; they land after it (and before the outlines).
-            for n, group in sorted(tabbed.items()):
-                name = f"{names[0]} - {n} tab{'s' if n != 1 else ''} each"
-                adapter.copy_op(sheet.name, names[0], name)
-                adapter.fill(sheet.name, name, OpFill(INNER, loops=tuple(group)))
-                _tab_op(adapter, job, sheet, name, [(cid, fid, idx) for cid, fid, idx in group], n, tool_d)
+            # Tabbed parts' cutouts: a copy of the op per tab count (and tab width), made before the op is
+            # filled, so each copy starts empty; they land after it (and before the outlines).
+            _tabbed_cutouts(adapter, job, sheet, sheet.name, names[0],
+                            {n: [(cid, fid, idx) for cid, fid, idx in group] for n, group in tabbed.items()}, tool_d)
         fill = fills[tag]
         if fill.holes or fill.loops or fill.floors:
             adapter.fill(sheet.name, names[0], fill)
@@ -1236,11 +1283,8 @@ def _build_small(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
         return
     for tag, names in by_tag.items():
         if tag == INNER:
-            for n, group in sorted(tabbed.items()):
-                copy = f"{names[0]} - {n} tab{'s' if n != 1 else ''} each"
-                adapter.copy_op(name, names[0], copy)
-                adapter.fill(name, copy, OpFill(INNER, loops=tuple(group)))
-                _tab_op(adapter, job, sheet, copy, list(group), n, tool_d, setup=name)
+            _tabbed_cutouts(adapter, job, sheet, name, names[0], {n: list(g) for n, g in tabbed.items()}, tool_d,
+                            setup=name)
         fill = fills.get(tag)
         if fill is not None and (fill.holes or fill.loops):
             adapter.fill(name, names[0], fill)

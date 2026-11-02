@@ -440,11 +440,12 @@ def select_outline_chain(op, coedges, contour_param: str) -> None:
     value.applyCurveSelections(sels)
 
 
-def generate(cam, setups, timeout_s: float, used=lambda key: None):
+def generate(cam, setups, timeout_s: float, used=lambda key: None, trace=lambda line: None):
     all_ops = [o for s in setups.values() for o in ops(s)]
 
     def settle(future, what):
-        wait_for(lambda: future.isGenerationCompleted, timeout_s, what)
+        wait_for(lambda: future.isGenerationCompleted, timeout_s, what, unblock_after_s=20.0,
+                 said=lambda out: trace(f"  not generating after 20 s; Recovered Documents window: {out or 'no answer'}"))
         wait_for(lambda: not any(o.isGenerating for o in all_ops), timeout_s, f"{what} to finish")
 
     settle(call("generateAllToolpaths", cam.generateAllToolpaths, False), "toolpath generation")

@@ -1,6 +1,9 @@
 """UNTESTED IN FUSION. Small helpers shared by the fx_* modules (Fusion API units are cm)."""
 
+import os
+import subprocess
 import time
+from pathlib import Path
 
 import adsk.core
 
@@ -51,14 +54,43 @@ def set_expr(obj, name: str, expression: str) -> None:
         raise AdapterError(f"{name} = {expression} didn't stick (reads {p.expression})")
 
 
-def wait_for(done, timeout_s: float, what: str) -> float:
+CLOSE_RECOVERED = Path(__file__).with_name("close_recovered.ps1")
+
+
+def start_closing_recovered():
+    """Fusion's "Recovered Documents" window (shown over the first document after a crash) silently stops toolpaths
+    generating until it's closed (2026-11-02, r055-r059). A PowerShell UI Automation script clicks its Close; it
+    runs on its own while the caller keeps Fusion's events going (Fusion must answer it). None if it can't start."""
+    try:
+        return subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                                 str(CLOSE_RECOVERED), str(os.getpid())], stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, text=True, creationflags=0x08000000)   # no window
+    except OSError:
+        return None
+
+
+def wait_for(done, timeout_s: float, what: str, unblock_after_s=None, said=None) -> float:
+    """Wait, keeping Fusion's events going. unblock_after_s: still not done after this long, close Fusion's Recovered
+    Documents window if it's up (said gets what the script printed)."""
     t0 = time.time()
-    while not done():
-        adsk.doEvents()
-        time.sleep(0.1)
-        if time.time() - t0 > timeout_s:
-            raise AdapterError(f"timed out after {timeout_s:g} s waiting for {what}")
-    return time.time() - t0
+    proc = None
+    try:
+        while not done():
+            adsk.doEvents()
+            time.sleep(0.1)
+            if unblock_after_s is not None and proc is None and time.time() - t0 > unblock_after_s:
+                proc = start_closing_recovered()
+                unblock_after_s = None
+            if proc is not None and proc.poll() is not None:
+                if said is not None:
+                    said((proc.stdout.read() if proc.stdout else "").strip())
+                proc = None
+            if time.time() - t0 > timeout_s:
+                raise AdapterError(f"timed out after {timeout_s:g} s waiting for {what}")
+        return time.time() - t0
+    finally:
+        if proc is not None and proc.poll() is None:
+            proc.kill()
 
 
 def vec(v):
