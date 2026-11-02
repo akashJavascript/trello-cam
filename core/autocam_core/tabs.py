@@ -143,6 +143,37 @@ class _Contour:
         return b, i
 
 
+def _straight_runs(c: "_Contour") -> dict:
+    """Each line segment's straight run: (start, end) along the contour of the consecutive line segments going the
+    same way (within half a degree). A run that wraps past the contour's start has end < start."""
+    n = len(c.segs)
+    lines = [i for i in range(n) if c.segs[i].kind == "line" and c.seg_span[i][1] - c.seg_span[i][0] > 1e-9]
+    if not lines:
+        return {}
+
+    def same_way(i: int, j: int) -> bool:
+        a, b = c._direction(i, last=True), c._direction(j, last=False)
+        return bool(a and b) and _angle(a, b) <= 0.5
+
+    out = {}
+    for i in lines:
+        start, end = c.seg_span[i]
+        j = i                                       # back while the previous segment is a line going the same way
+        for _ in range(n):
+            k = (j - 1) % n
+            if k == i or c.segs[k].kind != "line" or not same_way(k, j):
+                break
+            start, j = c.seg_span[k][0], k
+        j = i
+        for _ in range(n):
+            k = (j + 1) % n
+            if k == i or c.segs[k].kind != "line" or not same_way(j, k):
+                break
+            end, j = c.seg_span[k][1], k
+        out[i] = (start, end)
+    return out
+
+
 def _around(a: float, b: float, length: float) -> float:
     """How far apart two places along a closed contour are, the short way."""
     d = abs(a - b) % length
@@ -159,6 +190,7 @@ def place_tabs(segs: Sequence[Seg], count: int, tool_diameter: float, tab_width:
     L = c.length
     half = tab_width / 2
     clear = tool_diameter + half                   # the tab's edge a cutter diameter from the corner
+    runs = _straight_runs(c)                       # seg index -> the straight run it's in (start, end along)
     step = L / max(samples, 1)
     spots = []                                     # (s, tier)
     for k in range(samples):
@@ -168,7 +200,12 @@ def place_tabs(segs: Sequence[Seg], count: int, tool_diameter: float, tab_width:
         to_corner = min((_around(s, x, L) for x in c.corners), default=L)
         whole = min(s - seg_start, seg_end - s) >= half - 1e-9         # the whole tab on this one edge
         if c.segs[i].kind == "line" and whole:
-            tier = 0 if to_corner >= clear - 1e-9 else 1
+            # tier 0: the cutter's whole climb over the tab (its width and a cutter diameter each side) on one
+            # straight run, so the ramp never meets a fillet's arc (2026-11-02: 0.3 in tabs broke Fusion's stock
+            # simulation on an arc move, tsize1/r054/r055, even with every tab on a straight edge)
+            run_start, run_end = runs.get(i, (seg_start, seg_end))
+            room = min((s - run_start) % L, (run_end - s) % L)
+            tier = 0 if to_corner >= clear - 1e-9 and room >= clear - 1e-9 else 1
         elif whole:
             tier = 2                               # on one curve that's long enough
         elif to_corner >= half - 1e-9:

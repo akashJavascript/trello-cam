@@ -105,3 +105,24 @@ def test_wide_tabs_can_be_kept_to_straight_edges():
     assert place_tabs([arc(0, 0, 1.0, 0, 2 * math.pi, 72)], 3, CUTTER, 0.3, max_tier=1) == []   # all curve: none
     anywhere = place_tabs([arc(0, 0, 1.0, 0, 2 * math.pi, 72)], 3, CUTTER, 0.3)
     assert len(anywhere) == 3 and all(t.tier == 2 for t in anywhere)                            # the default
+
+
+def rounded_rect(w, h, r):
+    """A rectangle with tangent fillets: no sharp corners, so only the straight runs' ends limit a tab."""
+    return [Seg("line", ((r, 0.0), (w - r, 0.0))), arc(w - r, r, r, -math.pi / 2, 0),
+            Seg("line", ((w, r), (w, h - r))), arc(w - r, h - r, r, 0, math.pi / 2),
+            Seg("line", ((w - r, h), (r, h))), arc(r, h - r, r, math.pi / 2, math.pi),
+            Seg("line", ((0.0, h - r), (0.0, r))), arc(r, r, r, math.pi, 3 * math.pi / 2)]
+
+
+def test_the_best_spots_leave_room_for_the_whole_ramp_before_a_fillet():
+    # 2 x 1 with 0.25 fillets: straights of 1.5 and 0.5. A 0.3 in tab's ramp needs 0.157 + 0.15 each side of its
+    # centre on the straight, so the short sides never qualify for tier 0 however they're placed
+    tabs = place_tabs(rounded_rect(2.0, 1.0, 0.25), 4, CUTTER, 0.3, max_tier=0)
+    assert tabs and all(t.tier == 0 for t in tabs)
+    assert all(abs(t.y) < 1e-6 or abs(t.y - 1.0) < 1e-6 for t in tabs)        # only on the long sides
+    assert all(0.25 + 0.307 - 1e-3 <= t.x <= 1.75 - 0.307 + 1e-3 for t in tabs)
+    split = [Seg("line", ((0.0, 0.0), (1.0, 0.0))), Seg("line", ((1.0, 0.0), (2.0, 0.0))),   # one side in two pieces
+             Seg("line", ((2.0, 0.0), (2.0, 1.0))), Seg("line", ((2.0, 1.0), (0.0, 1.0))), Seg("line", ((0.0, 1.0), (0.0, 0.0)))]
+    near_join = [t for t in place_tabs(split, 2, CUTTER, 0.3, max_tier=0) if abs(t.y) < 1e-6]
+    assert near_join and all(t.tier == 0 for t in near_join)                   # a split straight is still one run
