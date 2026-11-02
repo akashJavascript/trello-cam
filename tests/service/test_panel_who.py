@@ -3,7 +3,7 @@ the panel doesn't have, twice a minute), never the key or an IP address."""
 
 from http.client import HTTPMessage
 
-from autocam_service.panel.server import who
+from autocam_service.panel.server import Refused, who
 
 
 def headers(**kw):
@@ -30,3 +30,12 @@ def test_the_page_path_is_kept_but_never_its_query():
 def test_without_headers():
     assert who(None) == ""
     assert who(headers()) == " (from this computer; no user agent)"
+
+
+def test_each_kind_of_refused_request_is_logged_once_per_ten_minutes_with_a_count():
+    r = Refused(every_s=600)
+    assert r.due("/api/status 403 (a)", 0.0) == 0
+    assert [r.due("/api/status 403 (a)", t) for t in (30.0, 60.0, 599.0)] == [None, None, None]
+    assert r.due("/api/other 403 (a)", 61.0) == 0                     # another kind: its own clock
+    assert r.due("/api/status 403 (a)", 600.0) == 3                    # with the three left out
+    assert r.due("/api/status 403 (a)", 1300.0) == 0

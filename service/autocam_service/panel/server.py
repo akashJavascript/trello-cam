@@ -16,7 +16,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 from urllib.parse import parse_qsl, urlsplit
 
 from .api import PanelApp, body_limit
@@ -60,9 +60,41 @@ def _handler(app: PanelApp):
             if path.startswith(HOOK_PREFIX):
                 path = HOOK_PREFIX + "<secret>"                # the webhook's address is its password
             status = str(args[1]) if len(args) > 1 else ""
-            log.debug("panel http: %s %s%s", path, status, who(getattr(self, "headers", None)) if status[:1] == "4" else "")
+            if status[:1] != "4":
+                log.debug("panel http: %s %s", path, status)
+                return
+            line = f"{path} {status}{who(getattr(self, 'headers', None))}"
+            more = REFUSED.due(line, time.monotonic())
+            if more is not None:
+                log.debug("panel http: %s%s", line, f" [and {more} more like it]" if more else "")
 
     return Handler
+
+
+class Refused:
+    """Refused requests, each kind (path, status, who) logged at most once per `every_s` with how many were left out:
+    a forgotten page polling twice a minute filled most of the log (2026-11-02)."""
+
+    def __init__(self, every_s: float = 600.0):
+        self.every_s = every_s
+        self.seen: Dict[str, List[float]] = {}          # line -> [last logged, left out since]
+        self.lock = threading.Lock()
+
+    def due(self, line: str, now: float) -> Optional[int]:
+        """None: leave it out; else log it, with this many left out since the last time."""
+        with self.lock:
+            entry = self.seen.get(line)
+            if entry is not None and now - entry[0] < self.every_s:
+                entry[1] += 1
+                return None
+            more = int(entry[1]) if entry is not None else 0
+            if len(self.seen) > 200:
+                self.seen.clear()
+            self.seen[line] = [now, 0]
+            return more
+
+
+REFUSED = Refused()
 
 
 def who(headers) -> str:
