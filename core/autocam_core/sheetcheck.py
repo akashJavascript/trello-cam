@@ -274,6 +274,36 @@ def check_scribe_program(data: bytes, job: Job, thickness_in: float, part_counts
     return SheetCheck(report, None, tuple(problems))
 
 
+def check_small_program(data: bytes, job: Job, thickness_in: float, tool_key: str, part_counts: Mapping[str, int],
+                        by_hand: bool = False) -> SheetCheck:
+    """A sheet's small-tool program (core 0.19.0): the holes and cutouts only the job's small tool can make, run
+    before the sheet's own. The sheet's guard with that tool; no stops and no outlines (they stay last, in the
+    sheet's program); only parts of the job; and what it cuts goes through (it reaches the stock bottom)."""
+    text = data.decode("ascii", errors="replace")
+    if tool_key != job.tooling.small_features or tool_key not in job.tooling.tools:
+        why = f"{tool_key} isn't this job's small tool"
+        return SheetCheck(_failed(check_program(data, GuardSpec()), why), None, (why,))
+    problems: List[str] = []
+    if not any(abs(thickness_in - t) <= 1e-9 for t in job.material.thicknesses_in):
+        problems.append(f"sheet thickness {thickness_in:g} in is not a {job.material.name} stock thickness")
+    if not part_counts:
+        problems.append("the small-tool program lists no parts")
+    unknown = sorted(set(part_counts) - {p.part_key for p in job.parts})
+    if unknown:
+        problems.append(f"the small-tool program lists parts that aren't in the job: {', '.join(unknown)}")
+    outlines = [m.group(1) for m in (_OUTER_LINE.match(l.strip()) for l in text.splitlines()) if m]
+    if outlines:
+        problems.append(f"the small-tool program cuts outlines ({', '.join(outlines)}); they stay in the sheet's")
+    report = check_program(data, guard_spec(job, thickness_in, tool_key, by_hand))
+    if report.m0_count:
+        report = _failed(report, f"the small-tool program has {report.m0_count} M0; it never stops")
+    if report.min_z_in is None:
+        problems.append("the small-tool program has no Z move")
+    elif report.min_z_in > job.guard.z_floor_in + THROUGH_CUT_TOL_IN:
+        problems.append(f"the small-tool program never reaches the stock bottom (lowest Z {report.min_z_in:.4f} in)")
+    return SheetCheck(report, None, tuple(problems))
+
+
 def check_fit_program(data: bytes, job: Job, thickness_in: float, tool_key: str, outer_order: Sequence[str],
                       part_counts: Mapping[str, int], by_hand: bool = False) -> SheetCheck:
     """A fit lap (core 0.16.0): the sheet's guard with its tool, no stops, only parts that ask for a fit, and for an

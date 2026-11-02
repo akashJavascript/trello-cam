@@ -18,7 +18,7 @@ from autocam_core.schema import SchemaError
 from autocam_core.schema_job import Job
 from autocam_core.schema_result import ProgramResult, Result, SheetResult, read_result
 from autocam_core.sheetcheck import (SheetCheck, check_face_program, check_fit_program, check_scribe_program,
-                                     check_sheet_program)
+                                     check_sheet_program, check_small_program)
 
 
 @dataclass(frozen=True)
@@ -81,7 +81,7 @@ class IngestedJob:
 
 
 def verify_program(folder: Path, job: Job, sheet: SheetResult, program: ProgramResult) -> VerifiedProgram:
-    if program.kind not in ("face", "scribe", "fit"):
+    if program.kind not in ("face", "scribe", "small", "fit"):
         return VerifiedProgram(program, None, None, (f"unknown kind of program {program.kind!r}",))
     if not program.tap:
         return VerifiedProgram(program, None, None, (f"the {program.kind} program {program.name} wasn't offered for "
@@ -97,6 +97,15 @@ def verify_program(folder: Path, job: Job, sheet: SheetResult, program: ProgramR
         return _verify_fit(job, sheet, program, data, problems)
     if program.kind == "scribe":
         return _verify_scribe(job, sheet, program, data, problems)
+    if program.kind == "small":
+        key = job.tooling.small_features or ""
+        check = check_small_program(data, job, sheet.thickness_in, key, {p.part_key: p.count for p in program.parts},
+                                    sheet.by_hand)
+        problems += [f"small-tool program: {p}" for p in check.problems()]
+        tool = job.tooling.tools.get(key)
+        if tool is None or program.tool_guid != tool.guid:
+            problems.append(f"the small-tool program used tool GUID {program.tool_guid}, not the job's small tool")
+        return VerifiedProgram(program, data, check, tuple(problems))
     check = check_face_program(data, job, sheet.thickness_in, {p.part_key: p.count for p in program.parts},
                                sheet.by_hand)
     problems += [f"face program: {p}" for p in check.problems()]
@@ -177,6 +186,14 @@ def verify_sheet(folder: Path, job: Job, sheet: SheetResult) -> VerifiedSheet:
         problems.append("parts on it ask for facing but the sheet has no face program")
     elif faces and {p.part_key: p.count for p in faces[0].parts} != faced:
         problems.append("the face program doesn't face exactly the copies that ask for it")
+    smalls = [p.program for p in programs if p.program.kind == "small"]
+    if len(smalls) > 1:
+        problems.append(f"the sheet has {len(smalls)} small-tool programs")
+    if smalls and sheet.tool != job.tooling.default:
+        problems.append("the sheet has a small-tool program but isn't on the default tool")
+    for p in smalls:
+        if any(counts.get(q.part_key) != q.count for q in p.parts):
+            problems.append("the small-tool program doesn't cut every copy of its parts")
     scribes = [p.program for p in programs if p.program.kind == "scribe"]
     if len(scribes) > 1:
         problems.append(f"the sheet has {len(scribes)} scribe programs")

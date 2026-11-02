@@ -78,8 +78,9 @@ class ToolForce:
 class ProgramResult:
     """A program a sheet needs besides its main one (core 0.14.0): kind "face" skims the tops of the faced parts
     with the surfacing bit, run before the main program; kind "scribe" (0.18.0) scribes bent parts' bend lines
-    with the chamfer mill, run after the face program and before the main one."""
-    kind: str                      # "face", "scribe", "fit"
+    with the chamfer mill, run after the face program and before the main one; kind "small" (0.19.0) cuts the holes
+    and cutouts only the small tool can make, run just before the main one."""
+    kind: str                      # "face", "scribe", "small", "fit"
     name: str                      # program name, e.g. 6061_0p25_r030_S1_FACE
     runs: str                      # "before" the main program
     tool_guid: str

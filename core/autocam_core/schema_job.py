@@ -84,6 +84,8 @@ class ToolingSpec:
     default: str
     small_features: Optional[str]   # None: no small-feature tool + template for this family yet
     tools: Dict[str, ToolSpec]
+    split: bool = False             # small holes and tight cutouts in a small-tool program of their own, the rest
+                                    # on the default tool (core 0.19.0); False: the whole sheet on the small tool
 
 
 @dataclass(frozen=True)

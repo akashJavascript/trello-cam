@@ -62,7 +62,8 @@ def test_job_round_trips():
         parts=[{**p, "tabs": False, "by_hand": False, "face": False, "fit": None, "bends": [], "scribe": ""} for p in d["parts"]],
         offcuts=[], tabs={"distance_in": 2.5, "min_per_contour": 2, "max_per_contour": 6,
                                  "at_points": True, "width_in": 0.0, "height_in": 0.0},
-        holes={**d["holes"], "bearing_stock_in": 0.0}, face=None, scribe=None))   # defaults: older jobs load
+        holes={**d["holes"], "bearing_stock_in": 0.0}, face=None, scribe=None,
+        tooling={**d["tooling"], "split": False}))   # defaults: older jobs load
     assert load_job(json.loads(json.dumps(to_dict(job)))) == job
 
 

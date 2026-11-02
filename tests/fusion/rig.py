@@ -35,7 +35,7 @@ def plate(t=0.125, holes=(), name="plate"):
 
 
 class Rig:
-    def __init__(self, tmp_path, ops=OPS, guid_for=None, team=None, **nest):
+    def __init__(self, tmp_path, ops=OPS, guid_for=None, team=None, split=True, **nest):
         self.tmp = tmp_path
         data = copy.deepcopy(RAW)
         for key, t in data["templates"].items():
@@ -50,6 +50,8 @@ class Rig:
             f.write_text(json.dumps([["[face] tops", (guid_for or {}).get("face", data["face"]["guid"])]]))
             data["face"]["template"] = str(f)
         data["paths"] = {k: str(tmp_path / k) for k in ("queue", "cache", "state", "logs")}
+        for family in data["tooling"].values():
+            family["split"] = split
         data["nest"].update({"part_spacing_in": 0.25, **nest})   # the tests' layouts assume 1/4 in, whatever the shop's is
         if team:
             data["fusion_team"] = {"project": team[0], "folder": team[1]}

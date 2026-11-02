@@ -170,6 +170,8 @@ class Tool:
 class FamilyTooling:
     default: str
     small_features: str
+    split: bool = True        # small holes and tight cutouts in a program of their own with the small tool, the rest
+                              # on the default (core 0.19.0); false: a part like that puts its whole sheet on it
 
 
 @dataclass(frozen=True)
@@ -448,8 +450,8 @@ class _Table:
             self.errors.append(f"{self.where(key)}: must be >= {minimum}")
         return v
 
-    def boolean(self, key: str) -> bool:
-        v = self._get(key, "true or false", _MISSING)
+    def boolean(self, key: str, default: Any = _MISSING) -> bool:
+        v = self._get(key, "true or false", default)
         if v is None:
             return False
         if not isinstance(v, bool):
@@ -654,7 +656,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
     tooling: Dict[str, FamilyTooling] = {}
     for family, t in top.table("tooling").subtables():
         tooling[family] = FamilyTooling(default=t.string("default", required=True),
-                                        small_features=t.string("small_features", required=True))
+                                        small_features=t.string("small_features", required=True),
+                                        split=t.boolean("split", default=True))
         t.finish()
 
     t = top.table("holes")

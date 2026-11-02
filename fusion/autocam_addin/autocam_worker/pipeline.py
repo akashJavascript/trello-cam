@@ -30,6 +30,11 @@
    [outer] op, before the outlines); "chamfer" a SCRIBE setup with the chamfer mill, run after FACE and before
    the sheet. Scribing never holds a sheet up: a part whose bend lines can't be found or scribed gets a warning to
    mark them by hand instead.
+   A part whose only 4 mm problems are small through holes and tight-cornered cutouts is split (tooling.split_features,
+   core 0.19.0): those go in a SMALL setup with the small tool's template (its tool GUID checked), the sheet's own
+   program cuts the rest with the 4 mm, outlines last. It posts as the sheet's SMALL program, run just before the
+   sheet's, checked like it (check_small_program, the tool center never inside a part); the sheet isn't offered
+   without it.
 6. Post, insert the pauses, and check the final bytes with the check the service repeats
    (sheetcheck.py). Failures are kept as *.REJECTED.tap. A FACE program is checked the same way
    (check_face_program: no deeper than the face depth) and its cutter must stay over the faced parts.
@@ -59,7 +64,7 @@ from autocam_core.hotfolder import write_atomic
 from autocam_core.layout import Placed, plan_layout
 from autocam_core.offcuts import Placement, beside_as_loaded, placement_for, room_beside
 from autocam_core.names import (face_program_name, fit_program_name, instance_id, outer_op_name, program_name,
-                                scribe_op_name, scribe_program_name)
+                                scribe_op_name, scribe_program_name, small_program_name)
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
 from autocam_core.plate import PlateAnalysis, analyze
@@ -75,7 +80,7 @@ from autocam_core.scribe import (Line, bend_letter, bend_strips, distance_to_lin
                                  letter_strokes, mark_spot, off_the_lines, path_segments, scribe_sections,
                                  tip_radius_in)
 from autocam_core.sheetcheck import (check_face_program, check_fit_program, check_scribe_program, check_sheet_program,
-                                     pause_spec)
+                                     check_small_program, pause_spec)
 from autocam_core.tooling import FeaturePlan, ToolNeed, part_tool, plan_features, sheet_tool
 from autocam_core.toolpoints import cutting_points
 
@@ -210,6 +215,10 @@ class _Sheet:
     scribe_counts: Dict[str, int] = field(default_factory=dict)
     scribe_result: Optional[ProgramResult] = None
     suppressed: Set[str] = field(default_factory=set)        # ops left out (a scribe op that failed), never deleted
+    small_plans: Dict[str, FeaturePlan] = field(default_factory=dict)   # split parts: what the small tool cuts
+    small_name: str = ""                      # its SMALL setup and program, if any part on it is split
+    small_counts: Dict[str, int] = field(default_factory=dict)
+    small_result: Optional[ProgramResult] = None
 
     def counts(self) -> Dict[str, int]:
         return dict(Counter(p.part_key for _, p in self.instances))
@@ -273,7 +282,7 @@ def _load_part(adapter: Adapter, job: Job, part: _Part) -> None:
     small = tools.get(job.tooling.small_features) if job.tooling.small_features else None
     need = part_tool(analysis, family=job.material.family, default=profile(tools[job.tooling.default]),
                      small=profile(small) if small else None, rules=job.holes, force_small=spec.force_small_tool,
-                     strict_inside_radius=job.plate.strict_inside_radius)
+                     strict_inside_radius=job.plate.strict_inside_radius, split=job.tooling.split)
     part.need = need
     part.errors += need.errors
     part.warnings += need.warnings
@@ -802,14 +811,22 @@ def _plan_sheets(adapter: Adapter, job: Job, sheets: List[_Sheet], parts: Dict[s
             sheet.tool_key, sheet.forced = sheet_tool({k: parts[k].need for k in keys}, job.tooling.default,
                                                       job.tooling.small_features)
             tool = job.tooling.tools[sheet.tool_key]
+            small = job.tooling.tools.get(job.tooling.small_features or "")
             sheet.plans = {}
+            sheet.small_plans = {}
             for k in keys:
-                plan = plan_features(parts[k].analysis, profile(tool), job.holes)
+                need = parts[k].need
+                split = need.split if (need is not None and small is not None
+                                       and sheet.tool_key == job.tooling.default) else None
+                plan = plan_features(parts[k].analysis, profile(tool), job.holes, without=split)
+                small_plan = plan_features(parts[k].analysis, profile(small), job.holes, only=split) if split else None
                 missing = _missing_ops(plan, adapter.capabilities)
+                missing += [m for m in (_missing_ops(small_plan, adapter.capabilities) if small_plan else [])
+                            if m not in missing]
                 if parts[k].spec.face and FACE not in adapter.capabilities:
                     missing.append(FACE)
                 problems_fit = _fit_problems(parts[k], plan, job)
-                problems = list(plan.errors) + problems_fit
+                problems = list(plan.errors) + (list(small_plan.errors) if small_plan else []) + problems_fit
                 if missing:
                     problems.append(Issue(E.NEEDS_MANUAL_CAM,
                                           f"needs manual CAM: {', '.join(missing)} ops aren't automated yet"))
@@ -817,6 +834,8 @@ def _plan_sheets(adapter: Adapter, job: Job, sheets: List[_Sheet], parts: Dict[s
                     parts[k].errors += problems
                     rejected.add(k)
                 sheet.plans[k] = plan
+                if small_plan is not None:
+                    sheet.small_plans[k] = small_plan
         if not rejected:
             break
         for k in rejected:
@@ -827,7 +846,7 @@ def _plan_sheets(adapter: Adapter, job: Job, sheets: List[_Sheet], parts: Dict[s
     for sheet in sheets:
         for k, plan in sheet.plans.items():
             part = parts[k]
-            part.warnings += plan.warnings
+            part.warnings += plan.warnings + (sheet.small_plans[k].warnings if k in sheet.small_plans else ())
             if part.plan is None:
                 part.plan = plan
     return sheets
@@ -1078,6 +1097,7 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     sheet.built = True
     _build_face(adapter, job, sheet, parts)
     _build_scribe(adapter, job, sheet, parts)
+    _build_small(adapter, job, sheet, parts)
     _build_fits(adapter, job, sheet, parts)
 
 
@@ -1151,6 +1171,75 @@ def _build_face(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Par
     sheet.face_tops = tuple((p.body_id, outline_face(parts[p.part_key])) for p in faced)
     adapter.fill(name, tagged[0], OpFill(FACE, tops=sheet.face_tops, depth_in=job.face.depth_in))
     sheet.face_name = name
+
+
+def _build_small(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> None:
+    """The sheet's SMALL program: split parts' small holes and tight cutouts with the small tool. A setup of its own on
+    the sheet's stock and zero with the small tool's template (every op's tool GUID checked); each op filled with
+    those features or, untouched, deleted (never both: an op deleted after it was changed crashed Fusion, r041).
+    Tabbed parts' cutouts get their tabs here too, in copies of [inner] per tab count, like the sheet's."""
+    if not sheet.small_plans:
+        return
+    tool = job.tooling.tools[job.tooling.small_features]
+    insts = [(inst, p) for inst, p in sheet.instances if p.part_key in sheet.small_plans]
+    name = small_program_name(sheet.name)
+    adapter.make_extra_setup(sheet.name, name, [p.body_id for _, p in insts])
+    ops = adapter.apply_template(name, tool.template_path)
+    wrong = [o.name for o in ops if o.tool_guid != tool.guid]
+    if wrong:
+        sheet.errors.append(Issue(E.TOOL_GUID_MISMATCH, f"small-tool template ops {', '.join(wrong)} don't use "
+                                                        f"{tool.cutter_label} (GUID {tool.guid})"))
+        return
+    by_tag: Dict[str, List[str]] = {}
+    for o in ops:
+        tag = _op_tag(o.name)
+        if tag is None:
+            sheet.errors.append(Issue(E.TEMPLATE_PROBLEM, f"small-tool template op {o.name!r} needs exactly one tag"))
+            return
+        by_tag.setdefault(tag, []).append(o.name)
+    holes: Dict[str, List[Tuple[str, Tuple[int, ...]]]] = {DRILL: [], BORE: [], BEARING: []}
+    loops: List[Tuple[str, int, int]] = []
+    tabbed: Dict[int, List[Tuple[str, int, int]]] = {}
+    tool_d = tool.diameter_in
+    for _, placed in insts:
+        part = parts[placed.part_key]
+        plan = sheet.small_plans[part.key]
+        through = part.analysis.through_holes
+        for tag, indexes in ((DRILL, plan.drill), (BORE, plan.bore), (BEARING, plan.bearing)):
+            holes[tag] += [(placed.body_id, through[i].face_ids) for i in indexes]
+        for loop in plan.inner_loops:
+            n = _tabs_for(job, part, walls_length(part.analysis.geometry, loop.wall_face_ids), tool_d) \
+                if part.spec.tabs else 0
+            (tabbed.setdefault(n, []) if n else loops).append((placed.body_id, loop.face_id, loop.index))
+    if holes[BEARING] and BEARING not in by_tag and BORE in by_tag:
+        holes[BORE] += holes[BEARING]
+        holes[BEARING] = []
+    if tabbed and INNER not in by_tag:
+        loops += [loop for group in tabbed.values() for loop in group]
+        tabbed = {}
+    fills = {DRILL: OpFill(DRILL, holes=tuple(holes[DRILL])), BORE: OpFill(BORE, holes=tuple(holes[BORE])),
+             BEARING: OpFill(BEARING, holes=tuple(holes[BEARING])), INNER: OpFill(INNER, loops=tuple(loops))}
+    for tag, fill in fills.items():
+        wanted = len(fill.holes) + len(fill.loops) + (sum(len(g) for g in tabbed.values()) if tag == INNER else 0)
+        if wanted and tag not in by_tag:
+            sheet.errors.append(Issue(E.TEMPLATE_PROBLEM, f"the small-tool template has no [{tag}] op but this sheet "
+                                                          f"needs one ({wanted} features)"))
+    if sheet.errors:
+        return
+    for tag, names in by_tag.items():
+        if tag == INNER:
+            for n, group in sorted(tabbed.items()):
+                copy = f"{names[0]} - {n} tab{'s' if n != 1 else ''} each"
+                adapter.copy_op(name, names[0], copy)
+                adapter.fill(name, copy, OpFill(INNER, loops=tuple(group)))
+                _tab_op(adapter, job, sheet, copy, list(group), n, tool_d, setup=name)
+        fill = fills.get(tag)
+        if fill is not None and (fill.holes or fill.loops):
+            adapter.fill(name, names[0], fill)
+        else:
+            adapter.delete_op(name, names[0])
+    sheet.small_name = name
+    sheet.small_counts = dict(Counter(p.part_key for _, p in insts))
 
 
 def _scribe_depth(job: Job, depth_in: float, faced: bool) -> float:
@@ -1557,6 +1646,67 @@ def _post_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
         depth_in=job.scribe.chamfer_depth_in)
 
 
+def _small_feature(sheet: _Sheet, parts: Dict[str, _Part]) -> str:
+    """What the small-tool program cuts, for the sheet card: e.g. "P-2014: 4 holes; Plate: 1 cutout"."""
+    out = []
+    for key, plan in sorted(sheet.small_plans.items()):
+        holes = len(plan.drill) + len(plan.bore) + len(plan.bearing) + sum(1 for l in plan.inner_loops if l.hole is not None)
+        cutouts = sum(1 for l in plan.inner_loops if l.hole is None)
+        bits = ([f"{holes} hole{'s' if holes != 1 else ''}"] if holes else []) + \
+               ([f"{cutouts} cutout{'s' if cutouts != 1 else ''}"] if cutouts else [])
+        out.append(f"{parts[key].spec.name}: {' and '.join(bits)}")
+    return "; ".join(out)
+
+
+def _post_small(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part], out_dir: Path) -> None:
+    """Post and check the sheet's SMALL program: the check the service repeats, and the tool center never inside a
+    part. A failure stops the sheet: without it, its parts would miss those holes."""
+    name = sheet.small_name
+    raw_dir = out_dir / "raw" / name
+    if raw_dir.exists():
+        shutil.rmtree(raw_dir)
+    raw_dir.mkdir(parents=True)
+    try:
+        posted = adapter.post(name, name, raw_dir, job.post.path, job.post.properties)
+    except AdapterError as e:
+        sheet.errors.append(Issue(E.POST_FAILED, f"posting the small-tool program failed: {e}"))
+        return
+    data = posted.read_bytes()
+    text = data.decode("ascii", errors="surrogateescape")
+    key = job.tooling.small_features
+    check = check_small_program(data, job, sheet.thickness_in, key, sheet.small_counts, sheet.by_hand)
+    problems = check.problems()
+    if check.passed:
+        try:
+            hits = adapter.cuts_into_parts(name, cutting_points(text, sheet.thickness_in))
+        except AdapterError as e:
+            hits = []
+            problems.append(f"couldn't check it against the parts: {e}")
+        if hits:
+            problems.append("the tool cuts into a part: " + "; ".join(f"line {n} (X{x:.4f} Y{y:.4f})"
+                                                                         for n, x, y in hits[:5]))
+    ok = check.passed and not problems
+    tap, rejected = (f"{name}.tap", None) if ok else (None, f"{name}.REJECTED.tap")
+    write_atomic(out_dir / (tap or rejected), data)
+    try:
+        machining = adapter.machining_time(name)
+    except AdapterError as e:
+        machining = None
+        sheet.notes.append(f"small-tool program: machining time unavailable: {e}")
+    g = check.guard
+    tool = job.tooling.tools[key]
+    sheet.small_result = ProgramResult(
+        kind="small", name=name, runs="before", tool_guid=tool.guid, cutter_label=tool.cutter_label,
+        tool_number=tool.number, tap=tap, tap_rejected=rejected, tap_bytes=len(data),
+        tap_sha256=g.sha256 if tap else None,
+        guard=GuardSummary(g.passed, g.sha256, g.floor_in, g.min_z_in, g.units, g.offenders, g.clamp_violations,
+                           g.problems),
+        machining_time_s=machining, parts=tuple(SheetPart(k, n) for k, n in sorted(sheet.small_counts.items())),
+        feature=_small_feature(sheet, parts))
+    if not ok:
+        sheet.errors += [Issue(E.TAP_REJECTED, f"small-tool program: {msg}") for msg in problems]
+
+
 def _post_fits(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> None:
     """Post and check every fit lap: the check the service repeats (check_fit_program), and the tool center never
     inside a part, as for the sheet's program. One that fails stops the sheet."""
@@ -1726,6 +1876,7 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
         try:
             states = adapter.generate([s.name for s in built] + [s.face_name for s in built if s.face_name]
                                       + [s.scribe_name for s in built if s.scribe_counts]
+                                      + [s.small_name for s in built if s.small_name]
                                       + [lap for s in built for f in s.fits for lap in f.laps])
         except AdapterError as e:
             for s in built:
@@ -1757,7 +1908,7 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
                 _drop_scribe(sheet, parts, "; ".join(f"{st.name}: {st.error or 'no toolpath'}" for st in bad)
                              or "Fusion reported no toolpaths for it")
         for setup in [sheet.name] + ([sheet.face_name] if sheet.face_name else []) + \
-                [lap for f in sheet.fits for lap in f.laps]:
+                ([sheet.small_name] if sheet.small_name else []) + [lap for f in sheet.fits for lap in f.laps]:
             if setup not in states and not sheet.errors:
                 sheet.errors.append(Issue(E.OP_ERROR, f"Fusion reported no toolpaths for {setup}"))
             for st in states.get(setup, []):
@@ -1771,6 +1922,8 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             _post_face(adapter, job, sheet, parts, out_dir)       # first: the sheet isn't offered without it
         if not sheet.errors and sheet.scribe_counts:
             _post_scribe(adapter, job, sheet, parts, out_dir)     # never holds the sheet up
+        if not sheet.errors and sheet.small_name:
+            _post_small(adapter, job, sheet, parts, out_dir)      # the sheet isn't offered without it
         if not sheet.errors and sheet.fits:
             _post_fits(adapter, job, sheet, out_dir)              # before it too, for the same reason
         if not sheet.errors:
@@ -1822,6 +1975,7 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             by_hand=sheet.by_hand, repeat=sheet.repeat,
             programs=((sheet.face_result,) if sheet.face_result else ())
             + ((sheet.scribe_result,) if sheet.scribe_result else ())
+            + ((sheet.small_result,) if sheet.small_result else ())
             + tuple(r for f in sheet.fits for r in f.results),
             scribed=tuple(SheetPart(k, n) for k, n in sorted(sheet.scribed.items())) if sheet.result else (),
             **({} if sheet.by_hand else _sheet_use(job, sheet, parts))))

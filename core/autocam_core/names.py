@@ -49,6 +49,16 @@ def face_program_name(sheet_program: str) -> str:
 
 
 SCRIBE_SUFFIX = "_SCRIBE"
+SMALL_SUFFIX = "_SMALL"
+
+
+def small_program_name(sheet_program: str) -> str:
+    """The sheet's small-tool program (core 0.19.0), e.g. 6061_0p125_r052_S1_SMALL: the holes and cutouts only the
+    1/8 in endmill can make, run before the sheet's own (4 mm) program."""
+    name = f"{sheet_program}{SMALL_SUFFIX}"
+    if not is_safe_name(name):
+        raise ValueError(f"program name {name!r} has characters the post would strip")
+    return name
 
 
 def scribe_program_name(sheet_program: str) -> str:

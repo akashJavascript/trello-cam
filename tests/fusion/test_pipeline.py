@@ -91,8 +91,8 @@ def test_leftovers_go_to_the_next_sheet(tmp_path):
     assert view.part_problems == {} and all(vs.cuttable for vs in view.sheets)
 
 
-def test_a_hole_too_small_for_4mm_puts_the_sheet_on_the_eighth(tmp_path):
-    rig = Rig(tmp_path)
+def test_a_hole_too_small_for_4mm_puts_the_sheet_on_the_eighth_without_splitting(tmp_path):
+    rig = Rig(tmp_path, split=False)
     job = rig.job([("bracket", 1, plate(holes=(0.136,)), (4.0, 4.0)), ("spacer", 1, plate(), (3.0, 3.0))])
     result = rig.run(job)
     (sheet,) = result.sheets

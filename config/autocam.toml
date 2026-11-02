@@ -153,10 +153,13 @@ cutter_label = "1/8 in POLY"
 [tooling.aluminum]
 default = "t1_4mm_alu"
 small_features = "t12_eighth_alu"
+split = true               # small holes (an 8-32's 0.136) and tight cutouts in a short 1/8 in program run first, the
+                           # rest on the 4 mm, outlines last (the user, 2026-11-01); false: the whole sheet on the 1/8
 
 [tooling.polycarbonate]
 default = "t1_4mm_poly"
 small_features = "eighth_poly"
+split = true
 
 [holes]
 drill_tol_in = 0.002       # drill sizes are an exact list, +/- this

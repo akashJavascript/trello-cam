@@ -56,6 +56,10 @@ def _scribe(s):
     return next((p for p in s.programs if p.kind == "scribe"), None)
 
 
+def _small(s):
+    return next((p for p in s.programs if p.kind == "small"), None)
+
+
 def scribed_keys(s) -> set:
     """Parts whose bend lines this sheet scribes, in its own program or its SCRIBE program."""
     scribe = _scribe(s)
@@ -97,9 +101,9 @@ def sheet_title(job: Job, vs: VerifiedSheet, offcut_number: Optional[int] = None
     count = (f"{n} part{'s' if n != 1 else ''}" + (f", {faced} faced" if faced and not s.by_hand else
                                                    (", faced" if faced else ""))
              + (f", run {s.repeat}x" if s.repeat > 1 else ""))
-    seconds = (s.machining_time_s or 0) + ((face.machining_time_s or 0) if face else 0) + (
-        (_scribe(s).machining_time_s or 0) if _scribe(s) else 0)
-    bits = [stock, s.cutter_label, count, _minutes(seconds), f"{job.run_id} S{s.index}"]
+    seconds = (s.machining_time_s or 0) + sum(p.machining_time_s or 0 for p in (face, _scribe(s), _small(s)) if p)
+    cutters = s.cutter_label + (f" + {_small(s).cutter_label}" if _small(s) else "")
+    bits = [stock, cutters, count, _minutes(seconds), f"{job.run_id} S{s.index}"]
     title = " - ".join(b for b in bits if b)
     return title if vs.cuttable else f"NOT CUTTABLE - {title}"
 
@@ -132,13 +136,15 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
     m = job.material
     face = _face(s)
     scribe = _scribe(s)
+    small = _small(s)
     lines: List[str] = []
     if not vs.cuttable:
         problems = list(vs.problems) + [p for v in vs.programs for p in v.problems]
         lines += ["NOT CUTTABLE. This sheet failed the checks:"] + [f"- {p}" for p in problems] + [""]
     cutter = f"Cutter: {s.cutter_label} (T{tool.number})"
-    before = [f"{p.cutter_label} (T{p.tool_number}) to {'face' if p.kind == 'face' else 'scribe'}"
-              for p in (face, scribe) if p]
+    before = [f"{p.cutter_label} (T{p.tool_number}) to "
+              f"{ {'face': 'face', 'scribe': 'scribe', 'small': 'cut the small features'}[p.kind] }"
+              for p in (face, scribe, small) if p]
     if before:
         cutter = f"Cutters: {', then '.join(before)}, then {s.cutter_label} (T{tool.number})"
 
@@ -174,9 +180,15 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
                          f"(T{scribe.tool_number}), measure it, and run {scribe.tap}{about}{each}. It draws a fine line "
                          f"{scribe.depth_in:g} in deep down the middle of each bend of the parts marked scribed, with a U or D "
                          "beside it.")
+        if small:
+            about = f" (about {_minutes(small.machining_time_s)})" if small.machining_time_s else ""
+            steps.append(f"{'Then' if steps else 'First'} cut what only the {small.cutter_label} can: load it "
+                         f"(T{small.tool_number}), measure it, and run {small.tap}{about}{each}. It cuts "
+                         f"{small.feature or 'the small holes and cutouts'}, nothing else; leave the sheet where it is.")
         if steps:
             steps.append(f"Then load the {s.cutter_label} (T{tool.number}), measure it, and run {program or s.tap}"
-                         + (f" (about {_minutes(s.machining_time_s)})." if s.machining_time_s else "."))
+                         + (f" (about {_minutes(s.machining_time_s)})." if s.machining_time_s else ".")
+                         + (" It cuts everything else, outlines last." if small else ""))
             lines += [f"{i}. {text}" for i, text in enumerate(steps, 1)]
         else:
             lines.append(run)
