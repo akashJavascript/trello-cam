@@ -51,6 +51,9 @@ def test_labels_name_the_parameters_and_options():
     assert configuration_label(CFG, DEFINITION) == "Length: 19 in; Size: Wide"
     assert configuration_label(CFG, {}) == "Length: 19 in; List_x3: Option_2"       # without the definition
     assert configuration_label("", DEFINITION) == ""
+    # as the Shooter's BOM has them (read 2026-11-01): Onshape keeps lengths in meters
+    assert configuration_label("ID=0.004978400000000001+meter;Length=0.0047625+meter", {}) == "ID: 0.196 in; Length: 0.1875 in"
+    assert configuration_label("Angle=30+deg", {}) == "Angle: 30 deg"
 
 
 def test_quantities_count_only_that_configuration():

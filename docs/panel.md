@@ -102,7 +102,9 @@ picture, quantities and CAD changed. Each configuration is its own part: its own
 - **Typed cards:** pick the configuration in Onshape, then copy the address bar.
 - Onshape writes "+" inside configuration strings ("19+in"), so the link is decoded without turning "+" into a
   space (Python and the page both).
-- Not seen on a real configured plate yet; quantities match an assembly instance's configuration string, so a
+- Seen working 2026-11-01: a configured standoff from the Shooter's BOM exported with its configuration (lengths are
+  in meters in the string, so labels convert them: "Length: 0.1875 in"). Not yet on a configured plate; quantities
+  match an assembly instance's configuration string, so a
   different spelling counts 0 (the student types the quantity).
 
 ## The card it writes

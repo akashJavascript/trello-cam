@@ -82,6 +82,24 @@ def _q(cfg: str, **more: Any) -> Dict[str, Any]:
     return {**more, **({"configuration": cfg} if cfg else {})}
 
 
+_TO_IN = {"meter": 1 / 0.0254, "m": 1 / 0.0254, "millimeter": 1 / 25.4, "mm": 1 / 25.4, "centimeter": 1 / 2.54,
+          "cm": 1 / 2.54, "inch": 1.0, "in": 1.0, "foot": 12.0, "ft": 12.0}
+_QUANTITY_RE = re.compile(r"^\s*(-?[0-9.]+(?:e-?[0-9]+)?)\s*\+?\s*([A-Za-z]+)\s*$")
+
+
+def _quantity(value: str) -> str:
+    """A configuration's length in inches ("0.0047625+meter" is "0.1875 in"; Onshape stores lengths in meters);
+    anything else as written, with Onshape's "+" as a space."""
+    m = _QUANTITY_RE.match(value)
+    if m and m[2].lower() in _TO_IN:
+        try:
+            inches = float(m[1]) * _TO_IN[m[2].lower()]
+        except ValueError:
+            return value.replace("+", " ")
+        return f"{inches:.4f}".rstrip("0").rstrip(".") + " in"
+    return value.replace("+", " ")
+
+
 def configuration_label(cfg: str, definition: Dict[str, Any]) -> str:
     """"Length: 19 in; Size: Wide" from a configuration string and the Part Studio's configuration definition
     (each parameter's id and name, each list option's id and name; the old panel's labels). Anything the
@@ -103,7 +121,7 @@ def configuration_label(cfg: str, definition: Dict[str, Any]) -> str:
         options = [o.get("message") if isinstance(o.get("message"), dict) else o
                    for o in param.get("options") or [] if isinstance(o, dict)]
         option = next((o for o in options if o.get("option") == value), {})
-        shown.append(f"{param.get('parameterName') or key}: {option.get('optionName') or value.replace('+', ' ')}")
+        shown.append(f"{param.get('parameterName') or key}: {option.get('optionName') or _quantity(value)}")
     text = "; ".join(shown)
     return text if len(text) <= 80 else text[:77] + "..."
 
