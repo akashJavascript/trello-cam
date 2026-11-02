@@ -216,9 +216,7 @@ def select_lines(op, curves, contour_param: str) -> None:
     sels.clear()
     for curve in curves:
         chain = sels.createNewChainSelection()
-        if hasattr(type(chain), "isOpenAllowed"):
-            chain.isOpenAllowed = True
-        chain.inputGeometry = [curve]
+        chain.inputGeometry = [curve]       # isOpenAllowed is read-only (r040, 2026-11-01): an open line stays open
     value.applyCurveSelections(sels)
 
 
