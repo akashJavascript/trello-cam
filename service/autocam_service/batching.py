@@ -19,6 +19,7 @@ class ReadyPart:
     step_sha256: str
     onshape_part_id: Optional[str] = None
     onshape_microversion: Optional[str] = None     # workspace links: the state that was exported
+    bends: tuple = ()                              # a sheet metal part: its bend table (its STEP is the flat pattern)
 
 
 @dataclass(frozen=True)

@@ -147,6 +147,16 @@ class FitSpec:
 
 
 @dataclass(frozen=True)
+class BendSpec:
+    """One bend of a sheet metal part, from its bend table: cut flat, bent after (core 0.17.0)."""
+    name: str
+    angle_deg: float
+    direction: str                                     # "up" or "down", as Onshape says it
+    radius_in: float = 0.0
+    order: int = 0                                     # Onshape's bend sequence (0: not given)
+
+
+@dataclass(frozen=True)
 class PartSpec:
     part_key: str
     card_id: str
@@ -163,6 +173,7 @@ class PartSpec:
     face: bool = False                                 # its top skimmed clean first, in the sheet's FACE program
                                                        # (core 0.14.0)
     fit: Optional[FitSpec] = None                      # a hole size or the outline fitted at the machine (0.16.0)
+    bends: Tuple[BendSpec, ...] = ()                   # a sheet metal part: its STEP is the flat pattern (0.17.0)
 
 
 @dataclass(frozen=True)

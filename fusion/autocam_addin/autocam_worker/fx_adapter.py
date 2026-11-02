@@ -161,7 +161,8 @@ class FusionAdapter(Adapter):
             self.run_notes.append(f"{op_name}: pockets selected as {how}")
         elif fill.tag == FACE:
             self._used("face_tops")
-            loops = [fx_geometry.outer_loop(fx_design.face_by_id(self._occ(cid), fid)) for cid, fid in fill.tops]
+            loops = [fx_geometry.outer_loop(fx_design.face_by_id(self._occ(cid), f)) for cid, fid in fill.tops
+                     for f in (fid if isinstance(fid, (tuple, list)) else (fid,))]
             selections = params["selections"]
             call(f"{op_name}: select tops", fx_cam.select_loops, op, [], loops,
                  selections.get("face", selections["pocket"]), self._used)
@@ -194,7 +195,14 @@ class FusionAdapter(Adapter):
 
     def make_outer_ops(self, sheet, template_op, outlines):
         setup = self._setup(sheet)
-        faces = [(name, fx_design.face_by_id(self._occ(cid), fid)) for name, cid, fid in outlines]
+        faces = []
+        for name, cid, fid in outlines:
+            if isinstance(fid, (tuple, list)):          # a split top: its outline's co-edges, cut as a chain
+                self._used("outline_chain")
+                tops = [fx_design.face_by_id(self._occ(cid), f) for f in fid]
+                faces.append((name, fx_geometry.outline_coedges(tops)))
+            else:
+                faces.append((name, fx_design.face_by_id(self._occ(cid), fid)))
         fx_cam.outline_copies(setup, fx_cam.op_by_name(setup, template_op), faces,
                               self.job.fusion_params["selections"]["contour"])
 
@@ -208,6 +216,9 @@ class FusionAdapter(Adapter):
              self.job.fusion_params["tabs"], width_in, height_in)
 
     def loop_segments(self, copy_id, face_id, loop_index):
+        if isinstance(face_id, (tuple, list)):          # a split top: the outline of all its faces together
+            faces = [fx_design.face_by_id(self._occ(copy_id), f) for f in face_id]
+            return call("outline edges", lambda: fx_geometry.coedge_segments(fx_geometry.outline_coedges(faces)))
         return call("loop edges", fx_geometry.loop_segments, fx_design.face_by_id(self._occ(copy_id), face_id),
                     loop_index)
 

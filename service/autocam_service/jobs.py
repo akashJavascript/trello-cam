@@ -12,7 +12,7 @@ from autocam_core.holes import HoleRules
 from autocam_core.schema import to_dict
 from autocam_core.schema_job import (
     JOB_SCHEMA, FaceSpec, FitSpec, FixtureSpec, FusionTeamSpec, GuardSettings, Job, MaterialSpec, NestSpec, OffcutSpec, OnshapeRef,
-    PartSpec, PauseSettings, PlateSpec, PostSpec, SheetSpec, TabSpec, ToolingSpec, ToolSpec, load_job,
+    BendSpec, PartSpec, PauseSettings, PlateSpec, PostSpec, SheetSpec, TabSpec, ToolingSpec, ToolSpec, load_job,
 )
 
 from . import fits as fitting
@@ -100,7 +100,9 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
             onshape=OnshapeRef(link.did, link.vid, link.eid, ready.onshape_part_id or "", link.url,
                                ready.onshape_microversion) if link else None,
             force_small_tool=req.force_small_tool, tabs=req.tabs or bool(req.fit), by_hand=req.by_hand,
-            face=req.face, fit=fit_spec(cfg, fits, batch.material_key, req.fit, req.name)))
+            face=req.face, fit=fit_spec(cfg, fits, batch.material_key, req.fit, req.name),
+            bends=tuple(BendSpec(b["name"], float(b["angle_deg"]), b["direction"], float(b["radius_in"]),
+                                 int(b["order"])) for b in ready.bends)))
     for n, spec in enumerate(carried, len(parts) + 1):
         parts.append(replace(spec, part_key=f"p{n:02d}"))
 

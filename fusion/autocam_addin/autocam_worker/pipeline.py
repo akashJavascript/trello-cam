@@ -248,11 +248,6 @@ def _load_part(adapter: Adapter, job: Job, part: _Part) -> None:
     if analysis.up_face_id is None:
         part.errors.append(Issue(E.NOT_A_PLATE, "no top face to lay face up"))
         return
-    if len(analysis.top_face_ids) > 1:
-        part.errors.append(Issue(E.NEEDS_MANUAL_CAM, f"needs manual CAM: the top is split into "
-                                                     f"{len(analysis.top_face_ids)} faces, so there's no single "
-                                                     "outline to cut"))
-        return
     tools = job.tooling.tools
     small = tools.get(job.tooling.small_features) if job.tooling.small_features else None
     need = part_tool(analysis, family=job.material.family, default=profile(tools[job.tooling.default]),
@@ -736,7 +731,7 @@ def _sheet_use(job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> Dict[str, An
     area = 0.0
     for _, placed in sheet.instances:
         a = parts[placed.part_key].analysis
-        area += a.geometry.face(a.up_face_id).area_in2
+        area += sum(a.geometry.face(f).area_in2 for f in (a.top_face_ids or (a.up_face_id,)))
         cx, cy = placed.center
         which = next((w for w, e in sheet.areas if e[0] <= cx <= e[2] and e[1] <= cy <= e[3]), None)
         b = placed.bbox_in
@@ -851,6 +846,13 @@ def _sheet_xy(sheet: _Sheet, placed: Placed) -> Tuple[float, float]:
 
 
 # ------------------------------------------------------------------ 5. CAM
+
+def outline_face(part: "_Part"):
+    """What the part's outline is cut from: its top face, or for a top split into several faces in one plane (a
+    sheet metal flat pattern is split along its bends) all of them, as a tuple: the adapter cuts their outline."""
+    tops = tuple(part.analysis.top_face_ids)
+    return tops if len(tops) > 1 else part.analysis.up_face_id
+
 
 def _op_tag(name: str) -> Optional[str]:
     found = [t for t in TAGS if f"[{t}]" in name.lower()]
@@ -1034,7 +1036,7 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     points = [(inst, _sheet_xy(sheet, placed)) for inst, placed in sheet.instances]
     sheet.outer_order = tuple(order_outlines(points))
     by_instance = {inst: placed for inst, placed in sheet.instances}
-    outlines = [(outer_op_name(inst), by_instance[inst].body_id, parts[by_instance[inst].part_key].analysis.up_face_id)
+    outlines = [(outer_op_name(inst), by_instance[inst].body_id, outline_face(parts[by_instance[inst].part_key]))
                 for inst in sheet.outer_order]
     adapter.make_outer_ops(sheet.name, by_tag[OUTER][0], outlines)
     outline_fits = {f.part_key: f for f in sheet.fits if f.kind == "outline"}
@@ -1043,12 +1045,12 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
         fit = outline_fits.get(part.key)
         if fit is not None:                           # a fitted outline: cut tight by the first stock
             adapter.set_radial_stock(sheet.name, outer_op_name(inst), fit.stocks[0])
-            fit.instances.append((inst, by_instance[inst].body_id, part.analysis.up_face_id))
+            fit.instances.append((inst, by_instance[inst].body_id, outline_face(part)))
         if part.spec.tabs:
             n = _outline_tabs(job, part, tool_d)
             if n:
                 _tab_op(adapter, job, sheet, outer_op_name(inst),
-                        [(by_instance[inst].body_id, part.analysis.up_face_id, None)], n, tool_d)
+                        [(by_instance[inst].body_id, outline_face(part), None)], n, tool_d)
             else:
                 sheet.warnings.append(Issue(E.OP_WARNING, f"{part.spec.name} is too small for tabs: it's cut free"))
     sheet.built = True
@@ -1123,7 +1125,7 @@ def _build_face(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Par
                                                         f"not the {tool.cutter_label} (GUID {tool.guid}); rebuild "
                                                         "the face template (fusion/tools/make_templates/make_face.py)"))
         return
-    sheet.face_tops = tuple((p.body_id, parts[p.part_key].analysis.up_face_id) for p in faced)
+    sheet.face_tops = tuple((p.body_id, outline_face(parts[p.part_key])) for p in faced)
     adapter.fill(name, tagged[0], OpFill(FACE, tops=sheet.face_tops, depth_in=job.face.depth_in))
     sheet.face_name = name
 
@@ -1142,10 +1144,10 @@ def _labels(adapter: Adapter, sheet: _Sheet, parts: Dict[str, _Part], rect: Rect
     for n, inst in enumerate(sheet.outer_order, 1):
         placed = by_instance[inst]
         part = parts[placed.part_key]
-        face = part.analysis.up_face_id
-        outer = flatten(adapter.loop_segments(placed.body_id, face, None))
-        holes = [flatten(adapter.loop_segments(placed.body_id, face, i))
-                 for i in range(len(part.analysis.geometry.face(face).inner_loops))]
+        outer = flatten(adapter.loop_segments(placed.body_id, outline_face(part), None))
+        holes = [flatten(adapter.loop_segments(placed.body_id, f, i))
+                 for f in (part.analysis.top_face_ids or (part.analysis.up_face_id,))
+                 for i in range(len(part.analysis.geometry.face(f).inner_loops))]
         x, y, room = label_spot(outer, holes, min_room=BADGE_MIN_PX / scale)
         px, py = to_pixels(x, y, rect, size)
         copy = inst.rsplit("-", 1)[1]

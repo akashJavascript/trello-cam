@@ -174,6 +174,20 @@ def picks(a: PlateAnalysis, cfg: Config, tool: Optional[Tool], extra: Dict[str, 
     return out
 
 
+def bends_line(bends, material) -> str:
+    """"Cut flat, then 1 bend: Bend A 90 up (R 0.09 in)", and a word on 6061 (it can crack at a tight bend)."""
+    known = [b for b in bends if b.get("direction")]
+    if not known:
+        return "Cut flat, then bent (its bends weren't read: see the part in Onshape)."
+    each = ", then ".join(f"{b['name']} {b['angle_deg']:g}\u00b0 {b['direction']}" for b in known)
+    radii = sorted({round(b["radius_in"], 3) for b in known if b.get("radius_in")})
+    text = (f"Cut flat, then {len(known)} bend{'s' if len(known) != 1 else ''}: {each}"
+            + (f" (R {', '.join(f'{r:g}' for r in radii)} in)" if radii else "") + ".")
+    if material is not None and material.name == "6061":
+        text += " 6061 can crack at a tight bend; 5052 bends cleanly."
+    return text
+
+
 def check(geom: PartGeometry, cfg: Config, material_key: Optional[str],
           extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """{"ok", "problems": [{"title", "fix"}], "notes": [...], "thickness", "cutter", "cutterWhy", "features",
@@ -202,8 +216,6 @@ def check(geom: PartGeometry, cfg: Config, material_key: Optional[str],
     problems += _not_a_plate(a.measured_thickness_in, stock) or \
         [explain(i, a.measured_thickness_in, stock, name, small) for i in a.errors]
     notes += [note(i) for i in a.warnings]
-    if not a.errors and len(a.top_face_ids) > 1:
-        problems.append(explain(E.Issue(E.NEEDS_MANUAL_CAM, "split"), 0, stock, name, small))
     out: Dict[str, Any] = {"thickness": inches(a.stock_thickness_in or a.measured_thickness_in), "stock_in": a.stock_thickness_in,
                            "cutter": "",
                            "cutterWhy": "", "features": "", "needMaterial": False,

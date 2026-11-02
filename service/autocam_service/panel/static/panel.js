@@ -405,7 +405,7 @@
     var other = st.parts.filter(function (p) { return cut.indexOf(p) < 0; });
     function row(p) {
       return h("button", { class: "part-row", type: "button", onclick: function () { openPart(p.id); } },
-        h("span", { class: "name" }, p.name), markIcon(p.mark),
+        h("span", { class: "name" }, p.name), markIcon(p.mark), p.bent ? chip("Bent") : null,
         p.chip.label ? chip(p.chip.label, p.chip.status) : null);
     }
     var list = h("div", { class: "parts" }, cut.map(row), S.showOther ? other.map(row) : null);
@@ -620,6 +620,7 @@
     var m = d.part.material;
     var pickMaterial = !m || !m.key;
     var chips = [materialChip(m)];
+    if (d.part.bent) chips.push(chip("Bent"));
     if (card && card.status === "cut") chips.push(chip("Cut before", "cut"));
     if (S.editing && card) chips.push(chip(card.label, card.status));
     add(bodyEl, partHead(d.part, chips));
@@ -773,6 +774,7 @@
     } else {
       add(block, notice("good", "AutoCAM can cut this", facts));
     }
+    if (c.bent) add(block, h("p", { class: "hint check-note" }, c.bent));
     (c.notes || []).forEach(function (n) { add(block, h("p", { class: "hint check-note" }, n)); });
     if (c.use && S.form) {
       var q = S.form.qty, share = Math.round(c.use.sheet_share * q * 100);

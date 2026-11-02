@@ -1532,15 +1532,15 @@ class Runner:
             choice = resolve_material(exported.material, req.material_hint, req.smoked,
                                       self.cfg.onshape.material_map, self.cfg.materials)
             step_path, sha, part_id = exported.step_path, exported.step_sha256, exported.part_id
-            mid = exported.microversion
+            mid, bends = exported.microversion, exported.bends
         else:
             step_path = self._download_step(req)
-            sha, part_id, mid = sha256_file(step_path), None, None
+            sha, part_id, mid, bends = sha256_file(step_path), None, None, ()
             choice = resolve_material(None, req.material_hint, req.smoked, self.cfg.onshape.material_map,
                                       self.cfg.materials)
         if choice.key is None:
             return choice.problem
-        return ReadyPart(req, choice.key, step_path, sha, part_id, mid)
+        return ReadyPart(req, choice.key, step_path, sha, part_id, mid, tuple(bends))
 
     def _download_step(self, req: PartRequest) -> Path:
         att = req.step_attachment

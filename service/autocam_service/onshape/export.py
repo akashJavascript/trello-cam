@@ -18,6 +18,7 @@ resultExternalDataIds) follow Onshape's docs; confirm them on the first recorded
 """
 
 import difflib
+import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,15 +27,50 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from .cache import OnshapeCache, sha256_file
 from .client import API, BudgetExceeded, OnshapeClient, QuotaExhausted, RateLimited
 from .urls import OnshapeLink
+from urllib.parse import quote
 
 
 def _norm(name: str) -> str:
     return " ".join((name or "").split()).casefold()
 
 
+def flat_of(parts: List[Dict[str, Any]], part_id: str) -> Optional[Dict[str, Any]]:
+    """A sheet metal part's flat pattern: in a parts list read with includeFlatParts, a part of its own with
+    isFlattenedBody and the bent part's id as unflattenedPartId (read off a real response, 2026-11-01)."""
+    return next((p for p in parts if p.get("isFlattenedBody") and p.get("unflattenedPartId") == part_id), None)
+
+
+def parse_bend_table(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """GET .../partid/{pid}/sheetmetal/bendtable -> [{"name", "angle_deg", "direction", "radius_in", "order"}].
+    Each row's cells are keyed by column (name, angle, direction, radius, sequence), each a parameter with a value
+    and its units (read off a real response, 2026-11-01)."""
+    to_in = {"inch": 1.0, "meter": 1 / 0.0254, "millimeter": 1 / 25.4, "centimeter": 1 / 2.54, "foot": 12.0}
+    out = []
+    for row in ((data or {}).get("table") or {}).get("tableRows") or []:
+        cells = row.get("columnIdToCell") or {}
+
+        def value(key):
+            prm = (cells.get(key) or {}).get("parameter") or {}
+            return prm.get("value"), (prm.get("units") or "").lower()
+        name, _ = value("name")
+        angle, _ = value("angle")
+        direction, _ = value("direction")
+        radius, units = value("radius")
+        order, _ = value("sequence")
+        try:
+            out.append({"name": str(name or f"Bend {len(out) + 1}"), "angle_deg": float(angle or 0),
+                        "direction": str(direction or "").lower(),
+                        "radius_in": float(radius or 0) * to_in.get(units, 1.0), "order": int(float(order or 0))})
+        except (TypeError, ValueError):
+            continue
+    return sorted(out, key=lambda b: (b["order"] or 999, b["name"]))
+
+
 def pick_part(parts: List[Dict[str, Any]], name: str, part_id: Optional[str] = None) -> Dict[str, Any]:
     """The card's part: the one with its Part ID line's id, else the same name (ignoring case and extra spaces).
-    A Part Studio with one solid part needs no name match at all."""
+    A Part Studio with one solid part needs no name match at all. Flat patterns and bend lines aren't parts to
+    pick (they share the bent part's name)."""
+    parts = [p for p in parts if not p.get("isFlattenedBody")]
     if part_id:
         by_id = [p for p in parts if p.get("partId") == part_id]
         if by_id:
@@ -80,6 +116,7 @@ class ExportedPart:
     step_sha256: str
     from_cache: bool
     microversion: Optional[str] = None    # workspace links: the state that was exported
+    bends: Tuple[Dict[str, Any], ...] = ()   # a sheet metal part: its bends (the STEP is its flat pattern)
 
 
 @dataclass(frozen=True)
@@ -156,7 +193,7 @@ class Exporter:
             return cached
         client = self._need_client("the Part Studio's parts list")
         data = client.get_json(f"{API}/parts/d/{link.did}/{link.wvm}/{link.vid}/e/{link.eid}",
-                               query={"withThumbnails": "false"}, purpose="parts_list")
+                               query={"withThumbnails": "false", "includeFlatParts": "true"}, purpose="parts_list")
         if not isinstance(data, list):
             raise ExportError("Onshape didn't return a parts list; is the link to a Part Studio tab?")
         self.cache.put_parts(link, data)
@@ -171,6 +208,24 @@ class Exporter:
             raise ExportError(f"Onshape returned no partId for '{name}'")
         return part
 
+    def export_id(self, link: OnshapeLink, part: Dict[str, Any]) -> str:
+        """What's exported for the part: its flat pattern if it's sheet metal, else the part itself."""
+        flat = flat_of(self.parts_list(link), part["partId"])
+        return flat["partId"] if flat else part["partId"]
+
+    def bends(self, link: OnshapeLink, pid: str, part_key: Optional[str] = None) -> Tuple[Dict[str, Any], ...]:
+        """A sheet metal part's bend table (one call, cached with the Part Studio's state)."""
+        path = self.cache.meta / f"bends_{link.key}_{pid.replace('/', '_')}.json"
+        if path.exists():
+            return tuple(json.loads(path.read_text(encoding="utf-8")))
+        client = self._need_client(f"the bends of part {pid}")
+        data = client.get_json(f"{API}/parts/d/{link.did}/{link.wvm}/{link.vid}/e/{link.eid}/partid/"
+                               f"{quote(pid, safe='')}/sheetmetal/bendtable", purpose="bend_table", part_key=part_key)
+        bends = parse_bend_table(data)
+        self.cache._ensure()
+        path.write_text(json.dumps(bends), encoding="utf-8")
+        return tuple(bends)
+
     def is_cached(self, link: OnshapeLink, name: str, part_id: Optional[str] = None) -> bool:
         """Without spending a call: workspace links aren't pinned yet, so they count as not cached."""
         if link.is_workspace and not link.mid:
@@ -182,7 +237,7 @@ class Exporter:
             part = pick_part(parts, name, part_id)
         except ExportError:
             return False
-        return bool(part.get("partId")) and self.cache.has_step(link, part["partId"])
+        return bool(part.get("partId")) and self.cache.has_step(link, self.export_id(link, part))
 
     def start(self, link: OnshapeLink, name: str, part_key: Optional[str] = None,
               part_id: Optional[str] = None) -> bool:
@@ -192,7 +247,7 @@ class Exporter:
         a call raises the same (a cached part still comes from the cache)."""
         try:
             pinned = self.resolve(link)
-            pid = self.find_part(pinned, name, part_id)["partId"]
+            pid = self.export_id(pinned, self.find_part(pinned, name, part_id))
             if not self.cache.has_step(pinned, pid) and self.cache.translation(pinned, pid) is None:
                 self._translate(pinned, name, pid, part_key)
         except Exception as e:  # noqa: BLE001 - export() raises it, where the run handles each kind
@@ -221,11 +276,22 @@ class Exporter:
             raise failed
         link = self.resolve(link)
         part = self.find_part(link, name, part_id)
-        pid = part["partId"]
+        bent = part["partId"]                         # the part itself (its id goes on record)
+        pid = self.export_id(link, part)              # what's cut: the flat pattern of a sheet metal part
         material = (part.get("material") or {}).get("displayName")
+        bends: Tuple[Dict[str, Any], ...] = ()
+        if pid != bent:
+            try:
+                bends = self.bends(link, bent, part_key)
+            except (BudgetExceeded, QuotaExhausted, RateLimited):
+                raise
+            except Exception as e:  # noqa: BLE001 - the flat still cuts; the card just can't list its bends
+                bends = ({"name": "?", "angle_deg": 0.0, "direction": "", "radius_in": 0.0, "order": 0,
+                          "unknown": str(e)[:120]},)
         if self.cache.has_step(link, pid):
             path = self.cache.step_path(link, pid)
-            return ExportedPart(pid, material, path, sha256_file(path), from_cache=True, microversion=link.mid)
+            return ExportedPart(bent, material, path, sha256_file(path), from_cache=True, microversion=link.mid,
+                                bends=bends)
 
         client = self._need_client(f"the STEP file for '{name}'")
         tid = self.cache.translation(link, pid)
@@ -245,7 +311,8 @@ class Exporter:
                 data = client.get_bytes(f"{API}/documents/d/{link.did}/externaldata/{ids[0]}",
                                         purpose="export_download", part_key=part_key)
                 path, sha = self.cache.put_step(link, pid, data)
-                return ExportedPart(pid, material, path, sha, from_cache=False, microversion=link.mid)
+                return ExportedPart(bent, material, path, sha, from_cache=False, microversion=link.mid,
+                                    bends=bends)
             if state == "FAILED":
                 self.cache.forget_translation(link, pid)
                 raise ExportError(f"Onshape couldn't export '{name}': {status.get('failureReason', 'no reason given')}")

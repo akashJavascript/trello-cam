@@ -164,13 +164,36 @@ def read_body(body: Dict[str, Any], name: str) -> Tuple[PartGeometry, Dict[str, 
     us, ws = [_dot(p, u) for p in every], [_dot(p, w) for p in every]
     extra["box_in"] = [round((max(us) - min(us)) / M_PER_IN, 3), round((max(ws) - min(ws)) / M_PER_IN, 3)]
     extra["face_ids"] = [f["id"] for f in faces]
-    outer = next((lp for lp in largest.get("loops") or [] if lp.get("isOuter")), None)
-    if outer is not None:
+    # The outline: the top's outer loop, or for a top split into faces in one plane (a sheet metal flat pattern is
+    # split along its bends) the outer loops' co-edges that aren't shared between two of those faces, in order.
+    level = _dot(_v((largest.get("surface") or {}).get("origin")) or (0.0, 0.0, 0.0), axis)
+    tops = [f for f in planes if _dot(outward_normal(f), axis) > 0.9999
+            and abs(_dot(_v((f.get("surface") or {}).get("origin")) or (0.0, 0.0, 0.0), axis) - level) < 1e-6]
+    top_ids = {f["id"] for f in tops}
+    boundary = []
+    for f in tops:
+        outer = next((lp for lp in f.get("loops") or [] if lp.get("isOuter")), None)
+        for co in (outer or {}).get("coedges") or []:
+            if sum(1 for o in faces_of_edge.get(co.get("edgeId"), []) if o in top_ids) > 1:
+                continue                                   # between two top faces: inside the outline
+            boundary.append((f["id"], co))
+    if boundary:
+        def ends(co):
+            g = (edges.get(co.get("edgeId")) or {}).get("geometry") or {}
+            a, b = _v(g.get("startPoint")), _v(g.get("endPoint"))
+            return (b, a) if not co.get("orientation", True) else (a, b)
+        ordered, left = [boundary[0]], boundary[1:]
+        while left:
+            end = ends(ordered[-1][1])[1]
+            nxt = min(left, key=lambda fc: sum((x - y) ** 2 for x, y in zip(end or (0, 0, 0),
+                                                                            ends(fc[1])[0] or (0, 0, 0))))
+            ordered.append(nxt)
+            left.remove(nxt)
         walls: List[str] = []
         ring: List[Tuple[float, float]] = []
-        for co in outer.get("coedges") or []:
+        for fid, co in ordered:
             for other in faces_of_edge.get(co.get("edgeId"), []):
-                if other != largest["id"] and other not in walls:
+                if other not in top_ids and other not in walls:
                     walls.append(other)
             g = (edges.get(co.get("edgeId")) or {}).get("geometry") or {}
             pts = [_v(g.get(k)) for k in ("startPoint", "quarterPoint", "midPoint", "endPoint")]

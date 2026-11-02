@@ -893,3 +893,10 @@ laptop's Windows side by the service, apart from BreadCompetition's. The panel's
 and yearly limits, counted apart from runs', so it can never use up a run's calls. A second card for a part that
 has one going is refused; its quantity can be changed instead.
 
+## 2026-11-01: bent sheet metal parts (the user's choices)
+
+Cut the flat pattern Onshape makes (the parts list with includeFlatParts), and tell the operator how to bend it from
+Onshape's bend table, on the sheet card. No 3/32 in stock. Scribing the bend lines with the router: an option, off by
+default. A top split into faces in one plane (every flat pattern's is, along its bends) is cut as one outline for every
+part, not only bent ones: the old refusal existed only because the outline came from one face.
+

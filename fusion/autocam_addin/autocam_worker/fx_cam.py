@@ -29,6 +29,7 @@ UNCONFIRMED = {
     "generate_retry": "CAM.generateToolpath again for ops left with no toolpath and no error",
     "chain_side_type": "ChainSelection.sideType = AlwaysInside for single loops",
     "chain_direction": "ChainSelection.isReverted so the chain runs against the loop's way (cut side follows direction)",
+    "outline_chain": "a split top's outline cut as one chain of edges (sheet metal flats; fx_geometry.outline_coedges)",
     "gouge_check": "BRepBody.pointContainment on the posted program's cutting points",
     "team_save": "Document.saveAs into the Fusion Team folder, wait for Application.dataFileComplete, then DataFile.fusionWebURL",
     "tabs": "contour op tabs: group_tabs, tabPositioning = 'tabCount', tabsPerContour",
@@ -323,8 +324,31 @@ def outline_copies(setup, template_op, outlines, contour_param: str) -> None:
         op.name = name
         if op.name != name:
             raise AdapterError(f"renaming the outline copy to {name!r} didn't stick")
-        select_face_loops(op, [face], adsk.cam.LoopTypes.OnlyOutsideLoops, contour_param)
+        if isinstance(face, list):                       # a split top's outline (fx_geometry.outline_coedges)
+            select_outline_chain(op, face, contour_param)
+        else:
+            select_face_loops(op, [face], adsk.cam.LoopTypes.OnlyOutsideLoops, contour_param)
     template_op.deleteMe()
+
+
+def select_outline_chain(op, coedges, contour_param: str) -> None:
+    """A part's outline as one chain of edges, cut outside it. Like a cutout's loop (_inside): the cut side follows
+    the chain's direction, and a chain running against the loops' way cuts on the side away from the faces, which
+    for an outline is outside. The posted program is still tested against the part bodies, so a wrong side is never
+    offered."""
+    if not coedges:
+        raise AdapterError(f"{op.name}: no outline edges")
+    value = _contours(op, contour_param)
+    sels = value.getCurveSelections()
+    sels.clear()
+    chain = sels.createNewChainSelection()
+    chain.inputGeometry = [co.edge for co in coedges]
+    sides = getattr(adsk.cam, "SideTypes", None)
+    if sides is not None and hasattr(type(chain), "sideType") and hasattr(sides, "AlwaysOutsideSideType"):
+        chain.sideType = sides.AlwaysOutsideSideType
+    elif hasattr(type(chain), "isReverted"):
+        chain.isReverted = not coedges[0].isOpposedToEdge
+    value.applyCurveSelections(sels)
 
 
 def generate(cam, setups, timeout_s: float, used=lambda key: None):

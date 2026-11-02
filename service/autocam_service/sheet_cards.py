@@ -181,6 +181,7 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
     elif vs.cuttable and tabbed:
         lines.append("Parts marked tabs, and the slugs in their cutouts, are held by small tabs: leave them in at "
                      "the stops, and break them out once the program is done.")
+    bent_keys = {p.part_key for p in job.parts if p.bends}
     lines += ["", "CUT ORDER"]
     counts = {}
     totals = {p.part_key: p.count for p in s.parts}
@@ -190,8 +191,15 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         name = part_cards.get(part_key, (part_key, ""))[0]
         of = f" ({counts[part_key]} of {totals[part_key]})" if totals.get(part_key, 1) > 1 else ""
         marks = [m for m, on in (("faced", part_key in faced), ("fit", part_key in fitted),
-                                 ("tabs", part_key in tabbed)) if on]
+                                 ("tabs", part_key in tabbed), ("bent", part_key in bent_keys)) if on]
         lines.append(f"{i}. {name}{of}" + "".join(f" - {m}" for m in marks))
+
+    bent = [p for p in job.parts if p.bends and p.part_key in on_sheet]
+    if bent:
+        lines += ["", "BEND AFTER CUTTING (these are cut flat)"]
+        for p in bent:
+            lines.append(f"- {part_cards.get(p.part_key, (p.name, ''))[0]}: {bend_text(p.bends)}"
+                         + (f" ({m.name} can crack at a tight bend: check it)" if m.name == "6061" else ""))
 
     use = sheet_use(s)
     if use:
@@ -259,6 +267,16 @@ def own_by_hand_description(*, program: str, part: str, part_url: str, stock: st
         "Cut it from one of AutoCAM's numbered offcuts? Add a line to that offcut's card like Cut by hand: 12 to 18 "
         "along, 5 to 10 across, so later runs keep clear of it.",
     ])
+
+
+def bend_text(bends) -> str:
+    """Bend A 90 up, then Bend B 45 down (R 0.09 in)."""
+    known = [b for b in bends if b.direction]
+    if not known:
+        return "its bends weren't read: check the part in Onshape"
+    parts = [f"{b.name} {b.angle_deg:g}\u00b0 {b.direction}" for b in known]
+    radii = sorted({round(b.radius_in, 3) for b in known if b.radius_in})
+    return ", then ".join(parts) + (f" (R {', '.join(f'{r:g}' for r in radii)} in)" if radii else "")
 
 
 def fit_lines(f: dict, s) -> List[str]:

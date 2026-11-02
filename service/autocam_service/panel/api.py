@@ -259,7 +259,14 @@ class PanelApp:
                 "family": m.family if m else ""}
 
     def _solids(self, parts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return [p for p in parts if p.get("bodyType") in (None, "solid") and p.get("partId")]
+        """The parts a student sends: solids, not sheet metal flat patterns (they share the bent part's name)."""
+        return [p for p in parts if p.get("bodyType") in (None, "solid") and p.get("partId")
+                and not p.get("isFlattenedBody")]
+
+    def _flat(self, did: str, wvm: str, wvmid: str, eid: str, pid: str) -> Optional[Dict[str, Any]]:
+        """A sheet metal part's flat pattern (what's cut), from the parts list read with includeFlatParts."""
+        from ..onshape.export import flat_of
+        return flat_of(self.onshape.cached_parts(did, wvm, wvmid, eid) or [], pid)
 
     def _find(self, did: str, wvm: str, wvmid: str, eid: str, pid: str) -> Dict[str, Any]:
         part = next((p for p in self._solids(self.onshape.parts(did, wvm, wvmid, eid)) if p["partId"] == pid), None)
@@ -282,7 +289,8 @@ class PanelApp:
                 self.board.chip(self.board.for_part(did, eid, p["partId"], p.get("name") or "", cards))
             material = self._part_material(p)
             listed.append({"id": p["partId"], "name": p.get("name") or "", "material": material, "chip": chip,
-                           "mark": self._mark(did, wvm, wvmid, eid, p, material)})
+                           "mark": self._mark(did, wvm, wvmid, eid, p, material),
+                           "bent": self._flat(did, wvm, wvmid, eid, p["partId"]) is not None})
         uid = q.get("u", "")
         return {"parts": listed, "boardError": board_error, "writable": wvm == "w", "queue": self._queue(),
                 "user": self.names.get(uid) if USER_RE.match(uid or "") else "",
@@ -382,7 +390,9 @@ class PanelApp:
               material: Optional[Dict[str, Any]]) -> Optional[str]:
         """"ok" or "bad" for a part already checked in this state of the Part Studio (no Onshape call); None
         otherwise."""
-        found = self.onshape.cached_geometry(did, wvm, wvmid, eid, part["partId"], str(part.get("microversionId") or ""))
+        flat = self._flat(did, wvm, wvmid, eid, part["partId"])
+        found = self.onshape.cached_geometry(did, wvm, wvmid, eid, (flat or part)["partId"],
+                                             str(part.get("microversionId") or ""))
         if found is None:
             return None
         try:
@@ -397,7 +407,8 @@ class PanelApp:
         pid = self._part_id(q)
         part = self._find(did, wvm, wvmid, eid, pid)
         pc = self.board.for_part(did, eid, pid, part.get("name") or "", self.board.part_cards())
-        return {"part": {"id": pid, "name": part.get("name") or "", "material": self._part_material(part)},
+        return {"part": {"id": pid, "name": part.get("name") or "", "material": self._part_material(part),
+                         "bent": self._flat(did, wvm, wvmid, eid, pid) is not None},
                 "card": self.board.detail(pc) if pc is not None else None}
 
     def qty(self, q: Dict[str, str]) -> Dict[str, Any]:
@@ -418,16 +429,26 @@ class PanelApp:
         key = q.get("m") or (have["key"] if have and have["key"] else None)
         if key is not None and key not in self.cfg.materials:
             raise Refused(400, "Bad request")
+        flat = self._flat(did, wvm, wvmid, eid, pid)       # sheet metal: its flat pattern is what's cut
+        state = str(part.get("microversionId") or "")
+        bends = None
         try:
-            geom, extra = self.onshape.geometry(did, wvm, wvmid, eid, pid, str(part.get("microversionId") or ""),
+            geom, extra = self.onshape.geometry(did, wvm, wvmid, eid, (flat or part)["partId"], state,
                                                 part.get("name") or pid, fresh=q.get("fresh") == "1")
+            if flat is not None:
+                bends = self.onshape.bends(did, wvm, wvmid, eid, pid, state)
         except OutOfCalls as e:
             return {"unavailable": str(e)}
         except NoAccess:
             raise
         except PanelOnshapeError as e:
-            return {"unavailable": str(e)}
-        return checks.check(geom, self.cfg, key, extra)
+            if flat is None or "bends" not in str(e):
+                return {"unavailable": str(e)}
+            bends = []
+        out = checks.check(geom, self.cfg, key, extra)
+        if flat is not None:
+            out["bent"] = checks.bends_line(bends or [], self.cfg.materials.get(key) if key else None)
+        return out
 
     def changed(self, q: Dict[str, str]) -> Dict[str, Any]:
         """{"changed": True/False/None, "what": [...], "run"}: None when there's nothing to compare with (not CAM'd

@@ -157,7 +157,8 @@ class PanelOnshape:
             client = self._client()
             try:
                 data = client.get_json(f"{API}/parts/d/{did}/{wvm}/{wvmid}/e/{eid}",
-                                       query={"withThumbnails": "false"}, purpose="panel_parts")
+                                       query={"withThumbnails": "false", "includeFlatParts": "true"},
+                                       purpose="panel_parts")
             except BudgetExceeded as e:
                 raise OutOfCalls(str(e)) from e
             except OnshapeError as e:
@@ -299,6 +300,32 @@ class PanelOnshape:
             rows = bom_rows(data if isinstance(data, dict) else {})
             self._boms[key] = _Entry(self.clock(), rows)
             return rows
+
+    # ---- a sheet metal part's bends
+    def bends(self, did: str, wvm: str, wvmid: str, eid: str, pid: str, microversion: str) -> List[Dict[str, Any]]:
+        """Its bend table (one call, kept on disk with the Part Studio's state)."""
+        from ..onshape.export import parse_bend_table
+        path = self.cache_root / "onshape" / (f"panel_bends_{did}_{wvm}{wvmid}_{eid}_{safe_token(pid)}_"
+                                              f"{safe_token(microversion)}.json")
+        with self._lock:
+            if microversion and path.is_file():
+                try:
+                    return json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    pass
+            client = self._client()
+            try:
+                data = client.get_json(f"{API}/parts/d/{did}/{wvm}/{wvmid}/e/{eid}/partid/{quote(pid, safe='')}"
+                                       "/sheetmetal/bendtable", purpose="panel_bends")
+            except BudgetExceeded as e:
+                raise OutOfCalls(str(e)) from e
+            except OnshapeError as e:
+                raise PanelOnshapeError(f"Onshape didn't give the bends ({e.status or 'no answer'}).") from e
+            bends = parse_bend_table(data if isinstance(data, dict) else {})
+            if microversion:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                write_atomic(path, json.dumps(bends).encode("utf-8"))
+            return bends
 
     # ---- quantities from the document's assemblies
     def assembly_counts(self, did: str, wvm: str, wvmid: str, eid: str, pid: str,

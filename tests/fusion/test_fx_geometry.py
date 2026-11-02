@@ -51,3 +51,48 @@ def test_no_flat_face_or_two_bodies(fx_geometry):
     occ = fakebrep.plate(4.0, 3.0, 0.125)
     occ.bRepBodies.append(occ.bRepBodies[0])
     assert fx_geometry.extract("p01", occ).solid_bodies == 2
+
+
+# ---------------------------------------------------------------- a split top's outline (sheet metal flats)
+
+import types as _types                                                      # noqa: E402
+
+
+class _P:
+    def __init__(self, x, y):
+        self.x, self.y, self.z = x, y, 0.0
+
+    def distanceTo(self, o):
+        return ((self.x - o.x) ** 2 + (self.y - o.y) ** 2) ** 0.5
+
+
+def _split_top():
+    """A 4 x 2 top split at x = 2 into two faces, as Fusion has them: each face's outer loop runs counterclockwise;
+    the split edge belongs to both. Co-edges are listed out of order, and some run against their edges."""
+    pts = {k: _P(*v) for k, v in {"a": (0, 0), "b": (2, 0), "c": (4, 0), "d": (4, 2), "e": (2, 2), "f": (0, 2)}.items()}
+
+    def edge(u, v):
+        return _types.SimpleNamespace(startVertex=_types.SimpleNamespace(geometry=pts[u]),
+                                      endVertex=_types.SimpleNamespace(geometry=pts[v]), faces=[], name=u + v)
+
+    e = {n: edge(*n) for n in ("ab", "bc", "cd", "de", "be", "ef", "fa")}
+    left = _types.SimpleNamespace(tempId=1, loops=[])
+    right = _types.SimpleNamespace(tempId=2, loops=[])
+    for face, runs in ((left, [("ab", False), ("be", False), ("ef", False), ("fa", False)]),
+                       (right, [("de", False), ("bc", False), ("cd", False), ("be", True)])):
+        co = []
+        for name, opposed in runs:
+            e[name].faces.append(face)
+            co.append(_types.SimpleNamespace(edge=e[name], isOpposedToEdge=opposed))
+        face.loops = [_types.SimpleNamespace(isOuter=True, coEdges=co)]
+    return [left, right]
+
+
+def test_a_split_tops_outline_leaves_out_the_shared_edge_and_runs_round(monkeypatch):
+    from autocam_worker import fx_geometry
+    monkeypatch.setattr(fx_geometry, "items", lambda x: list(x))
+    ring = fx_geometry.outline_coedges(_split_top())
+    names = [co.edge.name for co in ring]
+    assert "be" not in names and sorted(names) == ["ab", "bc", "cd", "de", "ef", "fa"]
+    for a, b in zip(ring, ring[1:] + ring[:1]):                                 # each ends where the next starts
+        assert fx_geometry._ends(a)[1].distanceTo(fx_geometry._ends(b)[0]) < 1e-9

@@ -113,8 +113,41 @@ def loop_segments(face, index=None):
     """The face's outer loop (index None) or inner loop `index`, as Segs in X/Y (inches) in loop order: a
     straight edge as its two ends, anything else as a polyline from its evaluator."""
     loop = outer_loop(face) if index is None else inner_loops(face)[index]
+    return coedge_segments(items(loop.coEdges))
+
+
+def _ends(co):
+    """A co-edge's start and end points, the way its loop runs."""
+    a, b = co.edge.startVertex.geometry, co.edge.endVertex.geometry
+    return (b, a) if co.isOpposedToEdge else (a, b)
+
+
+def outline_coedges(faces):
+    """The outline of several faces in one plane that share edges (a top split along a sheet metal part's bends):
+    the co-edges of their outer loops whose edge isn't shared between two of them, in order around the outline,
+    each running its own loop's way (all the faces face the same way, so their loops run the same way round)."""
+    ids = {f.tempId for f in faces}
+    boundary = []
+    for f in faces:
+        for co in items(outer_loop(f).coEdges):
+            if any(o.tempId in ids and o.tempId != f.tempId for o in items(co.edge.faces)):
+                continue                                 # between two of the faces: inside the outline
+            boundary.append(co)
+    if not boundary:
+        return []
+    ring, left = [boundary[0]], boundary[1:]
+    while left:
+        end = _ends(ring[-1])[1]
+        nxt = min(left, key=lambda c: end.distanceTo(_ends(c)[0]) if hasattr(end, "distanceTo")
+                  else ((end.x - _ends(c)[0].x) ** 2 + (end.y - _ends(c)[0].y) ** 2 + (end.z - _ends(c)[0].z) ** 2))
+        ring.append(nxt)
+        left.remove(nxt)
+    return ring
+
+
+def coedge_segments(coedges):
     segs = []
-    for co in items(loop.coEdges):
+    for co in coedges:
         edge = co.edge
         if edge.geometry.curveType == adsk.core.Curve3DTypes.Line3DCurveType:
             pts = [edge.startVertex.geometry, edge.endVertex.geometry]

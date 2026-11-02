@@ -312,12 +312,17 @@ def test_one_sheet_failing_to_build_or_post_leaves_the_others(tmp_path):
     assert rig.service_view(job, result).part_problems == {}
 
 
-def test_split_top_face_needs_manual_cam(tmp_path):
+def test_a_split_top_is_cut_as_one_outline(tmp_path):
+    """A top split into faces in one plane (a sheet metal flat pattern is split along its bends) is fine: its
+    outline is all of them together (2026-11-01; before, it went to manual CAM)."""
     rig = Rig(tmp_path)
     b = PlateBuilder("split")
     b._face(kind="plane", z0=0.125, z1=0.125, normal_dot=1.0, area=10.0)
     job = rig.job([("split", 1, b.build(), (4.0, 4.0))])
-    assert "top is split into 2 faces" in rig.run(job).parts[0].errors[0].msg
+    result = rig.run(job)
+    assert result.parts[0].errors == ()
+    [(name, _, faces)] = next(iter(rig.fake.sheets.values()))["outer"]
+    assert isinstance(faces, tuple) and len(faces) == 2
 
 
 def test_tool_cutting_into_a_part_rejects_the_sheet(tmp_path):

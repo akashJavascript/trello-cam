@@ -77,6 +77,13 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   elsewhere suspends it (one session per account); a separate account for the laptop would end that.
 
 ### Built, not yet seen on the machine or the real board
+- **Bent (sheet metal) parts** (core 0.17.0, 2026-11-01): a run reads the Part Studio's parts with
+  `includeFlatParts`; a part with a flat pattern is exported as its flat (the bent part's id stays on record) and its
+  bend table (`.../sheetmetal/bendtable`) goes in the job, so the sheet card has a "BEND AFTER CUTTING" section and the
+  cut order marks it bent. A flat's top and bottom are split along its bends (seen on a real one): any top split into
+  faces in one plane is now cut as one outline (fx_geometry.outline_coedges, a chain cut outside, like a cutout's loop
+  the other way round), with tabs and labels on that outline; before, it went to manual CAM. Scribing bend lines:
+  an option, off by default (not built yet). No 3/32 stock (the user).
 - **The Onshape panel, Phase 1** (2026-11-01, `docs/panel.md`): "Send to AutoCAM" in a Part Studio's right panel
   makes part cards in AutoCAM's format (Ready for CAM, or Drafts), with the quantity counted from the document's
   assemblies, the options in one list, the material set in Onshape when it has none, and each part's status
