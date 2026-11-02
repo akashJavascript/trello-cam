@@ -217,7 +217,8 @@
       var sel = {};
       a.items.forEach(function (i) {
         var old = S.asmSel[i.key];
-        sel[i.key] = { on: i.sendable && (old ? old.on : i.chip.status === "none"), qty: old ? old.qty : Math.max(1, i.qty) };
+        // ticked to start: this document's parts with no card (another document's are often bought parts)
+        sel[i.key] = { on: i.sendable && (old ? old.on : i.here && i.chip.status === "none"), qty: old ? old.qty : Math.max(1, i.qty) };
       });
       S.asmSel = sel;
       S.mode = "assembly";

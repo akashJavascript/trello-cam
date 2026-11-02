@@ -48,7 +48,8 @@ preview), cut, or sent back with the reason.
 - **Fits by clicking:** clicking a round hole that isn't drilled, or a wall of the outline, in the CAD sets the Fit
   (Onshape face ids from the shape read for the check). Waits on what Onshape's SELECTION messages really hold.
 - **A whole assembly:** the second extension (context Assembly, `&kind=assembly` on its link) lists the assembly's
-  parts from its bill of materials (one call, subassemblies counted in): the ones AutoCAM cuts ticked, with their
+  parts from its bill of materials (one call, subassemblies counted in): this document's parts AutoCAM cuts first
+  and ticked (parts from other documents are often bought ones, so they start unticked), with their
   counts, the rest saying why not (no material, not a material AutoCAM cuts, configured, already has a card).
   Send makes a card per ticked part, linking its own Part Studio (a version for parts from other documents).
 - **A part that already has a card:** its status. A second card is refused; the quantity can be changed instead

@@ -308,9 +308,10 @@ class PanelApp:
             why = ("No material" if material is None else "" if material["key"] else "Not cut here") or \
                 ("Configured" if r["configured"] else "")
             items.append({"key": f"{r['did']}/{r['eid']}/{r['pid']}", "name": r["name"] or r["pid"], "qty": r["qty"],
-                          "material": material, "chip": chip, "why": why,
+                          "material": material, "chip": chip, "why": why, "here": r["did"] == did,
                           "sendable": not why and cards is not None and (pc is None or pc.status not in ACTIVE)})
-        items.sort(key=lambda i: _natural(i["name"]))
+        # this document's parts first: parts from other documents are often bought ones (a vendor's library)
+        items.sort(key=lambda i: (not i["here"], _natural(i["name"])))
         name = ""
         try:
             name = next((e.get("name") or "" for e in self.onshape.elements(did, wvm, wvmid) if e.get("id") == eid), "")
