@@ -16,13 +16,14 @@ from typing import Dict, List
 from autocam_core.schema_job import Job
 
 from . import fx_cam, fx_design, fx_geometry
-from .adapter import BEARING, BORE, DRILL, FACE, INNER, OUTER, POCKET, POCKETFINISH, Adapter, AdapterError, Box
+from .adapter import (BEARING, BORE, DRILL, FACE, INNER, OUTER, POCKET, POCKETFINISH, SCRIBE, Adapter, AdapterError,
+                      Box)
 from .fx_cam import UNCONFIRMED
 from .fx_util import call, to_cm
 
 
 class FusionAdapter(Adapter):
-    capabilities = frozenset({DRILL, BORE, BEARING, INNER, OUTER, POCKET, POCKETFINISH, FACE})
+    capabilities = frozenset({DRILL, BORE, BEARING, INNER, OUTER, POCKET, POCKETFINISH, FACE, SCRIBE})
 
     def __init__(self, app, job: Job, generate_timeout_s: float = 900.0):
         self.app = app
@@ -32,6 +33,7 @@ class FusionAdapter(Adapter):
         self.tokens: Dict[str, str] = {}       # copy id -> occurrence entity token
         self.setups: Dict[str, object] = {}     # sheet -> setup
         self.tab_sketch: Dict[str, object] = {}  # sheet -> the sketch holding its tab points
+        self.scribe_sketch: Dict[str, object] = {}   # sheet -> the sketch holding its bend lines
         self.sheet_info: Dict[str, tuple] = {}  # sheet -> (origin, thickness, copy ids)
         self.stocks: Dict[str, object] = {}     # sheet -> its stock solid
         self.used: List[str] = []
@@ -167,6 +169,18 @@ class FusionAdapter(Adapter):
             call(f"{op_name}: select tops", fx_cam.select_loops, op, [], loops,
                  selections.get("face", selections["pocket"]), self._used)
             call(f"{op_name}: face depth", fx_cam.face_depth, op, fill.depth_in)
+        elif fill.tag == SCRIBE:
+            self._used("scribe_lines")
+            if sheet not in self.scribe_sketch:
+                root = self.design.rootComponent
+                sk = call("bend lines sketch", root.sketches.add, root.xYConstructionPlane)
+                sk.name = f"BEND LINES {sheet}"
+                self.scribe_sketch[sheet] = sk
+            lines = self.scribe_sketch[sheet].sketchCurves.sketchLines
+            made = [call("bend line", lines.addByTwoPoints, adsk.core.Point3D.create(to_cm(x0), to_cm(y0), 0),
+                         adsk.core.Point3D.create(to_cm(x1), to_cm(y1), 0)) for x0, y0, x1, y1 in fill.lines]
+            call(f"{op_name}: select bend lines", fx_cam.select_lines, op, made, params["selections"]["contour"])
+            call(f"{op_name}: scribe", fx_cam.scribe_params, op, fill.depth_in)
         elif fill.tag == POCKETFINISH:
             self._used("pocket_walls")
             loops = [fx_geometry.outer_loop(fx_design.face_by_id(self._occ(cid), fid)) for cid, fid in fill.floors]
@@ -221,6 +235,15 @@ class FusionAdapter(Adapter):
             return call("outline edges", lambda: fx_geometry.coedge_segments(fx_geometry.outline_coedges(faces)))
         return call("loop edges", fx_geometry.loop_segments, fx_design.face_by_id(self._occ(copy_id), face_id),
                     loop_index)
+
+    def top_edges(self, copy_id, face_ids):
+        occ = self._occ(copy_id)
+        return {fid: fx_geometry.face_edges(fx_design.face_by_id(occ, fid)) for fid in face_ids}
+
+    def set_tool(self, sheet, op_name, tool_json):
+        self._used("scribe_tool")
+        note = fx_cam.set_tool(fx_cam.op_by_name(self._setup(sheet), op_name), tool_json)
+        self.run_notes.append(note)
 
     def set_tab_points(self, sheet, op_name, points):
         self._used("tab_points")
@@ -318,6 +341,7 @@ def _as_adapter_error(name, method):
 
 for _name in ("begin", "import_step", "extract", "add_copy", "arrange", "box", "faces_up", "discard", "make_sheet",
               "make_extra_setup", "set_radial_stock", "op_names", "apply_template", "fill",
-              "copy_op", "set_tabs", "set_tab_size", "set_tab_points", "loop_segments", "make_outer_ops", "delete_op", "generate", "post", "cuts_into_parts",
+              "copy_op", "set_tabs", "set_tab_size", "set_tab_points", "loop_segments", "make_outer_ops", "delete_op",
+              "top_edges", "set_tool", "generate", "post", "cuts_into_parts",
               "machining_time", "preview", "export_f3d", "save_to_team", "finish"):
     setattr(FusionAdapter, _name, _as_adapter_error(_name, getattr(FusionAdapter, _name)))

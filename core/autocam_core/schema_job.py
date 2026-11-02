@@ -21,6 +21,8 @@ SOURCES = ("onshape", "trello_attachment", "local")
 
 Rect = Tuple[float, float, float, float]
 MAX_FACE_DEPTH_IN = 0.02          # facing skims a top clean; anything deeper is a pocket
+MAX_SCRIBE_DEPTH_IN = 0.02        # a scribed bend line is a mark, not a cut
+SCRIBE_WAYS = ("endmill", "chamfer")
 
 
 @dataclass(frozen=True)
@@ -174,6 +176,8 @@ class PartSpec:
                                                        # (core 0.14.0)
     fit: Optional[FitSpec] = None                      # a hole size or the outline fitted at the machine (0.16.0)
     bends: Tuple[BendSpec, ...] = ()                   # a sheet metal part: its STEP is the flat pattern (0.17.0)
+    scribe: str = ""                                   # its bend lines scribed on top: "endmill" (in the sheet's
+                                                       # program) or "chamfer" (its SCRIBE program); "" not (0.18.0)
 
 
 @dataclass(frozen=True)
@@ -194,6 +198,17 @@ class FaceSpec:
     (the sheet's FACE program, run first) with the face tool, over those parts only (core 0.14.0)."""
     depth_in: float
     tool: ToolSpec                                     # its template has one [face] op, with this tool
+
+
+@dataclass(frozen=True)
+class ScribeSpec:
+    """Bend lines scribed on the tops of bent parts that ask for it (core 0.18.0, scribe.py): with the sheet's own
+    cutter in the sheet's program, or with the chamfer mill in the sheet's SCRIBE program (after FACE, before the
+    sheet's). Each this deep below the part's top."""
+    depth_in: float                                    # with the sheet's cutter
+    chamfer_depth_in: float                            # with the chamfer mill (its line is twice this wide)
+    chamfer: Optional[ToolSpec] = None                 # None: only the sheet's cutter scribes
+    chamfer_tool_json: str = ""                        # its entry in the pinned tool library (Tool.createFromJson)
 
 
 @dataclass(frozen=True)
@@ -231,6 +246,7 @@ class Job:
     offcuts: Tuple[OffcutSpec, ...] = ()
     tabs: TabSpec = TabSpec()
     face: Optional[FaceSpec] = None
+    scribe: Optional[ScribeSpec] = None
 
     def validate(self) -> List[str]:
         e: List[str] = []
@@ -292,6 +308,17 @@ class Job:
                 e.append(f"face.tool: {f.tool.key} is one of the sheet tools")
         if any(p.face for p in self.parts) and self.face is None:
             e.append("parts ask for facing but the job has no face settings")
+        if self.scribe is not None:
+            s = self.scribe
+            for name, depth in (("depth_in", s.depth_in), ("chamfer_depth_in", s.chamfer_depth_in)):
+                if not 0 < depth <= MAX_SCRIBE_DEPTH_IN:
+                    e.append(f"scribe.{name}: must be more than 0 and at most {MAX_SCRIBE_DEPTH_IN} in (a line, "
+                             "not a cut)")
+            if s.chamfer is not None:
+                if not s.chamfer_tool_json:
+                    e.append("scribe.chamfer_tool_json: missing (the chamfer mill from the tool library)")
+                if s.chamfer.key in t.tools:
+                    e.append(f"scribe.chamfer: {s.chamfer.key} is one of the sheet tools")
         if not self.parts:
             e.append("parts: empty")
         for p in self.parts:
@@ -318,6 +345,15 @@ class Job:
                     e.append(f"{where}.fit: a fitted part is always held by tabs (its laps run after it's cut out)")
                 if p.by_hand:
                     e.append(f"{where}.fit: parts placed by hand aren't fitted yet")
+            if p.scribe:
+                if p.scribe not in SCRIBE_WAYS:
+                    e.append(f"{where}.scribe: {p.scribe!r} is not one of {', '.join(SCRIBE_WAYS)}")
+                elif not p.bends:
+                    e.append(f"{where}.scribe: only a bent part has bend lines to scribe")
+                elif self.scribe is None:
+                    e.append(f"{where}.scribe: the job has no scribe settings")
+                elif p.scribe == "chamfer" and self.scribe.chamfer is None:
+                    e.append(f"{where}.scribe: the job has no chamfer mill for scribing")
         return e
 
     def part(self, part_key: str) -> PartSpec:

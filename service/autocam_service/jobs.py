@@ -1,8 +1,10 @@
 """Build job.json for one batch: everything Fusion needs, copied out of config (Fusion never reads it)."""
 
 import copy
+import json
 import os
 import re
+import zipfile
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from typing import List, Optional, Sequence
@@ -11,7 +13,7 @@ from autocam_core import CORE_VERSION, fixture
 from autocam_core.holes import HoleRules
 from autocam_core.schema import to_dict
 from autocam_core.schema_job import (
-    JOB_SCHEMA, FaceSpec, FitSpec, FixtureSpec, FusionTeamSpec, GuardSettings, Job, MaterialSpec, NestSpec, OffcutSpec, OnshapeRef,
+    JOB_SCHEMA, FaceSpec, FitSpec, ScribeSpec, FixtureSpec, FusionTeamSpec, GuardSettings, Job, MaterialSpec, NestSpec, OffcutSpec, OnshapeRef,
     BendSpec, PartSpec, PauseSettings, PlateSpec, PostSpec, SheetSpec, TabSpec, ToolingSpec, ToolSpec, load_job,
 )
 
@@ -56,6 +58,39 @@ def face_spec(cfg: Config) -> Optional[FaceSpec]:
     return FaceSpec(depth_in=f.depth_in, tool=tool)
 
 
+def library_entry(library: Path, guid: str) -> Optional[str]:
+    """A tool's entry in the pinned tool library, as JSON (what Fusion's Tool.createFromJson reads); None if it
+    isn't there."""
+    try:
+        with zipfile.ZipFile(library) as z:
+            tools = json.loads(z.read("tools.json").decode("utf-8")).get("data") or []
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile):
+        return None
+    entry = next((t for t in tools if isinstance(t, dict) and t.get("guid") == guid), None)
+    return json.dumps(entry, sort_keys=True) if entry is not None else None
+
+
+def scribe_spec(cfg: Config) -> Optional[ScribeSpec]:
+    """Scribed bend lines ([scribe]): its depths and the chamfer mill; None without a [scribe] table."""
+    s = cfg.scribe
+    if s is None:
+        return None
+    entry = library_entry(cfg.fusion.tool_library, s.chamfer_guid)
+    tool = None if entry is None else ToolSpec(
+        key="scribe", guid=s.chamfer_guid, number=s.chamfer_number, diameter_in=s.chamfer_diameter_in,
+        flute_in=s.chamfer_flute_in, min_inside_radius_in=0.0, drill_sizes_in=(), cutter_label=s.chamfer_label,
+        template_key="", template_path="")
+    return ScribeSpec(depth_in=s.depth_in, chamfer_depth_in=s.chamfer_depth_in, chamfer=tool,
+                      chamfer_tool_json=entry or "")
+
+
+def scribe_way(spec: Optional[ScribeSpec], asked: str, bends) -> str:
+    """What a part's Scribe: line comes to: nothing unless it's bent and the job can scribe that way."""
+    if not asked or not bends or spec is None or (asked == "chamfer" and spec.chamfer is None):
+        return ""
+    return asked
+
+
 def fit_spec(cfg: Config, store: Optional["fitting.FitStore"], material: str, fit, part_name: str) -> Optional[FitSpec]:
     """The stocks for a part's Fit: line ([fit], centred on what fitted last time if anything was ticked)."""
     if fit is None or not cfg.fit.enabled:
@@ -88,6 +123,7 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
         tools[small.key] = small
 
     fx = sheet_fixture(cfg)
+    scribe = scribe_spec(cfg)
 
     parts: List[PartSpec] = []
     for key, ready in batch.parts:
@@ -102,7 +138,8 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
             force_small_tool=req.force_small_tool, tabs=req.tabs or bool(req.fit), by_hand=req.by_hand,
             face=req.face, fit=fit_spec(cfg, fits, batch.material_key, req.fit, req.name),
             bends=tuple(BendSpec(b["name"], float(b["angle_deg"]), b["direction"], float(b["radius_in"]),
-                                 int(b["order"])) for b in ready.bends)))
+                                 int(b["order"])) for b in ready.bends),
+            scribe=scribe_way(scribe, req.scribe, ready.bends)))
     for n, spec in enumerate(carried, len(parts) + 1):
         parts.append(replace(spec, part_key=f"p{n:02d}"))
 
@@ -136,5 +173,6 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
         tabs=TabSpec(cfg.tabs.distance_in, cfg.tabs.min_per_contour, cfg.tabs.max_per_contour, cfg.tabs.at_points,
                      cfg.tabs.width_in, cfg.tabs.height_in),
         face=face_spec(cfg),
+        scribe=scribe,
     )
     return load_job(to_dict(job))  # same validation Fusion will apply

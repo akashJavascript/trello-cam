@@ -25,6 +25,9 @@ POCKET, POCKETFINISH = "pocket", "pocketfinish"
 DRILL, BORE, BEARING, INNER, OUTER = "drill", "bore", "bearing", "inner", "outer"
 TAGS = (POCKET, POCKETFINISH, DRILL, BORE, BEARING, INNER, OUTER)
 FACE = "face"            # the face template's one op (its own setup, never in a sheet's template)
+SCRIBE = "scribe"        # bend lines (core 0.18.0): a copy of the template's [outer] op, never in a template itself
+
+Edge = Tuple[str, Tuple[float, float], Tuple[float, float], bool]   # autocam_core.scribe.Edge
 
 
 class AdapterError(Exception):
@@ -73,7 +76,9 @@ class OpFill:
     loops: Tuple[Tuple[str, int, int], ...] = ()            # inner: (copy id, face id, inner loop index)
     floors: Tuple[Tuple[str, int], ...] = ()                # pocket, pocketfinish: (copy id, floor face id)
     tops: Tuple[Tuple[str, int], ...] = ()                  # face: (copy id, top face id), each skimmed inside
-    depth_in: float = 0.0                                   # its outline, this deep from the stock top
+    depth_in: float = 0.0                                   # its outline, this deep from the stock top (scribe too)
+    lines: Tuple[Tuple[float, float, float, float], ...] = ()   # scribe: bend lines (design X/Y), the tool center
+                                                                # along each, from the stock top down by depth_in
     stock_in: Optional[float] = None                        # bearing: radial stock to leave (None: the template's)
 
 
@@ -155,7 +160,9 @@ class Adapter:
 
     def fill(self, sheet: str, op_name: str, fill: OpFill) -> None:
         """Select what the op cuts. Inner ops also get bottom height = stock bottom; pocket ops keep the
-        template's (the selected floor); the face op gets bottom height = stock top less fill.depth_in."""
+        template's (the selected floor); the face op gets bottom height = stock top less fill.depth_in. A scribe
+        op (a copy of the template's [outer]) follows fill.lines with its tool center (no compensation, leads,
+        ramps, tabs or stock to leave), from the stock top down to fill.depth_in below it, in one pass."""
         raise NotImplementedError
 
     def make_outer_ops(self, sheet: str, template_op: str, outlines: Sequence[Tuple[str, str, int]]) -> None:
@@ -175,6 +182,16 @@ class Adapter:
     def loop_segments(self, copy_id: str, face_id: int, loop_index: Optional[int]) -> List[Seg]:
         """A loop of a face of a copy as it is now, in the design's X/Y (inches): the outer loop (loop_index
         None) or that inner loop, as straight lines and curves (polylines) in loop order."""
+        raise NotImplementedError
+
+    def top_edges(self, copy_id: str, face_ids: Sequence[int]) -> Dict[int, List[Edge]]:
+        """Each of these faces' outer loop as it is now, in the design's X/Y (inches): (a key the same for an edge two
+        of the faces share, start, end, straight)."""
+        raise NotImplementedError
+
+    def set_tool(self, sheet: str, op_name: str, tool_json: str) -> None:
+        """The op cuts with this tool (its entry in the pinned tool library) and that tool's preset feeds and speeds.
+        Raises AdapterError unless the op's tool reads back with the tool's GUID."""
         raise NotImplementedError
 
     def set_tab_points(self, sheet: str, op_name: str, points: Sequence[Tuple[float, float]]) -> None:

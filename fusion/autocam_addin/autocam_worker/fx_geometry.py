@@ -145,6 +145,17 @@ def outline_coedges(faces):
     return ring
 
 
+def face_edges(face):
+    """The face's outer loop as (edge key, start, end, straight) in X/Y (inches), each co-edge the loop's way. The
+    key is the edge's tempId, the same seen from either face that shares it (autocam_core.scribe.bend_centerlines)."""
+    out = []
+    for co in items(outer_loop(face).coEdges):
+        a, b = _ends(co)
+        straight = co.edge.geometry.curveType == adsk.core.Curve3DTypes.Line3DCurveType
+        out.append((str(co.edge.tempId), (to_in(a.x), to_in(a.y)), (to_in(b.x), to_in(b.y)), straight))
+    return out
+
+
 def coedge_segments(coedges):
     segs = []
     for co in coedges:

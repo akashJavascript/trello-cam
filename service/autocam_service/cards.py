@@ -27,6 +27,8 @@ QTY_LINE_RES = (
 )
 TITLE_QTY_RE = re.compile(r"^(?P<name>.*?)[ \t]*\(?[x\u00d7][ \t]*(?P<qty>\d+)\)?[ \t]*$", re.IGNORECASE)
 MATERIAL_RE = re.compile(r"^[ \t>\-]*material[ \t]*[:=][ \t]*(.*?)[ \t]*$", re.IGNORECASE | re.MULTILINE)
+SCRIBE_RE = re.compile(r"^[ \t>\-]*scribe(?:[ \t]+(?:the[ \t]+)?bend[ \t]*lines?)?[ \t]*[:=][ \t]*(.*?)[ \t]*$",
+                       re.IGNORECASE | re.MULTILINE)
 PART_ID_RE = re.compile(r"^[ \t>\-]*part[ \t]*id[ \t]*[:=][ \t]*([A-Za-z0-9_.+/=-]+)[ \t]*$", re.IGNORECASE | re.MULTILINE)
 STEP_SUFFIXES = (".step", ".stp")
 README_CARD = "How to add a part (read me)"
@@ -55,6 +57,9 @@ slug out before the laps) or Fit: outline. It's cut a little tight, and the shee
 to run one at a time until it fits; tick the one that did, and the next time starts there.
 Labels, if needed: {smoked} for smoked polycarbonate, {tool} to force the 1/8 in endmill, {face} for a clean
 top (it's skimmed {face_depth} in off the top, in a program run before the sheet's).
+Bent (sheet metal) part? It's cut flat and the sheet card lists its bends. Add a line Scribe: endmill to have each
+bend line scribed on top with the sheet's own cutter (a shallow line as wide as it), or Scribe: chamfer mill for a fine
+line with the 45 degree chamfer mill (a short program of its own, run before the sheet's).
 No Onshape? Attach a .step file and add a line like Material: 6061 (or 5052, PC).
 CAM'd it yourself? Attach your .tap instead, with lines like Material: 6061 and Thickness: 3/16 (and Cutter: 1/2
 if it's over 1/4 in), or use "I CAM'd it myself" in the Onshape panel. Add a line Place it myself to cut it wherever
@@ -70,6 +75,19 @@ Cut a part out of an offcut by hand? Add a line to its card like Cut by hand: 12
 attach the .tap instead, with a line like Zeroed at: 10 along, 5 across (where you zeroed X/Y). If a sheet card's offcut turns out
 to have something cut where the program goes, tick "Something's already cut where this program goes".
 If something is wrong, the card comes back in Needs fixing with a comment saying what to fix."""
+
+
+def scribe_value(text: str) -> Optional[str]:
+    """What a Scribe: line says: "endmill", "chamfer", "" (no), or None if it can't be read."""
+    t = " ".join(text.lower().replace("-", " ").split())
+    if t in ("", "no", "off", "none", "false"):
+        return ""
+    if "chamfer" in t or "45" in t or t in ("v bit", "vbit", "t16"):
+        return "chamfer"
+    if t in ("yes", "on", "true", "endmill", "end mill", "4mm", "4 mm", "1/8", "the endmill", "the end mill") \
+            or "end mill" in t or "endmill" in t:
+        return "endmill"
+    return None
 
 
 def _plain(desc: str) -> str:
@@ -95,6 +113,7 @@ class PartRequest:
     face: bool = False                   # the Face label: its top skimmed clean first
     fit: Optional[Tuple[str, float]] = None   # its Fit: line, ("hole", diameter) or ("outline", 0) (set by the runner)
     part_id: Optional[str] = None        # a Part ID: line: Onshape's id for the part, found by it before its name
+    scribe: str = ""                     # a Scribe: line: a bent part's bend lines scribed, "endmill" or "chamfer"
 
 
 @dataclass(frozen=True)
@@ -163,9 +182,17 @@ def parse_card(card: Card, smoked_label: str = "Smoked", tool_label: str = "Tool
     if len(ids) > 1:
         problems.append(f"Two different Part ID lines ({', '.join(ids)}). Keep one.")
 
+    scribes = {scribe_value(v) for v in SCRIBE_RE.findall(plain)}
+    if None in scribes:
+        problems.append("The Scribe: line says something else. Write Scribe: endmill (the sheet's own cutter) or "
+                        "Scribe: chamfer mill.")
+    elif len(scribes) > 1:
+        problems.append("Two different Scribe: lines. Keep one.")
+
     labels = {l.strip().lower() for l in card.labels}
     if problems:
         return CardProblem(card, tuple(problems))
     return PartRequest(card=card, name=name, qty=qty, link=link, step_attachment=step, material_hint=hint,
                        smoked=smoked_label.lower() in labels, force_small_tool=tool_label.lower() in labels,
-                       face=face_label.strip().lower() in labels, part_id=ids[0] if ids and link else None)
+                       face=face_label.strip().lower() in labels, part_id=ids[0] if ids and link else None,
+                       scribe=next(iter(scribes)) if scribes else "")

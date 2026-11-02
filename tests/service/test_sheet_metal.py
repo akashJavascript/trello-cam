@@ -5,6 +5,9 @@ part's name, and bend lines as wire bodies."""
 
 import json
 
+import pytest
+
+from autocam_service.cards import parse_card, scribe_value
 from autocam_service.onshape.export import flat_of, parse_bend_table, pick_part
 from autocam_service.tracker.base import Card
 from fakeonshape import FakeTransport, resp
@@ -73,3 +76,52 @@ def test_the_panel_checks_the_flat_and_shows_the_bends(tmp_path):
     assert r["ok"] and r["thickness"] == "1/8 in"
     assert r["bent"] == "Cut flat, then 2 bends: Bend A 90° up, then Bend B 45° down (R 0.09, 0.091 in)."
     assert p.call("GET", "/api/part", {**Q, "p": "JHD"})[1]["part"]["bent"] is True
+
+
+@pytest.mark.parametrize("said, way", [("endmill", "endmill"), ("End mill", "endmill"), ("yes", "endmill"),
+                                       ("chamfer mill", "chamfer"), ("45 deg chamfer", "chamfer"), ("no", ""),
+                                       ("off", ""), ("sharpie", None)])
+def test_what_a_scribe_line_says(said, way):
+    assert scribe_value(said) == way
+
+
+def test_a_scribe_line_on_a_card():
+    card = Card("ca", "Part 22", f"Qty: 2\n{STUDIO}\nScribe: chamfer mill", "ready_for_cam", "https://t/c")
+    assert parse_card(card).scribe == "chamfer"
+    assert parse_card(Card("cb", "Part 22", f"Qty: 2\n{STUDIO}", "ready_for_cam", "https://t/c")).scribe == ""
+    bad = parse_card(Card("cc", "Part 22", f"Qty: 2\n{STUDIO}\nScribe bend lines: marker", "ready_for_cam", "x"))
+    assert "Scribe: endmill" in bad.problems[0]
+
+
+def test_a_scribed_bent_part_from_the_panel_to_the_job(tmp_path):
+    parts = [dict(p, microversionId="m1") for p in PARTS]
+    transport = FakeTransport([("GET", "/sheetmetal/bendtable", [resp(body=BENDS)]),
+                               ("GET", "/parts/", [resp(body=parts)] * 4)])
+    p = Panel(tmp_path, transport=transport)
+    assert p.call("GET", "/api/studio", Q)[1]["scribe"] is True
+    status, r = p.call("POST", "/api/send", body={**Q, "p": "JHD", "qty": 2, "name": "Maya", "scribe": "chamfer",
+                                                  "drafts": True})
+    assert status == 200, r
+    [card] = [c for c in p.t.cards.values() if c.list_key == "inbox" and c.name == "Part 22"]
+    assert "Scribe: chamfer mill" in card.desc.split("\n") and parse_card(card).scribe == "chamfer"
+    assert p.call("GET", "/api/part", {**Q, "p": "JHD"})[1]["card"]["form"]["scribe"] == "chamfer"   # made over
+    assert p.call("POST", "/api/send", body={**Q, "p": "JHD", "qty": 2, "name": "M", "scribe": "laser"})[0] == 400
+
+
+def test_a_scribe_line_reaches_the_job(tmp_path):
+    transport = FakeTransport([
+        ("GET", "/sheetmetal/bendtable", [resp(body=BENDS)]),
+        ("GET", "/parts/", [resp(body=PARTS)]),
+        ("POST", "/translations", [resp(body={"id": "T1"})]),
+        ("GET", "/translations/T1", [resp(body={"requestState": "DONE", "resultExternalDataIds": ["F1"]})]),
+        ("GET", "/externaldata/F1", [resp(200, b"ISO-10303-21; flat")]),
+    ])
+    h = Harness(tmp_path, transport=transport, card_list=[
+        Card(SYS, "System", "", "control", "https://trello.example/c/sys"),
+        Card("ca", "Part 22", f"Qty: 2\n{STUDIO}\nScribe: endmill", "ready_for_cam", "https://trello.example/c/ca")])
+    h.runner.tick()
+    [job_id] = h.queue.pending()
+    job = json.loads(h.store.job_text(job_id))
+    assert job["parts"][0]["scribe"] == "endmill"
+    assert job["scribe"]["depth_in"] == 0.012 and job["scribe"]["chamfer"]["number"] == 16
+    assert json.loads(job["scribe"]["chamfer_tool_json"])["guid"] == "915d08db-80ad-44e2-8fd5-6b9ed2129f59"

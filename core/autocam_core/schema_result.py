@@ -77,8 +77,9 @@ class ToolForce:
 @dataclass(frozen=True)
 class ProgramResult:
     """A program a sheet needs besides its main one (core 0.14.0): kind "face" skims the tops of the faced parts
-    with the surfacing bit, run before the main program."""
-    kind: str                      # "face"
+    with the surfacing bit, run before the main program; kind "scribe" (0.18.0) scribes bent parts' bend lines
+    with the chamfer mill, run after the face program and before the main one."""
+    kind: str                      # "face", "scribe", "fit"
     name: str                      # program name, e.g. 6061_0p25_r030_S1_FACE
     runs: str                      # "before" the main program
     tool_guid: str
@@ -91,7 +92,7 @@ class ProgramResult:
     guard: Optional[GuardSummary]
     machining_time_s: Optional[float]
     parts: Tuple[SheetPart, ...]   # the copies it works on
-    depth_in: float = 0.0          # face: how deep it skims
+    depth_in: float = 0.0          # face: how deep it skims; scribe: how deep below the parts' tops
     # fit laps (core 0.16.0): kind "fit", runs "after", in order
     stock_in: Optional[float] = None   # the radial stock this lap leaves
     series: int = 0                    # which fit series on the sheet (1, 2, ...)
@@ -141,6 +142,8 @@ class SheetResult:
     repeat: int = 1
     # Programs run besides the main one, in order (core 0.14.0): the FACE program, before it
     programs: Tuple[ProgramResult, ...] = ()
+    # Copies whose bend lines this program scribes with the sheet's cutter (core 0.18.0)
+    scribed: Tuple[SheetPart, ...] = ()
 
 
 @dataclass(frozen=True)

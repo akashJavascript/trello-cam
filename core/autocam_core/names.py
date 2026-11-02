@@ -10,6 +10,7 @@ COMMENT_CHARS = frozenset(" abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
 COMMENT_MAX = 120 - 2  # the post's maximumLineLength minus the brackets
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 OUTER_TAG = "[outer]"
+SCRIBE_TAG = "[scribe]"
 
 
 def is_safe_name(name: str) -> bool:
@@ -45,6 +46,23 @@ def face_program_name(sheet_program: str) -> str:
     if not is_safe_name(name):
         raise ValueError(f"program name {name!r} has characters the post would strip")
     return name
+
+
+SCRIBE_SUFFIX = "_SCRIBE"
+
+
+def scribe_program_name(sheet_program: str) -> str:
+    """The sheet's SCRIBE program (core 0.18.0), e.g. 5052_0p125_r040_S1_SCRIBE: bend lines scribed with the
+    chamfer mill, run after the FACE program and before the sheet's."""
+    name = f"{sheet_program}{SCRIBE_SUFFIX}"
+    if not is_safe_name(name):
+        raise ValueError(f"program name {name!r} has characters the post would strip")
+    return name
+
+
+def scribe_op_name(faced: bool = False) -> str:
+    """A [scribe] op: posts as `[scribe bend lines]` (or `... faced`, for faced parts: a face depth deeper)."""
+    return f"{SCRIBE_TAG} bend lines" + (" faced" if faced else "")
 
 
 def fit_program_name(sheet_program: str, series: int, lap: int) -> str:

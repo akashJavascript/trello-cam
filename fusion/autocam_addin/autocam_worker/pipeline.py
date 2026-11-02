@@ -25,9 +25,16 @@
    and zero: the face template's one [face] op (its tool GUID checked) skims each of those copies' tops inside
    its outline, job.face.depth_in deep. It posts as the sheet's FACE program, run first; the sheet isn't
    offered without it.
+   Bent parts that ask for their bend lines scribed (PartSpec.scribe, core 0.18.0; scribe.py finds each bend's
+   centerline on the copy's top): "endmill" gets a [scribe] op in the sheet's own setup (a copy of the template's
+   [outer] op, before the outlines); "chamfer" a SCRIBE setup with the chamfer mill, run after FACE and before
+   the sheet. Scribing never holds a sheet up: a part whose bend lines can't be found or scribed gets a warning to
+   mark them by hand instead.
 6. Post, insert the pauses, and check the final bytes with the check the service repeats
    (sheetcheck.py). Failures are kept as *.REJECTED.tap. A FACE program is checked the same way
    (check_face_program: no deeper than the face depth) and its cutter must stay over the faced parts.
+   Scribing (in the sheet's program or its SCRIBE program) must stay on the bend lines, at the scribing depth;
+   the rest of the sheet's program still never has the tool center inside a part.
 7. Preview, .f3d, result.json.
 
 Pure Python: everything Fusion does goes through the Adapter (adapter.py).
@@ -50,7 +57,8 @@ from autocam_core.holes import ToolProfile
 from autocam_core.hotfolder import write_atomic
 from autocam_core.layout import Placed, plan_layout
 from autocam_core.offcuts import Placement, beside_as_loaded, placement_for, room_beside
-from autocam_core.names import face_program_name, fit_program_name, instance_id, outer_op_name, program_name
+from autocam_core.names import (face_program_name, fit_program_name, instance_id, outer_op_name, program_name,
+                                scribe_op_name, scribe_program_name)
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
 from autocam_core.plate import PlateAnalysis, analyze
@@ -62,12 +70,14 @@ from autocam_core.schema_result import (
     RESULT_SCHEMA, FusionTeamResult, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary,
     PostResult, ProgramResult, Result, SheetPart, SheetResult, ToolForce, WorkerInfo, overall_status, result_json,
 )
-from autocam_core.sheetcheck import check_face_program, check_fit_program, check_sheet_program, pause_spec
+from autocam_core.scribe import Line, bend_centerlines, in_sections, off_the_lines, scribe_sections
+from autocam_core.sheetcheck import (check_face_program, check_fit_program, check_scribe_program, check_sheet_program,
+                                     pause_spec)
 from autocam_core.tooling import FeaturePlan, ToolNeed, part_tool, plan_features, sheet_tool
 from autocam_core.toolpoints import cutting_points
 
-from .adapter import (BEARING, BORE, DRILL, FACE, INNER, OUTER, POCKET, POCKETFINISH, TAGS, Adapter, AdapterError,
-                      OpFill, Rect)
+from .adapter import (BEARING, BORE, DRILL, FACE, INNER, OUTER, POCKET, POCKETFINISH, SCRIBE, TAGS, Adapter,
+                      AdapterError, OpFill, Rect)
 
 RESULT = "result.json"
 LOG = "worker.log"
@@ -189,6 +199,12 @@ class _Sheet:
     face_tops: Tuple[Tuple[str, int], ...] = ()   # (copy id, top face id) of each faced copy
     face_result: Optional[ProgramResult] = None
     fits: List[_Fit] = field(default_factory=list)
+    scribe_ops: Dict[str, Tuple[Line, ...]] = field(default_factory=dict)   # [scribe] ops in the sheet's setup
+    scribed: Dict[str, int] = field(default_factory=dict)    # part key -> copies those ops scribe
+    scribe_name: str = ""                     # its SCRIBE setup and program (the chamfer mill), if any
+    scribe_lines: Tuple[Line, ...] = ()       # ...the bend lines it scribes (design X/Y)
+    scribe_counts: Dict[str, int] = field(default_factory=dict)
+    scribe_result: Optional[ProgramResult] = None
 
     def counts(self) -> Dict[str, int]:
         return dict(Counter(p.part_key for _, p in self.instances))
@@ -1033,6 +1049,7 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
         else:
             adapter.delete_op(sheet.name, names[0])
 
+    _build_sheet_scribe(adapter, job, sheet, parts, by_tag[OUTER][0])
     points = [(inst, _sheet_xy(sheet, placed)) for inst, placed in sheet.instances]
     sheet.outer_order = tuple(order_outlines(points))
     by_instance = {inst: placed for inst, placed in sheet.instances}
@@ -1055,6 +1072,7 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
                 sheet.warnings.append(Issue(E.OP_WARNING, f"{part.spec.name} is too small for tabs: it's cut free"))
     sheet.built = True
     _build_face(adapter, job, sheet, parts)
+    _build_scribe(adapter, job, sheet, parts)
     _build_fits(adapter, job, sheet, parts)
 
 
@@ -1130,6 +1148,125 @@ def _build_face(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Par
     sheet.face_name = name
 
 
+def _scribe_depth(job: Job, depth_in: float, faced: bool) -> float:
+    """How far below the stock top a scribed line goes: its depth below the part's top, which a faced part has
+    lower by the face depth."""
+    return depth_in + (job.face.depth_in if faced and job.face is not None else 0.0)
+
+
+def _scribe_groups(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part], way: str
+                   ) -> Tuple[Dict[bool, List[Line]], Dict[str, int]]:
+    """The bend lines of the copies on the sheet whose part asks to be scribed `way`, by faced or not, and how
+    many copies of each part that is. A part whose lines can't be found on every copy isn't scribed: a sheet
+    warning says to mark its bends by hand."""
+    found: Dict[str, List[Tuple[Line, ...]]] = {}
+    missed: Dict[str, str] = {}
+    for _, placed in sheet.instances:
+        part = parts[placed.part_key]
+        if part.spec.scribe != way or part.key in missed:
+            continue
+        try:
+            faces = adapter.top_edges(placed.body_id, tuple(part.analysis.top_face_ids))
+        except AdapterError as e:
+            missed[part.key] = f"its top couldn't be read: {e}"
+            continue
+        lines, why = bend_centerlines(faces, [(b.angle_deg, b.radius_in) for b in part.spec.bends],
+                                      part.analysis.measured_thickness_in)
+        if why:
+            missed[part.key] = why
+        else:
+            found.setdefault(part.key, []).append(lines)
+    for key, why in missed.items():
+        found.pop(key, None)
+        sheet.warnings.append(Issue(E.OP_WARNING, f"{parts[key].spec.name}: its bend lines aren't scribed ({why}). "
+                                                  "Mark them by hand."))
+    groups: Dict[bool, List[Line]] = {}
+    for key, per_copy in found.items():
+        groups.setdefault(bool(parts[key].spec.face), []).extend(ln for lines in per_copy for ln in lines)
+    return groups, {key: len(per_copy) for key, per_copy in found.items()}
+
+
+def _asks_scribe(job: Job, sheet: _Sheet, parts: Dict[str, _Part], way: str) -> bool:
+    return job.scribe is not None and any(parts[p.part_key].spec.scribe == way for _, p in sheet.instances)
+
+
+def _build_sheet_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part], outer_op: str) -> None:
+    """Bend lines scribed with the sheet's own cutter: a copy of the template's [outer] op per faced/not group,
+    made before the outline copies (so it runs before them), along the lines at the scribing depth."""
+    if not _asks_scribe(job, sheet, parts, "endmill"):
+        return
+    if SCRIBE not in adapter.capabilities:
+        sheet.warnings.append(Issue(E.OP_WARNING, "this worker can't scribe bend lines yet: mark them by hand"))
+        return
+    groups, counts = _scribe_groups(adapter, job, sheet, parts, "endmill")
+    for faced, lines in sorted(groups.items()):
+        name = scribe_op_name(faced)
+        keys = [k for k in counts if bool(parts[k].spec.face) == faced]
+        try:
+            adapter.copy_op(sheet.name, outer_op, name)
+            adapter.fill(sheet.name, name, OpFill(SCRIBE, lines=tuple(lines),
+                                                  depth_in=_scribe_depth(job, job.scribe.depth_in, faced)))
+        except AdapterError as e:
+            if name in adapter.op_names(sheet.name):
+                adapter.delete_op(sheet.name, name)
+            sheet.warnings.append(Issue(E.OP_WARNING, f"bend lines not scribed ({e}): mark them by hand on "
+                                                      f"{', '.join(parts[k].spec.name for k in keys)}"))
+            continue
+        sheet.scribe_ops[name] = tuple(lines)
+        sheet.scribed.update({k: counts[k] for k in keys})
+
+
+def _build_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> None:
+    """The sheet's SCRIBE program: bend lines scribed with the chamfer mill. A setup of its own on the sheet's
+    stock and zero, the sheet template's [outer] op copied per faced/not group with the chamfer mill set on it
+    (checked by GUID), the rest of the template deleted."""
+    if not _asks_scribe(job, sheet, parts, "chamfer"):
+        return
+    s = job.scribe
+    if SCRIBE not in adapter.capabilities or s.chamfer is None:
+        sheet.warnings.append(Issue(E.OP_WARNING, "bend lines can't be scribed with the chamfer mill here: mark "
+                                                  "them by hand"))
+        return
+    groups, counts = _scribe_groups(adapter, job, sheet, parts, "chamfer")
+    if not groups:
+        return
+    name = scribe_program_name(sheet.name)
+    tool = job.tooling.tools[sheet.tool_key]
+    setup = False
+    try:
+        adapter.make_extra_setup(sheet.name, name, [p.body_id for _, p in sheet.instances if p.part_key in counts])
+        setup = True
+        ops = adapter.apply_template(name, tool.template_path)
+        outer = [o.name for o in ops if _op_tag(o.name) == OUTER]
+        if len(outer) != 1:
+            raise AdapterError(f"the sheet template has {len(outer)} [outer] ops")
+        for o in ops:
+            if o.name != outer[0]:
+                adapter.delete_op(name, o.name)
+        made = []
+        for faced in sorted(groups):
+            adapter.copy_op(name, outer[0], scribe_op_name(faced))
+            made.append(faced)
+        adapter.delete_op(name, outer[0])
+        for faced in made:
+            op = scribe_op_name(faced)
+            adapter.set_tool(name, op, s.chamfer_tool_json)
+            adapter.fill(name, op, OpFill(SCRIBE, lines=tuple(groups[faced]),
+                                          depth_in=_scribe_depth(job, s.chamfer_depth_in, faced)))
+    except AdapterError as e:
+        sheet.warnings.append(Issue(E.OP_WARNING, f"no scribe program ({e}): mark the bend lines by hand on "
+                                                  f"{', '.join(parts[k].spec.name for k in counts)}"))
+        try:                                      # Fusion generates every setup: leave nothing half made in it
+            for op in adapter.op_names(name) if setup else []:
+                adapter.delete_op(name, op)
+        except AdapterError as e2:
+            sheet.errors.append(Issue(E.OP_ERROR, f"the scribe setup {name} couldn't be emptied: {e2}"))
+        return
+    sheet.scribe_name = name
+    sheet.scribe_lines = tuple(ln for faced in made for ln in groups[faced])
+    sheet.scribe_counts = counts
+
+
 # ------------------------------------------------------------------ 6. post and check
 
 def _labels(adapter: Adapter, sheet: _Sheet, parts: Dict[str, _Part], rect: Rect) -> Dict[str, Any]:
@@ -1182,9 +1319,21 @@ def _post_sheet(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> Non
     check = check_sheet_program(data, job, sheet.thickness_in, sheet.tool_key, sheet.outer_order, counts,
                                 sheet.by_hand)
     if check.passed:
-        # The tool center must never be inside a part: catches a cutout or outline cut on the wrong side.
+        # The tool center must never be inside a part: catches a cutout or outline cut on the wrong side. Scribing
+        # is meant to be inside its parts: it must be on their bend lines instead.
+        sections = scribe_sections(text)
+        points = cutting_points(text, sheet.thickness_in)
+        scribing = [p for p in points if in_sections(p[0], sections)]
+        if sections and not sheet.scribe_ops:
+            sheet.errors.append(Issue(E.TAP_REJECTED, "the program scribes, but no bend lines were asked for"))
+        ox, oy = sheet.origin
+        off = off_the_lines([(n, x + ox, y + oy, z) for n, x, y, z in scribing],
+                            [ln for lines in sheet.scribe_ops.values() for ln in lines])
+        if off:
+            where = "; ".join(f"line {n} (X{x - ox:.4f} Y{y - oy:.4f})" for n, x, y in off[:5])
+            sheet.errors.append(Issue(E.TAP_REJECTED, f"the scribing leaves the bend lines: {where}"))
         try:
-            hits = adapter.cuts_into_parts(sheet.name, cutting_points(text, sheet.thickness_in))
+            hits = adapter.cuts_into_parts(sheet.name, [p for p in points if not in_sections(p[0], sections)])
         except AdapterError as e:
             hits = []
             sheet.errors.append(Issue(E.TAP_REJECTED, f"couldn't check the toolpaths against the parts: {e}"))
@@ -1268,6 +1417,59 @@ def _post_face(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part
         depth_in=job.face.depth_in)
     if not ok:
         sheet.errors += [Issue(E.TAP_REJECTED, f"face program: {msg}") for msg in problems]
+
+
+def _drop_scribe(sheet: _Sheet, parts: Dict[str, _Part], why: str) -> None:
+    names = ", ".join(parts[k].spec.name for k in sheet.scribe_counts if k in parts)
+    sheet.warnings.append(Issue(E.OP_WARNING, f"no scribe program ({why}): mark the bend lines by hand on {names}"))
+    sheet.scribe_counts = {}
+
+
+def _post_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part], out_dir: Path) -> None:
+    """Post and check the sheet's SCRIBE program: the check the service repeats (the scribing depth below the
+    parts' tops, no deeper, no stops, no outlines), and every point where the cutter is below the stock top must be
+    on one of the bend lines. A failure only drops the program (its parts are marked by hand); a failed program is
+    kept as REJECTED for a look, never offered."""
+    name = sheet.scribe_name
+    raw_dir = out_dir / "raw" / name
+    if raw_dir.exists():
+        shutil.rmtree(raw_dir)
+    raw_dir.mkdir(parents=True)
+    try:
+        posted = adapter.post(name, name, raw_dir, job.post.path, job.post.properties)
+    except AdapterError as e:
+        _drop_scribe(sheet, parts, f"posting it failed: {e}")
+        return
+    data = posted.read_bytes()
+    text = data.decode("ascii", errors="surrogateescape")
+    check = check_scribe_program(data, job, sheet.thickness_in, sheet.scribe_counts, sheet.by_hand)
+    problems = check.problems()
+    if check.passed:
+        ox, oy = sheet.origin
+        off = off_the_lines([(n, x + ox, y + oy, z) for n, x, y, z in cutting_points(text, sheet.thickness_in)],
+                            sheet.scribe_lines)
+        if off:
+            problems.append("its cutter leaves the bend lines: "
+                            + "; ".join(f"line {n} (X{x - ox:.4f} Y{y - oy:.4f})" for n, x, y in off[:5]))
+    if not check.passed or problems:
+        write_atomic(out_dir / f"{name}.REJECTED.tap", data)
+        _drop_scribe(sheet, parts, "; ".join(problems))
+        return
+    write_atomic(out_dir / f"{name}.tap", data)
+    try:
+        machining = adapter.machining_time(name)
+    except AdapterError as e:
+        machining = None
+        sheet.notes.append(f"scribe program: machining time unavailable: {e}")
+    g = check.guard
+    tool = job.scribe.chamfer
+    sheet.scribe_result = ProgramResult(
+        kind="scribe", name=name, runs="before", tool_guid=tool.guid, cutter_label=tool.cutter_label,
+        tool_number=tool.number, tap=f"{name}.tap", tap_rejected=None, tap_bytes=len(data), tap_sha256=g.sha256,
+        guard=GuardSummary(g.passed, g.sha256, g.floor_in, g.min_z_in, g.units, g.offenders, g.clamp_violations,
+                           g.problems),
+        machining_time_s=machining, parts=tuple(SheetPart(k, n) for k, n in sorted(sheet.scribe_counts.items())),
+        depth_in=job.scribe.chamfer_depth_in)
 
 
 def _post_fits(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> None:
@@ -1424,11 +1626,33 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
     if built:
         try:
             states = adapter.generate([s.name for s in built] + [s.face_name for s in built if s.face_name]
+                                      + [s.scribe_name for s in built if s.scribe_counts]
                                       + [lap for s in built for f in s.fits for lap in f.laps])
         except AdapterError as e:
             for s in built:
                 s.errors.append(Issue(E.OP_ERROR, f"toolpath generation failed: {e}"))
     for sheet in built:
+        for st in states.get(sheet.name, []):         # scribing that won't generate: taken out, marked by hand
+            if st.name in sheet.scribe_ops and (st.error or not st.has_toolpath):
+                try:
+                    adapter.delete_op(sheet.name, st.name)
+                except AdapterError as e:
+                    sheet.errors.append(Issue(E.OP_ERROR, f"{st.name}: {st.error or 'no toolpath'}; deleting it: {e}"))
+                    continue
+                keys = [k for k in sheet.scribed if bool(parts[k].spec.face) == st.name.endswith(" faced")]
+                sheet.warnings.append(Issue(E.OP_WARNING, f"bend lines not scribed ({st.error or 'no toolpath'}): "
+                                                          f"mark them by hand on "
+                                                          f"{', '.join(parts[k].spec.name for k in keys)}"))
+                sheet.scribe_ops.pop(st.name)
+                for k in keys:
+                    sheet.scribed.pop(k, None)
+        states[sheet.name] = [st for st in states.get(sheet.name, []) if not (st.name.startswith("[scribe]")
+                                                                              and st.name not in sheet.scribe_ops)]
+        if sheet.scribe_counts:
+            bad = [st for st in states.get(sheet.scribe_name, []) if st.error or not st.has_toolpath]
+            if sheet.scribe_name not in states or bad:
+                _drop_scribe(sheet, parts, "; ".join(f"{st.name}: {st.error or 'no toolpath'}" for st in bad)
+                             or "Fusion reported no toolpaths for it")
         for setup in [sheet.name] + ([sheet.face_name] if sheet.face_name else []) + \
                 [lap for f in sheet.fits for lap in f.laps]:
             if setup not in states and not sheet.errors:
@@ -1442,6 +1666,8 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
                     sheet.warnings.append(Issue(E.OP_WARNING, f"{st.name}: {st.warning}"))
         if not sheet.errors and sheet.face_name:
             _post_face(adapter, job, sheet, parts, out_dir)       # first: the sheet isn't offered without it
+        if not sheet.errors and sheet.scribe_counts:
+            _post_scribe(adapter, job, sheet, parts, out_dir)     # never holds the sheet up
         if not sheet.errors and sheet.fits:
             _post_fits(adapter, job, sheet, out_dir)              # before it too, for the same reason
         if not sheet.errors:
@@ -1492,7 +1718,9 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             errors=_dedupe(sheet.errors), warnings=_dedupe(sheet.warnings), notes=tuple(sheet.notes),
             by_hand=sheet.by_hand, repeat=sheet.repeat,
             programs=((sheet.face_result,) if sheet.face_result else ())
+            + ((sheet.scribe_result,) if sheet.scribe_result else ())
             + tuple(r for f in sheet.fits for r in f.results),
+            scribed=tuple(SheetPart(k, n) for k, n in sorted(sheet.scribed.items())) if sheet.result else (),
             **({} if sheet.by_hand else _sheet_use(job, sheet, parts))))
 
     f3d_name: Optional[str] = None

@@ -57,9 +57,10 @@ class Rig:
         self.fake = FakeAdapter()
         self.out = tmp_path / "out"
 
-    def job(self, parts, material="al6061", face=(), fits=None):
+    def job(self, parts, material="al6061", face=(), fits=None, bends=None, scribe=None):
         """parts: (name, qty, geometry, (w, h)); face: names of the parts with the Face label; fits: name ->
-        ("hole", diameter) or ("outline", 0) (a Fit: line)"""
+        ("hole", diameter) or ("outline", 0) (a Fit: line); bends: name -> its bend table rows (a bent part);
+        scribe: name -> "endmill" or "chamfer" (a Scribe: line)"""
         ready = []
         for i, (name, qty, geometry, size) in enumerate(parts, 1):
             step = self.tmp / "steps" / f"{name}.step"
@@ -68,8 +69,8 @@ class Rig:
             self.fake.register(step, geometry, size)
             card = Card(f"local-{i}", name, "", None, "")
             ready.append(ReadyPart(PartRequest(card, name, qty, None, None, material, False, False, face=name in face,
-                                               fit=(fits or {}).get(name)),
-                                   material, step, sha256_file(step)))
+                                               fit=(fits or {}).get(name), scribe=(scribe or {}).get(name, "")),
+                                   material, step, sha256_file(step), bends=tuple((bends or {}).get(name, ()))))
         job = build_job(self.cfg, Batch(material, tuple((f"p{i:02d}", r) for i, r in enumerate(ready, 1))),
                         "r001", "2026-10-01T00:00:00Z")
         return replace(job, post=replace(job.post, path=str(POST)))   # from WSL, build_job writes C:/...

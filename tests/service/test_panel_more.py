@@ -289,7 +289,7 @@ def test_a_drafts_card_made_over_starts_from_it_and_keeps_what_the_panel_doesnt_
     p.t.add_checklist(typed.id, "Nest", ["Nest this part"], checked=False)
     form = p.call("GET", "/api/part", {**Q, "p": "JHD"})[1]["card"]["form"]
     assert form == {"qty": 3, "face": True, "rush": False, "smoked": False, "tool_eighth": True, "nest": False,
-                    "tabs": True, "fit": {"kind": "hole", "size": 1.125}, "notes": "deburr",
+                    "tabs": True, "fit": {"kind": "hole", "size": 1.125}, "scribe": "", "notes": "deburr",
                     "kept": ["make it from the scrap pile"]}
     status, _ = p.call("POST", "/api/send", body={**Q, "p": "JHD", "card": typed.id, "qty": 3, "name": "Maya",
                                                    "face": True, "tool_eighth": True, "nest": True, "notes": "deburr",

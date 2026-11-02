@@ -20,7 +20,7 @@ if sys.version_info >= (3, 11):
 else:  # WSL dev boxes still ship Python 3.10
     import tomli as tomllib
 
-from autocam_core.schema_job import MAX_FACE_DEPTH_IN, MAX_FIT_STOCK_IN
+from autocam_core.schema_job import MAX_FACE_DEPTH_IN, MAX_FIT_STOCK_IN, MAX_SCRIBE_DEPTH_IN
 from autocam_core.tapguard import SAFE_G, SAFE_M
 from autocam_core.toollib import ToolLibrary, ToolLibraryError
 
@@ -244,6 +244,19 @@ class Panel:
 
 
 @dataclass(frozen=True)
+class Scribe:
+    """Bend lines scribed on bent parts that ask for it (core 0.18.0): with the sheet's own cutter in its program,
+    or with the chamfer mill (identified by GUID, checked against the library) in a SCRIBE program of its own."""
+    depth_in: float
+    chamfer_depth_in: float
+    chamfer_guid: str
+    chamfer_number: int
+    chamfer_diameter_in: float
+    chamfer_flute_in: float
+    chamfer_label: str
+
+
+@dataclass(frozen=True)
 class Face:
     """The "Face" label: that part's top skimmed clean, in a FACE program run before the sheet's own (core
     0.14.0). Its tool is identified by GUID only, like every tool, and must be the face template's."""
@@ -364,6 +377,7 @@ class Config:
     warnings: Tuple[str, ...]
     tabs: Tabs = Tabs()
     face: Optional[Face] = None
+    scribe: Optional[Scribe] = None
     hand_cuts: HandCuts = HandCuts()
     fit: Fit = Fit()
     panel: Panel = Panel()
@@ -775,6 +789,18 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                     template=root / t.string("template", required=True))
         t.finish()
 
+    scribe = None
+    if "scribe" in top.data:
+        t = top.table("scribe")
+        scribe = Scribe(depth_in=t.number("depth_in", positive=True),
+                        chamfer_depth_in=t.number("chamfer_depth_in", positive=True),
+                        chamfer_guid=t.string("chamfer_guid", pattern=GUID_RE, required=True),
+                        chamfer_number=t.integer("chamfer_number", minimum=0),
+                        chamfer_diameter_in=t.number("chamfer_diameter_in", positive=True),
+                        chamfer_flute_in=t.number("chamfer_flute_in", positive=True),
+                        chamfer_label=t.string("chamfer_label", required=True))
+        t.finish()
+
     fit = Fit()
     if "fit" in top.data:
         t = top.table("fit")
@@ -836,7 +862,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         tools=MappingProxyType(tools), tooling=MappingProxyType(tooling), holes=holes,
         op_tags=op_tags, templates=MappingProxyType(templates), labels=labels, onshape=onshape,
         trello=trello, fusion=fusion, tapguard=tapguard, fusion_team=fusion_team, status=status, paths=paths,
-        placeholders=tuple(_placeholders(data)), warnings=(), tabs=tabs, face=face, hand_cuts=hand_cuts,
+        placeholders=tuple(_placeholders(data)), warnings=(), tabs=tabs, face=face, scribe=scribe, hand_cuts=hand_cuts,
         fit=fit, panel=panel, costs=costs,
     )
     warnings: List[str] = []
@@ -955,8 +981,8 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
             e(f"{where}.diameter_in: library says {lib.diameter_in:.5f} in, config says {tool.diameter_in}")
         if abs(lib.flute_length_in - tool.flute_in) > 0.002:
             e(f"{where}.flute_in: library says {lib.flute_length_in:.4f} in, config says {tool.flute_in}")
-    widest = max([t.diameter_in for t in cfg.tools.values()] + ([cfg.face.diameter_in] if cfg.face else []),
-                 default=0.0)
+    widest = max([t.diameter_in for t in cfg.tools.values()] + ([cfg.face.diameter_in] if cfg.face else [])
+                 + ([cfg.scribe.chamfer_diameter_in] if cfg.scribe else []), default=0.0)
     if cfg.nest.part_spacing_in <= widest:
         e("nest.part_spacing_in: must exceed the largest tool diameter (the face tool's too)")
 
@@ -984,6 +1010,33 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
         if not f.template.is_file():
             warnings.append(f"face.template: {_rel(f.template, cfg.root)} not exported yet; the Face label is "
                             "refused until it is")
+
+    # Scribed bend lines: a mark, not a cut; the chamfer mill checked against the library like any tool.
+    sc = cfg.scribe
+    if sc is not None:
+        thinnest = min((t for m in cfg.materials.values() for t in m.thicknesses_in), default=0.0)
+        for name in ("depth_in", "chamfer_depth_in"):
+            if getattr(sc, name) > MAX_SCRIBE_DEPTH_IN:
+                e(f"scribe.{name}: at most {MAX_SCRIBE_DEPTH_IN} in (a scribed line is a mark, not a cut)")
+            elif getattr(sc, name) >= thinnest / 2:
+                e(f"scribe.{name}: must be less than half the thinnest stock")
+        if sc.chamfer_guid in guids:
+            e("scribe.chamfer_guid: the chamfer mill can't also be a sheet tool")
+        if library is not None:
+            if sc.chamfer_guid not in library:
+                e(f"scribe.chamfer_guid: {sc.chamfer_guid} is not in {cfg.fusion.tool_library.name}")
+            else:
+                lib = library.by_guid(sc.chamfer_guid)
+                if lib.type != "chamfer mill":
+                    e(f"scribe.chamfer_guid: the library says that's a {lib.type}, not a chamfer mill")
+                if lib.number != sc.chamfer_number:
+                    e(f"scribe.chamfer_number: library says T{lib.number} for this GUID, config says T{sc.chamfer_number}")
+                if abs(lib.diameter_in - sc.chamfer_diameter_in) > 0.0005:
+                    e(f"scribe.chamfer_diameter_in: library says {lib.diameter_in:.5f} in, config says "
+                      f"{sc.chamfer_diameter_in}")
+                if abs(lib.flute_length_in - sc.chamfer_flute_in) > 0.002:
+                    e(f"scribe.chamfer_flute_in: library says {lib.flute_length_in:.4f} in, config says "
+                      f"{sc.chamfer_flute_in}")
 
     # Per-family tool choice (decision 13).
     templates_by_tool = {t.tool: t for t in cfg.templates.values()}

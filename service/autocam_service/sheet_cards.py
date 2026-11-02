@@ -52,6 +52,16 @@ def _face(s):
     return next((p for p in s.programs if p.kind == "face"), None)
 
 
+def _scribe(s):
+    return next((p for p in s.programs if p.kind == "scribe"), None)
+
+
+def scribed_keys(s) -> set:
+    """Parts whose bend lines this sheet scribes, in its own program or its SCRIBE program."""
+    scribe = _scribe(s)
+    return {p.part_key for p in s.scribed} | ({p.part_key for p in scribe.parts} if scribe else set())
+
+
 def fit_series(job: Job, s) -> List[dict]:
     """Each fit series on a sheet: the part, its feature, the stocks and the lap programs in order."""
     out = []
@@ -87,7 +97,8 @@ def sheet_title(job: Job, vs: VerifiedSheet, offcut_number: Optional[int] = None
     count = (f"{n} part{'s' if n != 1 else ''}" + (f", {faced} faced" if faced and not s.by_hand else
                                                    (", faced" if faced else ""))
              + (f", run {s.repeat}x" if s.repeat > 1 else ""))
-    seconds = (s.machining_time_s or 0) + ((face.machining_time_s or 0) if face else 0)
+    seconds = (s.machining_time_s or 0) + ((face.machining_time_s or 0) if face else 0) + (
+        (_scribe(s).machining_time_s or 0) if _scribe(s) else 0)
     bits = [stock, s.cutter_label, count, _minutes(seconds), f"{job.run_id} S{s.index}"]
     title = " - ".join(b for b in bits if b)
     return title if vs.cuttable else f"NOT CUTTABLE - {title}"
@@ -120,13 +131,16 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
     tool = job.tooling.tools[s.tool]
     m = job.material
     face = _face(s)
+    scribe = _scribe(s)
     lines: List[str] = []
     if not vs.cuttable:
         problems = list(vs.problems) + [p for v in vs.programs for p in v.problems]
         lines += ["NOT CUTTABLE. This sheet failed the checks:"] + [f"- {p}" for p in problems] + [""]
     cutter = f"Cutter: {s.cutter_label} (T{tool.number})"
-    if face:
-        cutter = f"Cutters: {face.cutter_label} (T{face.tool_number}) to face, then {s.cutter_label} (T{tool.number})"
+    before = [f"{p.cutter_label} (T{p.tool_number}) to {'face' if p.kind == 'face' else 'scribe'}"
+              for p in (face, scribe) if p]
+    if before:
+        cutter = f"Cutters: {', then '.join(before)}, then {s.cutter_label} (T{tool.number})"
 
     if s.by_hand:
         lines += ["LOAD"] + _by_hand_load(job, vs, part_cards) + [
@@ -147,14 +161,22 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         key = resume_key or "the continue key"
         run = f"Program: {program or s.tap}" + (f" (about {_minutes(s.machining_time_s)})" if s.machining_time_s else "")
         lines += ["", "RUN"]
+        steps = []
+        each = " on each copy, before cutting it" if s.by_hand and s.repeat > 1 else ""
         if face:
             about = f" (about {_minutes(face.machining_time_s)})" if face.machining_time_s else ""
-            each = " on each copy, before cutting it" if s.by_hand and s.repeat > 1 else ""
-            lines += [f"1. Face first: load the {face.cutter_label} (T{face.tool_number}), measure it on the fixed "
-                      f"tool setter, and run {face.tap}{about}{each}. It skims {face.depth_in:g} in off the tops of the "
-                      "parts marked faced, nothing else.",
-                      f"2. Then load the {s.cutter_label} (T{tool.number}), measure it, and run {program or s.tap}"
-                      + (f" (about {_minutes(s.machining_time_s)})." if s.machining_time_s else ".")]
+            steps.append(f"Face first: load the {face.cutter_label} (T{face.tool_number}), measure it on the fixed "
+                         f"tool setter, and run {face.tap}{about}{each}. It skims {face.depth_in:g} in off the tops of "
+                         "the parts marked faced, nothing else.")
+        if scribe:
+            about = f" (about {_minutes(scribe.machining_time_s)})" if scribe.machining_time_s else ""
+            steps.append(f"{'Then' if face else 'First'} scribe the bend lines: load the {scribe.cutter_label} "
+                         f"(T{scribe.tool_number}), measure it, and run {scribe.tap}{about}{each}. It draws a fine line "
+                         f"{scribe.depth_in:g} in deep down the middle of each bend of the parts marked scribed.")
+        if steps:
+            steps.append(f"Then load the {s.cutter_label} (T{tool.number}), measure it, and run {program or s.tap}"
+                         + (f" (about {_minutes(s.machining_time_s)})." if s.machining_time_s else "."))
+            lines += [f"{i}. {text}" for i, text in enumerate(steps, 1)]
         else:
             lines.append(run)
         if s.by_hand and s.repeat > 1:
@@ -172,6 +194,7 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
             lines += [""] + fit_lines(f, s)
     on_sheet = {p.part_key for p in s.parts}
     faced = {p.part_key for p in face.parts} if face else set()
+    scribed = scribed_keys(s)
     fitted = {f["part_key"] for f in fit_series(job, s)}
     tabbed = {p.part_key for p in job.parts if p.tabs} & on_sheet
     if vs.cuttable and tabbed == on_sheet:
@@ -191,7 +214,8 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         name = part_cards.get(part_key, (part_key, ""))[0]
         of = f" ({counts[part_key]} of {totals[part_key]})" if totals.get(part_key, 1) > 1 else ""
         marks = [m for m, on in (("faced", part_key in faced), ("fit", part_key in fitted),
-                                 ("tabs", part_key in tabbed), ("bent", part_key in bent_keys)) if on]
+                                 ("tabs", part_key in tabbed), ("bent", part_key in bent_keys),
+                                 ("scribed", part_key in scribed)) if on]
         lines.append(f"{i}. {name}{of}" + "".join(f" - {m}" for m in marks))
 
     bent = [p for p in job.parts if p.bends and p.part_key in on_sheet]
@@ -200,6 +224,9 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         for p in bent:
             lines.append(f"- {part_cards.get(p.part_key, (p.name, ''))[0]}: {bend_text(p.bends)}"
                          + (f" ({m.name} can crack at a tight bend: check it)" if m.name == "6061" else ""))
+        if any(p.part_key in scribed for p in bent):
+            lines.append("Scribed parts have a line down the middle of each bend on the side that was up: line "
+                         "that up with the brake.")
 
     use = sheet_use(s)
     if use:

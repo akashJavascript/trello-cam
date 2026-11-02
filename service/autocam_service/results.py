@@ -4,7 +4,8 @@ The service doesn't trust result.json's word that a .tap is safe: it re-runs the
 and cut-plan checks (autocam_core.sheetcheck) on the bytes it is about to upload, against its own
 copy of the job. It also checks that each part's numbers add up before a card is moved to Nested.
 A sheet's FACE program is checked the same way (check_face_program), and a sheet with parts that ask for
-facing is only cuttable with a FACE program that faces every one of their copies.
+facing is only cuttable with a FACE program that faces every one of their copies. A SCRIBE program (bend lines,
+check_scribe_program) only for parts that ask for it; one that's missing just means marking them by hand.
 """
 
 import hashlib
@@ -16,7 +17,8 @@ from autocam_core.hotfolder import Queue
 from autocam_core.schema import SchemaError
 from autocam_core.schema_job import Job
 from autocam_core.schema_result import ProgramResult, Result, SheetResult, read_result
-from autocam_core.sheetcheck import SheetCheck, check_face_program, check_fit_program, check_sheet_program
+from autocam_core.sheetcheck import (SheetCheck, check_face_program, check_fit_program, check_scribe_program,
+                                     check_sheet_program)
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,10 @@ class VerifiedSheet:
         return next((p for p in self.programs if p.program.kind == "face"), None)
 
     @property
+    def scribe(self) -> Optional[VerifiedProgram]:
+        return next((p for p in self.programs if p.program.kind == "scribe"), None)
+
+    @property
     def pause_count(self) -> int:
         """From the service's own check of the program, not from the worker's summary."""
         if self.check is None or self.check.pauses is None:
@@ -75,7 +81,7 @@ class IngestedJob:
 
 
 def verify_program(folder: Path, job: Job, sheet: SheetResult, program: ProgramResult) -> VerifiedProgram:
-    if program.kind not in ("face", "fit"):
+    if program.kind not in ("face", "scribe", "fit"):
         return VerifiedProgram(program, None, None, (f"unknown kind of program {program.kind!r}",))
     if not program.tap:
         return VerifiedProgram(program, None, None, (f"the {program.kind} program {program.name} wasn't offered for "
@@ -89,6 +95,8 @@ def verify_program(folder: Path, job: Job, sheet: SheetResult, program: ProgramR
         problems.append(f"{program.tap} changed after Fusion checked it")
     if program.kind == "fit":
         return _verify_fit(job, sheet, program, data, problems)
+    if program.kind == "scribe":
+        return _verify_scribe(job, sheet, program, data, problems)
     check = check_face_program(data, job, sheet.thickness_in, {p.part_key: p.count for p in program.parts},
                                sheet.by_hand)
     problems += [f"face program: {p}" for p in check.problems()]
@@ -110,6 +118,19 @@ def _verify_fit(job: Job, sheet: SheetResult, program: ProgramResult, data: byte
     tool = job.tooling.tools.get(sheet.tool)
     if tool is None or program.tool_guid != tool.guid:
         problems.append(f"{program.name} used tool GUID {program.tool_guid}, not the sheet's")
+    return VerifiedProgram(program, data, check, tuple(problems))
+
+
+def _verify_scribe(job: Job, sheet: SheetResult, program: ProgramResult, data: bytes, problems) -> VerifiedProgram:
+    check = check_scribe_program(data, job, sheet.thickness_in, {p.part_key: p.count for p in program.parts},
+                                 sheet.by_hand)
+    problems += [f"scribe program: {p}" for p in check.problems()]
+    chamfer = job.scribe.chamfer if job.scribe is not None else None
+    if chamfer is None or program.tool_guid != chamfer.guid:
+        problems.append(f"the scribe program used tool GUID {program.tool_guid}, not the job's chamfer mill")
+    elif abs(program.depth_in - job.scribe.chamfer_depth_in) > 1e-9:
+        problems.append(f"the scribe program scribes {program.depth_in:g} in deep, not the job's "
+                        f"{job.scribe.chamfer_depth_in:g} in")
     return VerifiedProgram(program, data, check, tuple(problems))
 
 
@@ -156,6 +177,15 @@ def verify_sheet(folder: Path, job: Job, sheet: SheetResult) -> VerifiedSheet:
         problems.append("parts on it ask for facing but the sheet has no face program")
     elif faces and {p.part_key: p.count for p in faces[0].parts} != faced:
         problems.append("the face program doesn't face exactly the copies that ask for it")
+    scribes = [p.program for p in programs if p.program.kind == "scribe"]
+    if len(scribes) > 1:
+        problems.append(f"the sheet has {len(scribes)} scribe programs")
+    for p in scribes:
+        if any(counts.get(q.part_key) != q.count for q in p.parts):
+            problems.append("the scribe program doesn't scribe every copy of its parts")
+    endmill = {p.part_key for p in job.parts if p.scribe == "endmill"}
+    if any(q.part_key not in endmill or counts.get(q.part_key) != q.count for q in sheet.scribed):
+        problems.append("the sheet's program scribes parts that don't ask for it with its cutter")
     problems += _fit_problems(job, sheet, counts)
     return VerifiedSheet(sheet, data, check, tuple(problems), programs)
 

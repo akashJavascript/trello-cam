@@ -21,7 +21,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from autocam_core.hotfolder import write_atomic
 
 from ..autostart import box
-from ..cards import MATERIAL_RE, PART_ID_RE, QTY_LINE_RES, README_CARD, TITLE_QTY_RE, _plain
+from ..cards import MATERIAL_RE, PART_ID_RE, QTY_LINE_RES, README_CARD, SCRIBE_RE, TITLE_QTY_RE, _plain, scribe_value
 from ..config import Config
 from ..fits import _FIT, parse_fit
 from ..own_programs import OWN_PROGRAM_RE
@@ -105,6 +105,7 @@ class Send:
     drafts: bool = False
     material_line: str = ""        # e.g. "6061": only when Onshape doesn't have the material
     fit_line: str = ""             # e.g. "1.125 hole" or "outline"
+    scribe: str = ""               # a bent part's bend lines scribed: "endmill" or "chamfer" (a Scribe: line)
     sender: str = ""
     notes: str = ""                # one line
 
@@ -118,7 +119,7 @@ def _panel_line(line: str) -> bool:
     plain = _plain(line)
     return bool(first_onshape_url(line) or any(rx.match(plain) for rx in QTY_LINE_RES) or PART_ID_RE.match(plain)
                 or MATERIAL_RE.match(plain) or _FIT.match(plain) or SENT_BY_RE.match(plain) or NOTE_RE.match(plain)
-                or OWN_PROGRAM_RE.match(plain))
+                or OWN_PROGRAM_RE.match(plain) or SCRIBE_RE.match(plain))
 
 
 def kept_lines(desc: str) -> List[str]:
@@ -133,6 +134,8 @@ def card_desc(s: Send, keep: Optional[List[str]] = None) -> str:
         lines.append(f"Material: {s.material_line}")
     if s.fit_line:
         lines.append(f"Fit: {s.fit_line}")
+    if s.scribe:
+        lines.append(f"Scribe: {'endmill' if s.scribe == 'endmill' else 'chamfer mill'}")
     lines.append(f"Sent from the Onshape panel by {s.sender or 'someone'}")
     if s.notes:
         lines.append(f"Note: {s.notes}")
@@ -272,12 +275,14 @@ class PanelBoard:
         labels = {norm(l) for l in card.labels}
         fit = parse_fit(card.desc)
         notes = [m.group(1).strip() for m in (NOTE_RE.match(_plain(ln)) for ln in (card.desc or "").split("\n")) if m]
+        scribes = [scribe_value(v) for v in SCRIBE_RE.findall(_plain(card.desc or ""))]
         return {"qty": pc.qty, "face": norm(lb.face) in labels, "rush": norm(lb.rush) in labels,
                 "smoked": norm(lb.smoked) in labels, "tool_eighth": norm(lb.tool_eighth) in labels,
                 "nest": box(card, tc.nest_checklist, tc.nest_item, True),
                 "tabs": box(card, tc.tabs_checklist, tc.tabs_item, self.cfg.tabs.default),
                 "fit": ({"kind": "outline"} if fit[0] == "outline" else {"kind": "hole", "size": fit[1]})
                 if isinstance(fit, tuple) else {"kind": "none"},
+                "scribe": next((v for v in scribes if v), ""),
                 "notes": " / ".join(n for n in notes if n), "kept": kept_lines(card.desc)}
 
     def reason(self, card_id: str) -> str:

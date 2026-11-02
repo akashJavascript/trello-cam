@@ -295,7 +295,8 @@ class PanelApp:
         return {"parts": listed, "boardError": board_error, "writable": wvm == "w", "queue": self._queue(),
                 "user": self.names.get(uid) if USER_RE.match(uid or "") else "",
                 "materials": list(self._materials().values()), "fit": self.cfg.fit.enabled,
-                "face": self.cfg.face is not None, "tabsDefault": self.cfg.tabs.default,
+                "face": self.cfg.face is not None, "scribe": self.cfg.scribe is not None,
+                "tabsDefault": self.cfg.tabs.default,
                 "callsLeft": self.onshape.calls_left(), "maxQty": MAX_QTY}
 
     def _queue(self) -> Optional[Dict[str, Any]]:
@@ -587,6 +588,9 @@ class PanelApp:
         fit_line = self._fit_line(d.get("fit"), nest)
         if fit_line:
             tabs = True                                  # a fitted part is always tabbed (fits.py)
+        scribe = str(d.get("scribe") or "")
+        if scribe not in ("", "endmill", "chamfer"):
+            raise Refused(400, "Bad request")
         part = self._find(did, wvm, wvmid, eid, pid)
         name = part.get("name") or ""
 
@@ -624,10 +628,12 @@ class PanelApp:
                 log.info("panel: %s's material not set in Onshape (%s); the card says Material: %s", name, why, line)
 
         face = bool(d.get("face")) and self.cfg.face is not None
+        if scribe and (self.cfg.scribe is None or self._flat(did, wvm, wvmid, eid, pid) is None):
+            scribe = ""                                  # only a bent part has bend lines
         s = Send(did=did, wvm=wvm, wvmid=wvmid, eid=eid, pid=pid, name=name, host=self._host(d.get("server")),
                  qty=qty, nest=nest, tabs=tabs, face=face, rush=bool(d.get("rush")), smoked=smoked,
                  tool_eighth=bool(d.get("tool_eighth")), drafts=bool(d.get("drafts")), material_line=line,
-                 fit_line=fit_line, sender=sender, notes=clean_text(d.get("notes"), 300))
+                 fit_line=fit_line, scribe=scribe, sender=sender, notes=clean_text(d.get("notes"), 300))
         card = self.board.write(s, existing)
         where = "inbox" if s.drafts else "ready_for_cam"
         log.info("panel: %s sent %s x%d to %s: %s", sender, name, qty, LIST_NAMES[where], card.url)

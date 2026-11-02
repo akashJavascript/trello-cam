@@ -45,6 +45,11 @@ UNCONFIRMED = {
     "fit_stock": "fit: useStockToLeave + stockToLeave on the fitted [bore]/[bearing] copy or [outer] ops",
     "face_tops": "[face] (2D Adaptive): each faced copy's top outer loop as a chain, inside; bottom height "
                  "'from stock top' less the depth",
+    "scribe_lines": "[scribe]: a copy of [outer] along root sketch lines (one open chain each) with the tool center "
+                    "(compensationType 'off'; no leads, ramp, tabs, stock to leave or multiple depths), from the stock "
+                    "top down by the depth",
+    "scribe_tool": "Operation.tool = Tool.createFromJson(the library's chamfer mill), then its preset's feeds and "
+                   "speeds, coolant left disabled",
 }
 
 
@@ -202,6 +207,67 @@ def face_depth(op, depth_in: float) -> None:
     _set_length(op, "topHeight_offset", 0.0)
     set_expr(op, "bottomHeight_mode", "'from stock top'")
     _set_length(op, "bottomHeight_offset", -depth_in)
+
+
+def select_lines(op, curves, contour_param: str) -> None:
+    """Each curve (a sketch line) as an open chain of its own: the tool center follows it (compensation off)."""
+    value = _contours(op, contour_param)
+    sels = value.getCurveSelections()
+    sels.clear()
+    for curve in curves:
+        chain = sels.createNewChainSelection()
+        if hasattr(type(chain), "isOpenAllowed"):
+            chain.isOpenAllowed = True
+        chain.inputGeometry = [curve]
+    value.applyCurveSelections(sels)
+
+
+SCRIBE_OFF = ("doLeadIn", "doLeadOut", "doRamp", "doMultipleDepths", "doMultipleFinishingPasses", "doRoughingPasses",
+              "group_tabs", "useStockToLeave", "doChamfer", "useRestMachining")
+
+
+def scribe_params(op, depth_in: float) -> None:
+    """[scribe]: the tool center on the line (no compensation), straight down to the depth and along it once: no
+    leads, ramp, tabs, stock to leave or extra passes. From the stock top down by depth_in."""
+    _set_choice(op, "compensationType", ("off",))
+    for name in SCRIBE_OFF:
+        if op.parameters.itemByName(name) is not None:
+            set_expr(op, name, "false")
+    face_depth(op, depth_in)
+
+
+_FEEDS = (("tool_spindleSpeed", "n", "rpm"), ("tool_rampSpindleSpeed", "n_ramp", "rpm"),
+          ("tool_feedCutting", "v_f", "feed"), ("tool_feedEntry", "v_f_leadIn", "feed"),
+          ("tool_feedExit", "v_f_leadOut", "feed"), ("tool_feedPlunge", "v_f_plunge", "feed"),
+          ("tool_feedRamp", "v_f_ramp", "feed"), ("tool_feedTransition", "v_f_transition", "feed"))
+
+
+def set_tool(op, tool_json: str) -> str:
+    """The op's tool from its library entry, and that entry's preset feeds and speeds (in the tool's own units);
+    coolant stays as the op had it (disabled: mist is the post's). Returns how the feeds were set, for the run
+    notes. Raises AdapterError unless the op's tool reads back with the entry's GUID."""
+    data = json.loads(tool_json)
+    tool = call("Tool.createFromJson", adsk.cam.Tool.createFromJson, tool_json)
+    coolant = op.parameters.itemByName("tool_coolant")
+    keep = coolant.expression if coolant is not None else None
+    call(f"{op.name}: tool", setattr, op, "tool", tool)
+    got = tool_guid(op)
+    if got != data.get("guid"):
+        raise AdapterError(f"{op.name}: the tool reads back as {got or 'unreadable'}, not {data.get('guid')}")
+    preset = ((data.get("start-values") or {}).get("presets") or [{}])[0]
+    unit = "mm/min" if data.get("unit") == "millimeters" else "in/min"
+    done = []
+    for name, key, kind in _FEEDS:
+        if key in preset and op.parameters.itemByName(name) is not None:
+            want = f"{float(preset[key]):g} {'rpm' if kind == 'rpm' else unit}"
+            p = param(op, name)
+            p.expression = want
+            if p.expression.replace(" ", "") != want.replace(" ", ""):
+                raise AdapterError(f"{op.name}: {name} = {want} didn't stick (reads {p.expression})")
+            done.append(f"{name} {p.expression}")
+    if keep is not None:
+        set_expr(op, "tool_coolant", keep)
+    return f"{op.name}: tool {data.get('description') or data.get('guid')}, feeds set ({', '.join(done)})"
 
 
 def radial_stock(op, inches: float) -> None:

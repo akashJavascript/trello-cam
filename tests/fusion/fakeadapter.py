@@ -19,8 +19,8 @@ from autocam_core.names import comment_line
 from autocam_core.tabs import Seg
 
 from autocam_worker.adapter import (
-    BEARING, BORE, DRILL, FACE, INNER, OUTER, POCKET, POCKETFINISH, TAGS, Adapter, AdapterError, Arranged, Box, OpFill,
-    OpState, TemplateOp,
+    BEARING, BORE, DRILL, FACE, INNER, OUTER, POCKET, POCKETFINISH, SCRIBE, TAGS, Adapter, AdapterError, Arranged, Box,
+    OpFill, OpState, TemplateOp,
 )
 
 OUTLINE_OFFSET_IN = 0.0787 + 0.05     # 4 mm tool radius + lead-in
@@ -32,7 +32,7 @@ def _tag(name: str) -> Optional[str]:
 
 
 class FakeAdapter(Adapter):
-    capabilities = frozenset({DRILL, BORE, BEARING, INNER, OUTER, POCKET, POCKETFINISH, FACE})
+    capabilities = frozenset({DRILL, BORE, BEARING, INNER, OUTER, POCKET, POCKETFINISH, FACE, SCRIBE})
 
     def __init__(self):
         self.parts: Dict[str, Tuple[PartGeometry, Tuple[float, float]]] = {}
@@ -63,6 +63,10 @@ class FakeAdapter(Adapter):
         self.fail_tab_points = False                   # set_tab_points refuses (like Fusion without the choice)
         self.face_inset_in = 0.05                      # the face pass stays this far inside each faced copy's box
         self.face_extra_depth_in = 0.0                 # ...and goes this much deeper than asked
+        self.tops: Dict[str, Dict[int, list]] = {}     # STEP path -> top face id -> edges, from the box's corner
+        self.scribe_off_in = 0.0                       # scribing runs this far beside its lines
+        self.scribe_extra_depth_in = 0.0               # ...and this much deeper than asked
+        self.fail_set_tool = False
 
     def register(self, step: Path, geometry: PartGeometry, size: Tuple[float, float]) -> None:
         self.parts[str(Path(step))] = (geometry, size)
@@ -221,6 +225,18 @@ class FakeAdapter(Adapter):
         pts.append(pts[0])
         return [Seg("line", (a, c)) for a, c in zip(pts, pts[1:])]
 
+    def top_edges(self, copy_id, face_ids):
+        b = self.boxes[copy_id]
+        tops = self.tops.get(self.copies[copy_id], {})
+        return {fid: [(k, (a[0] + b.x0, a[1] + b.y0), (c[0] + b.x0, c[1] + b.y0), st) for k, a, c, st in tops[fid]]
+                for fid in face_ids if fid in tops}
+
+    def set_tool(self, sheet, op_name, tool_json):
+        assert op_name in self.sheets[sheet]["ops"], op_name
+        if self.fail_set_tool:
+            raise AdapterError(f"{op_name}: tool: RuntimeError: 2 : not settable")
+        self.sheets[sheet].setdefault("tools", {})[op_name] = json.loads(tool_json)["guid"]
+
     def set_tab_points(self, sheet, op_name, points):
         assert op_name in self.sheets[sheet]["ops"], op_name
         if self.fail_tab_points:
@@ -260,6 +276,15 @@ class FakeAdapter(Adapter):
             if i == 0:
                 lines += ["S18000", "M3", "G4 X4."]
             tag = _tag(op)
+            if op.startswith("[scribe]"):                # the tool center along each line, at the depth
+                fill = s["fills"][op]
+                z = t - fill.depth_in - self.scribe_extra_depth_in
+                ox, oy = s["origin"]
+                for x0, y0, x1, y1 in fill.lines:
+                    d = self.scribe_off_in
+                    lines += [f"G0 X{x0 - ox + d:.4f} Y{y0 - oy:.4f}", f"Z{retract:g}", f"G1 Z{z:.4f} F20.",
+                              f"G1 X{x1 - ox + d:.4f} Y{y1 - oy:.4f} F60.", f"G0 Z{clear:g}"]
+                continue
             if f"[{FACE}]" in op.lower():                # a skim inside each faced copy's box, at the face depth
                 fill = s["fills"][op]
                 z = t - fill.depth_in - self.face_extra_depth_in

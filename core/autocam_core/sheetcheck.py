@@ -9,6 +9,8 @@ thicknesses, the tool must be one of the job's tools, and the program's `[outer 
 be exactly the planned cut order and account for every placed copy (so no part loses its pause).
 Every `[outer <part>]` op must also reach the stock bottom: a template whose bottom height follows
 the selected (top) face posts a program that passes the Z floor but never cuts a part free.
+A `[scribe ...]` op (bend lines scribed with the sheet's cutter, core 0.18.0) only for parts that ask for it,
+before the outlines, exactly the scribing depth below their tops.
 """
 
 import re
@@ -19,6 +21,7 @@ from .fixture import clamp_clear_z
 from .names import instance_id
 from .pauses import PauseCheck, PauseSpec, verify
 from .schema_job import Job
+from .scribe import lowest_z, scribe_sections
 from .tapguard import GuardReport, GuardSpec, check_program, parse_code
 
 _OUTER_LINE = re.compile(r"^\[outer (.*)\]$")
@@ -97,7 +100,48 @@ def plan_problems(text: str, job: Job, thickness_in: float, tool_key: str, outer
     if not part_counts:
         out.append("no parts on the sheet")
     out += outer_depth_problems(text, job.guard.z_floor_in)
+    out += sheet_scribe_problems(text, job, thickness_in, part_counts)
     return out
+
+
+def _scribe_depth_problems(text: str, sections, thickness_in: float, depth_in: float, face_in: float,
+                           what: str) -> List[str]:
+    """Each scribing op gets to the scribing depth below its parts' tops and no deeper: `depth_in` below the
+    stock top, or for an op named `... faced` that much below a faced top (face_in lower)."""
+    out: List[str] = []
+    lines = text.splitlines()
+    for section in sections:
+        faced = lines[section[0] - 1].strip().endswith(" faced]")
+        want = thickness_in - depth_in - (face_in if faced else 0.0)
+        z = lowest_z(text, section)
+        if z is None:
+            out.append(f"{what} at line {section[0]} has no Z move")
+        elif z < want - FACE_FLOOR_TOL_IN:
+            out.append(f"{what} at line {section[0]} goes down to Z{z:.4f}, below Z{want:.4f} (a scribed line is "
+                       f"{depth_in:g} in deep)")
+        elif z > want + FACE_REACH_TOL_IN:
+            out.append(f"{what} at line {section[0]} never gets to Z{want:.4f} (lowest Z {z:.4f})")
+    return out
+
+
+def _face_in(job: Job) -> float:
+    return job.face.depth_in if job.face is not None else 0.0
+
+
+def sheet_scribe_problems(text: str, job: Job, thickness_in: float, part_counts: Mapping[str, int]) -> List[str]:
+    sections = scribe_sections(text)
+    if not sections:
+        return []                    # parts that asked and weren't scribed are marked by hand (a sheet warning)
+    asking = {p.part_key for p in job.parts if p.scribe == "endmill" and p.part_key in part_counts}
+    if not asking or job.scribe is None:
+        return ["the program scribes bend lines, but no part on the sheet asks for that with the sheet's cutter"]
+    out: List[str] = []
+    stripped = [l.strip() for l in text.splitlines()]
+    first_outer = next((n for n, l in enumerate(stripped, 1) if _OUTER_LINE.match(l)), None)
+    if first_outer is not None and any(a > first_outer for a, _ in sections):
+        out.append("the program scribes bend lines after cutting an outline")
+    return out + _scribe_depth_problems(text, sections, thickness_in, job.scribe.depth_in, _face_in(job),
+                                        "the scribing")
 
 
 def outer_depth_problems(text: str, floor_in: float) -> List[str]:
@@ -189,6 +233,44 @@ def check_face_program(data: bytes, job: Job, thickness_in: float, part_counts: 
     if report.min_z_in is None or report.min_z_in > target + FACE_REACH_TOL_IN:
         lowest = "no Z move" if report.min_z_in is None else f"lowest Z {report.min_z_in:.4f} in"
         problems.append(f"the face program never gets to the face depth (Z{target:.4f}; {lowest})")
+    return SheetCheck(report, None, tuple(problems))
+
+
+def check_scribe_program(data: bytes, job: Job, thickness_in: float, part_counts: Mapping[str, int],
+                         by_hand: bool = False) -> SheetCheck:
+    """A sheet's SCRIBE program (core 0.18.0): bend lines scribed with the chamfer mill on the parts that ask for
+    it, and nothing else. Its [scribe] ops get to the scribing depth below their parts' tops and nothing goes
+    deeper (the guard's floor); no stops, no outlines. Whether every point is on a bend line is checked by the
+    worker (the service has no geometry)."""
+    text = data.decode("ascii", errors="replace")
+    if job.scribe is None or job.scribe.chamfer is None:
+        why = "the job has no chamfer mill for scribing"
+        return SheetCheck(_failed(check_program(data, GuardSpec()), why), None, (why,))
+    s = job.scribe
+    problems: List[str] = []
+    if not any(abs(thickness_in - t) <= 1e-9 for t in job.material.thicknesses_in):
+        problems.append(f"sheet thickness {thickness_in:g} in is not a {job.material.name} stock thickness")
+    asking = {p.part_key for p in job.parts if p.scribe == "chamfer"}
+    if not part_counts:
+        problems.append("the scribe program lists no parts")
+    others = sorted(set(part_counts) - asking)
+    if others:
+        problems.append(f"the scribe program lists parts that don't ask for it: {', '.join(others)}")
+    outlines = [m.group(1) for m in (_OUTER_LINE.match(l.strip()) for l in text.splitlines()) if m]
+    if outlines:
+        problems.append(f"the scribe program cuts outlines ({', '.join(outlines)})")
+    sections = scribe_sections(text)
+    if not sections:
+        problems.append("the scribe program has no [scribe] op")
+    face_in = _face_in(job)
+    faced = any(p.face for p in job.parts if p.part_key in part_counts)
+    problems += _scribe_depth_problems(text, sections, thickness_in, s.chamfer_depth_in, face_in, "the scribing")
+    deepest = thickness_in - s.chamfer_depth_in - (face_in if faced else 0.0)
+    spec = replace(guard_spec(job, thickness_in, job.tooling.default, by_hand),
+                   z_floor_in=max(0.0, deepest - FACE_FLOOR_TOL_IN), tool_radius_in=s.chamfer.diameter_in / 2)
+    report = check_program(data, spec)
+    if report.m0_count:
+        report = _failed(report, f"the scribe program has {report.m0_count} M0; it never stops")
     return SheetCheck(report, None, tuple(problems))
 
 

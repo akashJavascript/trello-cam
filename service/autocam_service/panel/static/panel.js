@@ -177,13 +177,13 @@
   function newForm(card) {
     var c = card && card.form;                 // a Drafts or sent-back card: start from what it says
     if (c) {
-      return { qty: c.qty || 1, qtyBy: "you", asm: 0, tabs: c.tabs, nest: c.nest, face: c.face,
+      return { qty: c.qty || 1, qtyBy: "you", asm: 0, tabs: c.tabs, nest: c.nest, face: c.face, scribe: c.scribe || "",
         fitKind: c.fit.kind, fitSize: c.fit.kind === "hole" ? String(c.fit.size) : "", rush: c.rush, drafts: false,
         smoked: c.smoked, tool18: c.tool_eighth, material: "", notes: c.notes || "", error: "", kept: c.kept || [] };
     }
     return fromAssembly({
       qty: card && card.qty ? card.qty : 1, qtyBy: card && card.qty ? "you" : "asm", asm: 0,
-      tabs: S.studio ? S.studio.tabsDefault : true, nest: true, face: false, fitKind: "none", fitSize: "",
+      tabs: S.studio ? S.studio.tabsDefault : true, nest: true, face: false, scribe: "", fitKind: "none", fitSize: "",
       rush: false, drafts: false, smoked: false, tool18: false, material: "", notes: "", error: ""
     });
   }
@@ -606,6 +606,7 @@
     if (f.tabs && !r.own) chips.push(chip("Tabs"));
     if (!f.nest) chips.push(chip("Placed by hand"));
     if (f.face) chips.push(chip("Face"));
+    if (f.scribe && !r.own) chips.push(chip("Scribed bends"));
     if (f.tool18 && !r.own) chips.push(chip("1/8 in endmill"));
     if (f.fitKind !== "none") chips.push(chip(f.fitKind === "outline" ? "Fit outline" : "Fit " + f.fitSize + " hole"));
     if (f.rush) chips.push(chip("Rush"));
@@ -674,6 +675,13 @@
     ];
     if (st.face && !f.own) opts.push(switchLine("Face the top", f.face, function (v) { f.face = v; render(); }));
     if (!f.own) opts.push(switchLine("Use the 1/8 in endmill", f.tool18, function (v) { f.tool18 = v; render(); }));
+    if (st.scribe && d.part.bent && !f.own) {
+      var ssel = h("select", { class: "select", id: "scribe", onchange: function () { f.scribe = ssel.value; render(); } },
+        [["", "No"], ["endmill", "With the endmill"], ["chamfer", "With the chamfer mill"]].map(function (o) {
+          return h("option", { value: o[0], selected: (f.scribe || "") === o[0] ? "selected" : null }, o[1]);
+        }));
+      opts.push(h("div", { class: "line" }, h("label", { class: "name", for: "scribe" }, "Scribe the bend lines"), ssel));
+    }
     if (st.fit && !f.own) {
       var fsel = h("select", { class: "select", id: "fit", onchange: function () { f.fitKind = fsel.value; render(); } },
         [["none", "None"], ["hole", "A hole"], ["outline", "Outline"]].map(function (o) {
@@ -795,6 +803,7 @@
     var fitted = f.fitKind !== "none";
     var body = where({
       p: S.partId, qty: f.qty, nest: f.nest || fitted, tabs: f.tabs || fitted, face: f.face, rush: f.rush, tool_eighth: !!f.tool18,
+      scribe: d.part.bent ? (f.scribe || "") : "",
       drafts: f.drafts, smoked: f.smoked, material: f.material, fit: { kind: f.fitKind, size: f.fitSize },
       notes: f.notes, u: ctx.u, name: S.user, server: ctx.server, card: S.editing && d.card ? d.card.card : ""
     });

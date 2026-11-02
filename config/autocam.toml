@@ -214,6 +214,17 @@ flute_in = 0.70866
 cutter_label = "6 mm 3-flute ALU"
 template = "fusion/templates/face_6mm.f3dhsm-template"   # one [face] op with that tool (make_face.py)
 
+[scribe]                   # a bent part's bend lines scribed on its top, if its card asks (Scribe: endmill or chamfer;
+                           # the panel's "Scribe the bend lines"); off unless asked (the user's choice, 2026-11-01)
+depth_in = 0.012           # with the sheet's own endmill, in the sheet's program (a line as wide as the cutter);
+                           # the user's 10 to 15 thou (2026-11-01). At most 0.02. Below a faced top, if it's faced
+chamfer_depth_in = 0.012   # with the chamfer mill, in a SCRIBE program run before the sheet's (a line 2x this wide)
+chamfer_guid = "915d08db-80ad-44e2-8fd5-6b9ed2129f59"   # "6mm 45 deg chamfer" (T16) in the pinned library
+chamfer_number = 16
+chamfer_diameter_in = 0.23622
+chamfer_flute_in = 0.70866
+chamfer_label = "6 mm 45 deg chamfer mill"
+
 [onshape]
 base_url = "https://cad.onshape.com"
 calls_per_part_estimate = 4    # translation + status checks + download; parts after the first usually need 3
