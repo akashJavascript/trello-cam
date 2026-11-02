@@ -596,7 +596,8 @@
   function renderSent() {
     var r = S.sent, f = S.form, d = S.detail;
     var drafts = r.list === "Drafts";
-    add(bodyEl, notice("good", "Sent to " + r.list, r.own ? "AutoCAM picks your program a spot and puts it in Sheet review, checked."
+    add(bodyEl, notice("good", "Sent to " + r.list, r.own ? (f.placeMyself ? "It goes in Sheet review as it is, for the operator to place."
+      : "AutoCAM picks your program a spot and puts it in Sheet review, checked.")
       : drafts ? "Move it to Ready for CAM when it's ready." : "It's nested about 2 minutes after the last card arrives."));
     if (r.material && r.material.line) {
       add(bodyEl, notice("info", null, "Onshape didn't take the material (" + (r.material.why || "no reason given") + "), so the card says Material: " + r.material.line + "."));
@@ -743,7 +744,10 @@
         h("label", { class: "btn btn-secondary file-btn" }, f.program ? "Change" : "Choose", file)),
       h("div", { class: "line" }, h("span", { class: "name" }, "Plate thickness"), thick),
       h("div", { class: "line" }, h("span", { class: "name" }, "Cutter"), cutter),
-      h("span", { class: "hint" }, "Zero X/Y at the part's front-left corner and Z0 on the spoilboard. AutoCAM picks a spot, moves your program there and checks it."));
+      switchLine("I'll place it myself", f.placeMyself, function (v) { f.placeMyself = v; render(); }),
+      h("span", { class: "hint" }, f.placeMyself
+        ? "It goes in Sheet review as it is: the operator zeros it on a piece big enough. Z0 on the spoilboard."
+        : "Zero X/Y at the part's front-left corner and Z0 on the spoilboard. AutoCAM picks a spot, moves your program there and checks it."));
   }
   function fraction(x) {
     var names = { "0.0625": "1/16 in", "0.125": "1/8 in", "0.1875": "3/16 in", "0.25": "1/4 in" };
@@ -813,7 +817,7 @@
     if (!f.thickness) { f.error = "Pick the plate's thickness."; render(); return; }
     f.error = ""; S.busy = true; render();
     api("POST", "/api/send-program", where({
-      p: S.partId, thickness: f.thickness, cutter: f.cutter || "", material: f.material, notes: f.notes,
+      p: S.partId, thickness: f.thickness, cutter: f.cutter || "", material: f.material, notes: f.notes, place_myself: !!f.placeMyself,
       program: { filename: f.program.filename, text: f.program.text }, u: ctx.u, name: S.user, server: ctx.server
     })).then(function (r) {
       S.busy = false; S.sent = r; d.card = r.card;

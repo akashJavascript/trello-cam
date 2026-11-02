@@ -9,6 +9,11 @@ there (shift_program: its zero becomes the piece's front-left corner, like AutoC
 like any sheet program (clamps, reach, Z floor, rapids), and puts it on a card in Sheet review. When that card
 goes to Cut, the cut is recorded on the piece (like a "Cut by hand:" line). The program itself can't be turned, so
 its footprint (the box its cutter covers) is placed as it is.
+
+With a "Place it myself" line, AutoCAM doesn't pick a spot: the program goes on a card in Sheet review as it is (the
+operator's list, like every sheet), checked for what doesn't depend on where it's cut (codes, units, nothing below
+Z0, the park, no sideways rapid in the stock), with the area its cutter covers so the operator can pick a big enough
+piece. Nothing is recorded on an offcut (AutoCAM doesn't know which piece it was).
 """
 
 import re
@@ -22,6 +27,9 @@ from .handprograms import PROGRAM_SUFFIXES
 
 SUFFIX = "_PLACED"
 OWN_PROGRAM_RE = re.compile(r"^[ \t>\-*]*own[ \t]*program[ \t*]*[:=]", re.IGNORECASE | re.MULTILINE)
+# "Place it myself": no spot picked; the program as it is goes in the operator's list (Sheet review), zeroed on whatever
+# piece they choose (the user's ask, 2026-11-01)
+PLACE_MYSELF_RE = re.compile(r"^[ \t>\-*]*place[ \t]+it[ \t]+myself\b", re.IGNORECASE | re.MULTILINE)
 _THICKNESS = re.compile(r"^[ \t>\-*]*thickness[ \t*]*[:=][ \t]*(.+?)[ \t*]*$", re.IGNORECASE | re.MULTILINE)
 _XY = re.compile(r"(?<![A-Z])([XY])( *)([+-]?(?:\d+\.?\d*|\.\d+))")
 _LINE = re.compile(r"([^\r\n]*)(\r\n|\n|$)")

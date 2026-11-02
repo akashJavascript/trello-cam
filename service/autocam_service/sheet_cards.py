@@ -238,6 +238,29 @@ def own_program_description(*, program: str, placed: str, part: str, part_url: s
     ])
 
 
+def own_by_hand_description(*, program: str, part: str, part_url: str, stock: str, cutter_in: float, box,
+                             margin_in: float, lowest_z: Optional[float]) -> str:
+    """The card for someone's own program that they place by hand ("Place it myself"): the program as it is."""
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+    return "\n".join([
+        "LOAD",
+        f"Stock: a piece of {stock} at least {w + 2 * margin_in:.1f} x {h + 2 * margin_in:.1f} in (the cutter covers "
+        f"{w:.1f} x {h:.1f} in), from the offcut rack or the scrap pile. Hold it down clear of the cut.",
+        f"Cutter: the one {program} was made for (it's checked as up to {cutter_in:g} in across).",
+        "",
+        "RUN",
+        f"Program: {program}, as it was made. Zero X/Y on the piece where its zero goes: it cuts X {x0:+.2f} to "
+        f"{x1:+.2f} in and Y {y0:+.2f} to {y1:+.2f} in from there. Z from the fixed tool setter (Z0 = spoilboard).",
+        "",
+        f"{part} ({part_url}) was CAM'd by hand and is placed by hand: AutoCAM only checked the program"
+        + (f" (lowest Z {lowest_z:.4f})" if lowest_z is not None else "")
+        + ". Check the toolpaths yourself before ticking Review.",
+        "Cut it from one of AutoCAM's numbered offcuts? Add a line to that offcut's card like Cut by hand: 12 to 18 "
+        "along, 5 to 10 across, so later runs keep clear of it.",
+    ])
+
+
 def fit_lines(f: dict, s) -> List[str]:
     """What the sheet card says about one fit series."""
     hole = f["fit"].kind == "hole"

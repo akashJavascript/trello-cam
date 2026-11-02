@@ -98,6 +98,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   were CAM'd (one call per document when nothing changed; a comment on the sheet when a part did), and "I CAM'd it
   myself" sends a part's own program from the panel (guard-checked, on a card linked to the part; an "Own
   program:" line marks it for own_programs).
+- **Own programs placed by hand** (2026-11-01): a "Place it myself" line (or the panel's "I'll place it myself") puts
+  someone's own program in Sheet review as it is, guard-checked for what doesn't depend on where it's cut, with the area
+  its cutter covers; nothing is recorded on an offcut at Cut. Tested offline.
 - **Fit series** (2026-11-01): a part card's `Fit: 1.125 hole` or `Fit: outline` line gets that feature cut 0.003 tight,
   with lap programs taking 0.001 more each, run one by one at the machine; the run that fit is ticked on the sheet card
   and the next series starts there. Holes over 1.5 in too (cut as cutouts: the slug comes out by hand, then the laps,

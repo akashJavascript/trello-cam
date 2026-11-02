@@ -670,8 +670,12 @@ class PanelApp:
                  f"Material: {material_line(m)}", f"Thickness: {inches(stock).replace(' in', '')}"]
         if cutter_in:
             lines.append(f"Cutter: {cutter_said}")
-        lines += ["Own program: the attached program, CAM'd by hand (AutoCAM places it and checks the placed copy)",
-                  f"Sent from the Onshape panel by {sender}"]
+        if d.get("place_myself"):
+            lines += ["Own program: the attached program, CAM'd by hand",
+                      "Place it myself: the operator zeros it on a piece they pick (AutoCAM checks it as it is)"]
+        else:
+            lines.append("Own program: the attached program, CAM'd by hand (AutoCAM places it and checks the placed copy)")
+        lines.append(f"Sent from the Onshape panel by {sender}")
         notes = clean_text(d.get("notes"), 300)
         if notes:
             lines.append(f"Note: {notes}")

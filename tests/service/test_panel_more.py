@@ -314,3 +314,16 @@ def test_the_eighth_switch_and_an_assemblys_face_and_rush(tmp_path):
                                             "items": [{"key": keys["P-2014 gusset"], "qty": 4}]})
     [made] = [c for c in card_in(a, "ready_for_cam") if c.name == "P-2014 gusset"]
     assert set(made.labels) == {"Face", "Rush"}
+
+
+def test_an_own_program_placed_by_hand_from_the_panel(tmp_path):
+    p = Panel(tmp_path)
+    status, _ = send_program(p, program(), place_myself=True)
+    assert status == 200
+    [card] = card_in(p, "ready_for_cam")
+    assert "Place it myself: the operator zeros it on a piece they pick (AutoCAM checks it as it is)" in card.desc
+    for att, (_, _, data) in p.t.files.items():                                    # what Trello would hand back
+        p.t.downloads[att] = data
+    p.h.runner.own_programs()
+    [sheet] = [c for c in p.t.cards.values() if c.list_key == "sheet_review"]
+    assert "placed by hand - own program P-2014.tap - P-2014 gusset" in sheet.name

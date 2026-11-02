@@ -57,7 +57,10 @@ preview), cut, or sent back with the reason.
   and the cutter if it's over 1/4 in. The guard checks the program first for what doesn't depend on where it goes
   (codes, inch units, nothing below Z0, the park), so a bad one never reaches Trello. It goes on a card linked to the
   part with Material, Thickness and an "Own program:" line, and AutoCAM places it like any own program (a spot,
-  the program moved there, the full check, a card in Sheet review). The card follows the part in the panel.
+  the program moved there, the full check, a card in Sheet review). The card follows the part in the panel. With
+  **"I'll place it myself"** AutoCAM doesn't pick a spot: the program goes in Sheet review as it is, with the area
+  its cutter covers, for the operator to zero on any piece big enough (a "Place it myself" line on a Trello card
+  does the same).
 - **Fits by clicking:** clicking a round hole that isn't drilled, or a wall of the outline, in the CAD sets the Fit
   (Onshape face ids from the shape read for the check). Waits on what Onshape's SELECTION messages really hold.
 - **A whole assembly:** the second extension (context Assembly, `&kind=assembly` on its link) lists the assembly's

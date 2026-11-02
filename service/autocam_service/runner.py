@@ -55,7 +55,8 @@ from .cards import (MATERIAL_RE, README_CARD, STEP_SUFFIXES, TITLE_QTY_RE, CardP
 from .offcuts import _number as _scrap_number
 from .config import Config
 from .handprograms import ProgramCut, footprint, is_program, parse_cutter, program_cuts
-from .own_programs import OWN_PROGRAM_RE, find_spot, parse_thickness, placed_name, program_attachments, shift_program
+from .own_programs import (OWN_PROGRAM_RE, PLACE_MYSELF_RE, find_spot, parse_thickness, placed_name,
+                           program_attachments, shift_program)
 from .fits import FitStore, key as fit_key, parse_fit, stocks as fit_stocks
 from .jobs import JobBuildError, build_job, face_spec, fit_spec, sheet_fixture
 from .materials import resolve_material
@@ -940,6 +941,9 @@ class Runner:
                                     "post it again and attach that."])
             return
         self._retire_own(card.id, "its part card came back to Ready for CAM")
+        if PLACE_MYSELF_RE.search(card.desc or ""):
+            self._own_by_hand(card, att, data, key, thickness, cutter, box)
+            return
         fx = sheet_fixture(cfg)
         width, length = cfg.sheet.width_in, cfg.sheet.length_in
         on_board = {c.id for c in self.t.list_cards("offcuts")}
@@ -1008,6 +1012,41 @@ class Runner:
                                 "checked; review it like any sheet.")
         log.info("own program %s on card %s placed as %s on %s", att.name, card.id, label, spot.offcut_id or "a new sheet")
 
+    def _own_by_hand(self, card: Card, att, data: bytes, key: str, thickness: float, cutter: float, box) -> None:
+        """An own program with "Place it myself": its card in Sheet review with the program as it is, zeroed on
+        whatever piece the operator picks (own_programs.py)."""
+        cfg = self.cfg
+        spec = GuardSpec(z_floor_in=cfg.machine.z_floor_in, allowed_g=frozenset(cfg.tapguard.allowed_g),
+                         allowed_m=frozenset(cfg.tapguard.allowed_m), park=cfg.machine.park,
+                         tool_radius_in=cutter / 2, stock_top_in=thickness)
+        report = check_program(data, spec)
+        if not report.passed:
+            self._refuse_own(card, [f"{att.name} failed AutoCAM's checks: {report.summary()}"])
+            return
+        label = self._own_label()
+        stock = self._stock_label(key, thickness)
+        part = " ".join(card.name.split())
+        title = f"{stock} - placed by hand - own program {att.name} - {part} - {label}"
+        desc = text.own_by_hand_description(program=att.name, part=part, part_url=card.url, stock=stock,
+                                            cutter_in=cutter, box=box, margin_in=cfg.nest.part_spacing_in,
+                                            lowest_z=report.min_z_in)
+        new = self.t.create_card(self.targets["sheet_created"], title, desc)
+        self.s.store.register_sheet(new.id, label, False, [card.id])
+        reg = self.s.store.sheet_cards()
+        reg[new.id].update(label=label, url=new.url, material=key, thickness_in=thickness, offcut_id=None,
+                           by_hand=True, own={"program": att.name, "by_hand": True, "box": list(box)})
+        self.s.store._write_sheets(reg)
+        self.t.attach_program(new.id, att.name, data, report)
+        self.t.add_checklist(new.id, cfg.trello.checklist_name, cfg.trello.checklist)
+        self.t.add_checklist(new.id, cfg.trello.machine_checklist_name, cfg.trello.machine_checklist)
+        reg = self.s.store.sheet_cards()
+        reg[new.id]["cuttable"] = True
+        self.s.store._write_sheets(reg)
+        self.t.move(card.id, self.targets["part_nested"])
+        self.t.comment(card.id, f"In Sheet review to be placed by hand: {new.url} ({label}). {att.name} is checked "
+                                "as it is; the operator zeros it on a piece big enough.")
+        log.info("own program %s on card %s: placed by hand as %s", att.name, card.id, label)
+
     def _own_label(self) -> str:
         f = self.s.store.offcuts_file.with_name("own_programs.json")
         try:
@@ -1034,8 +1073,8 @@ class Runner:
     def _own_after_cut(self, card: Card, info: Dict) -> None:
         """An own program's card went to Cut: its cut is taken out of the offcut it was on (like a hand cut, the
         room either side kept), or the rest of the new sheet becomes an offcut if its Offcut box is ticked."""
-        if info.get("offcut_done") or not info.get("cuttable"):
-            return
+        if info.get("offcut_done") or not info.get("cuttable") or info["own"].get("by_hand"):
+            return                                   # placed by hand: AutoCAM doesn't know which piece it was cut from
         cfg, own = self.cfg, info["own"]
         label = info.get("label") or info.get("run")
         cut = tuple(own["cut_own"])

@@ -182,3 +182,32 @@ def test_placing_programs_can_be_switched_off(tmp_path):
     h.runner.tick()
     assert not sheet_cards(h)                                   # an ordinary part card then: no link, no STEP
     assert "No Onshape link" in h.tracker.comments_on("o1")[-1]
+
+
+# ---------------------------------------------------------------- "Place it myself" (2026-11-01)
+
+def test_place_it_myself_puts_the_program_as_it_is_in_the_operators_list(tmp_path):
+    h = harness(tmp_path)
+    own_card(h, desc="Material: 6061\nThickness: 1/8\nPlace it myself")
+    h.runner.tick()
+    [s] = sheet_cards(h)
+    assert s.name == "6061 1/8in - placed by hand - own program P-3001.tap - P-3001 - H1"
+    assert placed_files(h, s.id) == {"P-3001.tap": program()}                    # not moved: as it was made
+    assert "Zero X/Y on the piece where its zero goes: it cuts X -0.12 to +3.12 in and Y -0.12 to +2.12 in" in s.desc
+    assert "at least 4.2 x 3.2 in" in s.desc
+    assert h.tracker.checklist(s.id, "Review").total == 2 and h.tracker.checklist(s.id, "Offcut") is None
+    assert h.tracker.get_card("o1").list_key == "nested"
+    info = h.store.sheet_cards()[s.id]
+    assert info["cuttable"] and info["own"]["by_hand"] and info["offcut_id"] is None
+    h.tracker.tick_all(s.id, "Review")
+    cut(h, s.id)
+    assert offcut_cards(h) == []                                                # no piece AutoCAM knows of
+    assert h.tracker.get_card("o1").list_key == "cut"
+
+
+def test_place_it_myself_is_still_checked(tmp_path):
+    h = harness(tmp_path)
+    own_card(h, desc="Material: 6061\nThickness: 1/8\nPlace it myself", data=program(z_cut="-0.13"))
+    h.runner.tick()
+    assert sheet_cards(h) == [] and h.tracker.get_card("o1").list_key == "needs_fixing"
+    assert "failed AutoCAM's checks" in h.tracker.comments_on("o1")[-1] or "Z0" in h.tracker.comments_on("o1")[-1]
