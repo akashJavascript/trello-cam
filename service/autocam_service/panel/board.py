@@ -32,6 +32,10 @@ from ..tracker.base import Card, Tracker
 log = logging.getLogger("autocam.panel")
 
 ACTIVE = ("drafts", "queued", "back", "sheet")
+# A part changed in Onshape after it was CAM'd (and before it's cut): the CAD changed label on its card and its sheet
+# cards, and this box on its card to cut it as it was anyway. Nesting it again clears it too.
+ACCEPT_LIST = "CAD changed"
+ACCEPT_ITEM = "Cut it as it was CAM'd (the change doesn't matter here)"
 PREVIEWS_KEPT = 20
 
 
@@ -225,13 +229,17 @@ class PanelBoard:
             return {"status": "none", "label": "Not sent"}
         if pc.status == "sheet":
             labels = [str(e.get("label") or "a sheet") for _, e in self.sheets_of(pc.card.id)]
-            return {"status": "sheet", "label": f"On {labels[-1]}" if labels else "On a sheet"}
+            return {"status": "sheet", "label": f"On {labels[-1]}" if labels else "On a sheet",
+                    **({"changed": True} if self.open_change(pc.card.id) is not None else {})}
         return {"status": pc.status, "label": {"drafts": "In Drafts", "queued": "Waiting to nest",
                                                "back": "Sent back", "cut": "Cut"}[pc.status]}
 
     def detail(self, pc: PartCard) -> Dict[str, Any]:
         """Everything the panel shows about a part's card."""
         out: Dict[str, Any] = {**self.chip(pc), "card": pc.card.id, "url": pc.card.url, "qty": pc.qty, "sheets": []}
+        change = self.open_change(pc.card.id) if pc.status in ("sheet", "cut") else None
+        if change is not None:
+            out["cadChanged"] = {"what": change.get("what") or [], "cut": pc.status == "cut"}
         if pc.status in ("drafts", "back"):
             out["form"] = self.settings(pc)              # "Edit and send" / "Send again" start from the card
         sheets = self.sheets_of(pc.card.id) if pc.status in ("sheet", "cut") else []
@@ -372,21 +380,108 @@ class PanelBoard:
         return sum(self.flag_sheet(sid, pc.card.id, name, what, key) for sid, e in self.sheets_of(pc.card.id)
                    if not e.get("cut"))
 
+    def _flags(self) -> Dict[str, Any]:
+        try:
+            return dict(json.loads(self.flags_file.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            return {}
+
+    def _save_flags(self, flags: Dict[str, Any]) -> None:
+        self.flags_file.parent.mkdir(parents=True, exist_ok=True)
+        write_atomic(self.flags_file, (json.dumps(flags, indent=1) + "\n").encode("utf-8"))
+
     def flag_sheet(self, sheet_id: str, card_id: str, name: str, what: List[str], key: str) -> bool:
-        """One comment on the sheet card per change of this part (`key`: its shape now)."""
+        """Once per change of this part (`key`: its shape now): a comment and the CAD changed label on the sheet
+        card, and on the part card the label, a comment and the box to cut it as it was anyway."""
+        label = self.cfg.labels.cad_changed
         with self._lock:
-            try:
-                flags = dict(json.loads(self.flags_file.read_text(encoding="utf-8")))
-            except (OSError, ValueError):
-                flags = {}
+            flags = self._flags()
             if flags.get(f"{sheet_id}:{card_id}") == key:
                 return False
             self.t.comment(sheet_id, f"{name} was changed in Onshape after this sheet was CAM'd ({', '.join(what)}). "
-                                     "Check it before cutting; the Onshape panel can nest the new version.")
+                                     f"Check it before cutting: tick \"{ACCEPT_ITEM.split(' (')[0]}\" on its card to "
+                                     "cut it anyway, or nest the new version (move its card back to Ready for CAM, or "
+                                     "the Onshape panel's button).")
+            self.t.add_label(sheet_id, label)
             flags[f"{sheet_id}:{card_id}"] = key
-            self.flags_file.parent.mkdir(parents=True, exist_ok=True)
-            write_atomic(self.flags_file, (json.dumps(flags, indent=1) + "\n").encode("utf-8"))
+            part = flags.get(f"part:{card_id}")
+            if not isinstance(part, dict) or part.get("key") != key or part.get("done"):
+                self.t.add_label(card_id, label)
+                self.t.remove_checklists(card_id, ACCEPT_LIST)
+                self.t.add_checklist(card_id, ACCEPT_LIST, [ACCEPT_ITEM])
+                self.t.comment(card_id, f"Changed in Onshape after it was CAM'd ({', '.join(what)}). To cut the new "
+                                        "version, move this card back to Ready for CAM (or press \"Nest the new "
+                                        "version\" in the Onshape panel). To cut it as it was, tick the CAD changed box.")
+                part = {"key": key, "job": (self.cammed(card_id) or {}).get("job") or "", "name": name,
+                        "what": list(what), "sheets": []}
+            if sheet_id not in part["sheets"]:
+                part["sheets"].append(sheet_id)
+            flags[f"part:{card_id}"] = part
+            self._save_flags(flags)
+            self.invalidate()
             return True
+
+    def open_change(self, card_id: str) -> Optional[Dict[str, Any]]:
+        """The card's change not settled yet ({"what", "name", "sheets", ...}), or None."""
+        with self._lock:
+            part = self._flags().get(f"part:{card_id}")
+        return part if isinstance(part, dict) and not part.get("done") else None
+
+    def accept_change(self, pc: PartCard, by: str) -> bool:
+        """Cut it as it was CAM'd (the panel's "Cut it as it is"): the same as ticking the box on its card."""
+        return self._settle(pc.card.id, pc, "accepted", f"accepted in the Onshape panel by {by or 'someone'}")
+
+    def _settle(self, card_id: str, pc: Optional[PartCard], how: str, why: str) -> bool:
+        label = self.cfg.labels.cad_changed
+        with self._lock:
+            flags = self._flags()
+            part = flags.get(f"part:{card_id}")
+            if not isinstance(part, dict) or part.get("done"):
+                return False
+            if pc is not None:
+                self.t.remove_label(card_id, label)
+                if how == "accepted":
+                    self.t.remove_checklists(card_id, ACCEPT_LIST)
+                    self.t.add_checklist(card_id, ACCEPT_LIST, [ACCEPT_ITEM], checked=True)
+            part["done"] = how
+            flags[f"part:{card_id}"] = part
+            still = {sid for k, f in flags.items() if k.startswith("part:") and isinstance(f, dict)
+                     and not f.get("done") for sid in f.get("sheets") or []}
+            for sid in part.get("sheets") or []:
+                if how == "accepted":
+                    self.t.comment(sid, f"{part.get('name') or 'A part'}: cut as it was CAM'd ({why}).")
+                if sid not in still:
+                    self.t.remove_label(sid, label)
+            self._save_flags(flags)
+            self.invalidate()
+            log.info("panel: %s's CAD change settled: %s (%s)", part.get("name") or card_id, how, why)
+            return True
+
+    def settle_changes(self) -> int:
+        """Clear the CAD changed labels of parts whose change is settled: the box ticked (cut it as it was), or the
+        card back in Ready for CAM, sent back, nested again from Onshape as it is now, or gone. A card cut with
+        its change unsettled keeps its label (what was cut is the old version)."""
+        with self._lock:
+            open_ = {k[5:]: f for k, f in self._flags().items()
+                     if k.startswith("part:") and isinstance(f, dict) and not f.get("done")}
+        if not open_:
+            return 0
+        cards = {pc.card.id: pc for pc in self.part_cards(fresh=True)}
+        settled = 0
+        for card_id, part in open_.items():
+            pc = cards.get(card_id)
+            if pc is not None and box(pc.card, ACCEPT_LIST, ACCEPT_ITEM, False):
+                how, why = "accepted", "the box on its card was ticked"
+            elif pc is None:
+                how, why = "gone", "its card isn't on the board"
+            elif pc.status in ("drafts", "queued", "back"):
+                how, why = "renested", "its card went back"
+            elif pc.status == "sheet" and (self.cammed(card_id) or {}).get("job", part.get("job")) != part.get("job"):
+                how, why = "renested", "nested again as it is now"
+            else:
+                continue
+            settled += self._settle(card_id, pc, how, why)
+        return settled
 
     def renest(self, pc: PartCard) -> Card:
         """A card on a sheet back to Ready for CAM, so the next run nests its part as it is now."""

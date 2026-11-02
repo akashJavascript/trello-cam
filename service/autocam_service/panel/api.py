@@ -10,6 +10,7 @@
     GET  /api/changed?d&wvm&w&e&p&card       has the part changed since that card's run CAM'd it (its manufacturing
                                              version, from state/jobs)? Tells the card's uncut sheets once
     POST /api/renest                         a card on a sheet back to Ready for CAM (nest the new version)
+    POST /api/accept-change                  a part that changed after it was CAM'd: cut it as it was (clears CAD changed)
     GET  /api/assembly?d&wvm&w&e[&fresh][&u] an assembly's parts (its flattened BOM), each with its card's status
     POST /api/send-many                      cards for the ticked parts of an assembly
     POST /api/send-program                   a part someone CAM'd themselves: its .tap on a card linked to the part,
@@ -176,6 +177,7 @@ class PanelApp:
             route = {("GET", "/api/studio"): self.studio, ("GET", "/api/part"): self.part,
                      ("GET", "/api/qty"): self.qty, ("GET", "/api/check"): self.check, ("POST", "/api/send"): self.send,
                      ("GET", "/api/changed"): self.changed, ("POST", "/api/renest"): self.renest,
+                     ("POST", "/api/accept-change"): self.accept_change,
                      ("GET", "/api/assembly"): self.assembly, ("POST", "/api/send-many"): self.send_many,
                      ("POST", PROGRAM_PATH): self.send_program,
                      ("POST", "/api/qty"): self.change_qty, ("POST", "/api/me"): self.me,
@@ -497,6 +499,24 @@ class PanelApp:
         log.info("panel: %s sent %s back to Ready for CAM (changed since it was CAM'd): %s",
                  clean_text(d.get("name"), 40) or "someone", pc.card.name, card.url)
         fresh = read_part_card(card, "queued")
+        return {"card": self.board.detail(fresh) if fresh is not None else None}
+
+    def accept_change(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        """Cut it as it was CAM'd: the same as ticking the CAD changed box on its card."""
+        self._rate_limit()
+        did, wvm, wvmid, eid = self._studio(d)
+        pid = self._part_id(d)
+        cards = self.board.part_cards(fresh=True)
+        pc = self.board.for_part(did, eid, pid, "", cards, card_id=str(d.get("card") or ""))   # by its Part ID line
+        if pc is None:                                   # a card made in Trello: by the part's name (one call)
+            part = self._find(did, wvm, wvmid, eid, pid)
+            pc = self.board.for_part(did, eid, pid, part.get("name") or "", cards, card_id=str(d.get("card") or ""))
+        if pc is None or pc.status != "sheet" or self.board.open_change(pc.card.id) is None:
+            raise Refused(409, "That card has moved on since this panel looked. Press Refresh.")
+        by = clean_text(d.get("name"), 40)
+        self.board.accept_change(pc, by)
+        log.info("panel: %s: cut %s as it was CAM'd: %s", by or "someone", pc.card.name, pc.card.url)
+        fresh = read_part_card(self.board.t.get_card(pc.card.id), "sheet")
         return {"card": self.board.detail(fresh) if fresh is not None else None}
 
     def preview(self, q: Dict[str, str]) -> Response:

@@ -300,7 +300,8 @@ def trello_setup(cfg, env_file: Path, board: Optional[str], create: Optional[str
     tracker = trello_tracker(cfg, env_file)
     result = setup_board(tracker.http, board=board, create=create, workspace=workspace,
                          labels={"smoked": cfg.labels.smoked, "tool_eighth": cfg.labels.tool_eighth,
-                                 "rush": cfg.labels.rush, "face": cfg.labels.face},
+                                 "rush": cfg.labels.rush, "face": cfg.labels.face,
+                                 "cad_changed": cfg.labels.cad_changed},
                          nest_box=(cfg.trello.nest_checklist, cfg.trello.nest_item), tabs_default=cfg.tabs.default,
                          face_depth=cfg.face.depth_in if cfg.face else 0.005)
     print(f"Board: {result.url}")

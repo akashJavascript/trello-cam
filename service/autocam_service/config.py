@@ -198,6 +198,7 @@ class Labels:
     tool_eighth: str
     rush: str = "Rush"
     face: str = "Face"
+    cad_changed: str = "CAD changed"    # a part changed in Onshape after it was CAM'd (panel/board.py)
 
 
 @dataclass(frozen=True)
@@ -241,6 +242,8 @@ class Panel:
     max_assemblies: int = 4              # quantities are counted in at most this many assemblies of the document
     board_cache_s: int = 30              # the Trello lists read for each part's status
     sends_per_minute: int = 20
+    change_check_hours: float = 12.0     # sheets in Sheet review are checked against Onshape this often (one call
+                                         # per document state); Ready to cut ones once each, when they get there
 
 
 @dataclass(frozen=True)
@@ -685,7 +688,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
 
     t = top.table("labels")
     labels = Labels(smoked=t.string("smoked", required=True), tool_eighth=t.string("tool_eighth", required=True),
-                    rush=t.string("rush", default="Rush"), face=t.string("face", default="Face"))
+                    rush=t.string("rush", default="Rush"), face=t.string("face", default="Face"),
+                    cad_changed=t.string("cad_changed", default="CAD changed"))
     t.finish()
 
     t = top.table("onshape")
@@ -826,7 +830,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                       assembly_cache_s=t.integer("assembly_cache_s", minimum=0),
                       max_assemblies=t.integer("max_assemblies", minimum=0),
                       board_cache_s=t.integer("board_cache_s", minimum=0),
-                      sends_per_minute=t.integer("sends_per_minute", minimum=1))
+                      sends_per_minute=t.integer("sends_per_minute", minimum=1),
+                      change_check_hours=t.number("change_check_hours", positive=True, default=12.0))
         t.finish()
 
     costs = Costs()

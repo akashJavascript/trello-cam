@@ -35,7 +35,7 @@ SYSTEM_DESC = "The auto-CAM service writes its status here, and comments when a 
 README_TITLE = README_CARD
 TEMPLATE_TITLE = "New part"
 TEMPLATE_DESC = "Paste the Part Studio link here\nQty: "
-LABEL_COLORS = {"smoked": "black", "tool_eighth": "orange", "rush": "red", "face": "green"}
+LABEL_COLORS = {"smoked": "black", "tool_eighth": "orange", "rush": "red", "face": "green", "cad_changed": "purple"}
 
 
 def _norm(name: str) -> str:

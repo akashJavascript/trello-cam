@@ -61,6 +61,9 @@ preview), cut, or sent back with the reason.
   **"I'll place it myself"** AutoCAM doesn't pick a spot: the program goes in Sheet review as it is, with the area
   its cutter covers, for the operator to zero on any piece big enough (a "Place it myself" line on a Trello card
   does the same).
+- **CAD changed** (2026-11-01): a part that changed after it was CAM'd shows "CAD changed" in the list and on its
+  status, with **Nest the new version** and **Cut it as it is** (the same as ticking the box on its card; either
+  takes the CAD changed labels off its card and sheet card). See `docs/decisions.md`.
 - **Bent (sheet metal) parts** (2026-11-01): a bent part is listed with "Bent"; its check runs on its flat pattern
   (what's cut) and says how it bends ("Cut flat, then 1 bend: Bend A 90 up (R 0.09 in)", plus a word on 6061).
   Its options add **Scribe the bend lines** (No / With the endmill / With the chamfer mill), written on the card as

@@ -204,6 +204,8 @@ smoked = "Smoked"
 tool_eighth = "Tool 1/8"
 rush = "Rush"              # one part needed now: nested at once, on its own (an offcut or a new sheet)
 face = "Face"              # a clean top: skimmed before the sheet is cut ([face])
+cad_changed = "CAD changed"   # put on by AutoCAM: the part changed in Onshape after it was CAM'd (its card has a box
+                              # to cut it as it was anyway); cleared once that's ticked or the part is nested again
 
 [face]                     # the Face label: a FACE program per sheet, run first, skims those parts' tops only
 depth_in = 0.005           # how much comes off the top (the user's default, 2026-11-01); at most 0.02
@@ -402,6 +404,8 @@ assembly_cache_s = 1800         # the document's assemblies, for "how many does 
 max_assemblies = 4              # quantities are counted in at most this many assemblies of the document
 board_cache_s = 30              # Trello lists read for each part's status
 sends_per_minute = 20
+change_check_hours = 12         # sheets in Sheet review are compared with Onshape this often (one call per document
+                                # state; Ready to cut sheets once each, when they get there)
 
 [costs]                         # the Onshape panel's cost and sheet use estimate. Prices: WCP's for a 24 x 48 in sheet
                                 # (wcproducts.com, read 2026-11-01; the user's choice), else another vendor's (named on

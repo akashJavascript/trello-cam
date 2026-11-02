@@ -451,6 +451,14 @@ mentions it. A plain plate as a Rush card with its STEP attached and the **Face*
 | 2b | `Fit: 2 hole` on a hole over 1.5 in (cut as a cutout): the program keeps its slug tabbed; the laps have no tabs, each 0.001 bigger, all to Z0; the card says to break the slug out first | r038 (a made-up 2 in hole) |
 | 3 | Cut one: run the program, try the fit (a bearing, a shaft or the mating part), run laps until it fits, tick it. The next sheet with that fit starts two steps above it | |
 
+### 17b. CAD changed (2026-11-01)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Change a part in Onshape after its sheet is in Sheet review (or move the sheet to Ready to cut): within 12 h (Ready to cut: within 2 minutes) its card and the sheet card have the purple CAD changed label, and the part card a "CAD changed" box | |
+| 2 | Tick "Cut it as it was CAM'd": within 2 minutes both labels are gone and the sheet card says who decided | |
+| 3 | Instead, press "Nest the new version" in the panel (or move the card to Ready for CAM): the labels come off and the next run nests the changed part | |
+
 ### 18. Scribed bend lines (2026-11-01)
 
 A bent part (Part 13, doc 31359564..., Part Studio c5ca4dcf...) as a Rush card with `Scribe: endmill`, then again

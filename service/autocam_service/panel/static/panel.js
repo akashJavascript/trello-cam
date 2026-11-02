@@ -406,6 +406,7 @@
     function row(p) {
       return h("button", { class: "part-row", type: "button", onclick: function () { openPart(p.id); } },
         h("span", { class: "name" }, p.name), markIcon(p.mark), p.bent ? chip("Bent") : null,
+        p.chip.changed ? chip("CAD changed", "back") : null,
         p.chip.label ? chip(p.chip.label, p.chip.status) : null);
     }
     var list = h("div", { class: "parts" }, cut.map(row), S.showOther ? other.map(row) : null);
@@ -503,9 +504,13 @@
     var d = S.detail, card = d.card;
     add(bodyEl, partHead(d.part, [chip(card.label, card.status), chip("Qty " + card.qty, "event")]));
     if (S.notice) add(bodyEl, notice("info", null, S.notice));
+    var flagged = card.cadChanged;
     if (S.changed && S.changed.changed) {
       add(bodyEl, notice("bad", "Changed in Onshape since it was CAM'd" + (S.changed.run ? " (" + S.changed.run + ")" : ""),
-        S.changed.what.join(", ") + "." + (card.status === "sheet" ? " The sheet card says so too." : "")));
+        S.changed.what.join(", ") + "." + (card.status === "sheet" ? " Its card and sheet card are marked CAD changed." : "")));
+    } else if (flagged && !(S.changed && S.changed.changed === false)) {
+      add(bodyEl, notice("bad", "Changed in Onshape since it was CAM'd", (flagged.what || []).join(", ") + "." +
+        (flagged.cut ? " What was cut is the old version." : "")));
     } else if (S.changed && S.changed.changed === false) {
       add(bodyEl, h("p", { class: "hint" }, "Onshape still matches what was CAM'd" + (S.changed.run ? " in " + S.changed.run : "") + "."));
     }
@@ -524,9 +529,10 @@
     actionEl.hidden = false;
     if (S.changing) return renderChangeQty();
     var open = sheet && sheet.url ? linkBtn("Open sheet", sheet.url) : linkBtn("Open card", card.url);
-    if (ch && ch.changed && card.status === "sheet") {
+    if (((ch && ch.changed) || (card.cadChanged && !card.cadChanged.cut)) && card.status === "sheet") {
       add(actionEl, h("div", { class: "btn-row" },
         h("button", { class: "btn btn-primary", type: "button", disabled: S.busy, onclick: renest }, "Nest the new version"),
+        card.cadChanged ? h("button", { class: "btn btn-ghost", type: "button", disabled: S.busy, onclick: acceptChange }, "Cut it as it is") : null,
         sheet && sheet.url ? linkBtn("Open sheet", sheet.url, "btn-ghost") : linkBtn("Open card", card.url, "btn-ghost")));
       return;
     }
@@ -547,6 +553,18 @@
       S.busy = false; S.changed = undefined;
       if (r.card) S.detail.card = r.card;
       S.notice = "It's back in Ready for CAM: the next run nests the new version.";
+      quietRefresh();
+      render();
+    }, function (err) { S.busy = false; S.notice = err.message; render(); });
+  }
+
+  function acceptChange() {
+    var card = S.detail.card;
+    S.busy = true; render();
+    api("POST", "/api/accept-change", where({ p: S.partId, card: card.card, name: S.user })).then(function (r) {
+      S.busy = false; S.changed = undefined;
+      if (r.card) S.detail.card = r.card;
+      S.notice = "OK: it's cut as it was CAM'd. The CAD changed marks are off its cards.";
       quietRefresh();
       render();
     }, function (err) { S.busy = false; S.notice = err.message; render(); });

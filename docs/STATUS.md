@@ -113,6 +113,12 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   were CAM'd (one call per document when nothing changed; a comment on the sheet when a part did), and "I CAM'd it
   myself" sends a part's own program from the panel (guard-checked, on a card linked to the part; an "Own
   program:" line marks it for own_programs).
+- **CAD changed** (2026-11-01, from the teammate's panel): a part that changed in Onshape after it was CAM'd, on a
+  sheet not cut yet, gets the **CAD changed** label on its card and its sheet card, and on its card a box "Cut it as
+  it was CAM'd" (or the panel's "Cut it as it is"). Ticking it, or nesting the part again, takes the labels off; a part
+  cut with it unsettled keeps its label (what was cut is the old version). Found by the panel, by sheets reaching
+  Ready to cut, and now by sheets in Sheet review every 12 h (`[panel] change_check_hours`; one call per document
+  state). Tested offline.
 - **Own programs placed by hand** (2026-11-01): a "Place it myself" line (or the panel's "I'll place it myself") puts
   someone's own program in Sheet review as it is, guard-checked for what doesn't depend on where it's cut, with the area
   its cutter covers; nothing is recorded on an offcut at Cut. Tested offline.
@@ -187,8 +193,7 @@ More stretch ideas (2026-10-04, saved for later; 1 and 2 were built the same day
   Ready for CAM together, nested from cache (no Onshape calls).
 - **Team chat ping** (small, needs a webhook URL): Discord or Slack messages when a sheet is ready for review, a
   run fails or Fusion goes down.
-- **Changed-part alerts** (larger, costs Onshape calls): before a sheet is cut, check whether its parts changed
-  in Onshape since it was CAM'd.
+- **Changed-part alerts:** built 2026-11-01 (the panel's checks, Ready to cut and Sheet review, the CAD changed label).
 
 ## Not verified yet (don't rely on these until they are)
 

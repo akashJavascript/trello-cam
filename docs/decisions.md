@@ -900,6 +900,19 @@ Onshape's bend table, on the sheet card. No 3/32 in stock. Scribing the bend lin
 default. A top split into faces in one plane (every flat pattern's is, along its bends) is cut as one outline for every
 part, not only bent ones: the old refusal existed only because the outline came from one face.
 
+## 2026-11-01: CAD changed, with an accept step (from the teammate's panel)
+
+A part that changed in Onshape after it was CAM'd, while its sheet isn't cut: the **CAD changed** label (purple) on
+the part card and the sheet card, a comment on each, and a "CAD changed" checklist on the part card with one box,
+"Cut it as it was CAM'd (the change doesn't matter here)". The two ways out: tick it (or the panel's "Cut it as it
+is", the same thing, with who in the sheet's comment), or nest the new version (the card back to Ready for CAM, or
+the panel's button). The service clears the labels within a couple of minutes of either (`panel/board.py`
+settle_changes). A sheet card loses its label when none of its parts is unsettled. Cut with it unsettled: the part
+card keeps the label, since what was cut is the old version. Changed again after being accepted: asked again (once
+per new shape). Nothing is blocked: the operator sees the label, as on the teammate's panel. Sheets in Sheet review
+are checked every 12 hours (not when they're new: they were just CAM'd), one current-state call per document, so a
+board of sheets from five documents costs about ten of the panel's 60 calls a day.
+
 ## 2026-11-01: scribed bend lines (core 0.18.0; the user: "Do both and make them both options", 10 to 15 thou)
 
 - **Two ways, per part, off unless asked:** `Scribe: endmill` (the sheet's own cutter, a `[scribe]` op in the sheet's
