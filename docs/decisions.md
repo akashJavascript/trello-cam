@@ -949,6 +949,23 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - **Quantities from 2 assemblies** (`max_assemblies`, was 4): 1 + 2 calls per document per 30 minutes.
 - Not changed (offered): `assembly_cache_s` and `parts_cache_s`.
 
+## 2026-11-02: SRPP, three kinds, cut as polycarbonate (the user)
+
+- **What the team does:** SRPP parts are set to Polycarbonate in Onshape (close in weight) and cut exactly like
+  polycarbonate on the router. So each kind (`srpp_twill` WCP, `srpp_maxcomposite` REV, `srpp_swyft` SWYFT) is a
+  material in the polycarbonate family: same tools, templates and checks, but its own stock, so it never shares a
+  sheet with PC or another kind. 1/8, 3/16 and 1/4 in, as the user listed.
+- **How a card says which:** a `Material: SRPP Twill` line. A Material: line now also picks a material Onshape has no
+  name of its own for, from the same family as the part's Onshape material (`materials.resolve_material`); it never
+  overrides between two materials Onshape names (6061 vs 5052), and plain "SRPP" asks which kind. No new Trello
+  labels. The panel's Smoked switch became a Sheet choice for polycarbonate parts (clear, smoked, the three SRPP),
+  which writes the Smoked label or the Material: line; SRPP picked for a part with no material sets Polycarbonate in
+  Onshape and still writes the line.
+- **Prices** (`[costs.sheet_prices]`): WCP Twill from its listings (the page itself refused us); MAXComposite and
+  SWYFT from REV's and SWYFT's pages, scaled to a 24 x 48 sheet's area, since they're sold 47 x 23 in and 24 x 24 in.
+- **Not done:** those two sizes. AutoCAM nests every new sheet as 24 x 48, so a MAXComposite or SWYFT sheet needs to
+  come in as an offcut card, or a sheet size per material (asked the user).
+
 ## 2026-11-02: 0.3 in tabs work, on straight edges with room for the ramp (the user: "fix why 0.3 doesn't work")
 
 - **The cause:** Fusion's stock simulation (`SubtractiveStockGenerator` -> `onCircularMove`) crashes when a wide tab's

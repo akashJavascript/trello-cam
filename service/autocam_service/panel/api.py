@@ -109,7 +109,7 @@ def clean_text(text: Any, most: int) -> str:
 def material_label(m: Material) -> str:
     if m.family == "aluminum":
         return f"{m.name} aluminum"
-    if m.family == "polycarbonate":
+    if m.family == "polycarbonate" and m.name.upper() == "PC":
         return f"Polycarbonate, {m.color}" if m.color else "Polycarbonate"
     return f"{m.name} {m.color}".strip()
 
@@ -273,19 +273,21 @@ class PanelApp:
         return pid
 
     def _materials(self) -> Dict[str, Dict[str, Any]]:
-        """Picker choices by material key, each with the Onshape material it is (smoked is Onshape's polycarbonate
-        plus the Smoked label)."""
+        """Picker choices by material key, each with the Onshape material it is: smoked is Onshape's polycarbonate
+        plus the Smoked label; SRPP is Onshape's polycarbonate plus a Material: line ("line")."""
         cfg = self.cfg
         onshape_of = {key: name for name, key in cfg.onshape.material_map.items()}
         out: Dict[str, Dict[str, Any]] = {}
         for key, m in cfg.materials.items():
-            name = onshape_of.get(key)
-            if name is None and m.color == "smoked":
-                name = next((onshape_of[k] for k, o in cfg.materials.items() if k in onshape_of
-                             and o.family == m.family and o.name == m.name), None)
+            name, line = onshape_of.get(key), False
+            if name is None:
+                same = [k for k, o in cfg.materials.items() if k in onshape_of and o.family == m.family]
+                same.sort(key=lambda k: cfg.materials[k].name != m.name)     # smoked PC: clear PC's Onshape name
+                name = onshape_of[same[0]] if same else None
+                line = m.color != "smoked"
             if name is not None:
                 out[key] = {"value": key, "label": material_label(m), "onshape": name, "family": m.family,
-                            "smoked": m.color == "smoked", "thicknesses": list(m.thicknesses_in)}
+                            "smoked": m.color == "smoked", "line": line, "thicknesses": list(m.thicknesses_in)}
         return out
 
     def _part_material(self, part: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -741,10 +743,15 @@ class PanelApp:
         materials = self._materials()
         have = self._part_material(part)
         smoked = bool(d.get("smoked"))
-        line, set_in_onshape, why = "", False, ""
+        line, set_in_onshape, why, missed = "", False, "", False
         if have and have["key"]:
             if have["family"] != "polycarbonate":
                 smoked = False
+            sheet = materials.get(str(d.get("sheet") or ""))       # which sheet, for Onshape's polycarbonate
+            if sheet is not None and sheet["onshape"].lower() == have["onshape"].lower():
+                smoked = sheet["smoked"]
+                if sheet["line"]:
+                    line = material_line(self.cfg.materials[sheet["value"]])
         else:
             chosen = materials.get(str(d.get("material") or ""))
             if chosen is None:
@@ -755,8 +762,10 @@ class PanelApp:
                 set_in_onshape, why = self.onshape.set_material(did, wvmid, eid, pid, chosen["onshape"])
             else:
                 why = "this is a version, which can't be changed"
-            if not set_in_onshape:
+            if not set_in_onshape or chosen["line"]:      # SRPP: Onshape's Polycarbonate can't say which
                 line = material_line(self.cfg.materials[chosen["value"]])
+            if not set_in_onshape:
+                missed = True
                 log.info("panel: %s's material not set in Onshape (%s); the card says Material: %s", name, why, line)
 
         face = bool(d.get("face")) and self.cfg.face is not None
@@ -772,7 +781,7 @@ class PanelApp:
         where = "inbox" if s.drafts else "ready_for_cam"
         log.info("panel: %s sent %s x%d to %s: %s", sender, name, qty, LIST_NAMES[where], card.url)
         return {"card": self._detail(card, where), "list": LIST_NAMES[where],
-                "material": {"setInOnshape": set_in_onshape, "why": why, "line": line}}
+                "material": {"setInOnshape": set_in_onshape, "why": why, "line": line, "missed": missed}}
 
     def send_program(self, d: Dict[str, Any]) -> Dict[str, Any]:
         """Someone CAM'd the part themselves: their .tap goes on a card linked to the part (Material, Thickness and

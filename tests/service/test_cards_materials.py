@@ -111,6 +111,14 @@ def test_step_attachment_fallback_needs_material():
     (None, "PC", False, "pc_clear"),
     (None, "pc smoked", False, "pc_smoked"),
     (None, "PC", True, "pc_smoked"),
+    # SRPP (2026-11-02): Polycarbonate in Onshape, the kind on a Material: line
+    ("Polycarbonate", "SRPP Twill", False, "srpp_twill"),
+    ("Polycarbonate", "srpp maxcomposite", False, "srpp_maxcomposite"),
+    ("Polycarbonate", "SRPP SWYFT", False, "srpp_swyft"),
+    (None, "SRPP Twill", False, "srpp_twill"),                     # a .step file
+    ("Polycarbonate", "PC", False, "pc_clear"),
+    ("Aluminum - 6061", "5052", False, "al6061"),                   # never between two Onshape names
+    ("Aluminum - 6061", "SRPP Twill", False, "al6061"),             # nor across families
 ])
 def test_material_resolution(onshape, hint, smoked, key):
     assert resolve_material(onshape, hint, smoked, CFG.onshape.material_map, CFG.materials).key == key
@@ -120,7 +128,10 @@ def test_material_resolution(onshape, hint, smoked, key):
     ("Steel - 1018", None, False, "isn't one we cut"),
     (None, None, False, "no material in Onshape"),
     ("Aluminum - 6061", None, True, "only polycarbonate comes smoked"),
-    (None, "titanium", False, "isn't one we cut (5052, 6061, PC)"),
+    (None, "titanium", False, "isn't one we cut (5052, 6061, PC, SRPP)"),
+    ("Polycarbonate", "SRPP", False, "say which: SRPP Twill, SRPP MAXComposite, SRPP SWYFT"),
+    (None, "SRPP", False, "say which: SRPP Twill, SRPP MAXComposite, SRPP SWYFT"),
+    ("Polycarbonate", "SRPP Twill", True, "the Smoked label and `Material: SRPP Twill` both say which sheet"),
 ])
 def test_material_problems(onshape, hint, smoked, problem):
     choice = resolve_material(onshape, hint, smoked, CFG.onshape.material_map, CFG.materials)

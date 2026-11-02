@@ -1531,7 +1531,7 @@ class Runner:
         if req.link is not None:
             exported = exporter.export(req.link, req.name, part_id=req.part_id)
             # Onshape's material wins; a Material: line covers a part that has none there (the panel writes one
-            # when it couldn't set the material in Onshape)
+            # when it couldn't set the material in Onshape), or names the kind of SRPP for Onshape's Polycarbonate
             choice = resolve_material(exported.material, req.material_hint, req.smoked,
                                       self.cfg.onshape.material_map, self.cfg.materials)
             step_path, sha, part_id = exported.step_path, exported.step_sha256, exported.part_id

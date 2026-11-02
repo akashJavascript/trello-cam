@@ -110,6 +110,33 @@ thicknesses_in = [0.0625, 0.125, 0.1875, 0.25]
 use_mist = false
 program_prefix = "PCsmoked"
 
+# SRPP (self-reinforced polypropylene), three kinds (the user, 2026-11-02): cut exactly like polycarbonate on the
+# router (its family: same tools, templates and checks) and set to Polycarbonate in Onshape, which is close in weight.
+# A card names the kind with a Material: line (Material: SRPP Twill); the panel writes it. Each kind is its own stock.
+[materials.srpp_twill]          # WCP SRPP Twill, 24 x 48
+name = "SRPP"
+family = "polycarbonate"
+color = "Twill"
+thicknesses_in = [0.125, 0.1875, 0.25]
+use_mist = false
+program_prefix = "SRPPtwill"
+
+[materials.srpp_maxcomposite]   # REV MAXComposite: sold 47 x 23 in, 0.1 and 0.2 in thick
+name = "SRPP"
+family = "polycarbonate"
+color = "MAXComposite"
+thicknesses_in = [0.125, 0.1875, 0.25]
+use_mist = false
+program_prefix = "SRPPmax"
+
+[materials.srpp_swyft]          # SWYFT Composite: sold 24 x 24 in (610 mm), 3 and 6 mm thick
+name = "SRPP"
+family = "polycarbonate"
+color = "SWYFT"
+thicknesses_in = [0.125, 0.1875, 0.25]
+use_mist = false
+program_prefix = "SRPPswyft"
+
 # Tools are identified by GUID only. number/diameter/flute are checked against the pinned
 # library, never used to pick a tool. cutter_label is what the sheet card tells the operator to load.
 # GUIDs change when a library is re-saved or copied, so config, the pinned library file and the
@@ -457,6 +484,19 @@ nest_efficiency = 0.7           # the share of a sheet that ends up as parts (th
 "0.0625" = 38.67                # EasyRuler Plastic (pcsmg0060x24x48, smoke grey), read 2026-11-01
 "0.125" = 74.99
 "0.25" = 99.99
+
+[costs.sheet_prices.srpp_twill]  # WCP SRPP Twill: WCP-1891 (1/8), WCP-1893 (1/4); from WCP's listings as a search
+"0.125" = 149.99                # shows them, read 2026-11-02 (wcproducts.com refused the page itself, 429)
+"0.1875" = 199.99
+"0.25" = 249.99
+
+[costs.sheet_prices.srpp_maxcomposite]   # REV MAXComposite (revrobotics.com, read 2026-11-02): $150 to $225 for a
+"0.125" = 159.86                # 47 x 23 in sheet, 0.1 in (REV-21-3098) or 0.2 in (REV-21-3095); the thinner
+"0.1875" = 239.78               # taken as the $150 one. Scaled to a 24 x 48 sheet's area (x 1.066). No 1/4 in
+
+[costs.sheet_prices.srpp_swyft] # SWYFT Composite (swyftrobotics.com, read 2026-11-02): 610 x 610 mm sheets, 3 mm
+"0.125" = 159.98                # $79.99, 6 mm (foam core) $89.99; doubled for a 24 x 48 sheet. No 3/16 in
+"0.25" = 179.98
 
 [paths]                         # relative to the repo root
 queue = "queue"

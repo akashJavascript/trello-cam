@@ -58,10 +58,12 @@ slug out before the laps) or Fit: outline. It's cut a little tight, and the shee
 to run one at a time until it fits; tick the one that did, and the next time starts there.
 Labels, if needed: {smoked} for smoked polycarbonate, {tool} to force the 1/8 in endmill, {face} for a clean
 top (it's skimmed {face_depth} in off the top, in a program run before the sheet's).
+SRPP? Set the part to Polycarbonate in Onshape and add a line Material: SRPP Twill (or SRPP MAXComposite, or SRPP
+SWYFT): it's cut like polycarbonate, from that kind of SRPP sheet.
 Bent (sheet metal) part? It's cut flat and the sheet card lists its bends. Add a line Scribe: endmill to have each
 bend line scribed on top with the sheet's own cutter (a shallow line as wide as it), or Scribe: chamfer mill for a fine
 line with the 45 degree chamfer mill (a short program of its own, run before the sheet's).
-No Onshape? Attach a .step file and add a line like Material: 6061 (or 5052, PC).
+No Onshape? Attach a .step file and add a line like Material: 6061 (or 5052, PC, SRPP Twill).
 CAM'd it yourself? Attach your .tap instead, with lines like Material: 6061 and Thickness: 3/16 (and Cutter: 1/2
 if it's over 1/4 in), or use "I CAM'd it myself" in the Onshape panel. Add a line Place it myself to cut it wherever
 you like instead: its card goes to Sheet review with your program as it is. AutoCAM picks it a spot on an offcut or a new sheet, moves the program there and puts it in

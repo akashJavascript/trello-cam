@@ -213,12 +213,12 @@
     if (c) {
       return { qty: c.qty || 1, qtyBy: "you", asm: 0, tabs: c.tabs, nest: c.nest, face: c.face, scribe: c.scribe || "",
         fitKind: c.fit.kind, fitSize: c.fit.kind === "hole" ? String(c.fit.size) : "", rush: c.rush, drafts: false,
-        smoked: c.smoked, tool18: c.tool_eighth, material: "", notes: c.notes || "", error: "", kept: c.kept || [] };
+        smoked: c.smoked, sheet: c.sheet || "", tool18: c.tool_eighth, material: "", notes: c.notes || "", error: "", kept: c.kept || [] };
     }
     return fromAssembly({
       qty: card && card.qty ? card.qty : 1, qtyBy: card && card.qty ? "you" : "asm", asm: 0,
       tabs: S.studio ? S.studio.tabsDefault : true, nest: true, face: false, scribe: "", fitKind: "none", fitSize: "",
-      rush: false, drafts: false, smoked: false, tool18: false, material: "", notes: "", error: ""
+      rush: false, drafts: false, smoked: false, sheet: "", tool18: false, material: "", notes: "", error: ""
     });
   }
   function fromAssembly(f) {
@@ -700,6 +700,7 @@
   function startEdit() {
     S.editing = true;
     S.form = newForm(S.detail.card);
+    if (S.form.sheet) loadCheck(S.partId, S.form.sheet);
     render();
   }
 
@@ -709,7 +710,7 @@
     add(bodyEl, notice("good", "Sent to " + r.list, r.own ? (f.placeMyself ? "It goes in Sheet review as it is, for the operator to place."
       : "AutoCAM picks your program a spot and puts it in Sheet review, checked.")
       : drafts ? "Move it to Ready for CAM when it's ready." : "It's nested about 2 minutes after the last card arrives."));
-    if (r.material && r.material.line) {
+    if (r.material && r.material.line && r.material.missed) {
       add(bodyEl, notice("info", null, "Onshape didn't take the material (" + (r.material.why || "no reason given") + "), so the card says Material: " + r.material.line + "."));
     }
     var chips = r.own ? [chip("Own program", "event")] : [chip("Qty " + f.qty, "event")];
@@ -806,7 +807,18 @@
       }
     }
     if (!f.own) opts.push(switchLine("Rush", f.rush, function (v) { f.rush = v; render(); }));
-    if (poly && !f.own) opts.push(switchLine("Smoked", f.smoked, function (v) { f.smoked = v; render(); }));
+    if (poly && !f.own) {
+      // which sheet: Onshape's polycarbonate is also smoked PC and SRPP (each kind its own stock)
+      var kinds = (st.materials || []).filter(function (o) { return o.onshape.toLowerCase() === m.onshape.toLowerCase(); });
+      if (kinds.length > 1) {
+        var shsel = h("select", { class: "select", id: "sheet", onchange: function () {
+          var picked = kinds.filter(function (o) { return o.value === shsel.value; })[0];
+          f.sheet = shsel.value === m.key ? "" : shsel.value; f.smoked = !!(picked && picked.smoked);
+          loadCheck(S.partId, f.sheet); render(); } },
+          kinds.map(function (o) { return h("option", { value: o.value, selected: (f.sheet || m.key) === o.value ? "selected" : null }, o.label); }));
+        opts.push(h("div", { class: "line" }, h("label", { class: "name", for: "sheet" }, "Sheet"), shsel));
+      }
+    }
     if (!f.own) {
       opts.push(switchLine("Send to Drafts", f.drafts, function (v) { f.drafts = v; render(); }));
       opts.push(ownSwitch);
@@ -914,7 +926,7 @@
     var body = where({
       p: S.partId, qty: f.qty, nest: f.nest || fitted, tabs: f.tabs || fitted, face: f.face, rush: f.rush, tool_eighth: !!f.tool18,
       scribe: d.part.bent ? (f.scribe || "") : "",
-      drafts: f.drafts, smoked: f.smoked, material: f.material, fit: { kind: f.fitKind, size: f.fitSize },
+      drafts: f.drafts, smoked: f.smoked, sheet: f.sheet || "", material: f.material, fit: { kind: f.fitKind, size: f.fitSize },
       notes: f.notes, u: ctx.u, name: S.user, server: ctx.server, card: S.editing && d.card ? d.card.card : ""
     });
     f.error = ""; S.busy = true; render();

@@ -27,7 +27,7 @@ def errors_for(mutate):
 
 def test_real_config_loads():
     cfg = load_config()
-    assert len(cfg.stock_types()) == 14
+    assert len(cfg.stock_types()) == 23        # 14, and SRPP's three kinds x 3 thicknesses (2026-11-02)
     assert [t.key for t in cfg.tools.values() if t.available] == [
         "t1_4mm_alu", "t1_4mm_poly", "t12_eighth_alu", "eighth_poly"]
     assert cfg.machine.z_floor_in == 0.0

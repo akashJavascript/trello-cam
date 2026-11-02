@@ -23,6 +23,7 @@ from autocam_core.hotfolder import write_atomic
 from ..autostart import box
 from ..cards import MATERIAL_RE, PART_ID_RE, QTY_LINE_RES, README_CARD, SCRIBE_RE, TITLE_QTY_RE, _plain, scribe_value
 from ..config import Config
+from ..materials import _by_hint
 from ..fits import _FIT, parse_fit
 from ..own_programs import OWN_PROGRAM_RE
 from ..onshape.urls import LinkError, configuration_query, first_onshape_url, parse_link
@@ -290,12 +291,25 @@ class PanelBoard:
         scribes = [scribe_value(v) for v in SCRIBE_RE.findall(_plain(card.desc or ""))]
         return {"qty": pc.qty, "face": norm(lb.face) in labels, "rush": norm(lb.rush) in labels,
                 "smoked": norm(lb.smoked) in labels, "tool_eighth": norm(lb.tool_eighth) in labels,
+                "sheet": self._sheet(card, norm(lb.smoked) in labels),
                 "nest": box(card, tc.nest_checklist, tc.nest_item, True),
                 "tabs": box(card, tc.tabs_checklist, tc.tabs_item, self.cfg.tabs.default),
                 "fit": ({"kind": "outline"} if fit[0] == "outline" else {"kind": "hole", "size": fit[1]})
                 if isinstance(fit, tuple) else {"kind": "none"},
                 "scribe": next((v for v in scribes if v), ""),
                 "notes": " / ".join(n for n in notes if n), "kept": kept_lines(card.desc)}
+
+    def _sheet(self, card: Card, smoked: bool) -> str:
+        """Which sheet the card picks for Onshape's material, for the panel's Sheet choice: the smoked material for
+        the Smoked label, a Material: line's (SRPP Twill), or "" (Onshape's own)."""
+        materials, named = self.cfg.materials, set(self.cfg.onshape.material_map.values())
+        if smoked:
+            return next((k for k, m in materials.items() if m.color == "smoked"), "")
+        for hint in MATERIAL_RE.findall(_plain(card.desc or "")):
+            key = _by_hint(hint.strip(), materials) if hint.strip() else None
+            if key is not None and key not in named:
+                return key
+        return ""
 
     def reason(self, card_id: str) -> str:
         """Why a card was sent back: its newest comment (AutoCAM's), without the closing how-to line."""

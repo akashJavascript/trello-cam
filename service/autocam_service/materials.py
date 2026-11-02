@@ -3,6 +3,10 @@
 Unmapped or missing material sends the part card to Needs fixing. The `Smoked` label turns
 clear polycarbonate into smoked (Onshape can't tell them apart). Cards with a .step file instead
 of an Onshape link name the material on a `Material:` line.
+
+A `Material:` line also picks a material Onshape has no name of its own for, from the same family as the part's
+Onshape material: SRPP is set to Polycarbonate in Onshape, and `Material: SRPP Twill` says which sheet (2026-11-02).
+It never overrides between two materials Onshape names itself (6061 and 5052).
 """
 
 from dataclasses import dataclass
@@ -29,6 +33,13 @@ def _by_hint(hint: str, materials: Mapping[str, Material]) -> Optional[str]:
     return None
 
 
+def _kinds(hint: str, materials: Mapping[str, Material]) -> str:
+    """For a Material: line naming only a material that comes in several kinds ("SRPP"): which to write."""
+    want = " ".join(hint.lower().split())
+    kinds = [f"{m.name} {m.color}" for m in materials.values() if m.name.lower() == want and m.color]
+    return f" (say which: {', '.join(kinds)})" if len(kinds) > 1 else ""
+
+
 def resolve_material(onshape_material: Optional[str], hint: Optional[str], smoked: bool,
                      material_map: Mapping[str, str], materials: Mapping[str, Material]) -> MaterialChoice:
     if onshape_material:
@@ -39,11 +50,22 @@ def resolve_material(onshape_material: Optional[str], hint: Optional[str], smoke
         if key is None:
             return MaterialChoice(None, f"Onshape material '{onshape_material}' isn't one we cut "
                                         "(not in config onshape.material_map)")
+        if hint:
+            picked = _by_hint(hint, materials)
+            named = set(material_map.values())
+            if picked is not None and picked != key and picked not in named \
+                    and materials[picked].family == materials[key].family and materials[picked].color != "smoked":
+                if smoked:
+                    return MaterialChoice(None, f"the Smoked label and `Material: {hint}` both say which sheet; "
+                                                "keep one")
+                return MaterialChoice(picked)
+            if picked is None and _kinds(hint, materials):
+                return MaterialChoice(None, f"`Material: {hint}` comes in more than one kind{_kinds(hint, materials)}")
     elif hint:
         key = _by_hint(hint, materials)
         if key is None:
             names = ", ".join(sorted({m.name for m in materials.values()}))
-            return MaterialChoice(None, f"`Material: {hint}` isn't one we cut ({names})")
+            return MaterialChoice(None, f"`Material: {hint}` isn't one we cut ({names}){_kinds(hint, materials)}")
     else:
         return MaterialChoice(None, "the part has no material in Onshape; assign one in the Part Studio "
                                     "(right-click the part > Assign material)")

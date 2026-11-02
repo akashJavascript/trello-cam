@@ -201,7 +201,8 @@ def test_the_studio_lists_solid_parts_with_their_material_and_status(tmp_path):
     assert rows["P-2015 window"]["material"] is None and rows["P-2015 window"]["chip"]["label"] == "Not sent"
     assert {m["value"]: m["onshape"] for m in data["materials"]} == {
         "al6061": "Aluminum - 6061", "al5052": "Aluminum - 5052", "pc_clear": "Polycarbonate",
-        "pc_smoked": "Polycarbonate"}
+        "pc_smoked": "Polycarbonate", "srpp_twill": "Polycarbonate", "srpp_maxcomposite": "Polycarbonate",
+        "srpp_swyft": "Polycarbonate"}                                           # SRPP is set to Polycarbonate
 
 
 # ---------------------------------------------------------------- sending
@@ -276,7 +277,7 @@ def test_a_material_picked_in_the_panel_is_set_in_onshape(tmp_path):
     assert p.send(p="JHG")[0] == 400                          # no material: pick one
     p.call("GET", "/api/studio", Q)
     status, data = p.send(p="JHG", material="al5052")
-    assert status == 200 and data["material"] == {"setInOnshape": True, "why": "", "line": ""}
+    assert status == 200 and data["material"] == {"setInOnshape": True, "why": "", "line": "", "missed": False}
     [(method, url, _, body)] = [s for s in p.transport.sent if s[0] == "POST"]
     assert url.endswith(f"/metadata/d/{D}/w/{W}/e/{E}/p/JHG")
     assert json.loads(body) == {"jsonType": "metadata-part", "partId": "JHG",
