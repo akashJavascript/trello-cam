@@ -136,12 +136,14 @@ def test_wide_tabs_only_where_their_ramp_has_room_else_the_templates(tmp_path):
 
 def test_a_sheet_with_a_cutout_that_needs_tabs_on_a_curve_keeps_the_templates_width_everywhere(tmp_path):
     # r061/r062: beside 0.3 in tabs, even the template's tabs on a curve crashed Fusion; on their own they never did
-    # (r058). A round cutout has nowhere else for its tabs, so its whole sheet gets the template's width.
+    # (r058). A round cutout has nowhere else for its tabs, so its whole sheet gets the template's width (when it
+    # isn't cut free: free_max_in 0 here, or bigger than it, below).
     rig = Rig(tmp_path)
     rig.fake.round_loops = True
     job = rig.job([("bracket", 1, with_cutouts("bracket", [5.0, 5.0]), (8.0, 6.0))])
     job = dataclasses.replace(job, parts=(dataclasses.replace(job.parts[0], tabs=True),),
-                              tabs=dataclasses.replace(job.tabs, width_in=0.3, height_in=0.0394, wide_max_tier=0))
+                              tabs=dataclasses.replace(job.tabs, width_in=0.3, height_in=0.0394, wide_max_tier=0,
+                                                       free_max_in=0.0))
     result = rig.run(job)
     [sheet] = result.sheets
     assert sheet.tap and not sheet.errors

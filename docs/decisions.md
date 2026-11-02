@@ -969,6 +969,13 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   it's up toolpaths never generate, with no error (r055-r058 sat in generate; one closed it and r058 finished).
   The add-in now clicks its Close (fx_util.wait_for, close_recovered.ps1, UI Automation) when a generation hasn't
   finished after 20 s; the recovered files stay under File > Recover Documents. The earlier "0.3 in hangs" were this.
+- **Curvy cutouts: cut free (the user's pick of three, "2"):** a tabbed cutout with no straight edge for its tabs (a
+  round hole cut as a cutout, a small rounded slot) would hold its whole sheet at 0.157 in. Instead, one at most
+  `[tabs] free_max_in` (2 in) across is cut free, no tabs, when that's what lets the setup have 0.3 in; the sheet
+  card says which under CHECK ("Watch for loose slugs"). Bigger ones, fitted slugs (a fit is tried with the slug
+  held) and curvy outlines still keep that setup at 0.157 in, and then nothing is cut free. The other two choices
+  were: such sheets stay 0.157 in, or 0.157 in everywhere. r067 (tsize1's four plates, 0.3 in, six cutouts up to
+  0.97 in cut free) generated fine, so `width_in = 0.3` is on.
 
 ## 2026-11-01: configured parts (the user picked it from the old panel's list)
 

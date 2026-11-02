@@ -71,9 +71,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 - **0.3 in tabs** (2026-11-02, test runs r054-r066 on tsize1's plates): they work when every tab on the sheet is on a
   straight edge (r060, r063, r064); a tab on a curve crashes Fusion's stock simulation at either width (r059, r061,
   r062, r065). Built: wide tabs only where their ramp fits on one straight run, and a per-setup rule (0.3 in only if
-  every tabbed contour fits on straight edges). Held at the template's width until the user picks what curvy cutouts
-  get. After a crash, Fusion's "Recovered Documents" window blocked every later generation; the add-in now closes it
-  (seen working, r066).
+  every tabbed contour fits on straight edges). Small curvy cutouts (up to 2 in) are cut free so the rest of the sheet
+  keeps 0.3 in (the user's pick); on since r067 passed. Not cut yet with 0.3 in tabs. After a crash, Fusion's
+  "Recovered Documents" window blocked every later generation; the add-in now closes it (seen working, r066).
 - **Adapters:** the user's, later.
 - **M5, on the scouting laptop** (the shop PC since 2026-10-30, reached over Tailscale): autostart tasks
   installed (the service in the background, no window, since 2026-10-31), the add-in on Run on Startup, Windows

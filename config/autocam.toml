@@ -386,10 +386,10 @@ place_programs = true           # a card in Ready for CAM with someone's own .ta
 default = true                  # the box starts ticked on new part cards (the user's choice, 2026-10-03)
 distance_in = 2.5               # about one tab per this much contour (outline or cutout); their shape
                                 # (triangular) is the template's: the API can't set the shape
-width_in = 0                    # 0: the template's (one cutter, 0.157 in). The user wants 0.3 in; it works with every
-                                # tab on straight edges (r060, r063, r064). Tabs on curves crashed Fusion at either width
-                                # (r059, r061, r062, r065; once fine, r058). Held at 0 until the cut-free rule below
-                                # passes on tsize1's plates; with 0.3 in, wide_max_tier and the per-setup rule apply
+width_in = 0.3                  # 0: the template's (one cutter, 0.157 in). The user's 0.3 in works with every tab on
+                                # straight edges (r060, r063, r064, r067). Tabs on curves crashed Fusion at either width
+                                # (r059, r061, r062, r065), so wide_max_tier, the per-setup rule and free_max_in apply:
+                                # on since 2026-11-02 (r067: tsize1's plates, 6 small cutouts cut free, fine)
 height_in = 0.0394              # above the bottom: 1 mm, what the template had (0 for either: the template's)
 wide_max_tier = 0               # tabs wider than the cutter go only where the cutter's whole climb over them is on one
                                 # straight edge (tabs.place_tabs tier 0); a contour without room for its tabs gets the
