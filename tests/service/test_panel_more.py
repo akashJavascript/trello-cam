@@ -376,3 +376,15 @@ def test_a_face_or_edge_clicked_in_the_cad_finds_its_part_without_calling_onshap
     assert p.call("GET", "/api/which-part", {**Q, "ids": "zz9"})[1] == {"part": ""}
     assert p.call("GET", "/api/which-part", {**Q, "ids": "<b>"})[1] == {"part": ""}
     assert len(p.transport.sent) == calls
+
+
+def test_the_page_links_its_script_by_content_so_a_deploy_reaches_browsers_at_once(tmp_path):
+    p = Panel(tmp_path)
+    page = p.app.handle("GET", "/panel", {"key": p.app._key.decode()}, {})
+    html = page.body.decode()
+    assert page.headers["Cache-Control"] == "no-store"
+    import re
+    js = re.search(r'src="(/static/panel\.js\?v=[0-9a-f]{12})"', html).group(1)
+    assert re.search(r'href="/static/panel\.css\?v=[0-9a-f]{12}"', html)
+    served = p.app.handle("GET", js.split("?")[0], {"v": js.split("v=")[1]}, {})
+    assert served.status == 200 and b"whichPart" in served.body

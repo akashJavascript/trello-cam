@@ -24,6 +24,7 @@
 Every /api request carries the key in an X-AutoCAM-Key header (the preview, an <img>, in its query instead).
 """
 
+import hashlib
 import hmac
 import json
 import logging
@@ -141,6 +142,20 @@ class Names:
             write_atomic(self.path, (json.dumps(names, indent=1, sort_keys=True) + "\n").encode("utf-8"))
 
 
+def versioned_page() -> bytes:
+    """index.html with each /static/ link stamped with its file's hash. Cloudflare tells browsers to keep static files
+    for 4 hours whatever this server says (seen 2026-11-01: an old panel.js kept running after a deploy); the page
+    itself is no-store, so a changed file gets a new address and is fetched at once."""
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+
+    def stamp(m: "re.Match[str]") -> str:
+        f = STATIC / m.group(1)
+        digest = hashlib.sha256(f.read_bytes()).hexdigest()[:12] if f.is_file() else "0"
+        return f'"/static/{m.group(1)}?v={digest}"'
+
+    return re.sub(r'"/static/([A-Za-z0-9_.-]+)"', stamp, html).encode("utf-8")
+
+
 class PanelApp:
     def __init__(self, cfg: Config, key: str, onshape: PanelOnshape, board: PanelBoard, names: Names,
                  clock: Callable[[], float] = time.monotonic,
@@ -220,7 +235,7 @@ class PanelApp:
         if not self._key_ok(query.get("key", "")):
             return Response(403, b"This isn't AutoCAM's panel link (the key is wrong). Ask a mentor.",
                             "text/plain; charset=utf-8", headers)
-        return Response(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8", headers)
+        return Response(200, versioned_page(), "text/html; charset=utf-8", headers)
 
     def _static(self, name: str) -> Response:
         path = STATIC / name

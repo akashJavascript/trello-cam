@@ -156,6 +156,11 @@ cloudflared --config <empty file> tunnel --origincert ~/.cloudflared/cert.pem ro
 
 (Without `--config`, `route dns` uses `config.yml`'s tunnel, BreadCompetition's, whatever tunnel is named.)
 
+**Cloudflare and the browser cache:** Cloudflare tells browsers to keep static files 4 hours whatever the service
+says (seen 2026-11-01: a deploy's new `panel.js` didn't reach an open browser). The page is `no-store`, and it links
+`panel.js` and `panel.css` with `?v=<hash of the file>`, so a changed file is fetched as soon as the panel is opened
+again.
+
 ## Registering it in Onshape (done 2026-11-01)
 
 Registered by Claude in Chrome with the user's enterprise admin account (the user asked). The key in the two Action
