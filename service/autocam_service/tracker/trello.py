@@ -193,8 +193,9 @@ class TrelloTracker(Tracker):
         board = self.http.call("GET", f"/cards/{card_id}", {"fields": "idBoard,idLabels"})
         found = [l for l in self.http.call("GET", f"/boards/{board['idBoard']}/labels", {"fields": "name"})
                  if norm(l.get("name") or "") == norm(name)]
+        color = "purple" if norm(name) == "cad changed" else "red"     # AutoCAM's own marks: CAD changed is purple
         label = found[0]["id"] if found else self.http.call(
-            "POST", "/labels", {"name": name, "color": "red", "idBoard": board["idBoard"]})["id"]
+            "POST", "/labels", {"name": name, "color": color, "idBoard": board["idBoard"]})["id"]
         if label not in (board.get("idLabels") or []):
             self.http.call("POST", f"/cards/{card_id}/idLabels", {"value": label})
 
