@@ -49,6 +49,7 @@ from ..tracker.base import Card
 from . import checks
 from .board import ACTIVE, PanelBoard, Send, read_part_card
 from .geometry import differences, shape_key
+from .hooks import HOOK_PREFIX, ChangeInbox, secret_ok
 from .onshape_reads import NoAccess, OutOfCalls, PanelOnshape, PanelOnshapeError
 
 log = logging.getLogger("autocam.panel")
@@ -142,10 +143,13 @@ class Names:
 class PanelApp:
     def __init__(self, cfg: Config, key: str, onshape: PanelOnshape, board: PanelBoard, names: Names,
                  clock: Callable[[], float] = time.monotonic,
-                 today: Callable[[], str] = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d")):
+                 today: Callable[[], str] = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                 inbox: Optional[ChangeInbox] = None, hook_secret: str = ""):
         if not key:
             raise ValueError("the panel needs AUTOCAM_PANEL_KEY")
         self.cfg = cfg
+        self.inbox = inbox                    # Onshape's webhook events (hooks.py); None: no webhook
+        self._hook_secret = hook_secret
         self._key = key.encode("utf-8")
         self.onshape = onshape
         self.board = board
@@ -166,6 +170,8 @@ class PanelApp:
                 return self._static(path[len("/static/"):])
             if not path.startswith("/api/"):
                 return Response(404, b"Not found", "text/plain; charset=utf-8")
+            if path.startswith(HOOK_PREFIX):                 # Onshape's webhook: its address is its password
+                return self.hook(method, path, body)
             given = query.get("key", "") if path == "/api/preview" else headers.get("x-autocam-key", "")
             if not self._key_ok(given):
                 return _json(403, {"error": "This isn't AutoCAM's panel link (the key is wrong). Ask a mentor."})
@@ -500,6 +506,18 @@ class PanelApp:
                  clean_text(d.get("name"), 40) or "someone", pc.card.name, card.url)
         fresh = read_part_card(card, "queued")
         return {"card": self.board.detail(fresh) if fresh is not None else None}
+
+    def hook(self, method: str, path: str, body: bytes) -> Response:
+        """An event from Onshape's webhook (hooks.py). Anything that isn't one is a plain 404."""
+        if method != "POST" or self.inbox is None or not secret_ok(path, self._hook_secret) or len(body) > 65536:
+            return _json(404, {"error": "Not found"})
+        try:
+            event = json.loads(body.decode("utf-8")) if body else {}
+        except ValueError:
+            return _json(400, {"error": "Bad request"})
+        if isinstance(event, dict) and self.inbox.note(event):
+            log.debug("panel: Onshape says %s/%s changed", event.get("documentId"), event.get("elementId"))
+        return _json(200, {"ok": True})
 
     def accept_change(self, d: Dict[str, Any]) -> Dict[str, Any]:
         """Cut it as it was CAM'd: the same as ticking the CAD changed box on its card."""

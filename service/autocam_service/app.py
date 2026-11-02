@@ -90,7 +90,9 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
         return False
     from .panel.api import Names, PanelApp
     from .panel.board import PanelBoard
+    from .panel.hooks import ChangeInbox, WebhookSetup
     from .panel.onshape_reads import PanelOnshape
+    from .panel.pictures import PictureWatch
     from .panel.precut import PrecutWatch
     from .panel.server import Tunnel, start_server
 
@@ -108,9 +110,19 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
                            max_assemblies=p.max_assemblies)
     tracker = trello_tracker(cfg, env_file)
     board = PanelBoard(tracker, cfg, services.store)
-    app = PanelApp(cfg, creds.get("AUTOCAM_PANEL_KEY"), onshape, board, Names(cfg.paths.state / "panel_users.json"))
+    secret = "" if creds.missing("webhook") else creds.get("AUTOCAM_WEBHOOK_SECRET")
+    inbox = hooks = None
+    if p.webhooks and secret and p.public_url and not creds.missing("onshape"):
+        inbox = ChangeInbox(cfg.paths.state / "panel_changes.json")
+        hooks = WebhookSetup(onshape, p.public_url, secret, cfg.paths.state / "panel_webhook.json", p.company_id)
+    elif p.webhooks:
+        log.info("panel: no Onshape webhook (needs AUTOCAM_WEBHOOK_SECRET in .env, [panel] public_url and Onshape keys)")
+    app = PanelApp(cfg, creds.get("AUTOCAM_PANEL_KEY"), onshape, board, Names(cfg.paths.state / "panel_users.json"),
+                   inbox=inbox, hook_secret=secret)
     start_server(app, p.port)
-    PrecutWatch(onshape, board, services.store, tracker).keep_running()   # changed before it's cut
+    pictures = PictureWatch(onshape, services.store, tracker) if p.pictures else None
+    PrecutWatch(onshape, board, services.store, tracker, inbox=inbox, hooks=hooks,
+                pictures=pictures).keep_running()                    # changed before it's cut, pictures
     if p.tunnel_dir:
         Tunnel(Path(p.tunnel_dir), cfg.paths.state, cfg.paths.logs).keep_running()
     return True

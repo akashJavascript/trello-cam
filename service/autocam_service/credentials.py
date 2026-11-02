@@ -15,6 +15,7 @@ GROUPS: Dict[str, tuple] = {
     "trello": ("TRELLO_API_KEY", "TRELLO_TOKEN"),
     "onshape": ("ONSHAPE_ACCESS_KEY", "ONSHAPE_SECRET_KEY"),
     "panel": ("AUTOCAM_PANEL_KEY",),         # the Onshape panel's link carries it (panel/)
+    "webhook": ("AUTOCAM_WEBHOOK_SECRET",),  # the address Onshape's webhook calls ends with it (panel/hooks.py)
 }
 ALL_KEYS = tuple(k for keys in GROUPS.values() for k in keys)
 

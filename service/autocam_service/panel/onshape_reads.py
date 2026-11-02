@@ -22,6 +22,7 @@ Write:
 Only assemblies in the same document are counted (a robot assembly in another document isn't).
 """
 
+import base64
 import json
 import logging
 import re
@@ -419,6 +420,57 @@ class PanelOnshape:
                 if p.get("partId") == pid:
                     p["material"] = material
             return True, ""
+
+
+    # ---- the company, its webhook, part pictures (an enterprise admin's keys, 2026-11-01)
+    def _call(self, what: str, fn):
+        with self._lock:
+            client = self._client()
+            try:
+                return fn(client)
+            except BudgetExceeded as e:
+                raise OutOfCalls(str(e)) from e
+            except OnshapeError as e:
+                if e.status in (403, 404):
+                    raise NoAccess(str(e)) from e
+                raise PanelOnshapeError(f"Onshape didn't {what} ({e.status or 'no answer'}).") from e
+
+    def companies(self) -> List[Dict[str, Any]]:
+        data = self._call("list the companies", lambda c: c.get_json(
+            f"{API}/companies", query={"activeOnly": "true"}, purpose="panel_companies"))
+        items = data.get("items") if isinstance(data, dict) else data
+        return [c for c in items or [] if isinstance(c, dict)]
+
+    def webhooks(self, company_id: str) -> List[Dict[str, Any]]:
+        data = self._call("list the webhooks", lambda c: c.get_json(
+            f"{API}/webhooks", query={"company": company_id}, purpose="panel_webhooks"))
+        items = data.get("items") if isinstance(data, dict) else data
+        return [w for w in items or [] if isinstance(w, dict)]
+
+    def create_webhook(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        data = self._call("register the webhook", lambda c: c.post_json(
+            f"{API}/webhooks", body, purpose="panel_webhook_create"))
+        return data if isinstance(data, dict) else {}
+
+    def picture(self, did: str, wvm: str, wvmid: str, eid: str, pid: str) -> bytes:
+        """A shaded picture of the part (PNG), kept for good per state (a version or microversion never changes)."""
+        path = self.cache_root / "onshape" / "pictures" / f"{did}_{wvm}{wvmid}_{eid}_{pid.replace('/', '_')}.png"
+        try:
+            return path.read_bytes()
+        except OSError:
+            pass
+        data = self._call("draw the part", lambda c: c.get_json(
+            f"{API}/parts/d/{did}/{wvm}/{wvmid}/e/{eid}/partid/{quote(pid, safe='')}/shadedviews",
+            query={"viewMatrix": "isometric", "outputHeight": 300, "outputWidth": 300, "pixelSize": 0,
+                   "edges": "show", "useAntiAliasing": "true"}, purpose="panel_picture"))
+        images = (data or {}).get("images") if isinstance(data, dict) else None
+        if not images:
+            raise PanelOnshapeError("Onshape sent no picture.")
+        png = base64.b64decode(images[0])
+        if wvm in ("m", "v"):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            write_atomic(path, png)
+        return png
 
 
 def bom_rows(data: Dict[str, Any]) -> List[Dict[str, Any]]:
