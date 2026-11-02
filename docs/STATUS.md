@@ -99,7 +99,8 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   https://autocam.team5940.org through its own Cloudflare tunnel; its own Onshape call limits. Tested offline (an
   e2e test sends a card through a whole run) and in a browser with fakes. Registered in Onshape 2026-11-01 (app
   `AutoCAM (Team 5940)`, Part Studio and assembly extensions, private App Store entry for all enterprise users;
-  `docs/panel.md`). Left: confirming selection messages, the material write and assembly counts on real documents. A `Part ID:` line (new, written by the panel, works on typed cards too) finds a part by its id
+  `docs/panel.md`). Seen working 2026-11-01 on the shooter document: selection (parts, and faces/edges of parts
+  opened before), design checks, quantities, the Shooter assembly (20 plates with BOM counts). Left: the material write. A `Part ID:` line (new, written by the panel, works on typed cards too) finds a part by its id
   before its name.
 - **Panel design checks** (2026-11-01): opening a part runs AutoCAM's own plate rules on its shape from Onshape
   (one `bodydetails` call per part per Part Studio state) and says "AutoCAM can cut this" or what would send it back,
