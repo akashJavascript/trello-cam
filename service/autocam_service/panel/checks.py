@@ -158,10 +158,19 @@ def use(cfg: Config, material_key: str, thickness: Optional[float], extra: Dict[
 
 
 def picks(a: PlateAnalysis, cfg: Config, tool: Optional[Tool], extra: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    """Onshape face id -> the fit picking it means: a round hole that isn't drilled (by its size), or the outline.
-    The panel turns a click on that face in the CAD into its Fit (fits.py)."""
+    """Onshape face or edge id -> the fit picking it means: a round hole that isn't drilled (by its size), or the
+    outline. The panel turns a click on that face, or on one of its edges, in the CAD into its Fit (fits.py)."""
     ids = extra.get("face_ids") or []
-    out: Dict[str, Dict[str, Any]] = {fid: {"kind": "outline"} for fid in extra.get("outline_faces") or []}
+    edges = extra.get("face_edges") or {}
+    out: Dict[str, Dict[str, Any]] = {}
+
+    def mark(fid: str, pick: Dict[str, Any]) -> None:
+        out[fid] = pick
+        for eid in edges.get(fid) or []:
+            out.setdefault(eid, pick)          # an edge between a hole and the outline wall (none on a plate) stays first
+
+    for fid in extra.get("outline_faces") or []:
+        mark(fid, {"kind": "outline"})
     if tool is None:
         return out
     rules, profile = hole_rules(cfg), _profile(cfg, tool)
@@ -170,7 +179,11 @@ def picks(a: PlateAnalysis, cfg: Config, tool: Optional[Tool], extra: Dict[str, 
             continue
         for face_id in hole.face_ids:
             if 0 < face_id <= len(ids):
-                out[ids[face_id - 1]] = {"kind": "hole", "size": round(hole.diameter_in, 4)}
+                fid = ids[face_id - 1]
+                pick = {"kind": "hole", "size": round(hole.diameter_in, 4)}
+                out[fid] = pick
+                for eid in edges.get(fid) or []:
+                    out[eid] = pick            # a hole's rim edge is the hole, even where it meets an outline wall
     return out
 
 

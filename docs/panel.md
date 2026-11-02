@@ -184,9 +184,14 @@ the app > Extensions > Edit).
 
 ## Not confirmed yet
 
-- **Selecting a part in the CAD:** Onshape's docs name the `SELECTION` message but not what's in it. The panel
-  takes any id in it that's one of the Part Studio's part ids, and logs the first few messages a day (service.log,
-  "Onshape selection message"). Until that's checked, students pick the part from the panel's list.
+- **Selecting in the CAD: seen 2026-11-01.** Onshape's `SELECTION` message (logged from a real Part Studio):
+  `{"messageName": "SELECTION", "selections": [{"selectionType": "BODY", "selectionId": "R1fD", ...}]}` for a whole
+  part (its part id; clicking it in Onshape's Parts list), and `{"selectionType": "ENTITY", "entityType": "FACE"`
+  (or `EDGE`, `VERTEX`), `"selectionId": "SBfqB"}` for a face or edge, with no part id. A part opens the panel on it.
+  A face or edge is looked up in the shapes AutoCAM already has for that state of the Part Studio
+  (`/api/which-part`, no Onshape call): a part opened in the panel before is found, any other gets "click its name in
+  Onshape's Parts list". Fits by clicking take a hole's or the outline's face or edge (the ids match `bodydetails`').
+  A sheet metal part's holes are on its flat pattern, which isn't what's shown in 3D, so they can't be clicked.
 - **Setting a material:** the request follows Onshape's metadata docs with a material object copied from a part
   that has it. Not yet tried on a live part; if it fails, the card's `Material:` line covers it and the panel says so.
 - **Assembly counts** follow Onshape's documented assembly definition (occurrences, subassemblies). Seen working on

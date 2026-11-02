@@ -46,6 +46,9 @@ def test_faces_to_click_for_a_fit_and_the_cost():
     assert r["pick"]["H00"] == r["pick"]["H01"] == {"kind": "hole", "size": 0.25}
     assert "H10" not in r["pick"]                                                # the drilled one can't be fitted
     assert all(r["pick"][f"S{i}"] == {"kind": "outline"} for i in range(4))
+    # Onshape's SELECTION names a clicked edge by its id (2026-11-01): a hole's rim is the hole, an outline edge the outline
+    assert r["pick"]["h0ta"] == r["pick"]["h0bb"] == {"kind": "hole", "size": 0.25}
+    assert "h1ta" not in r["pick"] and r["pick"]["et0"] == r["pick"]["ev2"] == {"kind": "outline"}
     share = 8.0 / 0.7 / (48 * 24)                                               # WCP's $174.99 sheet, 70% used
     assert r["use"] == {"area_in2": 8.0, "sheet_share": share, "each": round(174.99 * share, 2), "box_in": extra["box_in"]}
     unpriced = check(g, CFG, "al5052", extra)["use"]                             # WCP sells no 1/8 in 5052
@@ -358,4 +361,18 @@ def test_an_assemblys_own_refresh_never_calls_onshape(tmp_path):
     p.clock.t += 3600
     a = p.call("GET", "/api/assembly", {**Q, "cached": "1"})[1]
     assert a["name"] == "Intake" and len(a["items"]) == 6 and a["autoRefreshS"] == 15
+    assert len(p.transport.sent) == calls
+
+
+def test_a_face_or_edge_clicked_in_the_cad_finds_its_part_without_calling_onshape(tmp_path):
+    body = plate_body(rectangle(4, 2), 0.125, [(1, 1, 0.25)])
+    p, _ = changed_panel(tmp_path, body, body)
+    p.call("GET", "/api/studio", Q)
+    assert p.call("GET", "/api/which-part", {**Q, "ids": "H00"})[1] == {"part": ""}   # not opened yet: not known
+    p.call("GET", "/api/check", {**Q, "p": "JHD"})                                     # opening it reads its shape
+    calls = len(p.transport.sent)
+    assert p.call("GET", "/api/which-part", {**Q, "ids": "H00"})[1] == {"part": "JHD"}          # a face
+    assert p.call("GET", "/api/which-part", {**Q, "ids": "zz9,h0ta"})[1] == {"part": "JHD"}     # an edge
+    assert p.call("GET", "/api/which-part", {**Q, "ids": "zz9"})[1] == {"part": ""}
+    assert p.call("GET", "/api/which-part", {**Q, "ids": "<b>"})[1] == {"part": ""}
     assert len(p.transport.sent) == calls

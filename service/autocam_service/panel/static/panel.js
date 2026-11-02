@@ -109,8 +109,29 @@
     }
     if (pickFit(m)) return;
     var id = selectedPart(m);
-    if (id && (S.partId !== id || S.mode !== "part")) openPart(id);
+    if (id) {
+      if (S.partId !== id || S.mode !== "part") openPart(id);
+      return;
+    }
+    whichPart(m);
   });
+  function whichPart(m) {
+    // A face or edge clicked (Onshape sends only its id): the server knows the parts already opened in the panel.
+    var ids = (Array.isArray(m.selections) ? m.selections : []).filter(function (s) {
+      return s && s.selectionType === "ENTITY" && typeof s.selectionId === "string";
+    }).map(function (s) { return s.selectionId; }).slice(0, 20);
+    if (!ids.length || !S.studio || (S.mode !== "list" && S.mode !== "part") || S.busy) return;
+    api("GET", "/api/which-part", where({ ids: ids.join(",") })).then(function (r) {
+      if (S.busy) return;
+      if (r.part) {
+        S.hint = "";
+        if (S.partId !== r.part || S.mode !== "part") openPart(r.part);
+      } else if (S.mode === "list") {
+        S.hint = "To open a part from the CAD, click its name in Onshape's Parts list.";
+        render();
+      }
+    }, function () {});
+  }
   function strings(v, depth, out) {
     if (depth > 5 || v === null || v === undefined) return out;
     if (typeof v === "string") out.push(v);
@@ -291,6 +312,7 @@
 
   function openPart(id, keepNotice) {
     S.mode = "part"; S.partId = id; S.detail = null; S.qty = null; S.check = null; S.changed = undefined; S.sent = null;
+    S.hint = "";
     S.editing = false;
     S.changing = null; S.form = null;
     if (!keepNotice) S.notice = "";
@@ -452,6 +474,7 @@
     if (st.boardError) add(bodyEl, notice("info", null, st.boardError));
     add(bodyEl, queueLine(st.queue));
     add(bodyEl, h("p", { class: "muted" }, "Select a part to send it."));
+    if (S.hint) add(bodyEl, notice("info", null, S.hint));
     if (!st.parts.length) { add(bodyEl, h("p", { class: "muted" }, "This Part Studio has no parts yet.")); return; }
     // parts in a material AutoCAM doesn't cut (belts, PLA, steel) wait behind a link, unless they have a card
     var cut = st.parts.filter(function (p) { return !p.material || p.material.key || p.chip.status !== "none"; });

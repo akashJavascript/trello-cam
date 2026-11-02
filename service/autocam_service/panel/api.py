@@ -60,6 +60,7 @@ STATIC_TYPES = {".css": "text/css; charset=utf-8", ".js": "text/javascript; char
 ID_RE = re.compile(r"^[0-9a-f]{24}$")
 PART_RE = re.compile(r"^[A-Za-z0-9_.+/=-]{1,64}$")
 USER_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+ENTITY_RE = re.compile(r"^[A-Za-z0-9]{1,24}$")       # a face or edge id from Onshape's SELECTION
 MAX_BODY = 16 * 1024
 MAX_PROGRAM_BODY = 4 * 1024 * 1024        # /api/send-program carries the .tap
 PROGRAM_PATH = "/api/send-program"
@@ -187,7 +188,8 @@ class PanelApp:
                      ("GET", "/api/assembly"): self.assembly, ("POST", "/api/send-many"): self.send_many,
                      ("POST", PROGRAM_PATH): self.send_program,
                      ("POST", "/api/qty"): self.change_qty, ("POST", "/api/me"): self.me,
-                     ("POST", "/api/selection"): self.selection}.get((method, path))
+                     ("POST", "/api/selection"): self.selection,
+                     ("GET", "/api/which-part"): self.which_part}.get((method, path))
             if path == "/api/preview" and method == "GET":
                 return self.preview(query)
             if route is None:
@@ -584,6 +586,29 @@ class PanelApp:
         if n <= SELECTION_LOGS_PER_DAY:
             log.info("panel: Onshape selection message: %s", json.dumps(d.get("message"))[:2000])
         return {}
+
+    def which_part(self, q: Dict[str, str]) -> Dict[str, Any]:
+        """A face or edge clicked in the CAD -> the part it's on. Onshape's SELECTION names only the entity's id
+        ("selectionType": "ENTITY", "entityType": "FACE", seen 2026-11-01; a whole part is "BODY" with its part id).
+        Answered from the shapes AutoCAM already has for this state of the Part Studio (parts opened in the panel),
+        never with an Onshape call: an unknown one is {"part": ""} and the page says to pick the part instead."""
+        did, wvm, wvmid, eid = self._studio(q)
+        wanted = {i for i in str(q.get("ids") or "").split(",")[:20] if ENTITY_RE.match(i)}
+        if not wanted:
+            return {"part": ""}
+        for part in self._solids(self.onshape.cached_parts(did, wvm, wvmid, eid) or []):
+            flat = self._flat(did, wvm, wvmid, eid, part["partId"])
+            found = self.onshape.cached_geometry(did, wvm, wvmid, eid, (flat or part)["partId"],
+                                                 str(part.get("microversionId") or ""))
+            if found is None:
+                continue
+            extra = found[1]
+            known = set(extra.get("face_ids") or ())
+            for edges in (extra.get("face_edges") or {}).values():
+                known.update(edges)
+            if wanted & known:
+                return {"part": part["partId"]}
+        return {"part": ""}
 
     def _rate_limit(self) -> None:
         with self._lock:

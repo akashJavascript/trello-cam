@@ -89,7 +89,8 @@ def body_geometry(body: Dict[str, Any], name: str) -> PartGeometry:
 
 def read_body(body: Dict[str, Any], name: str) -> Tuple[PartGeometry, Dict[str, Any]]:
     """The part model, and what the panel needs beside it: "face_ids" (Onshape's id of each model face, in model id
-    order), "outline_faces" (the walls of the outline: picking one means its outline), "outline_area_in2" and
+    order), "outline_faces" (the walls of the outline: picking one means its outline), "face_edges" (each face's
+    edge ids: Onshape's SELECTION message names a clicked edge by its id, 2026-11-01), "outline_area_in2" and
     "box_in" (for the cost and sheet use)."""
     extra: Dict[str, Any] = {"face_ids": [], "outline_faces": [], "outline_area_in2": 0.0, "box_in": [0.0, 0.0]}
     if str(body.get("type", "SOLID")).upper() != "SOLID":
@@ -164,6 +165,8 @@ def read_body(body: Dict[str, Any], name: str) -> Tuple[PartGeometry, Dict[str, 
     us, ws = [_dot(p, u) for p in every], [_dot(p, w) for p in every]
     extra["box_in"] = [round((max(us) - min(us)) / M_PER_IN, 3), round((max(ws) - min(ws)) / M_PER_IN, 3)]
     extra["face_ids"] = [f["id"] for f in faces]
+    extra["face_edges"] = {f["id"]: sorted({co.get("edgeId") for _, co in _coedges(f) if co.get("edgeId")})
+                           for f in faces}
     # The outline: the top's outer loop, or for a top split into faces in one plane (a sheet metal flat pattern is
     # split along its bends) the outer loops' co-edges that aren't shared between two of those faces, in order.
     level = _dot(_v((largest.get("surface") or {}).get("origin")) or (0.0, 0.0, 0.0), axis)
