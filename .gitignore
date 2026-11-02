@@ -13,3 +13,6 @@ fusion/autocam_run/out/
 
 # editor settings Fusion writes next to add-ins and scripts
 .vscode/
+
+# Fusion parameter dumps (fusion/tools/dump_params): local output, not part of the repo
+fusion/tools/dump_params/out/
