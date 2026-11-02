@@ -70,7 +70,7 @@ from autocam_core.schema_result import (
     RESULT_SCHEMA, FusionTeamResult, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary,
     PostResult, ProgramResult, Result, SheetPart, SheetResult, ToolForce, WorkerInfo, overall_status, result_json,
 )
-from autocam_core.scribe import Line, bend_centerlines, in_sections, off_the_lines, scribe_sections
+from autocam_core.scribe import Line, bend_centerlines, distance_to_line, in_sections, off_the_lines, scribe_sections
 from autocam_core.sheetcheck import (check_face_program, check_fit_program, check_scribe_program, check_sheet_program,
                                      pause_spec)
 from autocam_core.tooling import FeaturePlan, ToolNeed, part_tool, plan_features, sheet_tool
@@ -84,6 +84,7 @@ LOG = "worker.log"
 Z_TOL_IN = 0.001
 EDGE_TOL_IN = 0.01      # body boxes can be a little loose; the envelope is already 0.25 in inside the nest region
 MOVE_TOL_IN = 0.001     # a copy that moved more than this after nesting stops its sheet
+SCRIBE_EPS_IN = 0.001   # a scribe op's radial stock is minus the tool's radius plus this: its center that close to the line
 
 
 class JobFailed(Exception):
@@ -205,6 +206,7 @@ class _Sheet:
     scribe_lines: Tuple[Line, ...] = ()       # ...the bend lines it scribes (design X/Y)
     scribe_counts: Dict[str, int] = field(default_factory=dict)
     scribe_result: Optional[ProgramResult] = None
+    suppressed: Set[str] = field(default_factory=set)        # ops left out (a scribe op that failed), never deleted
 
     def counts(self) -> Dict[str, int]:
         return dict(Counter(p.part_key for _, p in self.instances))
@@ -1202,18 +1204,30 @@ def _build_sheet_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[s
     for faced, lines in sorted(groups.items()):
         name = scribe_op_name(faced)
         keys = [k for k in counts if bool(parts[k].spec.face) == faced]
+        tool = job.tooling.tools[sheet.tool_key]
         try:
             adapter.copy_op(sheet.name, outer_op, name)
             adapter.fill(sheet.name, name, OpFill(SCRIBE, lines=tuple(lines),
-                                                  depth_in=_scribe_depth(job, job.scribe.depth_in, faced)))
+                                                  depth_in=_scribe_depth(job, job.scribe.depth_in, faced),
+                                                  stock_in=-(tool.diameter_in / 2 - SCRIBE_EPS_IN)))
         except AdapterError as e:
             if name in adapter.op_names(sheet.name):
-                adapter.delete_op(sheet.name, name)
+                _suppress(adapter, sheet, sheet.name, name)
             sheet.warnings.append(Issue(E.OP_WARNING, f"bend lines not scribed ({e}): mark them by hand on "
                                                       f"{', '.join(parts[k].spec.name for k in keys)}"))
             continue
         sheet.scribe_ops[name] = tuple(lines)
         sheet.scribed.update({k: counts[k] for k in keys})
+
+
+def _suppress(adapter: Adapter, sheet: _Sheet, setup: str, op: str) -> None:
+    """Leave a scribe op out. Never deleted once its settings were changed: that crashed Fusion's next toolpath
+    generation (r041-r043). If even that fails, the sheet can't be trusted."""
+    try:
+        adapter.suppress_op(setup, op)
+        sheet.suppressed.add(op if setup == sheet.name else f"{setup}/{op}")
+    except AdapterError as e:
+        sheet.errors.append(Issue(E.OP_ERROR, f"{op} couldn't be left out: {e}"))
 
 
 def _build_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> None:
@@ -1252,13 +1266,14 @@ def _build_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _P
             op = scribe_op_name(faced)
             adapter.set_tool(name, op, s.chamfer_tool_json)
             adapter.fill(name, op, OpFill(SCRIBE, lines=tuple(groups[faced]),
-                                          depth_in=_scribe_depth(job, s.chamfer_depth_in, faced)))
+                                          depth_in=_scribe_depth(job, s.chamfer_depth_in, faced),
+                                          stock_in=-(s.chamfer.diameter_in / 2 - SCRIBE_EPS_IN)))
     except AdapterError as e:
         sheet.warnings.append(Issue(E.OP_WARNING, f"no scribe program ({e}): mark the bend lines by hand on "
                                                   f"{', '.join(parts[k].spec.name for k in counts)}"))
         try:                                      # Fusion generates every setup: leave nothing half made in it
             for op in adapter.op_names(name) if setup else []:
-                adapter.delete_op(name, op)
+                _suppress(adapter, sheet, name, op)
         except AdapterError as e2:
             sheet.errors.append(Issue(E.OP_ERROR, f"the scribe setup {name} couldn't be emptied: {e2}"))
         return
@@ -1327,8 +1342,11 @@ def _post_sheet(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> Non
         if sections and not sheet.scribe_ops:
             sheet.errors.append(Issue(E.TAP_REJECTED, "the program scribes, but no bend lines were asked for"))
         ox, oy = sheet.origin
-        off = off_the_lines([(n, x + ox, y + oy, z) for n, x, y, z in scribing],
-                            [ln for lines in sheet.scribe_ops.values() for ln in lines])
+        all_lines = [ln for lines in sheet.scribe_ops.values() for ln in lines]
+        off = off_the_lines([(n, x + ox, y + oy, z) for n, x, y, z in scribing], all_lines)
+        if scribing and all_lines:
+            far = max(min(distance_to_line(x + ox, y + oy, ln) for ln in all_lines) for _, x, y, _ in scribing)
+            sheet.notes.append(f"scribing: {len(scribing)} points, all within {far:.4f} in of the bend lines")
         if off:
             where = "; ".join(f"line {n} (X{x - ox:.4f} Y{y - oy:.4f})" for n, x, y in off[:5])
             sheet.errors.append(Issue(E.TAP_REJECTED, f"the scribing leaves the bend lines: {where}"))
@@ -1446,8 +1464,11 @@ def _post_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     problems = check.problems()
     if check.passed:
         ox, oy = sheet.origin
-        off = off_the_lines([(n, x + ox, y + oy, z) for n, x, y, z in cutting_points(text, sheet.thickness_in)],
-                            sheet.scribe_lines)
+        pts = [(n, x + ox, y + oy, z) for n, x, y, z in cutting_points(text, sheet.thickness_in)]
+        off = off_the_lines(pts, sheet.scribe_lines)
+        if pts and sheet.scribe_lines:
+            far = max(min(distance_to_line(x, y, ln) for ln in sheet.scribe_lines) for _, x, y, _ in pts)
+            sheet.notes.append(f"scribe program: {len(pts)} points, all within {far:.4f} in of the bend lines")
         if off:
             problems.append("its cutter leaves the bend lines: "
                             + "; ".join(f"line {n} (X{x - ox:.4f} Y{y - oy:.4f})" for n, x, y in off[:5]))
@@ -1637,10 +1658,8 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
     for sheet in built:
         for st in states.get(sheet.name, []):         # scribing that won't generate: taken out, marked by hand
             if st.name in sheet.scribe_ops and (st.error or not st.has_toolpath):
-                try:
-                    adapter.delete_op(sheet.name, st.name)
-                except AdapterError as e:
-                    sheet.errors.append(Issue(E.OP_ERROR, f"{st.name}: {st.error or 'no toolpath'}; deleting it: {e}"))
+                _suppress(adapter, sheet, sheet.name, st.name)
+                if st.name not in sheet.suppressed:
                     continue
                 keys = [k for k in sheet.scribed if bool(parts[k].spec.face) == st.name.endswith(" faced")]
                 sheet.warnings.append(Issue(E.OP_WARNING, f"bend lines not scribed ({st.error or 'no toolpath'}): "
@@ -1649,8 +1668,7 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
                 sheet.scribe_ops.pop(st.name)
                 for k in keys:
                     sheet.scribed.pop(k, None)
-        states[sheet.name] = [st for st in states.get(sheet.name, []) if not (st.name.startswith("[scribe]")
-                                                                              and st.name not in sheet.scribe_ops)]
+        states[sheet.name] = [st for st in states.get(sheet.name, []) if st.name not in sheet.suppressed]
         if sheet.scribe_counts:
             bad = [st for st in states.get(sheet.scribe_name, []) if st.error or not st.has_toolpath]
             if sheet.scribe_name not in states or bad:

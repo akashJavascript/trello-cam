@@ -79,6 +79,7 @@ class OpFill:
     depth_in: float = 0.0                                   # its outline, this deep from the stock top (scribe too)
     lines: Tuple[Tuple[float, float, float, float], ...] = ()   # scribe: bend lines (design X/Y), the tool center
                                                                 # along each, from the stock top down by depth_in
+                                                                # (stock_in: almost minus the tool's radius)
     stock_in: Optional[float] = None                        # bearing: radial stock to leave (None: the template's)
 
 
@@ -161,8 +162,9 @@ class Adapter:
     def fill(self, sheet: str, op_name: str, fill: OpFill) -> None:
         """Select what the op cuts. Inner ops also get bottom height = stock bottom; pocket ops keep the
         template's (the selected floor); the face op gets bottom height = stock top less fill.depth_in. A scribe
-        op (a copy of the template's [outer]) follows fill.lines with its tool center (no compensation, leads,
-        ramps, tabs or stock to leave), from the stock top down to fill.depth_in below it, in one pass."""
+        op (a copy of the template's [outer]) follows fill.lines with its tool center: radial stock fill.stock_in
+        (almost minus the tool's radius: Fusion refuses compensation 'off', r041-r043), no leads, ramps, tabs or
+        extra passes, from the stock top down to fill.depth_in below it, in one pass."""
         raise NotImplementedError
 
     def make_outer_ops(self, sheet: str, template_op: str, outlines: Sequence[Tuple[str, str, int]]) -> None:
@@ -204,6 +206,11 @@ class Adapter:
         raise NotImplementedError
 
     def delete_op(self, sheet: str, op_name: str) -> None:
+        raise NotImplementedError
+
+    def suppress_op(self, sheet: str, op_name: str) -> None:
+        """Leave the op out of the toolpaths and the program (suppressed, not deleted): deleting an op whose settings
+        were changed crashed Fusion's next toolpath generation (r041, r042, r043, 2026-11-01)."""
         raise NotImplementedError
 
     def generate(self, sheets: Sequence[str]) -> Dict[str, List[OpState]]:

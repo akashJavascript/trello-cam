@@ -189,7 +189,7 @@ class FusionAdapter(Adapter):
             # Fusion's next toolpath generation (r041, r042); one deleted before that didn't (r040).
             self._used("scribe_lines")
             self.trace.append(f"{_stamp()}   scribe: params")
-            call(f"{op_name}: scribe", fx_cam.scribe_params, op, fill.depth_in, self.trace.append)
+            call(f"{op_name}: scribe", fx_cam.scribe_params, op, fill.depth_in, fill.stock_in or 0.0, self.trace.append)
             self.trace.append(f"{_stamp()}   scribe: sketch")
             if sheet not in self.scribe_sketch:
                 root = self.design.rootComponent
@@ -283,6 +283,12 @@ class FusionAdapter(Adapter):
     def delete_op(self, sheet, op_name):
         call(f"delete op {op_name}", fx_cam.op_by_name(self._setup(sheet), op_name).deleteMe)
 
+    def suppress_op(self, sheet, op_name):
+        op = fx_cam.op_by_name(self._setup(sheet), op_name)
+        call(f"suppress op {op_name}", setattr, op, "isSuppressed", True)
+        if not op.isSuppressed:
+            raise AdapterError(f"{op_name}: isSuppressed didn't stick")
+
     def generate(self, sheets):
         return fx_cam.generate(self.cam, {s: self._setup(s) for s in sheets}, self.timeout, self._used)
 
@@ -362,6 +368,6 @@ def _as_adapter_error(name, method):
 for _name in ("begin", "import_step", "extract", "add_copy", "arrange", "box", "faces_up", "discard", "make_sheet",
               "make_extra_setup", "set_radial_stock", "op_names", "apply_template", "fill",
               "copy_op", "set_tabs", "set_tab_size", "set_tab_points", "loop_segments", "make_outer_ops", "delete_op",
-              "top_edges", "set_tool", "generate", "post", "cuts_into_parts",
+              "suppress_op", "top_edges", "set_tool", "generate", "post", "cuts_into_parts",
               "machining_time", "preview", "export_f3d", "save_to_team", "finish"):
     setattr(FusionAdapter, _name, _as_adapter_error(_name, getattr(FusionAdapter, _name)))

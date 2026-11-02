@@ -67,6 +67,7 @@ class FakeAdapter(Adapter):
         self.scribe_off_in = 0.0                       # scribing runs this far beside its lines
         self.scribe_extra_depth_in = 0.0               # ...and this much deeper than asked
         self.fail_set_tool = False
+        self.fail_scribe_fill = False
 
     def register(self, step: Path, geometry: PartGeometry, size: Tuple[float, float]) -> None:
         self.parts[str(Path(step))] = (geometry, size)
@@ -198,6 +199,9 @@ class FakeAdapter(Adapter):
 
 
     def fill(self, sheet, op_name, fill: OpFill):
+        self.sheets[sheet].setdefault("changed", set()).add(op_name)
+        if fill.tag == SCRIBE and self.fail_scribe_fill:
+            raise AdapterError(f"{op_name}: select bend lines: RuntimeError: 2 : bad chain")
         self.sheets[sheet]["fills"][op_name] = fill
 
     def make_outer_ops(self, sheet, template_op, outlines):
@@ -233,6 +237,7 @@ class FakeAdapter(Adapter):
 
     def set_tool(self, sheet, op_name, tool_json):
         assert op_name in self.sheets[sheet]["ops"], op_name
+        self.sheets[sheet].setdefault("changed", set()).add(op_name)
         if self.fail_set_tool:
             raise AdapterError(f"{op_name}: tool: RuntimeError: 2 : not settable")
         self.sheets[sheet].setdefault("tools", {})[op_name] = json.loads(tool_json)["guid"]
@@ -250,8 +255,14 @@ class FakeAdapter(Adapter):
 
     def delete_op(self, sheet, op_name):
         s = self.sheets[sheet]
+        assert op_name not in s.get("changed", set()), f"{op_name} was changed: deleting it crashes Fusion (r041-r043)"
         s["ops"].remove(op_name)
         s["deleted"].append(op_name)
+
+    def suppress_op(self, sheet, op_name):
+        s = self.sheets[sheet]
+        s["ops"].remove(op_name)                       # like Fusion: no toolpath, not posted
+        s.setdefault("suppressed", []).append(op_name)
 
     def generate(self, sheets):
         self._shift(self.move_on_generate)

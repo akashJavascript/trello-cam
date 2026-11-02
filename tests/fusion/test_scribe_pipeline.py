@@ -55,6 +55,7 @@ def test_the_endmill_scribes_in_the_sheets_own_program_before_the_outlines(tmp_p
     assert s["ops"].index("[scribe] bend lines") < min(s["ops"].index(n) for n, _, _ in s["outer"])
     fill = s["fills"]["[scribe] bend lines"]
     assert fill.tag == "scribe" and fill.depth_in == 0.012 and len(fill.lines) == 2       # one bend, two copies
+    assert abs(fill.stock_in - (-(0.15748 / 2 - 0.001))) < 1e-9      # the center on the line ('off' is refused)
     for x0, y0, x1, y1 in fill.lines:
         box = rig.fake.boxes[next(c for c in s["copies"] if abs(rig.fake.boxes[c].x0 + X + WIDTH / 2 - x0) < 1e-9)]
         assert x0 == x1 and {y0 - box.y0, y1 - box.y0} == {0.0, 4.0}
@@ -139,7 +140,8 @@ def test_no_chamfer_mill_on_the_op_no_scribe_program(tmp_path):
     (sheet,) = rig.run(bent_job(rig, "chamfer")).sheets
     assert sheet.tap is not None and sheet.programs == ()
     assert any("no scribe program" in w.msg and "not settable" in w.msg for w in sheet.warnings)
-    assert rig.fake.sheets[scribe_program_name(sheet.name)]["ops"] == []      # nothing half made left to generate
+    s = rig.fake.sheets[scribe_program_name(sheet.name)]
+    assert s["ops"] == [] and s["suppressed"] == ["[scribe] bend lines"]     # left out, never deleted (r041-r043)
 
 
 def test_bend_lines_that_cant_be_found_are_marked_by_hand(tmp_path):
@@ -158,9 +160,21 @@ def test_a_scribe_op_that_wont_generate_is_taken_out(tmp_path):
     result = rig.run(job)
     (sheet,) = result.sheets
     assert sheet.tap is not None and sheet.scribed == () and sheet.errors == ()
-    assert "[scribe] bend lines" in rig.fake.sheets[sheet.name]["deleted"]
+    assert rig.fake.sheets[sheet.name]["suppressed"] == ["[scribe] bend lines"]
     assert any("Failed to generate toolpath" in w.msg and "bracket" in w.msg for w in sheet.warnings)
     assert [vs.cuttable for vs in rig.service_view(job, result).sheets] == [True]
+
+
+def test_a_scribe_op_that_cant_be_set_up_is_left_out_not_deleted(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.fail_scribe_fill = True
+    job = bent_job(rig)
+    result = rig.run(job)
+    (sheet,) = result.sheets
+    assert sheet.tap is not None and sheet.errors == () and sheet.scribed == ()
+    assert rig.fake.sheets[sheet.name]["suppressed"] == ["[scribe] bend lines"]
+    assert any("bad chain" in w.msg and "Part" not in w.msg and "bracket" in w.msg for w in sheet.warnings)
+    assert "[scribe" not in (rig.out / sheet.tap).read_text()
 
 
 def test_only_bent_parts_are_scribed(tmp_path):

@@ -221,18 +221,20 @@ def select_lines(op, curves, contour_param: str) -> None:
 
 
 SCRIBE_OFF = ("doLeadIn", "doLeadOut", "doRamp", "doMultipleDepths", "doMultipleFinishingPasses", "doRoughingPasses",
-              "group_tabs", "useStockToLeave", "doChamfer", "useRestMachining")
+              "group_tabs", "doChamfer", "useRestMachining")
 
 
-def scribe_params(op, depth_in: float, trace=lambda line: None) -> None:
-    """[scribe]: the tool center on the line (no compensation), straight down to the depth and along it once: no
-    leads, ramp, tabs, stock to leave or extra passes. From the stock top down by depth_in."""
-    for name in SCRIBE_OFF:                    # first: with leads on, Fusion refuses compensation 'off' (r042)
+def scribe_params(op, depth_in: float, stock_in: float, trace=lambda line: None) -> None:
+    """[scribe]: the tool center on the line, straight down to the depth and along it once: no leads, ramp, tabs
+    or extra passes; from the stock top down by depth_in. Compensation stays the template's: Fusion lists 'off'
+    but refuses it ("Invalid enumeration value", r041-r043), so the radial stock is almost minus the tool's radius
+    (stock_in) and the tool center runs that close to the line. The posted program is checked against the lines."""
+    for name in SCRIBE_OFF:
         if op.parameters.itemByName(name) is not None:
             trace(f"    {name}")
             set_expr(op, name, "false")
-    trace("    compensationType")
-    _set_choice(op, "compensationType", ("off",))
+    trace(f"    stock {stock_in:g}")
+    radial_stock(op, stock_in)
     trace("    heights")
     face_depth(op, depth_in)
 
