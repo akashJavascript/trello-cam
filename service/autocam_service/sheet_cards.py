@@ -172,7 +172,8 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
             about = f" (about {_minutes(scribe.machining_time_s)})" if scribe.machining_time_s else ""
             steps.append(f"{'Then' if face else 'First'} scribe the bend lines: load the {scribe.cutter_label} "
                          f"(T{scribe.tool_number}), measure it, and run {scribe.tap}{about}{each}. It draws a fine line "
-                         f"{scribe.depth_in:g} in deep down the middle of each bend of the parts marked scribed.")
+                         f"{scribe.depth_in:g} in deep down the middle of each bend of the parts marked scribed, with a U or D "
+                         "beside it.")
         if steps:
             steps.append(f"Then load the {s.cutter_label} (T{tool.number}), measure it, and run {program or s.tap}"
                          + (f" (about {_minutes(s.machining_time_s)})." if s.machining_time_s else "."))
