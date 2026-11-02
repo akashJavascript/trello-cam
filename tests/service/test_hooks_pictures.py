@@ -14,7 +14,6 @@ from test_panel import D, E, W, Panel
 from test_panel_more import MID, SHEET, precut_panel
 
 SECRET = "s" * 43
-CID = "c" * 24
 PART = "a" * 24
 THEN = plate_body(rectangle(4, 2), 0.125, [(1, 1, 0.25)])
 NOW = plate_body(rectangle(4, 2), 0.125, [(1, 1, 0.5)])
@@ -78,39 +77,41 @@ def test_a_reported_change_checks_its_sheet_in_review_right_away(tmp_path):
     assert len(p.transport.sent) == calls and inbox.quiet(0) == set()
 
 
-def test_the_webhook_is_registered_once_for_the_company_and_checked_daily(tmp_path):
-    transport = FakeTransport([("GET", "/companies", [resp(body={"items": [{"id": CID, "name": "FRC 5940"}]})]),
-                               ("GET", "/webhooks", [resp(body={"items": []}),
-                                                     resp(body={"items": [{"id": "w1", "url": "https://x.example"
-                                                                           + HOOK_PREFIX + SECRET}]})]),
-                               ("POST", "/webhooks", [resp(body={"id": "w1"})])])
+def test_a_webhook_per_document_on_an_open_sheet_made_once_checked_daily_removed_when_unused(tmp_path):
+    transport = FakeTransport([("POST", "/webhooks", [resp(body={"id": "w1"}), resp(body={"id": "w2"})]),
+                               ("GET", "/webhooks", [resp(body={"items": [{"id": "w1"}]})] * 2),
+                               ("DELETE", "/webhooks/w1", [resp(body={})])])
     p = Panel(tmp_path, transport=transport)
     clock = Clock()
     hooks = WebhookSetup(p.onshape, "https://x.example/", SECRET, tmp_path / "webhook.json", clock=clock)
-    assert hooks.ensure() == "registered" and hooks.active()
+    assert hooks.ensure({(D, W)}) == f"made {D}/{W}" and hooks.covered(D, W) and not hooks.covered(D, "9" * 24)
     [(_, url, _, body)] = [s for s in transport.sent if s[0] == "POST"]
     sent = json.loads(body)
-    assert sent["url"] == "https://x.example" + HOOK_PREFIX + SECRET and sent["companyId"] == CID
-    assert sent["events"] == [EVENT] and sent["options"] == {"collapseEvents": True}
-    assert hooks.ensure() == "checked recently"
-    clock.t += 25 * 3600
-    assert hooks.ensure() == "already registered"
-    assert [m for m, u, _, _ in transport.sent].count("POST") == 1 and \
-        len([u for m, u, _, _ in transport.sent if "/companies" in u]) == 1         # the company asked once
+    assert sent["url"] == "https://x.example" + HOOK_PREFIX + SECRET and sent["events"] == [EVENT]
+    assert sent["filter"] == f"{{$DocumentId}} = '{D}' && {{$WorkspaceId}} = '{W}'"
+    assert sent["options"] == {"collapseEvents": True} and "companyId" not in sent
+    calls = len(transport.sent)
+    assert hooks.ensure({(D, W)}) == "nothing to do" and len(transport.sent) == calls         # no call
+    clock.t += 25 * 3600                                    # a day on: listed once, still there
+    hooks.ensure({(D, W)})
+    assert [m for m, *_ in transport.sent[calls:]] == ["GET"]
+    clock.t += 8 * 24 * 3600                                # a week with no open sheet from it: removed
+    assert hooks.ensure({("8" * 24, W)}) == f"removed {D}/{W}; made {'8' * 24}/{W}"
+    assert not hooks.covered(D, W)
 
 
-def test_a_webhook_that_cant_be_registered_is_tried_hourly_not_every_tick(tmp_path):
-    transport = FakeTransport([("GET", "/companies", [resp(body={"items": [{"id": CID, "name": "FRC 5940"}]})]),
-                               ("GET", "/webhooks", [resp(403, body={"message": "not an admin"})] * 2)])
+def test_a_webhook_that_cant_be_made_is_tried_hourly_not_every_tick(tmp_path):
+    transport = FakeTransport([("POST", "/webhooks", [resp(400, body={"message": "nope"})] * 2)])
     p = Panel(tmp_path, transport=transport)
     clock = Clock()
     hooks = WebhookSetup(p.onshape, "https://x.example", SECRET, tmp_path / "webhook.json", clock=clock)
-    assert hooks.ensure().startswith("failed") and not hooks.active()
+    assert hooks.ensure({(D, W)}).startswith("failed") and not hooks.covered(D, W)
+    assert "nope" in hooks.ensure.__self__._state()["error"]
     clock.t += 120
-    assert hooks.ensure() == "failed recently"
+    assert hooks.ensure({(D, W)}) == "failed recently"
     clock.t += 3600
-    assert hooks.ensure().startswith("failed")
-    assert len([u for _, u, _, _ in transport.sent if "/webhooks" in u]) == 2
+    assert hooks.ensure({(D, W)}).startswith("failed")
+    assert len([s for s in transport.sent if s[0] == "POST"]) == 2
 
 
 def test_each_part_on_a_sheet_gets_its_picture_once(tmp_path):
@@ -125,3 +126,15 @@ def test_each_part_on_a_sheet_gets_its_picture_once(tmp_path):
     [url] = [u for _, u, _, _ in p.transport.sent if "shadedviews" in u]
     assert f"/m/{MID}/" in url and "viewMatrix=isometric" in url
     assert pics.tick() == 0 and len([u for _, u, _, _ in p.transport.sent if "shadedviews" in u]) == 1
+
+
+def test_pictures_and_webhooks_only_for_sheets_on_the_board(tmp_path):
+    p, _ = precut_panel(tmp_path, "8" * 24, THEN, NOW)
+    p.t.archive(SHEET)                                   # archived in Trello: the records may still say open
+    calls = []
+    p.onshape.picture = lambda *a: calls.append(a) or b"png"
+    wanted = []
+    hooks = type("Hooks", (), {"ensure": lambda self, w: wanted.append(w) or "ok", "covered": lambda self, *a: False})()
+    watch = PrecutWatch(p.onshape, p.board, p.h.store, p.t, hooks=hooks, pictures=PictureWatch(p.onshape, p.h.store, p.t))
+    watch.tick(now=1000.0)
+    assert calls == [] and wanted == [set()]

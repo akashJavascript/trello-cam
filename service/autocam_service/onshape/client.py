@@ -120,6 +120,9 @@ class OnshapeClient:
     def get_bytes(self, path: str, *, purpose: str, part_key: Optional[str] = None) -> bytes:
         return self._request("GET", path, None, None, purpose, part_key, "application/octet-stream").body
 
+    def delete(self, path: str, *, purpose: str) -> None:
+        self._request("DELETE", path, None, None, purpose, None, "application/json")
+
     # ---- internals
     def _request(self, method, path, query, body, purpose, part_key, accept) -> HttpResponse:
         url = self.base_url + path + (("?" + urlencode(query)) if query else "")

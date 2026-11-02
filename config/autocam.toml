@@ -409,9 +409,9 @@ board_cache_s = 30              # Trello lists read for each part's status
 sends_per_minute = 20
 change_check_hours = 12         # sheets in Sheet review are compared with Onshape this often (one call per document
                                 # state; Ready to cut sheets once each, when they get there)
-webhooks = true                 # Onshape's company webhook says what changed, within minutes (needs an enterprise
-                                # admin's Onshape keys and AUTOCAM_WEBHOOK_SECRET in .env; the user is admin 2026-11-01)
-company_id = ""                 # the 5940 enterprise's id; "" = asked of Onshape once (GET /companies)
+webhooks = true                 # Onshape webhooks say what changed, within minutes: one per document with parts on an
+                                # open sheet (a company-wide one is refused for model changes). Needs
+                                # AUTOCAM_WEBHOOK_SECRET in .env
 webhook_fallback_hours = 72     # with the webhook working, the check above happens only this often
 pictures = true                 # a picture of each part (Onshape's shaded view, one call each) on its card
 

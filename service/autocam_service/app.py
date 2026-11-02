@@ -114,7 +114,7 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
     inbox = hooks = None
     if p.webhooks and secret and p.public_url and not creds.missing("onshape"):
         inbox = ChangeInbox(cfg.paths.state / "panel_changes.json")
-        hooks = WebhookSetup(onshape, p.public_url, secret, cfg.paths.state / "panel_webhook.json", p.company_id)
+        hooks = WebhookSetup(onshape, p.public_url, secret, cfg.paths.state / "panel_webhook.json")
     elif p.webhooks:
         log.info("panel: no Onshape webhook (needs AUTOCAM_WEBHOOK_SECRET in .env, [panel] public_url and Onshape keys)")
     app = PanelApp(cfg, creds.get("AUTOCAM_PANEL_KEY"), onshape, board, Names(cfg.paths.state / "panel_users.json"),

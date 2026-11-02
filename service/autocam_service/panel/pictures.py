@@ -5,7 +5,7 @@ state (cached for good), a few per tick: out of calls, the rest wait for tomorro
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Set
 
 from autocam_core.hotfolder import write_atomic
 from autocam_core.names import safe_token
@@ -39,12 +39,15 @@ class PictureWatch:
         self.done_file.parent.mkdir(parents=True, exist_ok=True)
         write_atomic(self.done_file, (json.dumps(done, indent=1) + "\n").encode("utf-8"))
 
-    def tick(self) -> int:
-        """Pictures for the parts on sheets not cut yet that don't have one for the state they were CAM'd from."""
+    def tick(self, sheet_ids: Optional[Set[str]] = None) -> int:
+        """Pictures for the parts on sheets not cut yet (those of sheet_ids: the ones on the board) that don't have one
+        for the state they were CAM'd from."""
         done, made = self._done(), 0
         for sheet_id, info in self.store.sheet_cards().items():
             if made >= self.per_tick:
                 break
+            if sheet_ids is not None and sheet_id not in sheet_ids:
+                continue
             if info.get("cut") or info.get("archived") or not info.get("job"):
                 continue
             try:

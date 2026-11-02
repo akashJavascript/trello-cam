@@ -1,10 +1,10 @@
 """Onshape tells AutoCAM when a model changes (2026-11-01; the user is an enterprise admin), so a part on a sheet that
 changed after it was CAM'd is found within minutes, not at the next periodic check (precut.py).
 
-- One webhook for the whole company: Onshape lets a company admin's keys register for every company event. Event
-  onshape.model.lifecycle.changed, collapseEvents on, calling https://<[panel] public_url>/api/onshape-hook/<secret>
-  (AUTOCAM_WEBHOOK_SECRET in .env: the address is the password, since Onshape can't send the panel's key). The
-  service registers it when it starts and makes sure it's still there once a day: a call or two a day; the events
+- A webhook per document workspace with parts on an open sheet (a company-wide one is refused for model changes),
+  event onshape.model.lifecycle.changed, collapseEvents on, calling https://<[panel] public_url>/api/onshape-hook/<secret>
+  (AUTOCAM_WEBHOOK_SECRET in .env: the address is the password, since Onshape can't send the panel's key). One call
+  to make each, a call a day to check they're there, one to remove each a week after it's needed; the events
   themselves cost nothing.
 - Each event names the document, workspace and element that changed. ChangeInbox keeps the newest time per element
   (state/panel_changes.json); PrecutWatch checks the open sheets with parts from it once it's been quiet QUIET_S
@@ -30,7 +30,8 @@ EVENT = "onshape.model.lifecycle.changed"
 QUIET_S = 300.0              # an element is checked once nobody has changed it for this long
 MAX_PENDING = 500            # elements kept at most (anything past this is dropped: only a flood gets there)
 CHECK_EVERY_S = 24 * 3600.0  # the webhook is checked to be there this often
-RETRY_S = 3600.0             # after a failure (no admin keys, say), tried again this often: a call each time
+RETRY_S = 3600.0             # after a failure, tried again this often: a call each time
+UNUSED_S = 7 * 24 * 3600.0   # a webhook no open sheet needs is removed after this long
 HOOK_PREFIX = "/api/onshape-hook/"
 ID_RE = re.compile(r"^[0-9a-f]{24}$")
 
@@ -84,73 +85,74 @@ def touches(changed: Set[Tuple[str, str, str]], did: str, wid: str, eid: str) ->
 
 
 class WebhookSetup:
-    """Registers AutoCAM's company webhook if it isn't there, at most once a day (state/panel_webhook.json)."""
+    """A webhook per document with parts on an open sheet (Onshape refuses model changes for a whole company: "lifecycle.changed
+    event is not supported at enterprise level", 2026-11-01), filtered to that document and workspace. Made when a
+    sheet first needs it (a few per tick), checked to be there once a day, removed a week after no open sheet needs
+    it; one call each (state/panel_webhook.json)."""
 
-    def __init__(self, onshape: PanelOnshape, public_url: str, secret: str, state_path: Path, company_id: str = "",
-                 clock: Callable[[], float] = time.time):
+    def __init__(self, onshape: PanelOnshape, public_url: str, secret: str, state_path: Path,
+                 clock: Callable[[], float] = time.time, per_tick: int = 3):
         self.onshape = onshape
         self.url = f"{public_url.rstrip('/')}{HOOK_PREFIX}{secret}"
-        self.company_id = company_id
         self.path = Path(state_path)
         self.clock = clock
+        self.per_tick = per_tick
 
     def _state(self) -> Dict[str, Any]:
         try:
-            return dict(json.loads(self.path.read_text(encoding="utf-8")))
+            state = dict(json.loads(self.path.read_text(encoding="utf-8")))
         except (OSError, ValueError):
-            return {}
+            state = {}
+        state.setdefault("hooks", {})
+        return state
 
     def _save(self, state: Dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         write_atomic(self.path, (json.dumps(state, indent=1, sort_keys=True) + "\n").encode("utf-8"))
 
-    def active(self) -> bool:
-        """Seen registered within the last two days: the periodic sheet checks can be rarer."""
-        state = self._state()
-        return bool(state.get("id")) and self.clock() - float(state.get("checked_at") or 0) < 2 * CHECK_EVERY_S
+    def covered(self, did: str, wid: str) -> bool:
+        """That workspace's changes reach AutoCAM: its sheets need the periodic check only rarely."""
+        return bool(self._state()["hooks"].get(f"{did}/{wid}", {}).get("id"))
 
-    def _company(self, state: Dict[str, Any]) -> str:
-        if self.company_id:
-            return self.company_id
-        if state.get("company_id"):
-            return str(state["company_id"])
-        companies = self.onshape.companies()
-        named = [c for c in companies if "5940" in f"{c.get('name', '')} {c.get('domainPrefix', '')}"]
-        pick = named if len(named) == 1 else companies if len(companies) == 1 else []
-        if not pick:
-            raise PanelOnshapeError(f"which company? Onshape lists {len(companies)}; set [panel] company_id")
-        return str(pick[0].get("id") or "")
-
-    def ensure(self) -> str:
-        """Once a day: AutoCAM's webhook is registered (it registers it if not). Returns what it did."""
+    def ensure(self, wanted: Set[Tuple[str, str]]) -> str:
+        """The documents' workspaces (did, wid) with parts on open sheets each have a webhook. Returns what it did."""
         state = self._state()
+        hooks: Dict[str, Dict[str, Any]] = state["hooks"]
         now = self.clock()
-        if state.get("checked_at") is not None and now - float(state["checked_at"]) < CHECK_EVERY_S:
-            return "checked recently"
         if state.get("error") and now - float(state.get("tried_at") or 0) < RETRY_S:
             return "failed recently"
-        state["tried_at"] = now
+        done = []
         try:
-            company = self._company(state)
-            state["company_id"] = company
-            mine = [w for w in self.onshape.webhooks(company) if w.get("url") == self.url]
-            if mine:
-                state.update(id=str(mine[0].get("id") or ""), checked_at=self.clock(), error="")
-                what = "already registered"
-            else:
+            if hooks and now - float(state.get("listed_at") or 0) >= CHECK_EVERY_S:
+                there = {str(w.get("id")) for w in self.onshape.webhooks()}
+                for key in [k for k, h in hooks.items() if h.get("id") not in there]:
+                    hooks.pop(key)                               # gone (Onshape drops failing ones): made again
+                state["listed_at"] = now
+            for key, h in list(hooks.items()):
+                if tuple(key.split("/")) in wanted:
+                    h["used_at"] = now
+                elif now - float(h.get("used_at") or 0) > UNUSED_S:
+                    self.onshape.delete_webhook(str(h["id"]))
+                    hooks.pop(key)
+                    done.append(f"removed {key}")
+            for did, wid in sorted(wanted):
+                if f"{did}/{wid}" in hooks or len(done) >= self.per_tick:
+                    continue
                 made = self.onshape.create_webhook({
-                    "url": self.url, "companyId": company, "events": [EVENT], "options": {"collapseEvents": True},
+                    "url": self.url, "events": [EVENT], "options": {"collapseEvents": True},
+                    "filter": f"{{$DocumentId}} = '{did}' && {{$WorkspaceId}} = '{wid}'",
                     "name": "AutoCAM", "description": "AutoCAM: a part on a sheet changed after it was CAM'd"})
-                state.update(id=str(made.get("id") or ""), checked_at=self.clock(), error="")
-                what = "registered"
-                log.info("panel: Onshape webhook registered (%s)", state["id"])
+                hooks[f"{did}/{wid}"] = {"id": str(made.get("id") or ""), "made_at": now, "used_at": now}
+                done.append(f"made {did}/{wid}")
+                log.info("panel: Onshape webhook for %s/%s registered", did, wid)
+            state["error"] = ""
         except PanelOnshapeError as e:
-            state["error"] = str(e)
+            state.update(error=str(e), tried_at=now)
             self._save(state)
-            log.warning("panel: Onshape webhook not set up: %s", e)
+            log.warning("panel: Onshape webhook: %s", e)
             return f"failed: {e}"
         self._save(state)
-        return what
+        return "; ".join(done) or "nothing to do"
 
 
 def secret_ok(path: str, secret: str) -> bool:

@@ -433,17 +433,12 @@ class PanelOnshape:
             except OnshapeError as e:
                 if e.status in (403, 404):
                     raise NoAccess(str(e)) from e
-                raise PanelOnshapeError(f"Onshape didn't {what} ({e.status or 'no answer'}).") from e
+                raise PanelOnshapeError(f"Onshape didn't {what} ({e.status or 'no answer'}: "
+                                        f"{str(e).split(': ', 1)[-1][:160]}).") from e
 
-    def companies(self) -> List[Dict[str, Any]]:
-        data = self._call("list the companies", lambda c: c.get_json(
-            f"{API}/companies", query={"activeOnly": "true"}, purpose="panel_companies"))
-        items = data.get("items") if isinstance(data, dict) else data
-        return [c for c in items or [] if isinstance(c, dict)]
-
-    def webhooks(self, company_id: str) -> List[Dict[str, Any]]:
-        data = self._call("list the webhooks", lambda c: c.get_json(
-            f"{API}/webhooks", query={"company": company_id}, purpose="panel_webhooks"))
+    def webhooks(self) -> List[Dict[str, Any]]:
+        """The webhooks AutoCAM's keys registered."""
+        data = self._call("list the webhooks", lambda c: c.get_json(f"{API}/webhooks", purpose="panel_webhooks"))
         items = data.get("items") if isinstance(data, dict) else data
         return [w for w in items or [] if isinstance(w, dict)]
 
@@ -451,6 +446,10 @@ class PanelOnshape:
         data = self._call("register the webhook", lambda c: c.post_json(
             f"{API}/webhooks", body, purpose="panel_webhook_create"))
         return data if isinstance(data, dict) else {}
+
+    def delete_webhook(self, webhook_id: str) -> None:
+        self._call("remove the webhook", lambda c: c.delete(f"{API}/webhooks/{quote(webhook_id, safe='')}",
+                                                            purpose="panel_webhook_delete"))
 
     def picture(self, did: str, wvm: str, wvmid: str, eid: str, pid: str) -> bytes:
         """A shaded picture of the part (PNG), kept for good per state (a version or microversion never changes)."""

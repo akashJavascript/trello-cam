@@ -247,7 +247,6 @@ class Panel:
     change_check_hours: float = 12.0     # sheets in Sheet review are checked against Onshape this often (one call
                                          # per document state); Ready to cut ones once each, when they get there
     webhooks: bool = True                # Onshape's company webhook tells AutoCAM what changed (panel/hooks.py)
-    company_id: str = ""                 # the 5940 enterprise's id ("": asked of Onshape once)
     webhook_fallback_hours: float = 72.0  # with the webhook working, the periodic check above is only this often
     pictures: bool = True                # a picture of each part on its card (panel/pictures.py)
 
@@ -840,7 +839,6 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                       sends_per_minute=t.integer("sends_per_minute", minimum=1),
                       change_check_hours=t.number("change_check_hours", positive=True, default=12.0),
                       webhooks=t.boolean("webhooks", default=True),
-                      company_id=t.string("company_id", default=""),
                       webhook_fallback_hours=t.number("webhook_fallback_hours", positive=True, default=72.0),
                       pictures=t.boolean("pictures", default=True))
         t.finish()

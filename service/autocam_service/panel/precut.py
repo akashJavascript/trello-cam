@@ -64,19 +64,21 @@ class PrecutWatch:
         parts were found changed."""
         now = time.time() if now is None else now
         panel = self.board.cfg.panel
-        if self.hooks is not None:
-            try:
-                self.hooks.ensure()
-            except Exception as e:  # noqa: BLE001 - tried again tomorrow
-                log.info("panel: the Onshape webhook: %s", e)
-        live = self.hooks is not None and self.hooks.active()
-        every = (panel.webhook_fallback_hours if live else panel.change_check_hours) * 3600
-        told = self.inbox.quiet() if self.inbox is not None else set()   # Onshape said these changed
         ours, done = self.store.sheet_cards(), self._done()
+        lists = {key: self.t.list_cards(key) for key in ("ready_to_cut", "sheet_review")}
+        open_ids = {c.id for cards in lists.values() for c in cards
+                    if c.id in ours and not ours[c.id].get("cut") and ours[c.id].get("job")}   # on the board, not cut
+        if self.hooks is not None:
+            wanted = {(r["did"], r["vid"]) for sid in open_ids for r in self._refs(ours[sid])}
+            try:
+                self.hooks.ensure(wanted)
+            except Exception as e:  # noqa: BLE001 - tried again later
+                log.info("panel: the Onshape webhooks: %s", e)
+        told = self.inbox.quiet() if self.inbox is not None else set()   # Onshape said these changed
         changed = 0
         states: Dict[Tuple[str, str], Optional[str]] = {}   # one call per document state per tick
-        for list_key in ("ready_to_cut", "sheet_review"):
-            for card in self.t.list_cards(list_key):
+        for list_key, cards in lists.items():
+            for card in cards:
                 info = ours.get(card.id)
                 if not info or info.get("cut") or not info.get("job"):
                     continue
@@ -91,8 +93,13 @@ class PrecutWatch:
                         self._mark(mark, {"job": info["job"], "at": now})
                         if not touched:
                             continue
-                    elif now - float(seen.get("at") or 0) < every and not touched:
-                        continue
+                    else:
+                        refs = self._refs(info)
+                        live = self.hooks is not None and refs and all(self.hooks.covered(r["did"], r["vid"])
+                                                                       for r in refs)
+                        every = (panel.webhook_fallback_hours if live else panel.change_check_hours) * 3600
+                        if now - float(seen.get("at") or 0) < every and not touched:
+                            continue
                 found, finished = self._check(card, info, states)
                 changed += found
                 if finished:
@@ -105,7 +112,7 @@ class PrecutWatch:
             log.info("panel: settling CAD changes: %s", e)
         if self.pictures is not None:
             try:
-                self.pictures.tick()
+                self.pictures.tick(open_ids)
             except Exception as e:  # noqa: BLE001 - tried again next time
                 log.info("panel: part pictures: %s", e)
         return changed
