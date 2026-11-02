@@ -105,7 +105,7 @@ Onshape after sending doesn't break the card.
 ## Onshape calls
 
 Every call goes through the ledger (run id `panel`) and is counted apart from runs': `[panel]
-onshape_calls_per_day` (60) and `onshape_calls_per_year` (1500), beside runs' `yearly_cap_calls` (3000; 1500 until 2026-11-01). Both
+onshape_calls_per_day` (120; 60 until 2026-11-01) and `onshape_calls_per_year` (1500), beside runs' `yearly_cap_calls` (3000; 1500 until 2026-11-01). Both
 are shares of the enterprise's 10,000 a year; config-check refuses more than that together.
 
 | What | Calls | Kept |
