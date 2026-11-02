@@ -16,6 +16,7 @@ bends can be: its angle x (radius + k x thickness), k from 0 to 1. Its centerlin
 part where that doesn't find exactly one strip per bend isn't scribed (its bends are marked by hand).
 """
 
+import json
 import math
 import re
 from collections import Counter
@@ -90,6 +91,17 @@ def bend_centerlines(faces: Mapping[Any, Sequence[Edge]], bends: Sequence[Tuple[
         return (), (f"{len(lines)} bend zone{'s' if len(lines) != 1 else ''} found on its top for its "
                     f"{len(bends)} bend{'s' if len(bends) != 1 else ''}")
     return tuple(sorted(lines)), ""
+
+
+def tip_radius_in(tool_json: str) -> float:
+    """A chamfer mill's tip radius (inches) from its library entry: what Fusion offsets a 2D contour by with it, the
+    cone's tip being at the bottom height (r046: minus its full radius as stock was "Failed to write Job File")."""
+    try:
+        data = json.loads(tool_json)
+        tip = float((data.get("geometry") or {}).get("tip-diameter") or 0.0) / 2
+    except (ValueError, TypeError, AttributeError):
+        return 0.0
+    return tip / 25.4 if data.get("unit") == "millimeters" else tip
 
 
 def distance_to_line(x: float, y: float, line: Line) -> float:

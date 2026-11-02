@@ -85,6 +85,7 @@ def test_the_chamfer_mill_scribes_in_a_program_of_its_own(tmp_path):
     s = rig.fake.sheets[name]
     assert s["face_of"] == sheet.name and s["copies"] == ["p01.1", "p01.2"] and s["ops"] == ["[scribe] bend lines"]
     assert s["tools"] == {"[scribe] bend lines": T16}
+    assert s["fills"]["[scribe] bend lines"].stock_in == 0.0           # T16's tip is a point: no stock (r046)
     text = (rig.out / scribe.tap).read_text()
     assert "[scribe bend lines]" in text and "[outer" not in text and "Z0.1130" in text
     assert "[scribe" not in (rig.out / sheet.tap).read_text()

@@ -70,7 +70,8 @@ from autocam_core.schema_result import (
     RESULT_SCHEMA, FusionTeamResult, GuardSummary, HoleCounts, PartResult, PauseEntryResult, PauseSummary,
     PostResult, ProgramResult, Result, SheetPart, SheetResult, ToolForce, WorkerInfo, overall_status, result_json,
 )
-from autocam_core.scribe import Line, bend_centerlines, distance_to_line, in_sections, off_the_lines, scribe_sections
+from autocam_core.scribe import (Line, bend_centerlines, distance_to_line, in_sections, off_the_lines, scribe_sections,
+                                 tip_radius_in)
 from autocam_core.sheetcheck import (check_face_program, check_fit_program, check_scribe_program, check_sheet_program,
                                      pause_spec)
 from autocam_core.tooling import FeaturePlan, ToolNeed, part_tool, plan_features, sheet_tool
@@ -1267,7 +1268,7 @@ def _build_scribe(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _P
             adapter.set_tool(name, op, s.chamfer_tool_json)
             adapter.fill(name, op, OpFill(SCRIBE, lines=tuple(groups[faced]),
                                           depth_in=_scribe_depth(job, s.chamfer_depth_in, faced),
-                                          stock_in=-(s.chamfer.diameter_in / 2 - SCRIBE_EPS_IN)))
+                                          stock_in=-max(tip_radius_in(s.chamfer_tool_json) - SCRIBE_EPS_IN, 0.0)))
     except AdapterError as e:
         sheet.warnings.append(Issue(E.OP_WARNING, f"no scribe program ({e}): mark the bend lines by hand on "
                                                   f"{', '.join(parts[k].spec.name for k in counts)}"))
