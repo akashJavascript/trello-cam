@@ -172,7 +172,7 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
         parts=tuple(parts),
         offcuts=tuple(offcuts),
         tabs=TabSpec(cfg.tabs.distance_in, cfg.tabs.min_per_contour, cfg.tabs.max_per_contour, cfg.tabs.at_points,
-                     cfg.tabs.width_in, cfg.tabs.height_in),
+                     cfg.tabs.width_in, cfg.tabs.height_in, cfg.tabs.wide_max_tier),
         face=face_spec(cfg),
         scribe=scribe,
     )

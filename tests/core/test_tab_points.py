@@ -96,3 +96,12 @@ def test_a_wide_tab_stays_off_small_fillets():
             (r + 0.15 <= t.x <= w - r - 0.15 and r + 0.15 <= t.y <= h - r - 0.15) or \
             (t.y in (0.0, h) and r + 0.15 - 1e-6 <= t.x <= w - r - 0.15 + 1e-6) or \
             (t.x in (0.0, w) and r + 0.15 - 1e-6 <= t.y <= h - r - 0.15 + 1e-6)
+
+
+def test_wide_tabs_can_be_kept_to_straight_edges():
+    # a stadium with short straights: limited to lines, it gets only what the straights hold
+    tabs = place_tabs(stadium(0.8, 1.0), 6, CUTTER, 0.3, max_tier=1)
+    assert tabs and all(t.on_line and t.tier <= 1 for t in tabs) and len(tabs) < 6
+    assert place_tabs([arc(0, 0, 1.0, 0, 2 * math.pi, 72)], 3, CUTTER, 0.3, max_tier=1) == []   # all curve: none
+    anywhere = place_tabs([arc(0, 0, 1.0, 0, 2 * math.pi, 72)], 3, CUTTER, 0.3)
+    assert len(anywhere) == 3 and all(t.tier == 2 for t in anywhere)                            # the default

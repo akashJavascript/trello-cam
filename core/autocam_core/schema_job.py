@@ -192,6 +192,8 @@ class TabSpec:
     at_points: bool = True                             # placed by tabs.place_tabs, else spread evenly by Fusion
     width_in: float = 0.0                              # set on each tabbed op; 0: the template's (core 0.11.0)
     height_in: float = 0.0                             # the shape is always the template's
+    wide_max_tier: int = 4                             # tabs wider than the cutter: the worst spot they may take
+                                                       # (tabs.place_tabs tiers; 4 anywhere; core 0.20.0)
 
 
 @dataclass(frozen=True)
@@ -296,6 +298,8 @@ class Job:
             e.append("tabs.distance_in: must be > 0")
         if self.tabs.width_in < 0 or self.tabs.height_in < 0:
             e.append("tabs: width_in and height_in can't be negative")
+        if not 0 <= self.tabs.wide_max_tier <= 4:
+            e.append("tabs: wide_max_tier must be 0 to 4")
         if self.tabs.height_in and self.tabs.height_in >= min(self.material.thicknesses_in):
             e.append("tabs.height_in: must be less than the stock thickness")
         if not 1 <= self.tabs.min_per_contour <= self.tabs.max_per_contour:

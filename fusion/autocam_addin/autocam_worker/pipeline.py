@@ -916,12 +916,20 @@ def _tab_op(adapter: Adapter, job: Job, sheet: _Sheet, op_name: str,
         try:
             points = []
             on_lines = clear = 0
+            tiers = [0] * 5
+            wide = job.tabs.width_in > tool_d * 1.05            # wider than the cutter: maybe not on curves
             for cid, fid, index in contours:
                 placed = place_tabs(adapter.loop_segments(cid, fid, index), per_contour, tool_d,
-                                    job.tabs.width_in or tool_d)
+                                    job.tabs.width_in or tool_d, max_tier=job.tabs.wide_max_tier if wide else 4)
                 points += [(p.x, p.y) for p in placed]
                 on_lines += sum(p.on_line for p in placed)
                 clear += sum(p.clear_of_corners for p in placed)
+                for p in placed:
+                    tiers[p.tier] += 1
+            said = f"{op_name}: {len(points)} tabs by spot (line clear, line, curve, join, corner) {tiers}"
+            trace = getattr(adapter, "trace", None)          # fusion_calls.log: kept even if Fusion crashes
+            if trace is not None:
+                trace.append(f"  tabs {where} {said}")
             adapter.set_tab_points(where, op_name, points)
             if setup is None:
                 sheet.tab_points[op_name] = [(round(x - sheet.origin[0], 4), round(y - sheet.origin[1], 4))

@@ -86,6 +86,7 @@ class Tabs:
     at_points: bool = True
     width_in: float = 0.0
     height_in: float = 0.0
+    wide_max_tier: int = 4       # tabs wider than the cutter only on spots this good or better (tabs.place_tabs)
 
 
 @dataclass(frozen=True)
@@ -791,7 +792,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                 max_per_contour=t.integer("max_per_contour", minimum=1, default=6),
                 at_points=t.boolean("at_points"),
                 width_in=t.number("width_in", minimum=0, default=0.0),
-                height_in=t.number("height_in", minimum=0, default=0.0)) if t else Tabs()
+                height_in=t.number("height_in", minimum=0, default=0.0),
+                wide_max_tier=t.integer("wide_max_tier", minimum=0, default=4)) if t else Tabs()
     if t:
         t.finish()
 

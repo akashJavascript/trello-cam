@@ -84,6 +84,7 @@ class TabPoint:
     y: float
     on_line: bool                      # on a straight edge (else a curve or across a corner)
     clear_of_corners: bool             # the whole tab at least one cutter diameter from any corner
+    tier: int = 0                      # 0 line clear of corners, 1 line, 2 one curve, 3 across a join, 4 a corner
 
 
 def _dist(a: Point, b: Point) -> float:
@@ -149,8 +150,9 @@ def _around(a: float, b: float, length: float) -> float:
 
 
 def place_tabs(segs: Sequence[Seg], count: int, tool_diameter: float, tab_width: float,
-               samples: int = 600, turns: int = 24) -> List[TabPoint]:
-    """`count` tab points on a closed contour (segs in loop order), per the module docstring."""
+               samples: int = 600, turns: int = 24, max_tier: int = 4) -> List[TabPoint]:
+    """`count` tab points on a closed contour (segs in loop order), per the module docstring. max_tier: the worst
+    kind of spot allowed (4: anywhere); with fewer allowed spots than `count`, as many as fit (maybe none)."""
     c = _Contour(segs)
     if count <= 0 or c.length <= 0 or not c.pieces:
         return []
@@ -173,7 +175,10 @@ def place_tabs(segs: Sequence[Seg], count: int, tool_diameter: float, tab_width:
             tier = 3                               # across a smooth join (a small fillet): Fusion crashed on wide
         else:                                      # triangular tabs somewhere like that (tsize1, twice)
             tier = 4
-        spots.append((s, tier))
+        if tier <= max_tier:
+            spots.append((s, tier))
+    if not spots:
+        return []
     spacing = L / count
     weight = (0.0, 0.5, 1.0, 3.0, 4.0)            # times half the spacing: a line spot wins unless it's far off
     gap = min(tab_width + 2 * tool_diameter, spacing * 0.6)
@@ -185,7 +190,7 @@ def place_tabs(segs: Sequence[Seg], count: int, tool_diameter: float, tab_width:
         n = len(spots)
         for k in range(count):
             ideal = (offset + k * spacing) % L
-            centre = int(round(ideal / step)) % n
+            centre = min(range(n), key=lambda j: _around(spots[j][0], ideal, L))
             pick = None
             for d in range(n // 2 + 1):            # outwards from the even spot, until nothing closer can win
                 if pick is not None and d * step - step > pick[0]:
@@ -201,12 +206,12 @@ def place_tabs(segs: Sequence[Seg], count: int, tool_diameter: float, tab_width:
                 break
             chosen.append((pick[1], pick[2]))
             cost += pick[0]
-        if len(chosen) == count and (best is None or cost < best[0] - 1e-9):
+        if best is None or len(chosen) > len(best[1]) or (len(chosen) == len(best[1]) and cost < best[0] - 1e-9):
             best = (cost, chosen)
-    if best is None:                               # too short for them to stay apart: evenly, wherever
-        best = (0.0, [((k * spacing) % L, 2) for k in range(count)])
+    if (best is None or len(best[1]) < count) and max_tier >= 4:
+        best = (0.0, [((k * spacing) % L, 2) for k in range(count)])   # too short for them to stay apart: evenly
     out = []
-    for s, tier in sorted(best[1]):
+    for s, tier in sorted(best[1] if best else []):
         (x, y), _ = c.at(s)
-        out.append(TabPoint(round(x, 4), round(y, 4), tier <= 1, tier == 0))
+        out.append(TabPoint(round(x, 4), round(y, 4), tier <= 1, tier == 0, tier))
     return out
