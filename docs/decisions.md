@@ -960,6 +960,11 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   climb on one straight run (measured to its ends, fillets included). A cutout without room for its tabs goes in
   its own op with the template's width ("[inner] cutouts - 2 tabs each (narrow tabs)"); an outline or fitted
   feature without room gets the template's width for its op. Each op's spots by tier go in fusion_calls.log.
+- **And beside wide tabs, no tab on a curve:** with 0.3 in tabs on the sheet, the template's tabs on a curve crashed
+  it too (r061, r062); on straight edges, even near a corner, they didn't (r063, r064). So a setup takes 0.3 in tabs
+  only if every tabbed contour on it can take its tabs on straight edges; one that can't (a round cutout, a big
+  fitted hole's slug) puts the whole setup on the template's width, which is fine anywhere (r058). The sheet card's
+  notes say which. Each setup decides alone (the sheet's, its SMALL program's; fit laps follow the sheet's).
 - **A trap found on the way:** after a crash, Fusion shows "Recovered Documents" over the first document, and while
   it's up toolpaths never generate, with no error (r055-r058 sat in generate; one closed it and r058 finished).
   The add-in now clicks its Close (fx_util.wait_for, close_recovered.ps1, UI Automation) when a generation hasn't

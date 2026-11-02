@@ -131,3 +131,21 @@ def test_wide_tabs_only_where_their_ramp_has_room_else_the_templates(tmp_path):
     assert "[inner] cutouts - 2 tabs each (narrow tabs)" in inner and "[inner] cutouts - 2 tabs each" not in inner
     assert fake["tab_size"]["[inner] cutouts - 2 tabs each (narrow tabs)"] == (0.0, 0.0394)    # the template's width
     assert fake["tab_size"]["[outer] p01-1"] == (0.3, 0.0394) and len(fake["tab_points"]["[outer] p01-1"]) == 6
+
+
+def test_a_sheet_with_a_cutout_that_needs_tabs_on_a_curve_keeps_the_templates_width_everywhere(tmp_path):
+    # r061/r062: beside 0.3 in tabs, even the template's tabs on a curve crashed Fusion; on their own they never did
+    # (r058). A round cutout has nowhere else for its tabs, so its whole sheet gets the template's width.
+    rig = Rig(tmp_path)
+    rig.fake.round_loops = True
+    job = rig.job([("bracket", 1, with_cutouts("bracket", [5.0, 5.0]), (8.0, 6.0))])
+    job = dataclasses.replace(job, parts=(dataclasses.replace(job.parts[0], tabs=True),),
+                              tabs=dataclasses.replace(job.tabs, width_in=0.3, height_in=0.0394, wide_max_tier=0))
+    result = rig.run(job)
+    [sheet] = result.sheets
+    assert sheet.tap and not sheet.errors
+    [fake] = rig.fake.sheets.values()
+    assert "[inner] cutouts - 2 tabs each" in fake["ops"] and not any("narrow" in op for op in fake["ops"])
+    assert set(fake["tab_size"].values()) == {(0.0, 0.0394)}                   # the template's width everywhere
+    assert len(fake["tab_points"]["[inner] cutouts - 2 tabs each"]) == 4         # the round ones still get theirs
+    assert any("needs tabs on a curve" in n for n in sheet.notes)

@@ -61,6 +61,7 @@ class FakeAdapter(Adapter):
         self.arrange_envelopes: List[Tuple[float, float, float, float]] = []
         self.finished: Optional[bool] = None
         self.fail_tab_points = False                   # set_tab_points refuses (like Fusion without the choice)
+        self.round_loops = False                       # inner loops are 0.5 in circles (no straight edge for a tab)
         self.face_inset_in = 0.05                      # the face pass stays this far inside each faced copy's box
         self.face_extra_depth_in = 0.0                 # ...and goes this much deeper than asked
         self.tops: Dict[str, Dict[int, list]] = {}     # STEP path -> top face id -> edges, from the box's corner
@@ -227,6 +228,11 @@ class FakeAdapter(Adapter):
             pts = [(b.x0, b.y0), (b.x1, b.y0), (b.x1, b.y1), (b.x0, b.y1)]
         else:
             x, y = b.x0 + 0.5 + 0.6 * loop_index, b.y0 + 0.5
+            if self.round_loops:
+                import math
+                c, r = (x + 0.25, y + 0.25), 0.25
+                return [Seg("curve", tuple((c[0] + r * math.cos(2 * math.pi * k / 48), c[1] + r * math.sin(2 * math.pi * k / 48))
+                                           for k in range(49)))]
             pts = [(x, y), (x + 0.5, y), (x + 0.5, y + 0.5), (x, y + 0.5)]
         pts.append(pts[0])
         return [Seg("line", (a, c)) for a, c in zip(pts, pts[1:])]
