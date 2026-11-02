@@ -20,6 +20,7 @@ from typing import Callable, List, Optional
 from urllib.parse import parse_qsl, urlsplit
 
 from .api import PanelApp, body_limit
+from .hooks import HOOK_PREFIX
 
 log = logging.getLogger("autocam.panel")
 
@@ -56,6 +57,8 @@ def _handler(app: PanelApp):
 
         def log_message(self, fmt: str, *args) -> None:
             path = urlsplit(self.path).path if hasattr(self, "path") else "?"
+            if path.startswith(HOOK_PREFIX):
+                path = HOOK_PREFIX + "<secret>"                # the webhook's address is its password
             log.debug("panel http: %s %s", path, args[1] if len(args) > 1 else "")
 
     return Handler
