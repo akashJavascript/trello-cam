@@ -6,7 +6,7 @@ Developer) reads it from GET /api/v14/metrics/api/summary?startDate=<the cycle's
 "allocationInfo": {"apiLimit": 10000, "allocationStartDate", "allocationEndDate"}, ...}. That count covers
 everyone's API use (AutoCAM, teammates' tools), unlike AutoCAM's own ledger.
 
-One call every [panel] team_usage_hours, through the panel's limits. The count runs from startDate, so the first
+One call every [panel] team_usage_hours (a week; daily until 2026-11-01), through the panel's limits. The count runs from startDate, so the first
 read (which doesn't know the cycle yet) may take a second call once it learns the cycle's start. If AutoCAM's keys
 aren't allowed to read it, it's tried again a week later and the System card leaves the line out.
 """
@@ -124,16 +124,17 @@ class TeamUsage:
         return True
 
 
-def card_line(state_file: Path, now: datetime) -> str:
-    """The System card's line for it ("" when there's no count, or it's over two days old)."""
+def card_line(state_file: Path, now: datetime, every_hours: float = 24.0) -> str:
+    """The System card's line for it ("" when there's no count, or it's missed two reads: every_hours is
+    [panel] team_usage_hours)."""
     try:
         s = json.loads(Path(state_file).read_text(encoding="utf-8"))
         read_at = datetime.fromtimestamp(float(s["read_at"]), timezone.utc)
         count, limit, end = int(s["count"]), int(s["limit"]), _day(s["cycle_end"])
     except (OSError, ValueError, KeyError, TypeError):
         return ""
-    if end is None or now - read_at > timedelta(days=2):
+    if end is None or now - read_at > timedelta(hours=max(48.0, 2 * every_hours)):
         return ""
     share = f" ({count / limit:.0%})" if limit else ""
     return (f"Whole team's Onshape API calls (everyone's, from Onshape): {count:,} of {limit:,}{share} this year, "
-            f"which ends {end:%b} {end.day}, {end.year}.")
+            f"which ends {end:%b} {end.day}, {end.year} (read {read_at:%b} {read_at.day}).")

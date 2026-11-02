@@ -91,5 +91,8 @@ def test_the_system_card_line(tmp_path):
     usage.tick()
     assert card_line(tmp_path / "usage.json", now) == (
         "Whole team's Onshape API calls (everyone's, from Onshape): 45 of 10,000 (0%) this year, which ends "
-        "Oct 9, 2027.")
-    assert card_line(tmp_path / "usage.json", datetime.fromtimestamp(NOV1 + 3 * DAY, timezone.utc)) == ""   # stale
+        "Oct 9, 2027 (read Nov 1).")
+    later = datetime.fromtimestamp(NOV1 + 3 * DAY, timezone.utc)
+    assert card_line(tmp_path / "usage.json", later) == ""                          # read daily: missed two reads
+    assert card_line(tmp_path / "usage.json", later, every_hours=168).startswith("Whole team's")   # read weekly
+    assert card_line(tmp_path / "usage.json", datetime.fromtimestamp(NOV1 + 15 * DAY, timezone.utc), 168) == ""

@@ -111,12 +111,12 @@ are shares of the enterprise's 10,000 a year; config-check refuses more than tha
 | What | Calls | Kept |
 |---|---|---|
 | A Part Studio's parts (opening the panel) | 1 | 10 min (`parts_cache_s`), or until Refresh |
-| Quantities: the document's assemblies | 1 + up to 4 (`max_assemblies`) | 30 min, for every part of the document |
+| Quantities: the document's assemblies | 1 + up to 2 (`max_assemblies`; 4 until 2026-11-01) | 30 min, for every part of the document |
 | A part's shape, for the design checks | 1 | on disk, until the Part Studio changes |
 | Changed since it was CAM'd | 1 for the CAM'd state (kept for good), plus the check's | |
 | A whole assembly (its bill of materials) | 1 (+1 for the document's tabs) | 10 min |
 | Setting a material | 1 | |
-| The whole team's API count, for the System card | 1 a day (`team_usage_hours`) | until the next day |
+| The whole team's API count, for the System card | 1 a week (`team_usage_hours`) | until the next week |
 | Status, sending, changing a quantity | 0 (Trello only) | |
 | The panel refreshing itself (every `auto_refresh_s`, 15 s) | 0: Trello only, parts as last read | |
 
@@ -127,7 +127,7 @@ parts again. It waits while someone's typing, sending or editing, and stops afte
 panel. The Trello reads behind it are shared by every open panel (`board_cache_s`, 10 s).
 
 **The whole team's count** (`panel/usage.py`): Onshape's API has no documented call for the enterprise's usage, so
-AutoCAM reads the one the enterprise admin's Developer page uses (`GET /api/v14/metrics/api/summary`, startDate = the
+AutoCAM reads (once a week) the one the enterprise admin's Developer page uses (`GET /api/v14/metrics/api/summary`, startDate = the
 cycle's start, ownerId = `[panel] company_id`). The System card shows it ("45 of 10,000 this year, which ends Oct 9,
 2027"; seen in the browser 2026-11-01). If AutoCAM's keys aren't allowed to read it, it tries again a week later and
 the card leaves the line out.

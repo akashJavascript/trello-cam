@@ -938,6 +938,15 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   reads `GET /api/v14/metrics/api/summary` (found in its requests). AutoCAM reads it once a day through the panel's
   limits (`panel/usage.py`); if its keys can't, it leaves the line out and tries again in a week.
 
+## 2026-11-01: fewer Onshape calls (the user's picks from the call breakdown)
+
+- **The team's API count weekly** (`team_usage_hours = 168`, was 24): about 310 calls a year saved. The System card
+  keeps showing it (with the day it was read) until two reads are missed.
+- **The first export status check at 15 s** (`poll_first_s`, was 5): checks at 15, 60, 120 and 180 s. The ledger
+  showed about 2.3 checks per export with the first at 5 s, so it likely saves about one call per exported part.
+- **Quantities from 2 assemblies** (`max_assemblies`, was 4): 1 + 2 calls per document per 30 minutes.
+- Not changed (offered): `assembly_cache_s` and `parts_cache_s`.
+
 ## 2026-11-01: more than one cutter per part (core 0.19.0; the user's "bigger idea" #1)
 
 The brief's "later option" (decision 21: an 8-32 hole moves a whole aluminum sheet to the 1/8 in) done per feature.

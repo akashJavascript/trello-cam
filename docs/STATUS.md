@@ -120,7 +120,7 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 - **Faster refresh** (2026-11-01, the user asked): the service reads Trello every 15 s (was 60), runs start 1 min
   after the last card (was 2), the open panel refreshes its statuses every 15 s without Onshape calls, and CAD
   changed checks run 2 min after an edit stops (was 5). The System card shows the whole team's Onshape API count from
-  the admin Developer page's endpoint, once a day (if AutoCAM's keys may read it).
+  the admin Developer page's endpoint, once a week (AutoCAM's keys can read it).
 - **More than one cutter per part** (core 0.19.0, 2026-11-01): small through holes (an 8-32's 0.136) and cutouts
   with corners too tight for the 4 mm go in a short `<sheet>_SMALL` program with the 1/8 in, run first; the sheet
   stays on the 4 mm, outlines last. Only a tight outline or pocket corner (or the Tool 1/8 label) still puts a
@@ -150,7 +150,7 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   mostly cutouts. Work in Fusion (test jobs lbl1, lbl2); not on a real sheet card yet (M3 section 13).
 - **Duplicate part cards and "did you mean"** for a wrong part name: tested offline (M3 section 12).
 - **Fewer Onshape calls** (2026-10-04): a run starts all its STEP exports before it waits on any, status
-  checks are timed from each export's start (5, 20, 65, 125 s), and an export left from an earlier run gets one
+  checks are timed from each export's start (15, 60, 120, 180 s since 2026-11-01; was 5, 20, 65, 125), and an export left from an earlier run gets one
   check. Two parts that each take 30 s: 4 checks instead of 8. Tested with recorded responses only.
 - **Better nests:** several Arrange tries per thickness, the best kept, then the last sheet squeezed into a
   strip across the front. Work in Fusion (r006, r014).
