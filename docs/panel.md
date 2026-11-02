@@ -16,8 +16,9 @@ preview), cut, or sent back with the reason.
 - **A part with no card yet (or one that was cut):** its material, the quantity, the options and Send.
   - **Quantity** starts at how many of that part the document's assemblies use (the biggest count; a dropdown when
     there's more than one assembly), and can be changed. Only assemblies in the same document are counted.
-  - **Options**, in one list: Hold it in with tabs, Nest it with other parts, Face the top, Fit (a hole size or the
-    outline), Rush, Send to Drafts, Smoked (for polycarbonate), and notes.
+  - **Options**, in one list: Hold it in with tabs, Nest it with other parts, Face the top, Use the 1/8 in endmill
+    (the Tool 1/8 label), Fit (a hole size or the outline), Rush, Smoked (for polycarbonate), Send to Drafts, I CAM'd
+    it myself, and notes.
   - **No material in Onshape:** the student picks one, and AutoCAM sets it on the part in Onshape. If Onshape
     refuses (or the tab is a version), the card gets a `Material:` line instead, which the run reads.
   - **Who:** each student types their name once. It's kept for their Onshape user id (`state/panel_users.json`)
