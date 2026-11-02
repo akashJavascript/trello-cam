@@ -49,3 +49,11 @@ def test_a_card_it_cant_read_still_matches_by_its_title(tmp_path):
     h = harness(tmp_path, bad, linked("b", "P-2015"))
     h.runner.ready_cards()
     assert len(warnings(h, "b")) == 1
+
+
+def test_another_configuration_of_the_part_isnt_a_duplicate(tmp_path):
+    long = f"{STUDIO}?configuration=Length%3D19%2Bin"
+    h = harness(tmp_path, linked("a", "spacer", url=long, list_key="nested"), linked("b", "spacer"),
+                linked("c", "spacer", url=long))
+    h.runner.ready_cards()
+    assert warnings(h, "b") == [] and len(warnings(h, "c")) == 1     # the same configuration is

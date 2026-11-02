@@ -118,6 +118,10 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   parts on a sheet on the board tells AutoCAM within minutes when a part changed (CAD changed); each part card gets
   Onshape's picture of the part as its cover. Both seen working (registration, a ping through the tunnel, Part
   13's picture); a real edit's event still to be seen. `AUTOCAM_WEBHOOK_SECRET` in the laptop's `.env`.
+- **Configured parts** (2026-11-01, from the old panel): the configuration rides in the card's link and goes with
+  every Onshape read and export; each configuration is its own part and card; the panel reads `{$configuration}`
+  (its Action URL needs `&configuration={$configuration}`), and assemblies send configured parts. Not yet seen on a
+  real configured plate.
 - **Faster refresh** (2026-11-01, the user asked): the service reads Trello every 15 s (was 60), runs start 1 min
   after the last card (was 2), the open panel refreshes its statuses every 15 s without Onshape calls, and CAD
   changed checks run 2 min after an edit stops (was 5). The System card shows the whole team's Onshape API count from

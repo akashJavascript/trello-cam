@@ -949,6 +949,18 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - **Quantities from 2 assemblies** (`max_assemblies`, was 4): 1 + 2 calls per document per 30 minutes.
 - Not changed (offered): `assembly_cache_s` and `parts_cache_s`.
 
+## 2026-11-01: configured parts (the user picked it from the old panel's list)
+
+- **The configuration lives in the card's link** (`?configuration=`, as Onshape's address bar has it), not a new
+  card line: typed cards get it by copying the address bar, and the job's record of the part (its url) keeps it, so
+  the job format and the add-in didn't change. `OnshapeLink.configuration`; cache keys and `studio` get a short hash
+  of it; every read and export passes it as Onshape's `configuration` parameter.
+- **Each configuration is its own part:** cards match by document, tab, configuration and part id; the duplicate
+  warning too. Card titles from the panel name it ("P-2011 (Length: 19 in)").
+- **Before this the panel quietly sent the default configuration** of a configured Part Studio; now it reads
+  `{$configuration}` from the Action URL (which needs `&configuration={$configuration}`; the old panel's
+  validated way).
+
 ## 2026-11-01: more than one cutter per part (core 0.19.0; the user's "bigger idea" #1)
 
 The brief's "later option" (decision 21: an 8-32 hole moves a whole aluminum sheet to the 1/8 in) done per feature.

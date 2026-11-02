@@ -86,6 +86,25 @@ preview), cut, or sent back with the reason.
   form from what it says (quantity, labels, Fit, the boxes, notes), and lines someone typed that the panel doesn't
   write are kept below the panel's.
 
+## Configured parts (2026-11-01, from the old panel)
+
+A configured Part Studio's configuration rides in the card's link, the way Onshape's own address bar has it:
+`.../e/<eid>?configuration=Length%3D19%2Bin`. Everything AutoCAM does with that part carries it: the parts list,
+the design check (`bodydetails`), the bend table, the STEP export (`configuration` in the translation), the
+picture, quantities and CAD changed. Each configuration is its own part: its own card, cache entries and status.
+
+- **In the panel:** Onshape fills `{$configuration}` in the Action URL with the configuration on screen and reloads
+  the panel when it changes (the old panel's way). The Part Studio extension's Action URL needs
+  `&configuration={$configuration}` on the end. The panel shows "Configuration: Length: 19 in; Size: Wide" (names
+  from `GET /elements/.../configuration`, one call kept 30 min), and the card's title gets it too:
+  "P-2011 (Length: 19 in; Size: Wide)".
+- **Assemblies:** a configured part in the BOM is sent with its instance's configuration (it used to be skipped).
+- **Typed cards:** pick the configuration in Onshape, then copy the address bar.
+- Onshape writes "+" inside configuration strings ("19+in"), so the link is decoded without turning "+" into a
+  space (Python and the page both).
+- Not seen on a real configured plate yet; quantities match an assembly instance's configuration string, so a
+  different spelling counts 0 (the student types the quantity).
+
 ## The card it writes
 
 ```

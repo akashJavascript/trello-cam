@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from autocam_core.hotfolder import write_atomic
 
+from ..onshape.urls import configuration_of
 from ..run_state import RunStore
 from ..tracker.base import Tracker
 from .board import PanelBoard
@@ -157,9 +158,11 @@ class PrecutWatch:
                 if not now_state or now_state == ref["microversion"]:
                     continue
                 mid = ref["microversion"]
-                then, then_extra = self.onshape.geometry(ref["did"], "m", mid, ref["eid"], ref["part_id"], mid, name)
+                cfg = configuration_of(str(ref.get("url") or ""))   # a configured part: that configuration
+                then, then_extra = self.onshape.geometry(ref["did"], "m", mid, ref["eid"], ref["part_id"], mid, name,
+                                                         cfg=cfg)
                 now, now_extra = self.onshape.geometry(ref["did"], "w", ref["vid"], ref["eid"], ref["part_id"],
-                                                       now_state, name)
+                                                       now_state, name, cfg=cfg)
             except OutOfCalls:
                 return changed, False
             except PanelOnshapeError as e:

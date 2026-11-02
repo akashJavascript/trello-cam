@@ -164,8 +164,8 @@ def assembly_panel(tmp_path):
 def test_the_bom_is_read_flattened():
     rows = bom_rows(BOM)
     assert rows[0] == {"did": D, "wvm": "w", "wvmid": W, "eid": E, "pid": "JHD", "name": "P-2014 gusset", "qty": 4,
-                       "material": "Aluminum - 6061", "configured": False, "standard": False}
-    assert rows[4]["configured"] and rows[5]["standard"]
+                       "material": "Aluminum - 6061", "configuration": "", "standard": False}
+    assert rows[4]["configuration"] and rows[5]["standard"]
 
 
 def test_an_assembly_lists_its_parts_with_counts_and_cards(tmp_path):
@@ -176,7 +176,8 @@ def test_an_assembly_lists_its_parts_with_counts_and_cards(tmp_path):
     items = {i["name"]: (i["qty"], i["sendable"], i["why"], i["chip"]["status"]) for i in a["items"]}
     assert items == {"P-2014 gusset": (4, True, "", "none"), "P-3001 side plate": (2, True, "", "none"),
                      "P-2015 window": (1, False, "No material", "none"), "P-2016 spacer": (4, False, "Not cut here", "none"),
-                     "P-2017 bracket": (2, False, "Configured", "none"), "P-2018 queued": (1, False, "", "queued")}
+                     "P-2017 bracket (List_abc: 1)": (2, True, "", "none"),            # configured: sendable now
+                     "P-2018 queued": (1, False, "", "queued")}
 
 
 def test_sending_an_assembly_makes_a_card_per_part_from_its_own_part_studio(tmp_path):

@@ -39,7 +39,8 @@ TABS_HELP = {
             "break the part out after the cut."),
 }
 
-FORMAT_HELP = """1. In Onshape, open the Part Studio with your part and copy the address bar.
+FORMAT_HELP = """1. In Onshape, open the Part Studio with your part and copy the address bar. A configured part: pick its
+   configuration first; the address then has it, and that configuration is what's cut.
 2. Make a card in Drafts (or use the New part template).
    Title: the part's name.
    Description: the link, and a line like Qty: 2

@@ -25,7 +25,7 @@ from ..cards import MATERIAL_RE, PART_ID_RE, QTY_LINE_RES, README_CARD, SCRIBE_R
 from ..config import Config
 from ..fits import _FIT, parse_fit
 from ..own_programs import OWN_PROGRAM_RE
-from ..onshape.urls import LinkError, first_onshape_url, parse_link
+from ..onshape.urls import LinkError, configuration_query, first_onshape_url, parse_link
 from ..run_state import RunStore
 from ..tracker.base import Card, Tracker
 
@@ -61,6 +61,7 @@ class PartCard:
     part_id: Optional[str]
     qty: int
     order: int = 0                 # board order, for cards whose ids carry no time (tests)
+    configuration: str = ""        # its link's configuration ("" the default): another configuration is another part
 
 
 def read_part_card(card: Card, status: str, order: int = 0) -> Optional[PartCard]:
@@ -78,11 +79,12 @@ def read_part_card(card: Card, status: str, order: int = 0) -> Optional[PartCard
     found = [v.strip() for rx in QTY_LINE_RES for v in rx.findall(plain)] + ([m["qty"]] if m and m["name"] else [])
     qty = int(found[0]) if found and found[0].isdigit() else 0
     ids = PART_ID_RE.findall(plain)
-    return PartCard(card, status, link.did, link.eid, norm(name), ids[0] if ids else None, qty, order)
+    return PartCard(card, status, link.did, link.eid, norm(name), ids[0] if ids else None, qty, order,
+                    link.configuration)
 
 
-def is_this_part(pc: PartCard, did: str, eid: str, pid: str, name: str) -> bool:
-    if (pc.did, pc.eid) != (did, eid):
+def is_this_part(pc: PartCard, did: str, eid: str, pid: str, name: str, configuration: str = "") -> bool:
+    if (pc.did, pc.eid, pc.configuration) != (did, eid, configuration):
         return False
     if pc.part_id:
         return pc.part_id == pid
@@ -112,6 +114,7 @@ class Send:
     scribe: str = ""               # a bent part's bend lines scribed: "endmill" or "chamfer" (a Scribe: line)
     sender: str = ""
     notes: str = ""                # one line
+    configuration: str = ""        # a configured Part Studio's configuration, in the link ("" the default)
 
 
 SENT_BY_RE = re.compile(r"^\s*Sent from the Onshape panel by ", re.IGNORECASE)
@@ -133,7 +136,8 @@ def kept_lines(desc: str) -> List[str]:
 
 
 def card_desc(s: Send, keep: Optional[List[str]] = None) -> str:
-    lines = [f"https://{s.host}/documents/{s.did}/{s.wvm}/{s.wvmid}/e/{s.eid}", f"Qty: {s.qty}", f"Part ID: {s.pid}"]
+    lines = [f"https://{s.host}/documents/{s.did}/{s.wvm}/{s.wvmid}/e/{s.eid}{configuration_query(s.configuration)}",
+             f"Qty: {s.qty}", f"Part ID: {s.pid}"]
     if s.material_line:
         lines.append(f"Material: {s.material_line}")
     if s.fit_line:
@@ -193,11 +197,11 @@ class PanelBoard:
             self._cards = None
 
     def for_part(self, did: str, eid: str, pid: str, name: str, cards: Optional[List[PartCard]] = None,
-                 card_id: str = "") -> Optional[PartCard]:
+                 card_id: str = "", cfg: str = "") -> Optional[PartCard]:
         """The part's card: the newest one still going (Drafts to On a sheet), else the newest cut one.
-        card_id: that card, if it's still one of this part's."""
+        card_id: that card, if it's still one of this part's. cfg: the configuration (each is its own part)."""
         mine = [pc for pc in (cards if cards is not None else self.part_cards())
-                if is_this_part(pc, did, eid, pid, name)]
+                if is_this_part(pc, did, eid, pid, name, cfg)]
         if card_id:
             return next((pc for pc in mine if pc.card.id == card_id), None)
         newest = sorted(mine, key=lambda pc: (created(pc.card.id), pc.order), reverse=True)

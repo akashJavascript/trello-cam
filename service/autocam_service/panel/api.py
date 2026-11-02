@@ -52,6 +52,7 @@ from .board import ACTIVE, PanelBoard, Send, read_part_card
 from .geometry import differences, shape_key
 from .hooks import HOOK_PREFIX, ChangeInbox, secret_ok
 from .onshape_reads import NoAccess, OutOfCalls, PanelOnshape, PanelOnshapeError
+from ..onshape.urls import configuration_of, configuration_tag, normal_configuration
 
 log = logging.getLogger("autocam.panel")
 
@@ -251,6 +252,20 @@ class PanelApp:
             raise Refused(400, "Open this panel from a Part Studio tab.")
         return did, wvm, wvmid, eid
 
+    def _cfg(self, q: Dict[str, Any]) -> str:
+        """The Part Studio's configuration, from the Action URL's {$configuration} ("" the default; 2026-11-01)."""
+        cfg = normal_configuration(str(q.get("c") or ""))
+        if len(cfg) > 2000 or any(ord(ch) < 32 for ch in cfg):
+            raise Refused(400, "Bad request")
+        return cfg
+
+    def _titled(self, did: str, wvm: str, wvmid: str, eid: str, name: str, cfg: str) -> str:
+        """A configured part's card title: its name and its configuration ("P-2011 (Length: 19 in)")."""
+        if not cfg:
+            return name
+        label = self.onshape.configuration_label(did, wvm, wvmid, eid, cfg)
+        return f"{name} ({label})" if label else name
+
     def _part_id(self, q: Dict[str, str]) -> str:
         pid = str(q.get("p", ""))
         if not PART_RE.match(pid):
@@ -288,13 +303,14 @@ class PanelApp:
         return [p for p in parts if p.get("bodyType") in (None, "solid") and p.get("partId")
                 and not p.get("isFlattenedBody")]
 
-    def _flat(self, did: str, wvm: str, wvmid: str, eid: str, pid: str) -> Optional[Dict[str, Any]]:
+    def _flat(self, did: str, wvm: str, wvmid: str, eid: str, pid: str, cfg: str = "") -> Optional[Dict[str, Any]]:
         """A sheet metal part's flat pattern (what's cut), from the parts list read with includeFlatParts."""
         from ..onshape.export import flat_of
-        return flat_of(self.onshape.cached_parts(did, wvm, wvmid, eid) or [], pid)
+        return flat_of(self.onshape.cached_parts(did, wvm, wvmid, eid, cfg) or [], pid)
 
-    def _find(self, did: str, wvm: str, wvmid: str, eid: str, pid: str) -> Dict[str, Any]:
-        part = next((p for p in self._solids(self.onshape.parts(did, wvm, wvmid, eid)) if p["partId"] == pid), None)
+    def _find(self, did: str, wvm: str, wvmid: str, eid: str, pid: str, cfg: str = "") -> Dict[str, Any]:
+        part = next((p for p in self._solids(self.onshape.parts(did, wvm, wvmid, eid, cfg=cfg)) if p["partId"] == pid),
+                    None)
         if part is None:
             raise Refused(404, "That part isn't in this Part Studio any more. Press Refresh.")
         return part
@@ -303,12 +319,14 @@ class PanelApp:
         """cached=1 is the page's own refresh every few seconds: statuses from Trello, parts only from the last read
         (no Onshape call ever; {"stale": true} when there's none)."""
         did, wvm, wvmid, eid = self._studio(q)
-        if q.get("cached") == "1":
-            raw = self.onshape.cached_parts(did, wvm, wvmid, eid)
+        cfg = self._cfg(q)
+        cached = q.get("cached") == "1"
+        if cached:
+            raw = self.onshape.cached_parts(did, wvm, wvmid, eid, cfg)
             if raw is None:
                 return {"stale": True}
         else:
-            raw = self.onshape.parts(did, wvm, wvmid, eid, fresh=q.get("fresh") == "1")
+            raw = self.onshape.parts(did, wvm, wvmid, eid, fresh=q.get("fresh") == "1", cfg=cfg)
         parts = self._solids(raw)
         board_error, cards = "", None
         try:
@@ -319,13 +337,14 @@ class PanelApp:
         listed = []
         for p in sorted(parts, key=lambda p: _natural(p.get("name") or "")):
             chip = {"status": "unknown", "label": ""} if cards is None else \
-                self.board.chip(self.board.for_part(did, eid, p["partId"], p.get("name") or "", cards))
+                self.board.chip(self.board.for_part(did, eid, p["partId"], p.get("name") or "", cards, cfg=cfg))
             material = self._part_material(p)
             listed.append({"id": p["partId"], "name": p.get("name") or "", "material": material, "chip": chip,
-                           "mark": self._mark(did, wvm, wvmid, eid, p, material),
-                           "bent": self._flat(did, wvm, wvmid, eid, p["partId"]) is not None})
+                           "mark": self._mark(did, wvm, wvmid, eid, p, material, cfg),
+                           "bent": self._flat(did, wvm, wvmid, eid, p["partId"], cfg) is not None})
         uid = q.get("u", "")
         return {"parts": listed, "boardError": board_error, "writable": wvm == "w", "queue": self._queue(),
+                "configuration": self.onshape.configuration_label(did, wvm, wvmid, eid, cfg, cached_only=cached),
                 "user": self.names.get(uid) if USER_RE.match(uid or "") else "",
                 "materials": list(self._materials().values()), "fit": self.cfg.fit.enabled,
                 "face": self.cfg.face is not None, "scribe": self.cfg.scribe is not None,
@@ -361,11 +380,16 @@ class PanelApp:
             if r["standard"]:
                 continue                                 # Onshape's standard content: screws, nuts
             material = self._material_of(r["material"])
-            pc = None if cards is None else self.board.for_part(r["did"], r["eid"], r["pid"], r["name"], cards)
+            pc = None if cards is None else self.board.for_part(r["did"], r["eid"], r["pid"], r["name"], cards,
+                                                                cfg=r["configuration"])
             chip = {"status": "unknown", "label": ""} if cards is None else self.board.chip(pc)
-            why = ("No material" if material is None else "" if material["key"] else "Not cut here") or \
-                ("Configured" if r["configured"] else "")
-            items.append({"key": f"{r['did']}/{r['eid']}/{r['pid']}", "name": r["name"] or r["pid"], "qty": r["qty"],
+            why = "No material" if material is None else "" if material["key"] else "Not cut here"
+            shown = r["name"] or r["pid"]
+            if r["configuration"]:                       # its configuration, named only if already read (no call)
+                label = self.onshape.configuration_label(r["did"], r["wvm"], r["wvmid"], r["eid"], r["configuration"],
+                                                         cached_only=True)
+                shown = f"{shown} ({label})"
+            items.append({"key": _row_key(r), "name": shown, "qty": r["qty"],
                           "material": material, "chip": chip, "why": why, "here": r["did"] == did,
                           "sendable": not why and cards is not None and (pc is None or pc.status not in ACTIVE)})
         # this document's parts first: parts from other documents are often bought ones (a vendor's library)
@@ -383,7 +407,8 @@ class PanelApp:
 
     def send_many(self, d: Dict[str, Any]) -> Dict[str, Any]:
         """Cards for the ticked parts of an assembly, each in the format a typed card has (its own Part Studio's
-        link). Skipped, with the reason: no material AutoCAM cuts, configured parts, parts that already have a card."""
+        link, with its configuration). Skipped, with the reason: no material AutoCAM cuts, parts that already have a
+        card."""
         self._rate_limit()
         did, wvm, wvmid, eid = self._studio(d)
         sender = self._sender(d)
@@ -391,7 +416,7 @@ class PanelApp:
         drafts, rush = bool(d.get("drafts")), bool(d.get("rush"))
         face = bool(d.get("face")) and self.cfg.face is not None
         wanted = d.get("items") if isinstance(d.get("items"), list) else []
-        rows = {f"{r['did']}/{r['eid']}/{r['pid']}": r for r in self.onshape.bom(did, wvm, wvmid, eid)}
+        rows = {_row_key(r): r for r in self.onshape.bom(did, wvm, wvmid, eid)}
         cards = self.board.part_cards(fresh=True)
         host = self._host(d.get("server"))
         results, seen = [], set()
@@ -409,13 +434,13 @@ class PanelApp:
                 material = self._material_of(r["material"])
                 if material is None or not material["key"]:
                     raise Refused(400, "has no material AutoCAM cuts: open its Part Studio's panel")
-                if r["configured"]:
-                    raise Refused(400, "is a configured part: send it from its Part Studio")
-                going = self.board.for_part(r["did"], r["eid"], r["pid"], r["name"], cards)
+                going = self.board.for_part(r["did"], r["eid"], r["pid"], r["name"], cards, cfg=r["configuration"])
                 if going is not None and going.status in ACTIVE:
                     raise Refused(409, "already has a card")
-                s = Send(did=r["did"], wvm=r["wvm"], wvmid=r["wvmid"], eid=r["eid"], pid=r["pid"], name=r["name"],
-                         host=host, qty=qty, nest=nest, tabs=tabs, face=face, rush=rush, drafts=drafts, sender=sender)
+                title = self._titled(r["did"], r["wvm"], r["wvmid"], r["eid"], r["name"], r["configuration"])
+                s = Send(did=r["did"], wvm=r["wvm"], wvmid=r["wvmid"], eid=r["eid"], pid=r["pid"], name=title,
+                         host=host, qty=qty, nest=nest, tabs=tabs, face=face, rush=rush, drafts=drafts, sender=sender,
+                         configuration=r["configuration"])
                 card = self.board.write(s)
                 results.append({"key": key, "name": name, "sent": True, "url": card.url})
             except Refused as e:
@@ -426,12 +451,12 @@ class PanelApp:
         return {"results": results, "list": "Drafts" if drafts else "Ready for CAM"}
 
     def _mark(self, did: str, wvm: str, wvmid: str, eid: str, part: Dict[str, Any],
-              material: Optional[Dict[str, Any]]) -> Optional[str]:
+              material: Optional[Dict[str, Any]], cfg: str = "") -> Optional[str]:
         """"ok" or "bad" for a part already checked in this state of the Part Studio (no Onshape call); None
         otherwise."""
-        flat = self._flat(did, wvm, wvmid, eid, part["partId"])
+        flat = self._flat(did, wvm, wvmid, eid, part["partId"], cfg)
         found = self.onshape.cached_geometry(did, wvm, wvmid, eid, (flat or part)["partId"],
-                                             str(part.get("microversionId") or ""))
+                                             str(part.get("microversionId") or ""), cfg)
         if found is None:
             return None
         try:
@@ -444,23 +469,25 @@ class PanelApp:
     def part(self, q: Dict[str, str]) -> Dict[str, Any]:
         did, wvm, wvmid, eid = self._studio(q)
         pid = self._part_id(q)
+        cfg = self._cfg(q)
         if q.get("cached") == "1":                       # the page's own refresh: no Onshape call (see studio)
-            part = next((p for p in self._solids(self.onshape.cached_parts(did, wvm, wvmid, eid) or [])
+            part = next((p for p in self._solids(self.onshape.cached_parts(did, wvm, wvmid, eid, cfg) or [])
                          if p["partId"] == pid), None)
             if part is None:
                 return {"stale": True}
         else:
-            part = self._find(did, wvm, wvmid, eid, pid)
-        pc = self.board.for_part(did, eid, pid, part.get("name") or "", self.board.part_cards())
+            part = self._find(did, wvm, wvmid, eid, pid, cfg)
+        pc = self.board.for_part(did, eid, pid, part.get("name") or "", self.board.part_cards(), cfg=cfg)
         return {"part": {"id": pid, "name": part.get("name") or "", "material": self._part_material(part),
-                         "bent": self._flat(did, wvm, wvmid, eid, pid) is not None},
+                         "bent": self._flat(did, wvm, wvmid, eid, pid, cfg) is not None},
                 "card": self.board.detail(pc) if pc is not None else None}
 
     def qty(self, q: Dict[str, str]) -> Dict[str, Any]:
         did, wvm, wvmid, eid = self._studio(q)
         pid = self._part_id(q)
         try:
-            return self.onshape.assembly_counts(did, wvm, wvmid, eid, pid, fresh=q.get("fresh") == "1")
+            return self.onshape.assembly_counts(did, wvm, wvmid, eid, pid, fresh=q.get("fresh") == "1",
+                                                cfg=self._cfg(q))
         except OutOfCalls as e:
             return {"assemblies": [], "counted": 0, "total": 0, "note": str(e)}
 
@@ -469,19 +496,20 @@ class PanelApp:
         check waits."""
         did, wvm, wvmid, eid = self._studio(q)
         pid = self._part_id(q)
-        part = self._find(did, wvm, wvmid, eid, pid)
+        cfg = self._cfg(q)
+        part = self._find(did, wvm, wvmid, eid, pid, cfg)
         have = self._part_material(part)
         key = q.get("m") or (have["key"] if have and have["key"] else None)
         if key is not None and key not in self.cfg.materials:
             raise Refused(400, "Bad request")
-        flat = self._flat(did, wvm, wvmid, eid, pid)       # sheet metal: its flat pattern is what's cut
+        flat = self._flat(did, wvm, wvmid, eid, pid, cfg)  # sheet metal: its flat pattern is what's cut
         state = str(part.get("microversionId") or "")
         bends = None
         try:
             geom, extra = self.onshape.geometry(did, wvm, wvmid, eid, (flat or part)["partId"], state,
-                                                part.get("name") or pid, fresh=q.get("fresh") == "1")
+                                                part.get("name") or pid, fresh=q.get("fresh") == "1", cfg=cfg)
             if flat is not None:
-                bends = self.onshape.bends(did, wvm, wvmid, eid, pid, state)
+                bends = self.onshape.bends(did, wvm, wvmid, eid, pid, state, cfg)
         except OutOfCalls as e:
             return {"unavailable": str(e)}
         except NoAccess:
@@ -500,9 +528,11 @@ class PanelApp:
         from Onshape yet). Costs at most two calls the first time (the CAM'd state is kept for good)."""
         did, wvm, wvmid, eid = self._studio(q)
         pid = self._part_id(q)
-        part = self._find(did, wvm, wvmid, eid, pid)
+        cfg = self._cfg(q)
+        part = self._find(did, wvm, wvmid, eid, pid, cfg)
         name = part.get("name") or pid
-        pc = self.board.for_part(did, eid, pid, name, self.board.part_cards(), card_id=str(q.get("card") or ""))
+        pc = self.board.for_part(did, eid, pid, name, self.board.part_cards(), card_id=str(q.get("card") or ""),
+                                 cfg=cfg)
         ref = self.board.cammed(pc.card.id) if pc is not None else None
         if ref is None:
             return {"changed": None}
@@ -514,9 +544,9 @@ class PanelApp:
             return {"changed": None}
         try:
             then, then_extra = self.onshape.geometry(ref["did"], kind, ident, ref["eid"], ref.get("part_id") or pid,
-                                                     ident, name)
+                                                     ident, name, cfg=ref_configuration(ref))
             now, now_extra = self.onshape.geometry(did, wvm, wvmid, eid, pid, str(part.get("microversionId") or ""),
-                                                   name)
+                                                   name, cfg=cfg)
         except (OutOfCalls, PanelOnshapeError) as e:
             return {"changed": None, "unavailable": str(e)}
         what = differences(then, now, float(then_extra.get("outline_area_in2") or 0),
@@ -532,9 +562,10 @@ class PanelApp:
         self._rate_limit()
         did, wvm, wvmid, eid = self._studio(d)
         pid = self._part_id(d)
-        part = self._find(did, wvm, wvmid, eid, pid)
+        cfg = self._cfg(d)
+        part = self._find(did, wvm, wvmid, eid, pid, cfg)
         pc = self.board.for_part(did, eid, pid, part.get("name") or "", self.board.part_cards(fresh=True),
-                                 card_id=str(d.get("card") or ""))
+                                 card_id=str(d.get("card") or ""), cfg=cfg)
         if pc is None or pc.status != "sheet":
             raise Refused(409, "That card has moved on since this panel looked. Press Refresh.")
         card = self.board.renest(pc)
@@ -560,11 +591,13 @@ class PanelApp:
         self._rate_limit()
         did, wvm, wvmid, eid = self._studio(d)
         pid = self._part_id(d)
+        cfg = self._cfg(d)
         cards = self.board.part_cards(fresh=True)
-        pc = self.board.for_part(did, eid, pid, "", cards, card_id=str(d.get("card") or ""))   # by its Part ID line
+        pc = self.board.for_part(did, eid, pid, "", cards, card_id=str(d.get("card") or ""), cfg=cfg)   # by Part ID
         if pc is None:                                   # a card made in Trello: by the part's name (one call)
-            part = self._find(did, wvm, wvmid, eid, pid)
-            pc = self.board.for_part(did, eid, pid, part.get("name") or "", cards, card_id=str(d.get("card") or ""))
+            part = self._find(did, wvm, wvmid, eid, pid, cfg)
+            pc = self.board.for_part(did, eid, pid, part.get("name") or "", cards, card_id=str(d.get("card") or ""),
+                                     cfg=cfg)
         if pc is None or pc.status != "sheet" or self.board.open_change(pc.card.id) is None:
             raise Refused(409, "That card has moved on since this panel looked. Press Refresh.")
         by = clean_text(d.get("name"), 40)
@@ -611,10 +644,11 @@ class PanelApp:
         wanted = {i for i in str(q.get("ids") or "").split(",")[:20] if ENTITY_RE.match(i)}
         if not wanted:
             return {"part": ""}
-        for part in self._solids(self.onshape.cached_parts(did, wvm, wvmid, eid) or []):
-            flat = self._flat(did, wvm, wvmid, eid, part["partId"])
+        cfg = self._cfg(q)
+        for part in self._solids(self.onshape.cached_parts(did, wvm, wvmid, eid, cfg) or []):
+            flat = self._flat(did, wvm, wvmid, eid, part["partId"], cfg)
             found = self.onshape.cached_geometry(did, wvm, wvmid, eid, (flat or part)["partId"],
-                                                 str(part.get("microversionId") or ""))
+                                                 str(part.get("microversionId") or ""), cfg)
             if found is None:
                 continue
             extra = found[1]
@@ -688,17 +722,18 @@ class PanelApp:
         scribe = str(d.get("scribe") or "")
         if scribe not in ("", "endmill", "chamfer"):
             raise Refused(400, "Bad request")
-        part = self._find(did, wvm, wvmid, eid, pid)
+        cfg = self._cfg(d)
+        part = self._find(did, wvm, wvmid, eid, pid, cfg)
         name = part.get("name") or ""
 
         cards = self.board.part_cards(fresh=True)
         existing = None
         if d.get("card"):
-            existing = self.board.for_part(did, eid, pid, name, cards, card_id=str(d["card"]))
+            existing = self.board.for_part(did, eid, pid, name, cards, card_id=str(d["card"]), cfg=cfg)
             if existing is None or existing.status not in ("back", "drafts"):
                 raise Refused(409, "That card has moved on since this panel looked. Press Refresh.")
         else:
-            going = self.board.for_part(did, eid, pid, name, cards)
+            going = self.board.for_part(did, eid, pid, name, cards, cfg=cfg)
             if going is not None and going.status in ACTIVE:
                 raise Refused(409, "This part already has a card. Change its quantity instead of sending it again.",
                               kind="duplicate", card=self.board.detail(going))
@@ -725,12 +760,14 @@ class PanelApp:
                 log.info("panel: %s's material not set in Onshape (%s); the card says Material: %s", name, why, line)
 
         face = bool(d.get("face")) and self.cfg.face is not None
-        if scribe and (self.cfg.scribe is None or self._flat(did, wvm, wvmid, eid, pid) is None):
+        if scribe and (self.cfg.scribe is None or self._flat(did, wvm, wvmid, eid, pid, cfg) is None):
             scribe = ""                                  # only a bent part has bend lines
-        s = Send(did=did, wvm=wvm, wvmid=wvmid, eid=eid, pid=pid, name=name, host=self._host(d.get("server")),
+        title = self._titled(did, wvm, wvmid, eid, name, cfg)
+        s = Send(did=did, wvm=wvm, wvmid=wvmid, eid=eid, pid=pid, name=title, host=self._host(d.get("server")),
                  qty=qty, nest=nest, tabs=tabs, face=face, rush=bool(d.get("rush")), smoked=smoked,
                  tool_eighth=bool(d.get("tool_eighth")), drafts=bool(d.get("drafts")), material_line=line,
-                 fit_line=fit_line, scribe=scribe, sender=sender, notes=clean_text(d.get("notes"), 300))
+                 fit_line=fit_line, scribe=scribe, sender=sender, notes=clean_text(d.get("notes"), 300),
+                 configuration=cfg)
         card = self.board.write(s, existing)
         where = "inbox" if s.drafts else "ready_for_cam"
         log.info("panel: %s sent %s x%d to %s: %s", sender, name, qty, LIST_NAMES[where], card.url)
@@ -746,8 +783,9 @@ class PanelApp:
         did, wvm, wvmid, eid = self._studio(d)
         pid = self._part_id(d)
         sender = self._sender(d)
-        part = self._find(did, wvm, wvmid, eid, pid)
-        name = part.get("name") or pid
+        configuration = self._cfg(d)
+        part = self._find(did, wvm, wvmid, eid, pid, configuration)
+        name = self._titled(did, wvm, wvmid, eid, part.get("name") or pid, configuration)
         prog = d.get("program") if isinstance(d.get("program"), dict) else {}
         filename = re.sub(r"[^A-Za-z0-9_. -]+", "_", Path(str(prog.get("filename") or "")).name).strip() or "program.tap"
         if not filename.lower().endswith(PROGRAM_SUFFIXES):
@@ -786,11 +824,13 @@ class PanelApp:
             raise Refused(400, (problems or ["AutoCAM couldn't tell where your program cuts."])[0])
 
         cards = self.board.part_cards(fresh=True)
-        going = self.board.for_part(did, eid, pid, name, cards)
+        going = self.board.for_part(did, eid, pid, part.get("name") or pid, cards, cfg=configuration)
         if going is not None and going.status in ACTIVE:
             raise Refused(409, "This part already has a card.", kind="duplicate", card=self.board.detail(going))
         from .checks import inches                       # 3/16 in for the Thickness: line
-        lines = [f"https://{self._host(d.get('server'))}/documents/{did}/{wvm}/{wvmid}/e/{eid}", f"Part ID: {pid}",
+        from ..onshape.urls import configuration_query
+        lines = [f"https://{self._host(d.get('server'))}/documents/{did}/{wvm}/{wvmid}/e/{eid}"
+                 f"{configuration_query(configuration)}", f"Part ID: {pid}",
                  f"Material: {material_line(m)}", f"Thickness: {inches(stock).replace(' in', '')}"]
         if cutter_in:
             lines.append(f"Cutter: {cutter_said}")
@@ -821,9 +861,10 @@ class PanelApp:
         did, wvm, wvmid, eid = self._studio(d)
         pid = self._part_id(d)
         qty = self._qty(d)
-        part = self._find(did, wvm, wvmid, eid, pid)
+        cfg = self._cfg(d)
+        part = self._find(did, wvm, wvmid, eid, pid, cfg)
         pc = self.board.for_part(did, eid, pid, part.get("name") or "", self.board.part_cards(fresh=True),
-                                 card_id=str(d.get("card") or ""))
+                                 card_id=str(d.get("card") or ""), cfg=cfg)
         if pc is None or pc.status not in ("drafts", "queued", "sheet"):
             raise Refused(409, "That card has moved on since this panel looked. Press Refresh.")
         card = self.board.change_qty(pc, qty)
@@ -832,6 +873,16 @@ class PanelApp:
         status = "queued" if pc.status == "sheet" else pc.status
         fresh = read_part_card(card, status)
         return {"card": self.board.detail(fresh) if fresh is not None else None, "renest": pc.status == "sheet"}
+
+
+def _row_key(r: Dict[str, Any]) -> str:
+    """An assembly row's key: the part, and its configuration (each configuration is its own part)."""
+    return f"{r['did']}/{r['eid']}/{r['pid']}" + configuration_tag(r.get("configuration") or "")
+
+
+def ref_configuration(ref: Dict[str, Any]) -> str:
+    """The configuration a job CAM'd (it's in the card link the job kept)."""
+    return configuration_of(str(ref.get("url") or ""))
 
 
 def _natural(name: str):

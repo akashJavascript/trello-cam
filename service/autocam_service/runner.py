@@ -294,7 +294,8 @@ class Runner:
             if isinstance(parsed, CardProblem):           # still the same part: matched by its title alone
                 m = TITLE_QTY_RE.match(card.name.strip())
                 return " ".join((m["name"] if m else card.name).split()).casefold(), None
-            return " ".join(parsed.name.split()).casefold(), (parsed.link.did, parsed.link.eid) if parsed.link else None
+            link = parsed.link                            # another configuration is another part
+            return " ".join(parsed.name.split()).casefold(), (link.did, link.eid, link.configuration) if link else None
 
         ids = {c.id: identity(c) for c in {c.id: c for c in others}.values()}
         names = {"inbox": "Drafts", "ready_for_cam": "Ready for CAM", "needs_fixing": "Needs fixing",

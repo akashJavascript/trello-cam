@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, Set
 from autocam_core.hotfolder import write_atomic
 from autocam_core.names import safe_token
 
+from ..onshape.urls import configuration_of, configuration_tag
 from ..run_state import RunStore
 from ..tracker.base import Tracker
 from .onshape_reads import OutOfCalls, PanelOnshape, PanelOnshapeError
@@ -63,11 +64,13 @@ class PictureWatch:
                     ("v", ref.get("vid", "")) if "/v/" in (ref.get("url") or "") else None
                 if state is None:
                     continue
-                key = f"{ref['did']}/{state[1]}/{ref['eid']}/{ref.get('part_id')}"
+                cfg = configuration_of(str(ref.get("url") or ""))
+                key = f"{ref['did']}/{state[1]}/{ref['eid']}/{ref.get('part_id')}{configuration_tag(cfg)}"
                 if done.get(card) == key:
                     continue
                 try:
-                    png = self.onshape.picture(ref["did"], state[0], state[1], ref["eid"], ref.get("part_id") or "")
+                    png = self.onshape.picture(ref["did"], state[0], state[1], ref["eid"], ref.get("part_id") or "",
+                                               cfg)
                     name = f"{safe_token(part.get('name') or 'part')}.png"
                     att = self.t.attach_file(card, name, png, "image/png")
                     self.t.set_cover(card, att)

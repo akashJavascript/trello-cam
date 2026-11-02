@@ -112,7 +112,7 @@ def card_in(p, list_key):
 
 def test_occurrences_are_counted_into_subassemblies_and_suppressed_ones_left_out():
     counts = occurrence_counts(DEFINITION)
-    assert counts == {(D, E, "JHD"): 2, (D, E, "JHG"): 1}
+    assert counts == {(D, E, "JHD"): 2, (D, E, "JHG"): 1, (D, E, "JHD", ""): 2, (D, E, "JHG", ""): 1}
 
 
 def test_assemblies_named_like_the_whole_robot_are_counted_first():

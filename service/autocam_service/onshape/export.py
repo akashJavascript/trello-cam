@@ -193,7 +193,7 @@ class Exporter:
             return cached
         client = self._need_client("the Part Studio's parts list")
         data = client.get_json(f"{API}/parts/d/{link.did}/{link.wvm}/{link.vid}/e/{link.eid}",
-                               query={"withThumbnails": "false", "includeFlatParts": "true"}, purpose="parts_list")
+                               query=link.query(withThumbnails="false", includeFlatParts="true"), purpose="parts_list")
         if not isinstance(data, list):
             raise ExportError("Onshape didn't return a parts list; is the link to a Part Studio tab?")
         self.cache.put_parts(link, data)
@@ -220,7 +220,8 @@ class Exporter:
             return tuple(json.loads(path.read_text(encoding="utf-8")))
         client = self._need_client(f"the bends of part {pid}")
         data = client.get_json(f"{API}/parts/d/{link.did}/{link.wvm}/{link.vid}/e/{link.eid}/partid/"
-                               f"{quote(pid, safe='')}/sheetmetal/bendtable", purpose="bend_table", part_key=part_key)
+                               f"{quote(pid, safe='')}/sheetmetal/bendtable", query=link.query() or None,
+                               purpose="bend_table", part_key=part_key)
         bends = parse_bend_table(data)
         self.cache._ensure()
         path.write_text(json.dumps(bends), encoding="utf-8")
@@ -261,7 +262,7 @@ class Exporter:
         client = self._need_client(f"the STEP file for '{name}'")
         started = client.post_json(
             f"{API}/partstudios/d/{link.did}/{link.wvm}/{link.vid}/e/{link.eid}/translations",
-            {"formatName": "STEP", "partIds": pid, "storeInDocument": False},
+            {"formatName": "STEP", "partIds": pid, "storeInDocument": False, **link.query()},
             purpose="export_step", part_key=part_key)
         tid = started.get("id")
         if not tid:

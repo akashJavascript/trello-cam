@@ -4,6 +4,17 @@
   "use strict";
 
   var P = new URLSearchParams(location.search);
+  function rawParam(name) {
+    // URLSearchParams turns "+" into a space, but Onshape's configuration strings use "+" themselves ("19+in")
+    var found = "";
+    location.search.replace(/^\?/, "").split("&").forEach(function (kv) {
+      var i = kv.indexOf("="), k = i < 0 ? kv : kv.slice(0, i);
+      try { if (decodeURIComponent(k) === name) found = decodeURIComponent(i < 0 ? "" : kv.slice(i + 1)); } catch (e) { /* not ours */ }
+    });
+    return found;
+  }
+  var configuration = rawParam("configuration").trim();
+  if (/^(default)?$/i.test(configuration) || configuration.indexOf("{$") === 0) configuration = "";
   var wvm = (P.get("workspaceOrVersion") || "w").charAt(0).toLowerCase();
   var ctx = {
     key: P.get("key") || "",
@@ -13,7 +24,8 @@
     e: P.get("elementId") || "",
     u: P.get("userId") || "",
     server: P.get("server") || "",
-    kind: P.get("kind") === "assembly" ? "assembly" : "studio"   // the Assembly extension's link says kind=assembly
+    kind: P.get("kind") === "assembly" ? "assembly" : "studio",  // the Assembly extension's link says kind=assembly
+    c: configuration                                             // a configured Part Studio's ({$configuration})
   };
   var bodyEl = document.getElementById("body");
   var actionEl = document.getElementById("action");
@@ -82,6 +94,7 @@
   }
   function where(extra) {
     var q = { d: ctx.d, wvm: ctx.wvm, w: ctx.w, e: ctx.e };
+    if (ctx.c) q.c = ctx.c;
     Object.keys(extra || {}).forEach(function (k) { q[k] = extra[k]; });
     return q;
   }
@@ -413,7 +426,9 @@
       h("button", { type: "button", "aria-label": "One more", onclick: function () { onChange(Math.min(max, value + 1)); } }, icon("plus")));
   }
   function partHead(part, chips) {
-    return h("div", { class: "part-head" }, h("div", { class: "part-name" }, part.name), h("div", { class: "chips" }, chips));
+    var conf = S.studio && S.studio.configuration;               // a configured Part Studio: which one this is
+    return h("div", { class: "part-head" }, h("div", { class: "part-name" }, part.name),
+      h("div", { class: "chips" }, conf ? [chip(conf)].concat(chips) : chips));
   }
   function materialChip(m) {
     if (!m) return chip("No material", "bad");
@@ -473,6 +488,7 @@
     var st = S.studio;
     if (st.boardError) add(bodyEl, notice("info", null, st.boardError));
     add(bodyEl, queueLine(st.queue));
+    if (st.configuration) add(bodyEl, h("p", { class: "muted" }, "Configuration: " + st.configuration));
     add(bodyEl, h("p", { class: "muted" }, "Select a part to send it."));
     if (S.hint) add(bodyEl, notice("info", null, S.hint));
     if (!st.parts.length) { add(bodyEl, h("p", { class: "muted" }, "This Part Studio has no parts yet.")); return; }

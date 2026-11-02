@@ -32,7 +32,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from autocam_core.geometry import PartGeometry
 from autocam_core.hotfolder import write_atomic
@@ -40,6 +40,7 @@ from autocam_core.names import safe_token
 
 from ..onshape.client import API, BudgetExceeded, OnshapeClient, OnshapeError
 from ..onshape.ledger import Ledger
+from ..onshape.urls import configuration_tag, normal_configuration
 from .geometry import read_body, solid_body
 
 log = logging.getLogger("autocam.panel")
@@ -76,8 +77,40 @@ class _Assemblies:
     note: str = ""               # why some or all weren't counted
 
 
-def occurrence_counts(definition: Dict[str, Any]) -> Dict[Tuple[str, str, str], int]:
-    """(documentId, elementId, partId) -> how many occurrences of that part the assembly has, at any depth.
+def _q(cfg: str, **more: Any) -> Dict[str, Any]:
+    """An API query: `more`, plus the configuration when there is one."""
+    return {**more, **({"configuration": cfg} if cfg else {})}
+
+
+def configuration_label(cfg: str, definition: Dict[str, Any]) -> str:
+    """"Length: 19 in; Size: Wide" from a configuration string and the Part Studio's configuration definition
+    (each parameter's id and name, each list option's id and name; the old panel's labels). Anything the
+    definition doesn't name is shown as it is, with Onshape's "+" as a space."""
+    if not cfg:
+        return ""
+    params = []
+    for item in (definition or {}).get("configurationParameters") or []:
+        if isinstance(item, dict):
+            params.append(item.get("message") if isinstance(item.get("message"), dict) else item)
+    shown = []
+    for entry in cfg.split(";"):
+        key, eq, value = entry.partition("=")
+        if not eq:
+            shown.append(unquote(entry).replace("+", " "))
+            continue
+        key, value = unquote(key), unquote(value)
+        param = next((x for x in params if x.get("parameterId") == key), {})
+        options = [o.get("message") if isinstance(o.get("message"), dict) else o
+                   for o in param.get("options") or [] if isinstance(o, dict)]
+        option = next((o for o in options if o.get("option") == value), {})
+        shown.append(f"{param.get('parameterName') or key}: {option.get('optionName') or value.replace('+', ' ')}")
+    text = "; ".join(shown)
+    return text if len(text) <= 80 else text[:77] + "..."
+
+
+def occurrence_counts(definition: Dict[str, Any]) -> Dict[Tuple[str, ...], int]:
+    """(documentId, elementId, partId) -> how many occurrences of that part the assembly has, at any depth, and
+    (documentId, elementId, partId, configuration) -> how many in that configuration ("" the default).
 
     An occurrence's path is instance ids from the top; its last id is the instance itself, defined in the root
     assembly or in one of the subassemblies."""
@@ -94,7 +127,9 @@ def occurrence_counts(definition: Dict[str, Any]) -> Dict[Tuple[str, str, str], 
         inst = instances.get(path[-1]) if path else None
         if not inst or inst.get("type") != "Part" or inst.get("suppressed"):
             continue
-        counts[(inst.get("documentId"), inst.get("elementId"), inst.get("partId"))] += 1
+        ids = (inst.get("documentId"), inst.get("elementId"), inst.get("partId"))
+        counts[ids] += 1
+        counts[ids + (normal_configuration(inst.get("configuration")),)] += 1
     return dict(counts)
 
 
@@ -119,7 +154,8 @@ class PanelOnshape:
         self.max_assemblies = max_assemblies
         self.clock = clock
         self._lock = threading.RLock()        # one Onshape request at a time: two students never pay twice
-        self._parts: Dict[Tuple[str, str, str, str], _Entry] = {}
+        self._parts: Dict[Tuple[str, ...], _Entry] = {}
+        self._configs: Dict[Tuple[str, str, str, str], _Entry] = {}
         self._assemblies: Dict[Tuple[str, str, str], _Entry] = {}
         self._shapes: Dict[Tuple[str, ...], Tuple[PartGeometry, Dict[str, Any]]] = {}
         self._elements: Dict[Tuple[str, str, str], _Entry] = {}
@@ -148,8 +184,10 @@ class PanelOnshape:
         return self.client_for(left)
 
     # ---- parts
-    def parts(self, did: str, wvm: str, wvmid: str, eid: str, fresh: bool = False) -> List[Dict[str, Any]]:
-        key = (did, wvm, wvmid, eid)
+    def parts(self, did: str, wvm: str, wvmid: str, eid: str, fresh: bool = False,
+              cfg: str = "") -> List[Dict[str, Any]]:
+        """cfg: the Part Studio's configuration ("" the default), as everywhere below."""
+        key = (did, wvm, wvmid, eid, cfg)
         with self._lock:
             hit = self._parts.get(key)
             age = None if hit is None else self.clock() - hit.at
@@ -158,7 +196,7 @@ class PanelOnshape:
             client = self._client()
             try:
                 data = client.get_json(f"{API}/parts/d/{did}/{wvm}/{wvmid}/e/{eid}",
-                                       query={"withThumbnails": "false", "includeFlatParts": "true"},
+                                       query=_q(cfg, withThumbnails="false", includeFlatParts="true"),
                                        purpose="panel_parts")
             except BudgetExceeded as e:
                 raise OutOfCalls(str(e)) from e
@@ -172,24 +210,26 @@ class PanelOnshape:
             self._parts[key] = _Entry(self.clock(), data)
             return data
 
-    def cached_parts(self, did: str, wvm: str, wvmid: str, eid: str) -> Optional[List[Dict[str, Any]]]:
+    def cached_parts(self, did: str, wvm: str, wvmid: str, eid: str,
+                     cfg: str = "") -> Optional[List[Dict[str, Any]]]:
         """The last parts list read, however old (None: never read). Never calls Onshape."""
-        hit = self._parts.get((did, wvm, wvmid, eid))
+        hit = self._parts.get((did, wvm, wvmid, eid, cfg))
         return None if hit is None else hit.value
 
     # ---- a part's shape, for the design checks
-    def _shape_path(self, did: str, wvm: str, wvmid: str, eid: str, pid: str, microversion: str) -> Path:
+    def _shape_path(self, did: str, wvm: str, wvmid: str, eid: str, pid: str, microversion: str,
+                    cfg: str = "") -> Path:
         return self.cache_root / "onshape" / (f"geometry_{did}_{wvm}{wvmid}_{eid}_{safe_token(pid)}_"
-                                              f"{safe_token(microversion)}.json")
+                                              f"{safe_token(microversion)}{configuration_tag(cfg)}.json")
 
     def cached_geometry(self, did: str, wvm: str, wvmid: str, eid: str, pid: str,
-                        microversion: str) -> Optional[Tuple[PartGeometry, Dict[str, Any]]]:
+                        microversion: str, cfg: str = "") -> Optional[Tuple[PartGeometry, Dict[str, Any]]]:
         """Only what's already here (no call): memory, then disk."""
-        key = (did, wvm, wvmid, eid, pid, microversion)
+        key = (did, wvm, wvmid, eid, pid, microversion, cfg)
         with self._lock:
             if key in self._shapes:
                 return self._shapes[key]
-            path = self._shape_path(did, wvm, wvmid, eid, pid, microversion)
+            path = self._shape_path(did, wvm, wvmid, eid, pid, microversion, cfg)
             if not microversion or not path.is_file():
                 return None
             try:
@@ -201,21 +241,21 @@ class PanelOnshape:
             return found
 
     def geometry(self, did: str, wvm: str, wvmid: str, eid: str, pid: str, microversion: str, name: str,
-                 fresh: bool = False) -> Tuple[PartGeometry, Dict[str, Any]]:
+                 fresh: bool = False, cfg: str = "") -> Tuple[PartGeometry, Dict[str, Any]]:
         """The part as AutoCAM's model (and geometry.read_body's extras), from memory, disk (the same Part Studio
         state), or one bodydetails call. A version or microversion ("v"/"m") never changes: pass its id as
         `microversion`."""
-        key = (did, wvm, wvmid, eid, pid, microversion)
-        path = self._shape_path(did, wvm, wvmid, eid, pid, microversion)
+        key = (did, wvm, wvmid, eid, pid, microversion, cfg)
+        path = self._shape_path(did, wvm, wvmid, eid, pid, microversion, cfg)
         with self._lock:
             if not fresh:
-                found = self.cached_geometry(did, wvm, wvmid, eid, pid, microversion)
+                found = self.cached_geometry(did, wvm, wvmid, eid, pid, microversion, cfg)
                 if found is not None:
                     return found
             client = self._client()
             try:
                 data = client.get_json(f"{API}/parts/d/{did}/{wvm}/{wvmid}/e/{eid}/partid/{quote(pid, safe='')}"
-                                       "/bodydetails", purpose="panel_bodydetails")
+                                       "/bodydetails", query=_q(cfg) or None, purpose="panel_bodydetails")
             except BudgetExceeded as e:
                 raise OutOfCalls(str(e)) from e
             except OnshapeError as e:
@@ -287,7 +327,7 @@ class PanelOnshape:
 
     def bom(self, did: str, wvm: str, wvmid: str, aid: str, fresh: bool = False) -> List[Dict[str, Any]]:
         """An assembly's parts, flattened (subassemblies counted in): [{"did", "wvm", "wvmid", "eid", "pid", "name",
-        "qty", "material", "configured", "standard"}]. One call (GET /assemblies/.../bom), kept parts_cache_s.
+        "qty", "material", "configuration" ("" the default), "standard"}]. One call (GET /assemblies/.../bom), kept parts_cache_s.
 
         Read off a real response (2026-11-01): rows[].itemSource gives where the part comes from (its document,
         "w" or "v" with its id, Part Studio and part); headers name which column is the quantity, name and material."""
@@ -313,11 +353,12 @@ class PanelOnshape:
             return rows
 
     # ---- a sheet metal part's bends
-    def bends(self, did: str, wvm: str, wvmid: str, eid: str, pid: str, microversion: str) -> List[Dict[str, Any]]:
+    def bends(self, did: str, wvm: str, wvmid: str, eid: str, pid: str, microversion: str,
+              cfg: str = "") -> List[Dict[str, Any]]:
         """Its bend table (one call, kept on disk with the Part Studio's state)."""
         from ..onshape.export import parse_bend_table
         path = self.cache_root / "onshape" / (f"panel_bends_{did}_{wvm}{wvmid}_{eid}_{safe_token(pid)}_"
-                                              f"{safe_token(microversion)}.json")
+                                              f"{safe_token(microversion)}{configuration_tag(cfg)}.json")
         with self._lock:
             if microversion and path.is_file():
                 try:
@@ -327,7 +368,7 @@ class PanelOnshape:
             client = self._client()
             try:
                 data = client.get_json(f"{API}/parts/d/{did}/{wvm}/{wvmid}/e/{eid}/partid/{quote(pid, safe='')}"
-                                       "/sheetmetal/bendtable", purpose="panel_bends")
+                                       "/sheetmetal/bendtable", query=_q(cfg) or None, purpose="panel_bends")
             except BudgetExceeded as e:
                 raise OutOfCalls(str(e)) from e
             except OnshapeError as e:
@@ -340,12 +381,14 @@ class PanelOnshape:
 
     # ---- quantities from the document's assemblies
     def assembly_counts(self, did: str, wvm: str, wvmid: str, eid: str, pid: str,
-                        fresh: bool = False) -> Dict[str, Any]:
-        """{"assemblies": [{"name", "count"}] (count > 0, most first), "counted": n, "total": n, "note": str}."""
+                        fresh: bool = False, cfg: str = "") -> Dict[str, Any]:
+        """{"assemblies": [{"name", "count"}] (count > 0, most first), "counted": n, "total": n, "note": str}.
+        A configured part counts only its instances in that configuration (the instance's configuration string,
+        not yet seen on a real assembly: no match counts 0 and the student types the quantity)."""
         doc = self._document_assemblies(did, wvm, wvmid, fresh)
         found = []
         for name, counts in doc.counted:
-            n = counts.get((did, eid, pid), 0)
+            n = counts.get((did, eid, pid, cfg), 0) if cfg else counts.get((did, eid, pid, ""), counts.get((did, eid, pid), 0))
             if n:
                 found.append({"name": name, "count": n})
         found.sort(key=lambda a: -a["count"])
@@ -465,17 +508,37 @@ class PanelOnshape:
         self._call("remove the webhook", lambda c: c.delete(f"{API}/webhooks/{quote(webhook_id, safe='')}",
                                                             purpose="panel_webhook_delete"))
 
-    def picture(self, did: str, wvm: str, wvmid: str, eid: str, pid: str) -> bytes:
+    def configuration_label(self, did: str, wvm: str, wvmid: str, eid: str, cfg: str, cached_only: bool = False) -> str:
+        """"Length: 19 in; Plate: Wide" for a configuration, from the Part Studio's configuration definition
+        (GET /elements/.../configuration, one call kept assembly_cache_s; the old panel's way). Without it (out of
+        calls, Onshape not answering), the configuration string made readable as it is."""
+        if not cfg:
+            return ""
+        key = (did, wvm, wvmid, eid)
+        with self._lock:
+            hit = self._configs.get(key)
+            if not cached_only and (hit is None or self.clock() - hit.at >= self.assembly_cache_s):
+                try:
+                    data = self._call("read the configurations", lambda c: c.get_json(
+                        f"{API}/elements/d/{did}/{wvm}/{wvmid}/e/{eid}/configuration", purpose="panel_configuration"))
+                    hit = _Entry(self.clock(), data if isinstance(data, dict) else {})
+                    self._configs[key] = hit
+                except (OutOfCalls, NoAccess, PanelOnshapeError) as e:
+                    log.info("panel: the configuration names of %s: %s", eid, e)
+        return configuration_label(cfg, hit.value if hit is not None else {})
+
+    def picture(self, did: str, wvm: str, wvmid: str, eid: str, pid: str, cfg: str = "") -> bytes:
         """A shaded picture of the part (PNG), kept for good per state (a version or microversion never changes)."""
-        path = self.cache_root / "onshape" / "pictures" / f"{did}_{wvm}{wvmid}_{eid}_{pid.replace('/', '_')}.png"
+        path = self.cache_root / "onshape" / "pictures" / (f"{did}_{wvm}{wvmid}_{eid}_{pid.replace('/', '_')}"
+                                                           f"{configuration_tag(cfg)}.png")
         try:
             return path.read_bytes()
         except OSError:
             pass
         data = self._call("draw the part", lambda c: c.get_json(
             f"{API}/parts/d/{did}/{wvm}/{wvmid}/e/{eid}/partid/{quote(pid, safe='')}/shadedviews",
-            query={"viewMatrix": "isometric", "outputHeight": 300, "outputWidth": 300, "pixelSize": 0,
-                   "edges": "show", "useAntiAliasing": "true"}, purpose="panel_picture"))
+            query=_q(cfg, viewMatrix="isometric", outputHeight=300, outputWidth=300, pixelSize=0, edges="show",
+                     useAntiAliasing="true"), purpose="panel_picture"))
         images = (data or {}).get("images") if isinstance(data, dict) else None
         if not images:
             raise PanelOnshapeError("Onshape sent no picture.")
@@ -503,6 +566,6 @@ def bom_rows(data: Dict[str, Any]) -> List[Dict[str, Any]]:
         out.append({"did": src.get("documentId") or "", "wvm": src.get("wvmType") or "w", "wvmid": src.get("wvmId") or "",
                     "eid": src["elementId"], "pid": src["partId"], "name": str(values.get(headers.get("name")) or ""),
                     "qty": qty, "material": material or "",
-                    "configured": str(src.get("configuration") or "default").lower() not in ("", "default"),
+                    "configuration": normal_configuration(src.get("configuration")),
                     "standard": bool(src.get("isStandardContent"))})
     return out
