@@ -59,9 +59,22 @@ def _handler(app: PanelApp):
             path = urlsplit(self.path).path if hasattr(self, "path") else "?"
             if path.startswith(HOOK_PREFIX):
                 path = HOOK_PREFIX + "<secret>"                # the webhook's address is its password
-            log.debug("panel http: %s %s", path, args[1] if len(args) > 1 else "")
+            status = str(args[1]) if len(args) > 1 else ""
+            log.debug("panel http: %s %s%s", path, status, who(getattr(self, "headers", None)) if status[:1] == "4" else "")
 
     return Handler
+
+
+def who(headers) -> str:
+    """Who sent a refused request, for the log (2026-11-02: something asked for /api/status, which the panel doesn't
+    have, twice a minute around the clock): through the tunnel or from this computer, its user agent, and the site
+    it came from (the host only: a page's address has the panel's key in it). Never the key or an IP address."""
+    if headers is None:
+        return ""
+    via = "through the tunnel" if headers.get("Cf-Ray") else "from this computer"
+    agent = " ".join(str(headers.get("User-Agent") or "no user agent").split())[:100]
+    site = urlsplit(headers.get("Origin") or headers.get("Referer") or "").netloc
+    return f" ({via}; {agent}{'; from ' + site if site else ''})"
 
 
 def start_server(app: PanelApp, port: int, sleep: Callable[[float], None] = time.sleep) -> threading.Thread:
