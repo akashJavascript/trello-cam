@@ -24,6 +24,7 @@ Full context and decisions: `docs/BRIEF.md`. Read it before planning or changing
 ## Layout (see `docs/PLAN.md` for the module list)
 
 - `core/autocam_core/` pure logic, **standard library only**: imported by the Fusion add-in and the service.
+  (`scribe.py`: bend centerlines from a flat's split top, and the scribing checks.)
   Fusion 2705 bundles Python 3.14 (confirmed by api_probe); CI runs the core tests on 3.14.
 - `service/autocam_service/` plain-Python Windows service: Trello + Onshape + hot folder.
 - `service/autocam_service/panel/` the Onshape panel ("Send to AutoCAM"): served by the service, public through

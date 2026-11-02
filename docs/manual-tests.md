@@ -451,6 +451,19 @@ mentions it. A plain plate as a Rush card with its STEP attached and the **Face*
 | 2b | `Fit: 2 hole` on a hole over 1.5 in (cut as a cutout): the program keeps its slug tabbed; the laps have no tabs, each 0.001 bigger, all to Z0; the card says to break the slug out first | r038 (a made-up 2 in hole) |
 | 3 | Cut one: run the program, try the fit (a bearing, a shaft or the mating part), run laps until it fits, tick it. The next sheet with that fit starts two steps above it | |
 
+### 18. Scribed bend lines (2026-11-01)
+
+A bent part (Part 13, doc 31359564..., Part Studio c5ca4dcf...) as a Rush card with `Scribe: endmill`, then again
+with `Scribe: chamfer mill`.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Endmill: the sheet's program has a `[scribe bend lines]` op before the outlines, one pass along each bend's centerline 0.012 in deep; CUT ORDER says "bent - scribed" | r044: one G1 5 in across at Z0.113 (1/8 stock), within 0.0009 in of the line, guard passed |
+| 2 | Chamfer mill: the sheet card has `<sheet>_SCRIBE.tap` too, RUN says T16 first then the sheet's cutter | r047: attached, RUN steps 1 and 2, plunge 13.3 in/min then 50 in/min (T16's preset), within 0.0001 in, 7 s |
+| 3 | A part whose scribing can't be made is still cut, with "mark them by hand" under CHECK | r040, r045, r046 (while it was being fixed): yes, the sheet posted each time |
+| 4 | Look at both in the Fusion file (simulate): the endmill line centered on the bend, the chamfer line a fine V; nothing else touched | |
+| 5 | At the machine: run one of each on scrap. The line is down the middle of the bend zone; bend on it in the brake and check the flange length | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

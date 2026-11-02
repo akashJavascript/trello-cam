@@ -900,3 +900,29 @@ Onshape's bend table, on the sheet card. No 3/32 in stock. Scribing the bend lin
 default. A top split into faces in one plane (every flat pattern's is, along its bends) is cut as one outline for every
 part, not only bent ones: the old refusal existed only because the outline came from one face.
 
+## 2026-11-01: scribed bend lines (core 0.18.0; the user: "Do both and make them both options", 10 to 15 thou)
+
+- **Two ways, per part, off unless asked:** `Scribe: endmill` (the sheet's own cutter, a `[scribe]` op in the sheet's
+  program before the outlines: no tool change, a line as wide as the cutter) or `Scribe: chamfer mill` (T16, the
+  6 mm 45 degree chamfer, in a `<sheet>_SCRIBE` program after FACE and before the sheet's: a fine line). Both
+  `[scribe]` 0.012 in below the part's top (a faced part's top is the face depth lower). Only bent parts.
+- **Where:** Onshape splits a flat's top into the flats and a strip per bend (Part 13: 0.1669 in, R 0.05 on 1/8,
+  k 0.45). A strip is a top face with exactly two straight, parallel edges shared with other top faces, as far apart
+  as one of the part's bends can be (angle x (R + k T), k 0 to 1); its centerline is scribed. Not exactly one strip
+  per bend: that part isn't scribed (no guessing).
+- **How in Fusion:** a copy of the template's `[outer]` 2D Contour along root sketch lines, leads, ramp, tabs and
+  extra passes off, from the stock top down by the depth. Compensation 'off' is listed but refused ("Invalid
+  enumeration value"), so the radial stock is minus the radius it offsets by plus 0.001 in: the endmill's radius;
+  the chamfer mill's tip radius (0 for T16: Fusion offsets a cone by its tip; its full radius was "Failed to write
+  Job File", r046). The chamfer mill is set on the op from its library entry (`Tool.createFromJson`); Fusion gives
+  that a GUID of its own, so it's checked by type, units, size, angle, tip, flutes and number instead.
+- **Never deleted once changed:** deleting an op whose settings were changed crashed Fusion's next toolpath
+  generation three times (r041-r043, in `makeStockContours`). A scribe op that fails is suppressed instead; the
+  fake adapter refuses to delete a changed op. The worker's `fusion_calls.log` is now written as it goes.
+- **Checks, both sides:** the sheet's program may scribe only for parts that asked, before any outline, at exactly
+  the depth; a SCRIBE program the same with the guard's floor at the depth and no outlines or stops. The worker also
+  checks every scribing point is within 0.002 in of a bend line, and keeps scribing out of the "tool center in a
+  part" check.
+- **Never holds a sheet up:** a part whose lines can't be found, or whose scribe op or program fails, is cut anyway
+  with a CHECK line to mark its bends by hand.
+

@@ -82,8 +82,15 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   bend table (`.../sheetmetal/bendtable`) goes in the job, so the sheet card has a "BEND AFTER CUTTING" section and the
   cut order marks it bent. A flat's top and bottom are split along its bends (seen on a real one): any top split into
   faces in one plane is now cut as one outline (fx_geometry.outline_coedges, a chain cut outside, like a cutout's loop
-  the other way round), with tabs and labels on that outline; before, it went to manual CAM. Scribing bend lines:
-  an option, off by default (not built yet). No 3/32 stock (the user).
+  the other way round), with tabs and labels on that outline; before, it went to manual CAM. No 3/32 stock (the user).
+- **Scribed bend lines** (core 0.18.0, 2026-11-01): a bent part's card can say `Scribe: endmill` or `Scribe: chamfer
+  mill` (the panel's "Scribe the bend lines"; off unless asked). Each bend's centerline is found on the flat's split
+  top (`core/autocam_core/scribe.py`) and scribed 0.012 in deep (`[scribe]`; the user's 10 to 15 thou): with the
+  sheet's endmill as a `[scribe]` op in the sheet's program, before the outlines, or with the 45 degree chamfer mill
+  (T16) in a `<sheet>_SCRIBE` program run before the sheet's. Seen in Fusion on Part 13: r044 (endmill, within
+  0.0009 in of the line) and r047 (chamfer, within 0.0001 in, guard passed, attached and in RUN). Never holds a sheet
+  up: a part whose lines can't be found or scribed gets "mark them by hand". Not cut yet. Which way to bend isn't
+  marked on the part (an arrow is the user's next ask).
 - **The Onshape panel, Phase 1** (2026-11-01, `docs/panel.md`): "Send to AutoCAM" in a Part Studio's right panel
   makes part cards in AutoCAM's format (Ready for CAM, or Drafts), with the quantity counted from the document's
   assemblies, the options in one list, the material set in Onshape when it has none, and each part's status

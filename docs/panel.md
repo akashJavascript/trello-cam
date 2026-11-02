@@ -63,6 +63,8 @@ preview), cut, or sent back with the reason.
   does the same).
 - **Bent (sheet metal) parts** (2026-11-01): a bent part is listed with "Bent"; its check runs on its flat pattern
   (what's cut) and says how it bends ("Cut flat, then 1 bend: Bend A 90 up (R 0.09 in)", plus a word on 6061).
+  Its options add **Scribe the bend lines** (No / With the endmill / With the chamfer mill), written on the card as
+  `Scribe: endmill` or `Scribe: chamfer mill` (core 0.18.0; `docs/decisions.md`).
 - **Fits by clicking:** clicking a round hole that isn't drilled, or a wall of the outline, in the CAD sets the Fit
   (Onshape face ids from the shape read for the check). Waits on what Onshape's SELECTION messages really hold.
 - **A whole assembly:** the second extension (context Assembly, `&kind=assembly` on its link) lists the assembly's
