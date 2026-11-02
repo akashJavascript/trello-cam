@@ -280,7 +280,7 @@ def test_a_material_picked_in_the_panel_is_set_in_onshape(tmp_path):
     [(method, url, _, body)] = [s for s in p.transport.sent if s[0] == "POST"]
     assert url.endswith(f"/metadata/d/{D}/w/{W}/e/{E}/p/JHG")
     assert json.loads(body) == {"jsonType": "metadata-part", "partId": "JHG",
-                                "properties": [{"propertyId": "57f3fb8efa3416c06701d60f", "value": AL5052}]}
+                                "properties": [{"propertyId": "57f3fb8efa3416c06701d615", "value": AL5052}]}
     [card] = card_in(p, "ready_for_cam")
     assert "Material:" not in card.desc
 

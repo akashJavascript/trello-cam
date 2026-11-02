@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from autocam_core import errors as E
 from autocam_core.geometry import PartGeometry
-from autocam_core.holes import CONTOUR_ROOM_IN, HoleRules, ToolProfile
+from autocam_core.holes import CONTOUR_ROOM_IN, DRILL, HoleRules, ToolProfile, classify
 from autocam_core.plate import PlateAnalysis, analyze
 from autocam_core.tooling import part_tool, plan_features
 
@@ -144,9 +144,42 @@ def _not_a_plate(thickness: float, stock: Tuple[float, ...]) -> Optional[List[Di
     return None
 
 
-def check(geom: PartGeometry, cfg: Config, material_key: Optional[str]) -> Dict[str, Any]:
+def use(cfg: Config, material_key: str, thickness: Optional[float], extra: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """How much of a sheet one part takes and what that costs: its outline's area, plus its share of the gaps
+    ([costs] nest_efficiency), at the sheet's price ([costs] sheet_prices). None without a price or an outline."""
+    area = float(extra.get("outline_area_in2") or 0.0)
+    prices = cfg.costs.sheet_prices.get(material_key) or {}
+    price = next((v for t, v in prices.items() if thickness is not None and abs(t - thickness) < 1e-6), None)
+    if area <= 0:
+        return None
+    share = area / cfg.costs.nest_efficiency / (cfg.sheet.length_in * cfg.sheet.width_in)
+    return {"area_in2": round(area, 1), "sheet_share": share, "each": round(price * share, 2) if price else None,
+            "box_in": extra.get("box_in")}
+
+
+def picks(a: PlateAnalysis, cfg: Config, tool: Optional[Tool], extra: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Onshape face id -> the fit picking it means: a round hole that isn't drilled (by its size), or the outline.
+    The panel turns a click on that face in the CAD into its Fit (fits.py)."""
+    ids = extra.get("face_ids") or []
+    out: Dict[str, Dict[str, Any]] = {fid: {"kind": "outline"} for fid in extra.get("outline_faces") or []}
+    if tool is None:
+        return out
+    rules, profile = hole_rules(cfg), _profile(cfg, tool)
+    for hole in a.through_holes:
+        if classify(hole.diameter_in, profile, rules) == DRILL:
+            continue
+        for face_id in hole.face_ids:
+            if 0 < face_id <= len(ids):
+                out[ids[face_id - 1]] = {"kind": "hole", "size": round(hole.diameter_in, 4)}
+    return out
+
+
+def check(geom: PartGeometry, cfg: Config, material_key: Optional[str],
+          extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """{"ok", "problems": [{"title", "fix"}], "notes": [...], "thickness", "cutter", "cutterWhy", "features",
-    "needMaterial"}. Without a material the shape is checked against every stock size and the cutter waits."""
+    "needMaterial", "use", "pick"}. Without a material the shape is checked against every stock size and the cutter
+    waits."""
+    extra = extra or {}
     problems: List[Dict[str, str]] = []
     notes: List[str] = []
     if material_key is None:
@@ -156,7 +189,7 @@ def check(geom: PartGeometry, cfg: Config, material_key: Optional[str]) -> Dict[
             [explain(i, a.measured_thickness_in, stock, "Stock", None) for i in a.errors]
         return {"ok": not problems, "problems": problems, "notes": [note(i) for i in a.warnings],
                 "thickness": inches(a.stock_thickness_in or a.measured_thickness_in), "cutter": "", "cutterWhy": "",
-                "features": "", "needMaterial": True}
+                "features": "", "needMaterial": True, "use": None, "pick": picks(a, cfg, None, extra)}
 
     m = cfg.materials[material_key]
     tooling = cfg.tooling[m.family]
@@ -172,7 +205,8 @@ def check(geom: PartGeometry, cfg: Config, material_key: Optional[str]) -> Dict[
     if not a.errors and len(a.top_face_ids) > 1:
         problems.append(explain(E.Issue(E.NEEDS_MANUAL_CAM, "split"), 0, stock, name, small))
     out: Dict[str, Any] = {"thickness": inches(a.stock_thickness_in or a.measured_thickness_in), "cutter": "",
-                           "cutterWhy": "", "features": "", "needMaterial": False}
+                           "cutterWhy": "", "features": "", "needMaterial": False,
+                           "use": use(cfg, material_key, a.stock_thickness_in, extra), "pick": picks(a, cfg, None, extra)}
     if not problems:
         rules = hole_rules(cfg)
         need = part_tool(a, family=m.family, default=_profile(cfg, default),
@@ -185,6 +219,7 @@ def check(geom: PartGeometry, cfg: Config, material_key: Optional[str]) -> Dict[
             out["cutter"] = cutter_name(tool)
             if need.tool != default.key and need.reasons:
                 out["cutterWhy"] = _why_small(need.reasons[0])
+            out["pick"] = picks(a, cfg, tool, extra)
             plan = plan_features(a, _profile(cfg, tool), rules)
             problems += [explain(i, a.measured_thickness_in, stock, name, small) for i in plan.errors]
             notes += [note(i) for i in plan.warnings]

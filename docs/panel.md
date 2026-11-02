@@ -32,6 +32,25 @@ preview), cut, or sent back with the reason.
   "1/8 in endmill (a 0.130 in hole needs it)" and never asks for a change (the user's choice). Without a material,
   the shape is checked against every stock size until one is picked. Checked against Fusion on P-2011's real
   version: the same thickness, cutter and 2 drilled, 20 bored, 2 bearing, 25 cut out.
+- **Cost and sheet use** (2026-11-01): under the check, "Cost: about $21.24 for 4 · 18% of a sheet": the part's
+  outline area, plus its share of the gaps (`[costs] nest_efficiency`, 0.8), at the sheet's price
+  (`[costs.sheet_prices]`: GUESSES until someone puts in what the team pays).
+- **Marks in the parts list:** a part already checked in this state of the Part Studio shows a tick or a warning
+  sign beside its name (no Onshape call).
+- **The machine queue** at the top: AutoCAM's sheets in Sheet review and Ready to cut, their cutting time (from the
+  sheet cards' titles) and the cards waiting to be nested.
+- **Changed since it was CAM'd (the manufacturing version):** every job records exactly what it CAM'd for each card
+  (the document, the version or the pinned workspace state, the Part Studio and the part; `state/jobs`). For a part
+  on a sheet or cut, the panel compares its shape then (read once and kept for good) with its shape now: "Changed in
+  Onshape since it was CAM'd (r034): 2 holes added", or "Onshape still matches what was CAM'd in r034". A sheet not
+  cut yet gets one comment saying so, and the panel offers "Nest the new version" (the card goes back to Ready for
+  CAM). A moved part isn't a change; a moved hole is.
+- **Fits by clicking:** clicking a round hole that isn't drilled, or a wall of the outline, in the CAD sets the Fit
+  (Onshape face ids from the shape read for the check). Waits on what Onshape's SELECTION messages really hold.
+- **A whole assembly:** the second extension (context Assembly, `&kind=assembly` on its link) lists the assembly's
+  parts from its bill of materials (one call, subassemblies counted in): the ones AutoCAM cuts ticked, with their
+  counts, the rest saying why not (no material, not a material AutoCAM cuts, configured, already has a card).
+  Send makes a card per ticked part, linking its own Part Studio (a version for parts from other documents).
 - **A part that already has a card:** its status. A second card is refused; the quantity can be changed instead
   (a card already on a sheet goes back to Ready for CAM and is nested again). A card in Drafts can be edited and
   sent; a sent-back card shows why and can be sent again (the same card, made over).
@@ -63,6 +82,8 @@ are shares of the enterprise's 10,000 a year; config-check refuses more than tha
 | A Part Studio's parts (opening the panel) | 1 | 10 min (`parts_cache_s`), or until Refresh |
 | Quantities: the document's assemblies | 1 + up to 4 (`max_assemblies`) | 30 min, for every part of the document |
 | A part's shape, for the design checks | 1 | on disk, until the Part Studio changes |
+| Changed since it was CAM'd | 1 for the CAM'd state (kept for good), plus the check's | |
+| A whole assembly (its bill of materials) | 1 (+1 for the document's tabs) | 10 min |
 | Setting a material | 1 | |
 | Status, sending, changing a quantity | 0 (Trello only) | |
 
@@ -109,7 +130,9 @@ Onshape's docs: an extension belongs to an OAuth application, even one that neve
    Onshape adds `server`, `userId` and `companyId` to it by itself.
 4. Make it available to the team: an enterprise admin can assign the app to users or teams in Developer Settings
    (Onshape's docs), or create a private store entry for it and subscribe.
-5. Open a Part Studio, open the right panel, and pick AutoCAM.
+5. For whole assemblies, add a second extension to the same application: the same fields, but context
+   **Assembly** and the same Action URL with `&kind=assembly` on the end.
+6. Open a Part Studio (or an assembly), open the right panel, and pick AutoCAM.
 
 Changing the key later: change `.env` (the service restarts by itself) and the Action URL together.
 

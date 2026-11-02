@@ -98,7 +98,7 @@ def test_the_panel_checks_a_part_with_one_call_per_state_of_the_part_studio(tmp_
     assert [u for _, u, _, _ in transport.sent if "bodydetails" in u] == [
         f"https://cad.onshape.com/api/v10/parts/d/{Q['d']}/w/{Q['w']}/e/{Q['e']}/partid/JHD/bodydetails"]
     cached = list((p.h.cfg.paths.cache / "onshape").glob("geometry_*.json"))
-    assert len(cached) == 1 and json.loads(cached[0].read_text())["thickness_in"] > 0.18
+    assert len(cached) == 1 and json.loads(cached[0].read_text())["geometry"]["thickness_in"] > 0.18
     (tmp_path / "again").mkdir()
     p2 = Panel(tmp_path / "again", transport=transport)                 # a restarted service: from disk, no call
     p2.onshape.cache_root = p.onshape.cache_root

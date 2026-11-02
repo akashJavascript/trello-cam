@@ -9,12 +9,16 @@ or, without one, the part's name (as the runner's duplicate check matches them).
 The panel writes the card format students type (cards.py), plus a Part ID line and who sent it.
 """
 
+import json
 import logging
 import re
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from autocam_core.hotfolder import write_atomic
 
 from ..cards import PART_ID_RE, QTY_LINE_RES, README_CARD, TITLE_QTY_RE, _plain
 from ..config import Config
@@ -134,6 +138,9 @@ class PanelBoard:
         self._cards: Optional[Tuple[float, List[PartCard]]] = None
         self._sheet_lists: Dict[str, Tuple[float, Optional[str]]] = {}
         self._previews: Dict[str, bytes] = {}
+        self._jobs: Tuple[Tuple, Dict[str, Dict[str, Any]]] = ((), {})
+        self._queue: Optional[Tuple[float, Dict[str, Any]]] = None
+        self.flags_file = Path(store.sheets_file).with_name("panel_flags.json")
 
     # ---- reading
     def part_cards(self, fresh: bool = False) -> List[PartCard]:
@@ -268,6 +275,80 @@ class PanelBoard:
             self._previews[att.id] = data
         return data
 
+    # ---- the machine's queue
+    def queue(self) -> Dict[str, Any]:
+        """Sheets waiting at the machine (AutoCAM's sheet cards in Sheet review and Ready to cut) and their cutting
+        time (from the cards' titles: "... - 25 min - r034 S2"), and part cards waiting to be nested."""
+        with self._lock:
+            if self._queue is not None and self.clock() - self._queue[0] < self.cfg.panel.board_cache_s:
+                return self._queue[1]
+        ours = self.store.sheet_cards()
+        counts = {"sheet_review": 0, "ready_to_cut": 0}
+        minutes = 0
+        for list_key in counts:
+            for card in self.t.list_cards(list_key):
+                info = ours.get(card.id)
+                if info is None or not info.get("cuttable") or info.get("cut"):
+                    continue
+                counts[list_key] += 1
+                m = re.search(r"(\d+) min", card.name)
+                minutes += int(m.group(1)) if m else 0
+        waiting = sum(1 for pc in self.part_cards() if pc.status == "queued")
+        out = {"sheets": counts["sheet_review"] + counts["ready_to_cut"], "review": counts["sheet_review"],
+               "ready": counts["ready_to_cut"], "minutes": minutes, "waiting": waiting}
+        with self._lock:
+            self._queue = (self.clock(), out)
+        return out
+
+    # ---- the manufacturing version: what a card was CAM'd from
+    def cammed(self, card_id: str) -> Optional[Dict[str, Any]]:
+        """The newest job's record of this card's part ({"run", "job", "did", "vid", "eid", "part_id", "url",
+        "microversion"}), or None (not CAM'd yet, or from a .step attachment). Read from state/jobs, re-read only
+        when a job file changes."""
+        folder = Path(self.store.jobs_dir)
+        files = sorted(folder.glob("*.json")) if folder.is_dir() else []
+        stamp = tuple((p.name, p.stat().st_mtime_ns) for p in files)
+        with self._lock:
+            if stamp != self._jobs[0]:
+                index: Dict[str, Dict[str, Any]] = {}
+                for p in sorted(files, key=lambda p: (_run_number(p.stem), p.stem)):
+                    try:
+                        job = json.loads(p.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        continue
+                    for part in job.get("parts") or []:
+                        ref = part.get("onshape")
+                        if part.get("card_id") and isinstance(ref, dict):
+                            index[part["card_id"]] = {"run": job.get("run_id") or "", "job": p.stem, **ref}
+                self._jobs = (stamp, index)
+            return self._jobs[1].get(card_id)
+
+    def flag_changed(self, pc: PartCard, name: str, what: List[str], key: str) -> int:
+        """Comment once on each sheet the card is on that isn't cut yet: its part changed after it was CAM'd.
+        Returns how many sheets were told."""
+        try:
+            flags = dict(json.loads(self.flags_file.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            flags = {}
+        told = 0
+        for sid, e in self.sheets_of(pc.card.id):
+            if e.get("cut") or flags.get(f"{sid}:{pc.card.id}") == key:
+                continue
+            self.t.comment(sid, f"{name} was changed in Onshape after this sheet was CAM'd ({', '.join(what)}). Check "
+                                "it before cutting; the Onshape panel can nest the new version.")
+            flags[f"{sid}:{pc.card.id}"] = key
+            told += 1
+        if told:
+            self.flags_file.parent.mkdir(parents=True, exist_ok=True)
+            write_atomic(self.flags_file, (json.dumps(flags, indent=1) + "\n").encode("utf-8"))
+        return told
+
+    def renest(self, pc: PartCard) -> Card:
+        """A card on a sheet back to Ready for CAM, so the next run nests its part as it is now."""
+        self.t.move(pc.card.id, "ready_for_cam")
+        self.invalidate()
+        return self.t.get_card(pc.card.id)
+
     # ---- writing
     def write(self, s: Send, existing: Optional[PartCard] = None) -> Card:
         """A new part card, or `existing` (sent back) made over with this form and moved to its list."""
@@ -318,3 +399,8 @@ class PanelBoard:
             self.t.move(pc.card.id, "ready_for_cam")
         self.invalidate()
         return self.t.get_card(pc.card.id)
+
+
+def _run_number(stem: str) -> int:
+    m = re.match(r"r(\d+)", stem)
+    return int(m.group(1)) if m else -1

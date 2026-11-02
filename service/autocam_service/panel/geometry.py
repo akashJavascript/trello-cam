@@ -15,10 +15,14 @@ part's lowest point; a cylinder's sweep from its area (area / (radius x height))
 holes into pieces.
 """
 
+import hashlib
+import json
 import math
+from collections import Counter
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from autocam_core.geometry import CYLINDER, PLANE, Face, PartGeometry
+from autocam_core.holes import group_cylinders
 
 M_PER_IN = 0.0254
 TOL_M = 1e-8
@@ -80,13 +84,22 @@ def solid_body(details: Dict[str, Any], part_id: str) -> Optional[Dict[str, Any]
 
 
 def body_geometry(body: Dict[str, Any], name: str) -> PartGeometry:
+    return read_body(body, name)[0]
+
+
+def read_body(body: Dict[str, Any], name: str) -> Tuple[PartGeometry, Dict[str, Any]]:
+    """The part model, and what the panel needs beside it: "face_ids" (Onshape's id of each model face, in model id
+    order), "outline_faces" (the walls of the outline: picking one means its outline), "outline_area_in2" and
+    "box_in" (for the cost and sheet use)."""
+    extra: Dict[str, Any] = {"face_ids": [], "outline_faces": [], "outline_area_in2": 0.0, "box_in": [0.0, 0.0]}
     if str(body.get("type", "SOLID")).upper() != "SOLID":
-        return PartGeometry(name, 0, 0.0, ())
+        return PartGeometry(name, 0, 0.0, ()), extra
     faces: List[Dict[str, Any]] = [f for f in body.get("faces") or [] if f.get("id")]
     planes = [f for f in faces if _kind(f) == PLANE]
     if not planes:
-        return PartGeometry(name, 1, 0.0, ())
-    axis = outward_normal(max(planes, key=lambda f: float(f.get("area") or 0.0)))
+        return PartGeometry(name, 1, 0.0, ()), extra
+    largest = max(planes, key=lambda f: float(f.get("area") or 0.0))
+    axis = outward_normal(largest)
     u, w = _basis(axis)
 
     vertices = {v.get("id"): _v(v.get("point")) for v in body.get("vertices") or []}
@@ -101,7 +114,7 @@ def body_geometry(body: Dict[str, Any], name: str) -> PartGeometry:
 
     every = [p for p in vertices.values() if p is not None] + [p for eid in edges for p in edge_points(eid)]
     if not every:
-        return PartGeometry(name, 1, 0.0, ())
+        return PartGeometry(name, 1, 0.0, ()), extra
     heights = [_dot(p, axis) for p in every]
     z0, z1 = min(heights), max(heights)
 
@@ -146,7 +159,30 @@ def body_geometry(body: Dict[str, Any], name: str) -> PartGeometry:
                         center_in=(_dot(origin, u) / M_PER_IN, _dot(origin, w) / M_PER_IN),
                         sweep_deg=min(360.0, math.degrees(area / (r * height))) if r > 0 and height > TOL_M else 0.0)
         out.append(Face(**data))
-    return PartGeometry(name, 1, (z1 - z0) / M_PER_IN, tuple(out), _sharp_inside_corners(faces, edges, axis))
+    geom = PartGeometry(name, 1, (z1 - z0) / M_PER_IN, tuple(out), _sharp_inside_corners(faces, edges, axis))
+
+    us, ws = [_dot(p, u) for p in every], [_dot(p, w) for p in every]
+    extra["box_in"] = [round((max(us) - min(us)) / M_PER_IN, 3), round((max(ws) - min(ws)) / M_PER_IN, 3)]
+    extra["face_ids"] = [f["id"] for f in faces]
+    outer = next((lp for lp in largest.get("loops") or [] if lp.get("isOuter")), None)
+    if outer is not None:
+        walls: List[str] = []
+        ring: List[Tuple[float, float]] = []
+        for co in outer.get("coedges") or []:
+            for other in faces_of_edge.get(co.get("edgeId"), []):
+                if other != largest["id"] and other not in walls:
+                    walls.append(other)
+            g = (edges.get(co.get("edgeId")) or {}).get("geometry") or {}
+            pts = [_v(g.get(k)) for k in ("startPoint", "quarterPoint", "midPoint", "endPoint")]
+            pts = [p for p in pts if p is not None]
+            if not co.get("orientation", True):
+                pts.reverse()
+            ring += [(_dot(p, u) / M_PER_IN, _dot(p, w) / M_PER_IN) for p in pts]
+        extra["outline_faces"] = walls
+        extra["outline_area_in2"] = round(abs(sum(ring[i][0] * ring[(i + 1) % len(ring)][1]
+                                                  - ring[(i + 1) % len(ring)][0] * ring[i][1]
+                                                  for i in range(len(ring)))) / 2, 2) if len(ring) > 2 else 0.0
+    return geom, extra
 
 
 def _sharp_inside_corners(faces: Sequence[Dict[str, Any]], edges: Dict[str, Dict[str, Any]], axis: Vec) -> int:
@@ -181,3 +217,38 @@ def _sharp_inside_corners(faces: Sequence[Dict[str, Any]], edges: Dict[str, Dict
         if _dot(_cross(n1, n2), t) < 0:
             count += 1
     return count
+
+
+def _holes(geom: PartGeometry):
+    return [h for h in group_cylinders(geom.faces) if h.full]
+
+
+def shape_key(geom: PartGeometry) -> str:
+    """The same for the same shape wherever it sits in its Part Studio: the thickness, every face's kind, size and
+    height, and the distances between round holes (so a moved hole counts)."""
+    faces = sorted((f.kind, round(f.z_min_in, 3), round(f.z_max_in, 3), round(f.area_in2, 2), round(f.radius_in, 4))
+                   for f in geom.faces)
+    centers = [h.center_in for h in _holes(geom)][:60]
+    gaps = sorted(round(math.dist(a, b), 2) for i, a in enumerate(centers) for b in centers[i + 1:])
+    data = json.dumps([round(geom.thickness_in, 4), faces, gaps])
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()[:16]
+
+
+def differences(then: PartGeometry, now: PartGeometry, then_area: float = 0.0, now_area: float = 0.0) -> List[str]:
+    """What changed between two states of a part, in words; [] when it's the same shape."""
+    if shape_key(then) == shape_key(now):
+        return []
+    out: List[str] = []
+    if abs(then.thickness_in - now.thickness_in) > 0.0005:
+        from .checks import inches                     # here: checks reads the config, this module doesn't
+        out.append(f"thickness {inches(then.thickness_in)} to {inches(now.thickness_in)}")
+    a = Counter(round(h.diameter_in, 3) for h in _holes(then))
+    b = Counter(round(h.diameter_in, 3) for h in _holes(now))
+    added, removed = sum((b - a).values()), sum((a - b).values())
+    if added:
+        out.append(f"{added} hole{'s' if added != 1 else ''} added")
+    if removed:
+        out.append(f"{removed} hole{'s' if removed != 1 else ''} removed")
+    if then_area and now_area and abs(then_area - now_area) > 0.01:
+        out.append("the outline changed")
+    return out or ["the shape changed"]

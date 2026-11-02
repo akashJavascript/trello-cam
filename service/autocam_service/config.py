@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Dict, List, Mapping, Optional, Tuple
@@ -220,6 +220,13 @@ class HandCuts:
 
 
 @dataclass(frozen=True)
+class Costs:
+    """The panel's cost and sheet use estimate: what a full sheet costs, per material and thickness."""
+    sheet_prices: Mapping[str, Mapping[float, float]] = field(default_factory=dict)   # material -> thickness -> $
+    nest_efficiency: float = 0.8     # the share of a sheet that ends up as parts (the rest is gaps and edges)
+
+
+@dataclass(frozen=True)
 class Panel:
     """The Onshape panel ("Send to AutoCAM", panel/): a page in Onshape's right panel that makes part cards. This
     service serves it on 127.0.0.1:port; a Cloudflare tunnel (tunnel_dir) makes it public_url."""
@@ -360,6 +367,7 @@ class Config:
     hand_cuts: HandCuts = HandCuts()
     fit: Fit = Fit()
     panel: Panel = Panel()
+    costs: Costs = Costs()
 
     def stock_types(self) -> List[Tuple[Material, float]]:
         return [(m, t) for m in self.materials.values() for t in m.thicknesses_in]
@@ -795,6 +803,25 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                       sends_per_minute=t.integer("sends_per_minute", minimum=1))
         t.finish()
 
+    costs = Costs()
+    if "costs" in top.data:
+        t = top.table("costs")
+        prices: Dict[str, Dict[float, float]] = {}
+        sp = t.table("sheet_prices")
+        for key in list(sp.data):
+            row = sp.table(key)
+            prices[key] = {}
+            for thick in list(row.data):
+                try:
+                    prices[key][float(thick)] = row.number(thick, positive=True)
+                except ValueError:
+                    errors.append(f"costs.sheet_prices.{key}.{thick}: the key must be a thickness in inches")
+            row.finish()
+        sp.finish()
+        costs = Costs(sheet_prices=MappingProxyType(prices),
+                      nest_efficiency=t.number("nest_efficiency", positive=True, default=0.8))
+        t.finish()
+
     t = top.table("paths")
     paths = Paths(**{k: root / t.string(k, required=True) for k in ("queue", "cache", "state", "logs")})
     t.finish()
@@ -810,7 +837,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         op_tags=op_tags, templates=MappingProxyType(templates), labels=labels, onshape=onshape,
         trello=trello, fusion=fusion, tapguard=tapguard, fusion_team=fusion_team, status=status, paths=paths,
         placeholders=tuple(_placeholders(data)), warnings=(), tabs=tabs, face=face, hand_cuts=hand_cuts,
-        fit=fit, panel=panel,
+        fit=fit, panel=panel, costs=costs,
     )
     warnings: List[str] = []
     _cross_check(cfg, data, errors, warnings)
@@ -1039,6 +1066,15 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
             e(f"onshape.material_map.{name}: no material {key!r}")
     if cfg.onshape.per_run_max_calls > cfg.onshape.yearly_cap_calls:
         e("onshape.per_run_max_calls: larger than yearly_cap_calls")
+    for key, row in cfg.costs.sheet_prices.items():
+        if key not in cfg.materials:
+            e(f"costs.sheet_prices.{key}: no material {key!r}")
+            continue
+        for thick in row:
+            if not any(abs(thick - s) < 1e-6 for s in cfg.materials[key].thicknesses_in):
+                e(f"costs.sheet_prices.{key}: {thick} in isn't one of its stock thicknesses")
+    if not 0 < cfg.costs.nest_efficiency <= 1:
+        e("costs.nest_efficiency: must be more than 0 and at most 1")
     p = cfg.panel
     if p.onshape_calls_per_day > p.onshape_calls_per_year:
         e("panel.onshape_calls_per_day: larger than onshape_calls_per_year")

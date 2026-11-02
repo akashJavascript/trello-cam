@@ -12,7 +12,8 @@
     w: P.get("workspaceOrVersionId") || P.get("workspaceId") || "",
     e: P.get("elementId") || "",
     u: P.get("userId") || "",
-    server: P.get("server") || ""
+    server: P.get("server") || "",
+    kind: P.get("kind") === "assembly" ? "assembly" : "studio"   // the Assembly extension's link says kind=assembly
   };
   var bodyEl = document.getElementById("body");
   var actionEl = document.getElementById("action");
@@ -106,9 +107,31 @@
       selectionsLogged++;
       api("POST", "/api/selection", { message: m }).catch(function () {});
     }
+    if (pickFit(m)) return;
     var id = selectedPart(m);
     if (id && (S.partId !== id || S.mode !== "part")) openPart(id);
   });
+  function strings(v, depth, out) {
+    if (depth > 5 || v === null || v === undefined) return out;
+    if (typeof v === "string") out.push(v);
+    else if (Array.isArray(v)) v.forEach(function (x) { strings(x, depth + 1, out); });
+    else if (typeof v === "object") Object.keys(v).forEach(function (k) { strings(v[k], depth + 1, out); });
+    return out;
+  }
+  function pickFit(m) {
+    // A face of the open part clicked in the CAD: one of its round holes (not drilled) or its outline sets the Fit.
+    var f = S.form, c = S.check;
+    if (S.mode !== "part" || !f || !c || !c.pick || !S.studio || !S.studio.fit) return false;
+    var card = S.detail && S.detail.card;
+    if (card && card.status !== "cut" && !S.editing) return false;
+    var hit = strings(m.selections || m, 0, []).map(function (s) { return c.pick[s]; }).filter(Boolean)[0];
+    if (!hit) return false;
+    f.fitKind = hit.kind;
+    if (hit.kind === "hole") f.fitSize = String(hit.size);
+    f.picked = hit.kind === "hole" ? "Fit set to the " + hit.size + " in hole you clicked." : "Fit set to the outline you clicked.";
+    render();
+    return true;
+  }
   function selectedPart(m) {
     // Onshape's docs don't describe the SELECTION payload: take any id in it that is one of this studio's parts.
     if (!S.studio) return null;
@@ -137,6 +160,11 @@
     detail: null,          // /api/part: {part, card}
     qty: null,             // /api/qty for the open part (null: counting)
     check: null,           // /api/check for the open part (null: checking)
+    changed: undefined,    // /api/changed for a part on a sheet or cut (null: asking; undefined: not asked)
+    asm: null,             // /api/assembly (the Assembly extension)
+    asmSel: {},            // part key -> {on, qty}
+    asmOpts: null,         // {tabs, nest, drafts} for the whole assembly
+    asmResult: null,       // /api/send-many's answer
     form: null,
     editing: false,        // the form, making the open part's Drafts or sent-back card over
     sent: null,            // /api/send's answer
@@ -168,6 +196,7 @@
       return Promise.resolve();
     }
     refreshBtn.classList.add("spin");
+    if (ctx.kind === "assembly") return loadAssembly(fresh);
     return api("GET", "/api/studio", where({ fresh: fresh ? "1" : "", u: ctx.u })).then(function (st) {
       S.studio = st;
       if (st.user) { S.user = st.user; stored("name", st.user); }
@@ -180,8 +209,29 @@
     }).then(function () { refreshBtn.classList.remove("spin"); });
   }
 
+  function loadAssembly(fresh) {
+    return api("GET", "/api/assembly", where({ fresh: fresh ? "1" : "", u: ctx.u })).then(function (a) {
+      S.asm = a;
+      if (a.user) { S.user = a.user; stored("name", a.user); }
+      if (!S.asmOpts) S.asmOpts = { tabs: a.tabsDefault, nest: true, drafts: false };
+      var sel = {};
+      a.items.forEach(function (i) {
+        var old = S.asmSel[i.key];
+        sel[i.key] = { on: i.sendable && (old ? old.on : i.chip.status === "none"), qty: old ? old.qty : Math.max(1, i.qty) };
+      });
+      S.asmSel = sel;
+      S.mode = "assembly";
+      render();
+    }, function (err) {
+      S.mode = "error";
+      S.error = { text: err.message, kind: err.data && err.data.kind };
+      render();
+    }).then(function () { refreshBtn.classList.remove("spin"); });
+  }
+
   function openPart(id, keepNotice) {
-    S.mode = "part"; S.partId = id; S.detail = null; S.qty = null; S.check = null; S.sent = null; S.editing = false;
+    S.mode = "part"; S.partId = id; S.detail = null; S.qty = null; S.check = null; S.changed = undefined; S.sent = null;
+    S.editing = false;
     S.changing = null; S.form = null;
     if (!keepNotice) S.notice = "";
     var listed = (S.studio && S.studio.parts.filter(function (p) { return p.id === id; })[0]) || null;
@@ -191,6 +241,7 @@
       if (S.partId !== id) return;
       S.detail = r;
       S.form = newForm(null);
+      if (r.card && (r.card.status === "sheet" || r.card.status === "cut")) loadChanged(id, r.card.card);
       render();
     }, function (err) {
       if (S.partId !== id) return;
@@ -199,6 +250,15 @@
     });
     loadQty(id, false);
     loadCheck(id, "");
+  }
+
+  function loadChanged(id, card) {
+    S.changed = null;
+    api("GET", "/api/changed", where({ p: id, card: card })).then(function (r) {
+      if (S.partId !== id) return;
+      S.changed = r;
+      render();
+    }, function () { if (S.partId === id) { S.changed = undefined; render(); } });
   }
 
   function loadCheck(id, material) {
@@ -292,6 +352,7 @@
     if (S.mode === "loading") return renderLoading();
     if (S.mode === "error") return renderError();
     if (S.mode === "list") return renderList();
+    if (S.mode === "assembly") return renderAssembly();
     return renderPart();
   }
 
@@ -308,9 +369,28 @@
     add(actionEl, h("button", { class: "btn btn-secondary", type: "button", onclick: function () { S.mode = "loading"; render(); loadStudio(true); } }, "Try again"));
   }
 
+  function minutes(n) {
+    if (n < 60) return n + " min";
+    var m = n % 60;
+    return Math.floor(n / 60) + " h" + (m ? " " + (m < 10 ? "0" : "") + m : "");
+  }
+  function queueLine(q) {
+    if (!q) return null;
+    var text = q.sheets ? "Machine queue: " + q.sheets + " sheet" + (q.sheets === 1 ? "" : "s") + ", about " + minutes(q.minutes)
+      : "Machine queue: empty";
+    if (q.waiting) text += " · " + q.waiting + " card" + (q.waiting === 1 ? "" : "s") + " waiting to nest";
+    return h("p", { class: "muted queue" }, text);
+  }
+  function markIcon(mark) {
+    if (!mark) return null;
+    return h("span", { class: "mark " + mark, title: mark === "ok" ? "AutoCAM can cut it" : "AutoCAM would send it back" },
+      icon(mark === "ok" ? "check" : "alert"));
+  }
+
   function renderList() {
     var st = S.studio;
     if (st.boardError) add(bodyEl, notice("info", null, st.boardError));
+    add(bodyEl, queueLine(st.queue));
     add(bodyEl, h("p", { class: "muted" }, "Select a part to send it."));
     if (!st.parts.length) { add(bodyEl, h("p", { class: "muted" }, "This Part Studio has no parts yet.")); return; }
     // parts in a material AutoCAM doesn't cut (belts, PLA, steel) wait behind a link, unless they have a card
@@ -318,13 +398,80 @@
     var other = st.parts.filter(function (p) { return cut.indexOf(p) < 0; });
     function row(p) {
       return h("button", { class: "part-row", type: "button", onclick: function () { openPart(p.id); } },
-        h("span", { class: "name" }, p.name),
+        h("span", { class: "name" }, p.name), markIcon(p.mark),
         p.chip.label ? chip(p.chip.label, p.chip.status) : null);
     }
     var list = h("div", { class: "parts" }, cut.map(row), S.showOther ? other.map(row) : null);
     var more = other.length ? h("button", { class: "link-btn", type: "button", onclick: function () { S.showOther = !S.showOther; render(); } },
       S.showOther ? "Hide parts in other materials" : other.length + " more in materials AutoCAM doesn't cut") : null;
     add(bodyEl, group("In this Part Studio", list, more));
+  }
+
+  function renderAssembly() {
+    var a = S.asm, o = S.asmOpts;
+    if (a.boardError) add(bodyEl, notice("info", null, a.boardError));
+    if (S.asmResult) {
+      var r = S.asmResult, sent = r.results.filter(function (x) { return x.sent; }), skipped = r.results.filter(function (x) { return !x.sent; });
+      add(bodyEl, h("div", { class: "notice " + (sent.length ? "good" : "info") }, icon(sent.length ? "check" : "info"), h("div", null,
+        h("b", null, sent.length ? "Sent " + sent.length + " to " + r.list : "Nothing sent"),
+        skipped.length ? h("ul", { class: "problems" }, skipped.map(function (x) { return h("li", null, x.name + " " + x.why + "."); })) : null)));
+    }
+    add(bodyEl, queueLine(a.queue));
+    var ours = a.items.filter(function (i) { return (i.material && i.material.key) || i.chip.status !== "none"; });
+    var other = a.items.filter(function (i) { return ours.indexOf(i) < 0; });
+    function row(i) {
+      var sel = S.asmSel[i.key];
+      var box = i.sendable ? h("input", { type: "checkbox", checked: sel.on, "aria-label": "Send " + i.name,
+        onchange: function (ev) { sel.on = ev.target.checked; render(); } }) : h("span");
+      var qty = i.sendable ? h("input", { class: "qty-in", type: "number", min: "1", max: String(a.maxQty), value: String(sel.qty),
+        "aria-label": i.name + " quantity", onchange: function (ev) { sel.qty = Math.max(1, Math.min(a.maxQty, parseInt(ev.target.value, 10) || 1)); render(); } })
+        : h("span", { class: "hint" }, "×" + i.qty);
+      var tag = i.chip.status !== "none" && i.chip.label ? chip(i.chip.label, i.chip.status) : i.why ? chip(i.why, "bad") : null;
+      return h("label", { class: "arow" }, box, h("span", { class: "name" }, i.name), qty, tag);
+    }
+    var more = other.length ? h("button", { class: "link-btn", type: "button", onclick: function () { S.showOther = !S.showOther; render(); } },
+      S.showOther ? "Hide parts in other materials" : other.length + " more in materials AutoCAM doesn't cut") : null;
+    add(bodyEl, group(a.name ? "Parts in " + a.name : "Parts in this assembly",
+      ours.length ? h("div", { class: "parts" }, ours.map(row), S.showOther ? other.map(row) : null) : h("p", { class: "muted" }, "No parts AutoCAM cuts."),
+      more));
+    add(bodyEl, group("Options",
+      switchLine("Hold them in with tabs", o.tabs, function (v) { o.tabs = v; render(); }),
+      switchLine("Nest them with other parts", o.nest, function (v) { o.nest = v; render(); }),
+      switchLine("Send to Drafts", o.drafts, function (v) { o.drafts = v; render(); })));
+
+    var chosen = a.items.filter(function (i) { return i.sendable && S.asmSel[i.key].on; });
+    actionEl.hidden = false;
+    var nameInput = null;
+    if (!S.user) {
+      nameInput = h("input", { class: "input wide", type: "text", placeholder: "Your name (it goes on the cards)", maxlength: "40", "aria-label": "Your name" });
+      add(actionEl, nameInput);
+    }
+    var n = chosen.length;
+    add(actionEl, h("button", { class: "btn btn-primary", type: "button", disabled: S.busy || !n, onclick: function () { sendMany(chosen, nameInput); } },
+      S.busy ? "Sending…" : "Send " + n + " part" + (n === 1 ? "" : "s") + " to " + (o.drafts ? "Drafts" : "Ready for CAM")));
+    if (S.user) {
+      add(actionEl, h("div", { class: "as" }, "Sending as " + S.user + " · ",
+        h("button", { class: "link-btn", type: "button", onclick: function () { S.user = ""; stored("name", ""); render(); } }, "change")));
+    }
+  }
+
+  function sendMany(chosen, nameInput) {
+    if (nameInput) {
+      var typed = nameInput.value.trim();
+      if (!typed) { S.asmResult = { results: [{ name: "", sent: false, why: "Type your name first (it goes on the cards)" }], list: "" }; render(); return; }
+      S.user = typed; stored("name", typed);
+    }
+    var o = S.asmOpts;
+    S.busy = true; render();
+    api("POST", "/api/send-many", where({
+      items: chosen.map(function (i) { return { key: i.key, qty: S.asmSel[i.key].qty }; }),
+      tabs: o.tabs, nest: o.nest, drafts: o.drafts, name: S.user, u: ctx.u, server: ctx.server
+    })).then(function (r) {
+      S.busy = false; S.asmResult = r;
+      loadAssembly(false);
+    }, function (err) {
+      S.busy = false; S.asmResult = { results: [{ name: "", sent: false, why: err.message }], list: "" }; render();
+    });
   }
 
   function renderPart() {
@@ -346,6 +493,12 @@
     var d = S.detail, card = d.card;
     add(bodyEl, partHead(d.part, [chip(card.label, card.status), chip("Qty " + card.qty, "event")]));
     if (S.notice) add(bodyEl, notice("info", null, S.notice));
+    if (S.changed && S.changed.changed) {
+      add(bodyEl, notice("bad", "Changed in Onshape since it was CAM'd" + (S.changed.run ? " (" + S.changed.run + ")" : ""),
+        S.changed.what.join(", ") + "." + (card.status === "sheet" ? " The sheet card says so too." : "")));
+    } else if (S.changed && S.changed.changed === false) {
+      add(bodyEl, h("p", { class: "hint" }, "Onshape still matches what was CAM'd" + (S.changed.run ? " in " + S.changed.run : "") + "."));
+    }
     add(bodyEl, group("Status", h("div", { class: "steps" }, card.steps.map(function (s) {
       return h("div", { class: "step " + s.state }, h("span", { class: "b" }, s.state === "done" ? icon("check") : null),
         h("span", { class: "t" }, s.t, s.w ? h("span", { class: "w" }, s.w) : null));
@@ -357,9 +510,16 @@
       img.addEventListener("error", function () { img.remove(); });
       add(bodyEl, img);
     }
+    var ch = S.changed;
     actionEl.hidden = false;
     if (S.changing) return renderChangeQty();
     var open = sheet && sheet.url ? linkBtn("Open sheet", sheet.url) : linkBtn("Open card", card.url);
+    if (ch && ch.changed && card.status === "sheet") {
+      add(actionEl, h("div", { class: "btn-row" },
+        h("button", { class: "btn btn-primary", type: "button", disabled: S.busy, onclick: renest }, "Nest the new version"),
+        sheet && sheet.url ? linkBtn("Open sheet", sheet.url, "btn-ghost") : linkBtn("Open card", card.url, "btn-ghost")));
+      return;
+    }
     if (card.status === "drafts") {
       add(actionEl, h("div", { class: "btn-row" },
         h("button", { class: "btn btn-primary", type: "button", onclick: function () { startEdit(); } }, "Edit and send"),
@@ -368,6 +528,18 @@
       add(actionEl, h("div", { class: "btn-row" }, open,
         h("button", { class: "btn btn-ghost", type: "button", onclick: function () { S.changing = { qty: card.qty }; render(); } }, "Change qty")));
     }
+  }
+
+  function renest() {
+    var card = S.detail.card;
+    S.busy = true; render();
+    api("POST", "/api/renest", where({ p: S.partId, card: card.card, name: S.user })).then(function (r) {
+      S.busy = false; S.changed = undefined;
+      if (r.card) S.detail.card = r.card;
+      S.notice = "It's back in Ready for CAM: the next run nests the new version.";
+      quietRefresh();
+      render();
+    }, function (err) { S.busy = false; S.notice = err.message; render(); });
   }
 
   function renderChangeQty() {
@@ -439,6 +611,12 @@
     if (S.editing && card) chips.push(chip(card.label, card.status));
     add(bodyEl, partHead(d.part, chips));
     add(bodyEl, checkBlock());
+    var ch = S.changed;
+    if (card && card.status === "cut" && ch && ch.changed) {
+      add(bodyEl, notice("info", "Changed since it was cut" + (ch.run ? " (" + ch.run + ")" : ""), ch.what.join(", ") + "."));
+    } else if (card && card.status === "cut" && ch && ch.changed === false) {
+      add(bodyEl, h("p", { class: "hint" }, "The same as when it was cut" + (ch.run ? " in " + ch.run : "") + "."));
+    }
 
     if (pickMaterial) {
       var sel = h("select", { class: "select wide", "aria-label": "Material", onchange: function () {
@@ -482,6 +660,7 @@
           return h("option", { value: o[0], selected: f.fitKind === o[0] ? "selected" : null }, o[1]);
         }));
       opts.push(h("div", { class: "line" }, h("label", { class: "name", for: "fit" }, "Fit"), fsel));
+      if (f.picked) opts.push(h("span", { class: "hint" }, f.picked));
       if (f.fitKind === "hole") {
         var size = h("input", { class: "input size", type: "text", inputmode: "decimal", placeholder: "1.125", value: f.fitSize,
           "aria-label": "Hole size", oninput: function () { f.fitSize = size.value; } });
@@ -534,6 +713,11 @@
       add(block, notice("good", "AutoCAM can cut this", facts));
     }
     (c.notes || []).forEach(function (n) { add(block, h("p", { class: "hint check-note" }, n)); });
+    if (c.use && S.form) {
+      var q = S.form.qty, share = Math.round(c.use.sheet_share * q * 100);
+      var money = c.use.each ? "about $" + (c.use.each * q).toFixed(2) + (q > 1 ? " for " + q : "") + " · " : "";
+      add(block, h("p", { class: "hint check-note" }, "Cost: " + money + (share < 1 ? "under 1" : share) + "% of a sheet"));
+    }
     return block;
   }
 

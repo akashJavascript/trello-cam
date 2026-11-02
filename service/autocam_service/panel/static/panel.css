@@ -109,6 +109,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .parts { display: flex; flex-direction: column; }
 .group > .link-btn { align-self: flex-start; margin-top: 8px; }
+.queue { font-size: 13px; }
+.mark { display: inline-grid; place-items: center; flex: none; }
+.mark svg { width: 16px; height: 16px; }
+.mark.ok { color: var(--good); }
+.mark.bad { color: var(--on-error-container); }
+.arow { display: grid; grid-template-columns: 20px minmax(0, 1fr) 52px auto; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
+.arow .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arow input[type=checkbox] { width: 18px; height: 18px; margin: 0; accent-color: var(--primary-container); }
+.arow .hint { text-align: center; }
+.qty-in { width: 52px; height: 32px; border: 1px solid var(--outline-variant); border-radius: 8px; background: var(--surface-lowest); text-align: center; font-weight: 600; }
 .part-row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 8px; margin: 0 -8px; border-radius: 10px; border: 0; background: transparent; text-align: left; cursor: pointer; }
 .part-row:hover { background: var(--surface-low); }
 .part-row .name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

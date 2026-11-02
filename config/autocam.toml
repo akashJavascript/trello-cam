@@ -30,6 +30,8 @@ schema = 1
 "onshape.budget_year_start" = "plan: when the enterprise's call year resets (MM-DD)"
 "panel.onshape_calls_per_day" = "a guess: about 10 Part Studios and 20 part checks a day (2026-11-01: raised from 40 for the design checks)"
 "panel.onshape_calls_per_year" = "a share of the enterprise's 10,000 calls a year, beside runs' 1500"
+"costs.sheet_prices" = "guessed sheet prices (US$, 24 x 48 in); replace with what the team pays"
+"costs.nest_efficiency" = "a guess: about 80% of a sheet ends up as parts"
 "fusion.params.setup.wcs_origin_boxPoint" = "the team's manual value; check it lands bottom front-left in the nest preview (M1.3)"
 "fusion.params.setup.stock_mode_value" = "fallback only; confirm the 'from solid' value if Setup.stockSolids fails"
 
@@ -390,6 +392,32 @@ assembly_cache_s = 1800         # the document's assemblies, for "how many does 
 max_assemblies = 4              # quantities are counted in at most this many assemblies of the document
 board_cache_s = 30              # Trello lists read for each part's status
 sends_per_minute = 20
+
+[costs]                         # the Onshape panel's cost and sheet use estimate (2026-11-01). Prices are for a whole
+                                # 24 x 48 in sheet, in US$, by thickness: GUESSES until someone puts in what the team pays
+nest_efficiency = 0.8           # the share of a sheet that ends up as parts (the rest is gaps between parts and edges)
+
+[costs.sheet_prices.al6061]
+"0.0625" = 55.0
+"0.125" = 85.0
+"0.1875" = 120.0
+"0.25" = 155.0
+
+[costs.sheet_prices.al5052]
+"0.0625" = 50.0
+"0.125" = 80.0
+
+[costs.sheet_prices.pc_clear]
+"0.0625" = 35.0
+"0.125" = 55.0
+"0.1875" = 80.0
+"0.25" = 105.0
+
+[costs.sheet_prices.pc_smoked]
+"0.0625" = 40.0
+"0.125" = 60.0
+"0.1875" = 90.0
+"0.25" = 115.0
 
 [paths]                         # relative to the repo root
 queue = "queue"

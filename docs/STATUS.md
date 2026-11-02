@@ -89,6 +89,10 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 - **Panel design checks** (2026-11-01): opening a part runs AutoCAM's own plate rules on its shape from Onshape
   (one `bodydetails` call per part per Part Studio state) and says "AutoCAM can cut this" or what would send it back,
   with a fix. The 1/8 in endmill is a fact, never a problem. Matches Fusion on P-2011's real version.
+- **Panel, second batch** (2026-11-01, `docs/panel.md`): changed since it was CAM'd (each job's record of what it cut
+  is the manufacturing version; a changed part's uncut sheets get a comment, and the panel can nest the new
+  version), sending a whole assembly from its BOM, marks in the parts list, the machine queue, cost and sheet use
+  (sheet prices are guesses in `[costs]`), and fits by clicking a hole (waits on Onshape's selection messages).
 - **Fit series** (2026-11-01): a part card's `Fit: 1.125 hole` or `Fit: outline` line gets that feature cut 0.003 tight,
   with lap programs taking 0.001 more each, run one by one at the machine; the run that fit is ticked on the sheet card
   and the next series starts there. Holes over 1.5 in too (cut as cutouts: the slug comes out by hand, then the laps,

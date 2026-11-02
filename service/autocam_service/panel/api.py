@@ -7,6 +7,11 @@
     GET  /api/part?d&wvm&w&e&p               one part, and its card in detail
     GET  /api/qty?d&wvm&w&e&p[&fresh]        how many of it each assembly of the document uses
     GET  /api/check?d&wvm&w&e&p[&m][&fresh]  the design checks (checks.py) with that material (default: the part's)
+    GET  /api/changed?d&wvm&w&e&p&card       has the part changed since that card's run CAM'd it (its manufacturing
+                                             version, from state/jobs)? Tells the card's uncut sheets once
+    POST /api/renest                         a card on a sheet back to Ready for CAM (nest the new version)
+    GET  /api/assembly?d&wvm&w&e[&fresh][&u] an assembly's parts (its flattened BOM), each with its card's status
+    POST /api/send-many                      cards for the ticked parts of an assembly
     POST /api/send                           make its card (or make a sent-back or Drafts card over)
     POST /api/qty                            change a card's quantity
     POST /api/me                             remember a student's name for their Onshape user id
@@ -37,6 +42,7 @@ from ..fits import parse_fit
 from ..tracker.base import Card
 from . import checks
 from .board import ACTIVE, PanelBoard, Send, read_part_card
+from .geometry import differences, shape_key
 from .onshape_reads import NoAccess, OutOfCalls, PanelOnshape, PanelOnshapeError
 
 log = logging.getLogger("autocam.panel")
@@ -49,6 +55,7 @@ PART_RE = re.compile(r"^[A-Za-z0-9_.+/=-]{1,64}$")
 USER_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 MAX_BODY = 16 * 1024
 SELECTION_LOGS_PER_DAY = 30
+MAX_ASSEMBLY_SEND = 60
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
        "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
        "frame-ancestors https://*.onshape.com https://onshape.com; base-uri 'none'; form-action 'none'")
@@ -157,6 +164,8 @@ class PanelApp:
                 raise Refused(400, "Bad request")
             route = {("GET", "/api/studio"): self.studio, ("GET", "/api/part"): self.part,
                      ("GET", "/api/qty"): self.qty, ("GET", "/api/check"): self.check, ("POST", "/api/send"): self.send,
+                     ("GET", "/api/changed"): self.changed, ("POST", "/api/renest"): self.renest,
+                     ("GET", "/api/assembly"): self.assembly, ("POST", "/api/send-many"): self.send_many,
                      ("POST", "/api/qty"): self.change_qty, ("POST", "/api/me"): self.me,
                      ("POST", "/api/selection"): self.selection}.get((method, path))
             if path == "/api/preview" and method == "GET":
@@ -259,14 +268,115 @@ class PanelApp:
         for p in sorted(parts, key=lambda p: _natural(p.get("name") or "")):
             chip = {"status": "unknown", "label": ""} if cards is None else \
                 self.board.chip(self.board.for_part(did, eid, p["partId"], p.get("name") or "", cards))
-            listed.append({"id": p["partId"], "name": p.get("name") or "", "material": self._part_material(p),
-                           "chip": chip})
+            material = self._part_material(p)
+            listed.append({"id": p["partId"], "name": p.get("name") or "", "material": material, "chip": chip,
+                           "mark": self._mark(did, wvm, wvmid, eid, p, material)})
         uid = q.get("u", "")
-        return {"parts": listed, "boardError": board_error, "writable": wvm == "w",
+        return {"parts": listed, "boardError": board_error, "writable": wvm == "w", "queue": self._queue(),
                 "user": self.names.get(uid) if USER_RE.match(uid or "") else "",
                 "materials": list(self._materials().values()), "fit": self.cfg.fit.enabled,
                 "face": self.cfg.face is not None, "tabsDefault": self.cfg.tabs.default,
                 "callsLeft": self.onshape.calls_left(), "maxQty": MAX_QTY}
+
+    def _queue(self) -> Optional[Dict[str, Any]]:
+        try:
+            return self.board.queue()
+        except Exception as e:  # noqa: BLE001 - the queue line is a nicety
+            log.warning("panel: reading the machine queue: %s", e)
+            return None
+
+    def _material_of(self, onshape_name: str) -> Optional[Dict[str, Any]]:
+        return self._part_material({"material": {"displayName": onshape_name}}) if onshape_name else None
+
+    def assembly(self, q: Dict[str, str]) -> Dict[str, Any]:
+        """The assembly's parts from its BOM (one call): the ones AutoCAM cuts first, each with its count and card."""
+        did, wvm, wvmid, eid = self._studio(q)
+        rows = self.onshape.bom(did, wvm, wvmid, eid, fresh=q.get("fresh") == "1")
+        board_error, cards = "", None
+        try:
+            cards = self.board.part_cards(fresh=q.get("fresh") == "1")
+        except Exception as e:  # noqa: BLE001
+            log.warning("panel: reading the board: %s", e)
+            board_error = "Couldn't read the Trello board just now, so statuses are missing."
+        items = []
+        for r in rows:
+            if r["standard"]:
+                continue                                 # Onshape's standard content: screws, nuts
+            material = self._material_of(r["material"])
+            pc = None if cards is None else self.board.for_part(r["did"], r["eid"], r["pid"], r["name"], cards)
+            chip = {"status": "unknown", "label": ""} if cards is None else self.board.chip(pc)
+            why = ("No material" if material is None else "" if material["key"] else "Not cut here") or \
+                ("Configured" if r["configured"] else "")
+            items.append({"key": f"{r['did']}/{r['eid']}/{r['pid']}", "name": r["name"] or r["pid"], "qty": r["qty"],
+                          "material": material, "chip": chip, "why": why,
+                          "sendable": not why and cards is not None and (pc is None or pc.status not in ACTIVE)})
+        items.sort(key=lambda i: _natural(i["name"]))
+        name = ""
+        try:
+            name = next((e.get("name") or "" for e in self.onshape.elements(did, wvm, wvmid) if e.get("id") == eid), "")
+        except PanelOnshapeError:
+            pass
+        uid = q.get("u", "")
+        return {"name": name, "items": items, "boardError": board_error, "queue": self._queue(),
+                "user": self.names.get(uid) if USER_RE.match(uid or "") else "", "tabsDefault": self.cfg.tabs.default,
+                "maxQty": MAX_QTY, "callsLeft": self.onshape.calls_left()}
+
+    def send_many(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        """Cards for the ticked parts of an assembly, each in the format a typed card has (its own Part Studio's
+        link). Skipped, with the reason: no material AutoCAM cuts, configured parts, parts that already have a card."""
+        self._rate_limit()
+        did, wvm, wvmid, eid = self._studio(d)
+        sender = self._sender(d)
+        nest, tabs = bool(d.get("nest", True)), bool(d.get("tabs", self.cfg.tabs.default))
+        drafts = bool(d.get("drafts"))
+        wanted = d.get("items") if isinstance(d.get("items"), list) else []
+        rows = {f"{r['did']}/{r['eid']}/{r['pid']}": r for r in self.onshape.bom(did, wvm, wvmid, eid)}
+        cards = self.board.part_cards(fresh=True)
+        host = self._host(d.get("server"))
+        results, seen = [], set()
+        for item in wanted[:MAX_ASSEMBLY_SEND]:
+            key = str((item or {}).get("key") or "")
+            if key in seen:
+                continue
+            seen.add(key)
+            r = rows.get(key)
+            name = r["name"] if r else key
+            try:
+                if r is None:
+                    raise Refused(409, "isn't in this assembly any more")
+                qty = self._qty(item)
+                material = self._material_of(r["material"])
+                if material is None or not material["key"]:
+                    raise Refused(400, "has no material AutoCAM cuts: open its Part Studio's panel")
+                if r["configured"]:
+                    raise Refused(400, "is a configured part: send it from its Part Studio")
+                going = self.board.for_part(r["did"], r["eid"], r["pid"], r["name"], cards)
+                if going is not None and going.status in ACTIVE:
+                    raise Refused(409, "already has a card")
+                s = Send(did=r["did"], wvm=r["wvm"], wvmid=r["wvmid"], eid=r["eid"], pid=r["pid"], name=r["name"],
+                         host=host, qty=qty, nest=nest, tabs=tabs, drafts=drafts, sender=sender)
+                card = self.board.write(s)
+                results.append({"key": key, "name": name, "sent": True, "url": card.url})
+            except Refused as e:
+                results.append({"key": key, "name": name, "sent": False, "why": str(e)})
+        sent = sum(1 for x in results if x["sent"])
+        log.info("panel: %s sent %d of %d parts of an assembly to %s", sender, sent, len(results),
+                 "Drafts" if drafts else "Ready for CAM")
+        return {"results": results, "list": "Drafts" if drafts else "Ready for CAM"}
+
+    def _mark(self, did: str, wvm: str, wvmid: str, eid: str, part: Dict[str, Any],
+              material: Optional[Dict[str, Any]]) -> Optional[str]:
+        """"ok" or "bad" for a part already checked in this state of the Part Studio (no Onshape call); None
+        otherwise."""
+        found = self.onshape.cached_geometry(did, wvm, wvmid, eid, part["partId"], str(part.get("microversionId") or ""))
+        if found is None:
+            return None
+        try:
+            result = checks.check(found[0], self.cfg, material["key"] if material and material["key"] else None, found[1])
+        except Exception:  # noqa: BLE001 - a mark is a nicety; the part's own check says what's wrong
+            log.exception("panel: checking %s for the list", part.get("name"))
+            return None
+        return "ok" if result["ok"] else "bad"
 
     def part(self, q: Dict[str, str]) -> Dict[str, Any]:
         did, wvm, wvmid, eid = self._studio(q)
@@ -295,15 +405,63 @@ class PanelApp:
         if key is not None and key not in self.cfg.materials:
             raise Refused(400, "Bad request")
         try:
-            geom = self.onshape.geometry(did, wvm, wvmid, eid, pid, str(part.get("microversionId") or ""),
-                                         part.get("name") or pid, fresh=q.get("fresh") == "1")
+            geom, extra = self.onshape.geometry(did, wvm, wvmid, eid, pid, str(part.get("microversionId") or ""),
+                                                part.get("name") or pid, fresh=q.get("fresh") == "1")
         except OutOfCalls as e:
             return {"unavailable": str(e)}
         except NoAccess:
             raise
         except PanelOnshapeError as e:
             return {"unavailable": str(e)}
-        return checks.check(geom, self.cfg, key)
+        return checks.check(geom, self.cfg, key, extra)
+
+    def changed(self, q: Dict[str, str]) -> Dict[str, Any]:
+        """{"changed": True/False/None, "what": [...], "run"}: None when there's nothing to compare with (not CAM'd
+        from Onshape yet). Costs at most two calls the first time (the CAM'd state is kept for good)."""
+        did, wvm, wvmid, eid = self._studio(q)
+        pid = self._part_id(q)
+        part = self._find(did, wvm, wvmid, eid, pid)
+        name = part.get("name") or pid
+        pc = self.board.for_part(did, eid, pid, name, self.board.part_cards(), card_id=str(q.get("card") or ""))
+        ref = self.board.cammed(pc.card.id) if pc is not None else None
+        if ref is None:
+            return {"changed": None}
+        if ref.get("microversion"):
+            kind, ident = "m", ref["microversion"]
+        elif "/v/" in (ref.get("url") or ""):
+            kind, ident = "v", ref.get("vid") or ""
+        else:
+            return {"changed": None}
+        try:
+            then, then_extra = self.onshape.geometry(ref["did"], kind, ident, ref["eid"], ref.get("part_id") or pid,
+                                                     ident, name)
+            now, now_extra = self.onshape.geometry(did, wvm, wvmid, eid, pid, str(part.get("microversionId") or ""),
+                                                   name)
+        except (OutOfCalls, PanelOnshapeError) as e:
+            return {"changed": None, "unavailable": str(e)}
+        what = differences(then, now, float(then_extra.get("outline_area_in2") or 0),
+                           float(now_extra.get("outline_area_in2") or 0))
+        if what and pc.status == "sheet":
+            try:
+                self.board.flag_changed(pc, name, what, shape_key(now))
+            except Exception as e:  # noqa: BLE001 - the panel still says it
+                log.warning("panel: telling %s's sheets it changed: %s", name, e)
+        return {"changed": bool(what), "what": what, "run": ref.get("run") or ""}
+
+    def renest(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        self._rate_limit()
+        did, wvm, wvmid, eid = self._studio(d)
+        pid = self._part_id(d)
+        part = self._find(did, wvm, wvmid, eid, pid)
+        pc = self.board.for_part(did, eid, pid, part.get("name") or "", self.board.part_cards(fresh=True),
+                                 card_id=str(d.get("card") or ""))
+        if pc is None or pc.status != "sheet":
+            raise Refused(409, "That card has moved on since this panel looked. Press Refresh.")
+        card = self.board.renest(pc)
+        log.info("panel: %s sent %s back to Ready for CAM (changed since it was CAM'd): %s",
+                 clean_text(d.get("name"), 40) or "someone", pc.card.name, card.url)
+        fresh = read_part_card(card, "queued")
+        return {"card": self.board.detail(fresh) if fresh is not None else None}
 
     def preview(self, q: Dict[str, str]) -> Response:
         sheet = q.get("sheet", "")
