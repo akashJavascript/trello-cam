@@ -162,7 +162,9 @@ When the panel's calls for the day are used up, it says so and students make car
 
 ## How it's hosted
 
-- The AutoCAM service serves the panel on `127.0.0.1:8770` (threads of its own process; `[panel] port`).
+- The AutoCAM service serves the panel on `127.0.0.1:8790` (threads of its own process; `[panel] port`). It was 8770
+  until 2026-11-02, which the LoRa range tester's walk page also uses (8770-8772); the tunnel's `config.yml` names
+  the port too, so a change means editing both and restarting AutoCAM's tunnel.
 - A Cloudflare tunnel named `autocam` makes it `https://autocam.team5940.org`. It's separate from
   BreadCompetition's `bread-comp` tunnel (which runs in the laptop's WSL) so neither one's restarts touch the other.
 - The tunnel's files are in `C:\dev\autocam-tunnel` on the laptop (not in the repo): `cloudflared.exe`

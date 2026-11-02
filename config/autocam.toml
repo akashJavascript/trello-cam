@@ -407,7 +407,8 @@ at_points = true                # placed on straight edges clear of corners wher
 [panel]                         # the Onshape panel ("Send to AutoCAM", service/autocam_service/panel; docs/panel.md):
                                 # a page in a Part Studio's right panel that makes part cards (Phase 1, 2026-11-01)
 enabled = true
-port = 8770                     # served on 127.0.0.1 only; the tunnel below makes it public_url
+port = 8790                     # served on 127.0.0.1 only; the tunnel below makes it public_url. Not 8770: the
+                                # LoRa range tester's walk page uses 8770-8772 on this laptop (moved 2026-11-02)
 public_url = "https://autocam.team5940.org"
 tunnel_dir = "C:/dev/autocam-tunnel"   # cloudflared.exe + config.yml + the tunnel's credentials (not in the repo);
                                 # the service starts the tunnel and keeps it running ("" = it doesn't)

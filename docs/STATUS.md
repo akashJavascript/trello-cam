@@ -100,7 +100,7 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 - **The Onshape panel, Phase 1** (2026-11-01, `docs/panel.md`): "Send to AutoCAM" in a Part Studio's right panel
   makes part cards in AutoCAM's format (Ready for CAM, or Drafts), with the quantity counted from the document's
   assemblies, the options in one list, the material set in Onshape when it has none, and each part's status
-  (waiting, on a sheet with its preview, cut, sent back and why). Served by the service on 127.0.0.1:8770, public as
+  (waiting, on a sheet with its preview, cut, sent back and why). Served by the service on 127.0.0.1:8790, public as
   https://autocam.team5940.org through its own Cloudflare tunnel; its own Onshape call limits. Tested offline (an
   e2e test sends a card through a whole run) and in a browser with fakes. Registered in Onshape 2026-11-01 (app
   `AutoCAM (Team 5940)`, Part Studio and assembly extensions, private App Store entry for all enterprise users;

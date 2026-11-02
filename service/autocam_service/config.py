@@ -236,7 +236,7 @@ class Panel:
     """The Onshape panel ("Send to AutoCAM", panel/): a page in Onshape's right panel that makes part cards. This
     service serves it on 127.0.0.1:port; a Cloudflare tunnel (tunnel_dir) makes it public_url."""
     enabled: bool = False
-    port: int = 8770
+    port: int = 8790
     public_url: str = ""
     tunnel_dir: str = ""                 # cloudflared.exe and config.yml ("": no tunnel started by the service)
     onshape_calls_per_day: int = 40      # the panel's own calls, counted apart from runs' (ledger run_id "panel")
