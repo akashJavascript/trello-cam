@@ -45,9 +45,10 @@ def test_faces_to_click_for_a_fit_and_the_cost():
     assert r["pick"]["H00"] == r["pick"]["H01"] == {"kind": "hole", "size": 0.25}
     assert "H10" not in r["pick"]                                                # the drilled one can't be fitted
     assert all(r["pick"][f"S{i}"] == {"kind": "outline"} for i in range(4))
-    share = 8.0 / 0.8 / (48 * 24)
-    assert r["use"] == {"area_in2": 8.0, "sheet_share": share, "each": round(85.0 * share, 2), "box_in": extra["box_in"]}
-    assert check(g, CFG, "al5052", extra)["use"]["each"] == round(80.0 * share, 2)
+    share = 8.0 / 0.7 / (48 * 24)                                               # WCP's $174.99 sheet, 70% used
+    assert r["use"] == {"area_in2": 8.0, "sheet_share": share, "each": round(174.99 * share, 2), "box_in": extra["box_in"]}
+    unpriced = check(g, CFG, "al5052", extra)["use"]                             # WCP sells no 1/8 in 5052
+    assert unpriced["each"] is None and unpriced["sheet_share"] == share
 
 
 # ---------------------------------------------------------------- changed since it was CAM'd

@@ -33,8 +33,8 @@ preview), cut, or sent back with the reason.
   the shape is checked against every stock size until one is picked. Checked against Fusion on P-2011's real
   version: the same thickness, cutter and 2 drilled, 20 bored, 2 bearing, 25 cut out.
 - **Cost and sheet use** (2026-11-01): under the check, "Cost: about $21.24 for 4 · 18% of a sheet": the part's
-  outline area, plus its share of the gaps (`[costs] nest_efficiency`, 0.8), at the sheet's price
-  (`[costs.sheet_prices]`: GUESSES until someone puts in what the team pays).
+  outline area, plus its share of the gaps (`[costs] nest_efficiency`, 0.7), at WCP's price for the sheet
+  (`[costs.sheet_prices]`, read 2026-11-01). A thickness WCP doesn't sell shows only the share of a sheet.
 - **Marks in the parts list:** a part already checked in this state of the Part Studio shows a tick or a warning
   sign beside its name (no Onshape call).
 - **The machine queue** at the top: AutoCAM's sheets in Sheet review and Ready to cut, their cutting time (from the
