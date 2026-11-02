@@ -150,6 +150,8 @@ class Material:
     thicknesses_in: Tuple[float, ...]
     use_mist: bool
     program_prefix: str
+    sheet_length_in: float = 0.0   # its new sheets' size when it isn't [sheet]'s (SWYFT 24 x 24, MAXComposite 47 x 23);
+    sheet_width_in: float = 0.0    # 0: [sheet]'s
 
 
 @dataclass(frozen=True)
@@ -401,6 +403,13 @@ class Config:
     def stock_types(self) -> List[Tuple[Material, float]]:
         return [(m, t) for m in self.materials.values() for t in m.thicknesses_in]
 
+    def sheet_for(self, material: Optional[str]) -> Sheet:
+        """A new sheet of this material: its own size if it has one, else [sheet]'s (2026-11-02)."""
+        m = self.materials.get(material or "")
+        if m is None or not m.sheet_length_in:
+            return self.sheet
+        return Sheet(length_in=m.sheet_length_in, width_in=m.sheet_width_in)
+
 
 # ---------------------------------------------------------------- reader
 
@@ -644,6 +653,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
             thicknesses_in=t.numbers("thicknesses_in"),
             use_mist=t.boolean("use_mist"),
             program_prefix=t.string("program_prefix", pattern=SAFE_NAME_RE, required=True),
+            sheet_length_in=t.number("sheet_length_in", minimum=0, default=0.0),
+            sheet_width_in=t.number("sheet_width_in", minimum=0, default=0.0),
         )
         t.finish()
 
@@ -972,6 +983,10 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
         seen_materials.add(ident)
         if m.family not in cfg.tooling:
             e(f"tooling.{m.family}: missing (used by materials.{m.key})")
+        if bool(m.sheet_length_in) != bool(m.sheet_width_in):
+            e(f"materials.{m.key}: give both sheet_length_in and sheet_width_in, or neither")
+        elif m.sheet_width_in > m.sheet_length_in:
+            e(f"materials.{m.key}: sheet_width_in is the short side (clamps go on the long edges)")
     thicknesses = sorted({t for m in cfg.materials.values() for t in m.thicknesses_in})
     gaps = [b - a for a, b in zip(thicknesses, thicknesses[1:])]
     if gaps and cfg.plate.thickness_tol_in >= min(gaps) / 2:

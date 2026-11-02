@@ -200,10 +200,11 @@ class Runner:
             if when and datetime.strptime(when, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=since.tzinfo) < since:
                 continue
             area = info.get("parts_area_in2")
+            size = self._size(info["material"])
             cut.append(tally.CutSheet(self._stock_label(info["material"], info["thickness_in"]),
                                       bool(info.get("offcut_id")),
                                       area if area is not None else self._result_area(info),
-                                      bool(info.get("by_hand"))))
+                                      bool(info.get("by_hand")), size[0] * size[1]))
         return tally.season_text(cut, since, self.cfg.sheet.width_in * self.cfg.sheet.length_in,
                                  len(self.offcuts.all()))
 
@@ -402,10 +403,15 @@ class Runner:
             self.t.comment(offcut_id, f"Free again: {label} was {how} without being cut.")
             log.info("offcut %s is free again: sheet card %s was %s", offcut_id, holder, how)
 
-    def _free_after(self, used) -> float:
-        """The longest free stretch a sheet with these used stretches would offer the next run."""
-        region = sheet_fixture(self.cfg).nest_region_in
-        return free_length(used, self.cfg.sheet.length_in, region[1], region[3], self.cfg.nest.offcut_gap_in)
+    def _size(self, material: Optional[str]) -> Tuple[float, float]:
+        """A sheet of this material's (length, width): its own size, else [sheet]'s (Config.sheet_for)."""
+        sheet = self.cfg.sheet_for(material)
+        return sheet.length_in, sheet.width_in
+
+    def _free_after(self, used, material: Optional[str] = None) -> float:
+        """The longest free stretch a sheet (of this material) with these used stretches would offer the next run."""
+        region = sheet_fixture(self.cfg, material).nest_region_in
+        return free_length(used, self._size(material)[0], region[1], region[3], self.cfg.nest.offcut_gap_in)
 
     def _stock_label(self, material_key: str, thickness_in: float) -> str:
         return f"{text.material_label(self.cfg.materials[material_key])} {text.thickness_label(thickness_in)}"
@@ -444,8 +450,9 @@ class Runner:
         missing = f"offcut #{instead_of}" if instead_of else "the offcut it was made for"
         if not offcut_id:
             a, b = min(x for x, _ in bands), max(y for _, y in bands)
-            return (f"Stock: a new {self._stock_label(material, thickness)} sheet, {self.cfg.sheet.width_in:g} x "
-                    f"{self.cfg.sheet.length_in:g} ({missing} wasn't on the rack; the program is the same). The parts "
+            length, width = self._size(material)
+            return (f"Stock: a new {self._stock_label(material, thickness)} sheet, {width:g} x "
+                    f"{length:g} ({missing} wasn't on the rack; the program is the same). The parts "
                     f"are cut {a:.0f} to {b:.0f} in from the front; the rest of the sheet becomes an offcut.")
         piece = self.offcuts.get(offcut_id)
         if piece is None:
@@ -453,7 +460,7 @@ class Runner:
         last = piece.get("last") or {}
         line = load_line(self._stock_label(piece["material"], thickness), piece.get("url", ""),
                          last.get("label", "its last sheet"), tuple(last.get("stretch", (0.0, 0.0))), turned,
-                         self.cfg.sheet.length_in, bool(last.get("turned", False)), piece.get("number"),
+                         self._size(piece["material"])[0], bool(last.get("turned", False)), piece.get("number"),
                          piece.get("length_in") if piece.get("scrap") else None, bool(piece.get("hand_cuts")))
         return line + (f" ({missing[0].upper() + missing[1:]} wasn't on the rack; this one fits the same program.)"
                        if changed else "")
@@ -475,7 +482,7 @@ class Runner:
         if not info.get("job") or not (bands or beside_used) or not info.get("cuttable") \
                 or info.get("offcut_done"):
             return
-        cfg, length, width = self.cfg, self.cfg.sheet.length_in, self.cfg.sheet.width_in
+        cfg, (length, width) = self.cfg, self._size(info.get("material"))
         label = info.get("label") or f"{info.get('run')} S{info.get('index')}"
         turned = bool(info.get("turned"))
         own = [add_used((), b, length, turned)[0] for b in bands]          # in its own coordinates
@@ -490,7 +497,7 @@ class Runner:
             for b in bands:
                 used = add_used(used, b, length, turned)
             beside = compact([r for i, r in enumerate(piece.get("beside", [])) if i not in beside_used] + left)
-            free = self._free_after(used)
+            free = self._free_after(used, piece["material"])
             if free < cfg.nest.offcut_min_in and not beside:
                 self.t.comment(offcut_id, f"Used up: {label} was cut from it.")
                 self.t.archive(offcut_id)
@@ -511,7 +518,7 @@ class Runner:
         used: Tuple = ()                              # a new sheet: end A was at the front
         for b in bands:
             used = add_used(used, b, length, False)
-        free = self._free_after(used)
+        free = self._free_after(used, info["material"])
         if free < cfg.nest.offcut_min_in and not left:
             return
         piece = {"material": info["material"], "thickness_in": info["thickness_in"], "used": [list(s) for s in used],
@@ -529,11 +536,12 @@ class Runner:
 
     def _offcut_card_text(self, piece: Dict) -> Tuple[str, str]:
         used = [tuple(s) for s in piece["used"]]
-        return card_text(self._stock_label(piece["material"], piece["thickness_in"]), self._free_after(used), used,
+        return card_text(self._stock_label(piece["material"], piece["thickness_in"]),
+                         self._free_after(used, piece["material"]), used,
                          (piece.get("last") or {}).get("label", ""), compact(piece.get("beside", [])),
                          self.cfg.nest.offcut_min_in, piece.get("number"),
                          piece.get("length_in") if piece.get("scrap") else None, piece.get("hand_cuts", []),
-                         self.cfg.sheet.width_in, self.cfg.hand_cuts.programs)
+                         self._size(piece["material"])[1], self.cfg.hand_cuts.programs)
 
     def scan_offcuts(self) -> None:
         """The Offcuts list each pass: offcuts without a number get one (their card says it), a missing offcut
@@ -575,14 +583,15 @@ class Runner:
         def resolve(hint: str):
             choice = resolve_material(None, hint, False, cfg.onshape.material_map, cfg.materials)
             return choice.key, choice.problem or ""
-        parsed = parse_scrap(f"{card.name}\n{card.desc}", cfg.materials, cfg.sheet.length_in, resolve)
+        parsed = parse_scrap(f"{card.name}\n{card.desc}", cfg.materials, lambda key: self._size(key)[0], resolve)
         if isinstance(parsed, str):
             self.t.comment(card.id, f"Not added as an offcut yet: {parsed}\n\n{SCRAP_HELP}")
             self.offcuts.set_reply(card.id, said)
             return
         material, thickness, length = parsed
-        used = [[round(length, 3), cfg.sheet.length_in]] if length < cfg.sheet.length_in - 1e-6 else []
-        if self._free_after([tuple(u) for u in used]) < cfg.nest.offcut_min_in:
+        full, width = self._size(material)
+        used = [[round(length, 3), full]] if length < full - 1e-6 else []
+        if self._free_after([tuple(u) for u in used], material) < cfg.nest.offcut_min_in:
             self.t.comment(card.id, f"Not added as an offcut: a {length:g} in piece is too short to nest on (it "
                                     f"needs about {cfg.nest.offcut_min_in + 2 * cfg.nest.offcut_gap_in + 0.5:g} in).")
             self.offcuts.set_reply(card.id, said)
@@ -590,8 +599,8 @@ class Runner:
         piece = {"material": material, "thickness_in": thickness, "used": used, "beside": [],
                  "last": {"label": "", "stretch": [0.0, 0.0], "turned": False}, "reserved_by": None,
                  "url": card.url, "number": self.offcuts.next_number(), "scrap": True, "length_in": round(length, 3)}
-        cuts, problems = parse_hand_cuts(f"{card.name}\n{card.desc}", cfg.sheet.width_in, length)
-        made, more, ids = self._program_cuts(card, thickness, length, ())
+        cuts, problems = parse_hand_cuts(f"{card.name}\n{card.desc}", width, length)
+        made, more, ids = self._program_cuts(card, thickness, length, (), material)
         problems += more
         cuts += [pc.cut for pc in made if not any(same_cut(pc.cut, c) for c in cuts)]
         piece["programs"] = sorted({ids[pc.program] for pc in made})
@@ -612,10 +621,10 @@ class Runner:
         """Take parts cut out by hand (across, along, in the piece's own coordinates) out of an offcut's record.
         record: list them as "Cut by hand" on its card (not for an own program AutoCAM placed: that's a sheet)."""
         cfg = self.cfg
-        region = sheet_fixture(cfg).nest_region_in
+        region = sheet_fixture(cfg, piece["material"]).nest_region_in
         used, beside = [tuple(s) for s in piece["used"]], [tuple(r) for r in piece.get("beside", [])]
         for c in cuts:
-            used, beside = cut_away(used, beside, tuple(c), cfg.sheet.length_in, (region[0], region[2]),
+            used, beside = cut_away(used, beside, tuple(c), self._size(piece["material"])[0], (region[0], region[2]),
                                     cfg.nest.part_spacing_in, cfg.nest.offcut_gap_in, cfg.nest.offcut_beside_min_in)
         if not piece.get("reserved_by"):
             beside = compact(beside)                  # no sheet holds a room by its place in the list
@@ -628,11 +637,12 @@ class Runner:
         shows it as read), a line that can't be read gets one reply, and a sheet card already nested on the
         offcut where the cut is gets told how to move."""
         cfg, t = self.cfg, self.cfg.trello
-        width = cfg.sheet.width_in
-        piece_length = piece["length_in"] if piece.get("scrap") else cfg.sheet.length_in
+        full, width = self._size(piece["material"])
+        piece_length = piece["length_in"] if piece.get("scrap") else full
         cuts, problems = parse_hand_cuts(card.desc, width, piece_length)
         new = [c for c in cuts if not any(same_cut(c, k) for k in piece.get("hand_cuts", []))]
-        made, more, ids = self._program_cuts(card, piece["thickness_in"], piece_length, piece.get("programs", []))
+        made, more, ids = self._program_cuts(card, piece["thickness_in"], piece_length, piece.get("programs", []),
+                                             piece["material"])
         problems += more
         sources: Dict[int, ProgramCut] = {}
         for pc in made:                               # a program's cut, unless it's recorded already
@@ -658,7 +668,7 @@ class Runner:
         what = "; ".join(hand_cut_line(c, width).split(": ", 1)[1]
                          + (f" (from {sources[i].program})" if i in sources else "") for i, c in enumerate(new))
         notes = "".join(f" {pc.program}: {pc.note}." for pc in sources.values() if pc.note)
-        free = self._free_after([tuple(s) for s in piece["used"]])
+        free = self._free_after([tuple(s) for s in piece["used"]], piece["material"])
         rooms = compact(piece["beside"])
         if free < cfg.nest.offcut_min_in and not rooms and not holder:
             self.t.comment(card.id, f"Recorded the hand cut ({what}). Nothing worth nesting on is left, so it's "
@@ -671,7 +681,7 @@ class Runner:
         self.t.comment(card.id, f"Recorded the hand cut ({what}): runs keep clear of it. "
                        + (f"{free:.0f} in free now" if free >= cfg.nest.offcut_min_in else "No free stretch now")
                        + (", plus room beside the cuts for small parts." if rooms else ".") + notes)
-        length, slack = cfg.sheet.length_in, cfg.nest.part_spacing_in + cfg.nest.offcut_gap_in
+        length, slack = full, cfg.nest.part_spacing_in + cfg.nest.offcut_gap_in
         turned = bool(info.get("turned"))
         spans = [(length - c[3], length - c[1]) if turned else (c[1], c[3]) for c in new]
         if any(s0 < b1 + slack and s1 > b0 - slack for s0, s1 in spans for b0, b1 in bands):
@@ -681,7 +691,8 @@ class Runner:
                                    f"\"{t.cut_away_item}\" under {t.stock_checklist} and this sheet moves to "
                                    "other stock.")
 
-    def _program_cuts(self, card: Card, thickness: float, length: float, read: Sequence[str]):
+    def _program_cuts(self, card: Card, thickness: float, length: float, read: Sequence[str],
+                      material: Optional[str] = None):
         """The programs attached to an offcut card that aren't recorded yet (handprograms.py): (the cuts they made
         where their Zeroed at lines say, problems, file name -> attachment id). Each is downloaded once."""
         hc = self.cfg.hand_cuts
@@ -695,7 +706,7 @@ class Runner:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 write_atomic(path, self.t.download(a))
             programs.append((a.name, path.read_bytes()))
-        made, problems = program_cuts(card.desc, programs, thickness, self.cfg.sheet.width_in, length, hc.cutter_in)
+        made, problems = program_cuts(card.desc, programs, thickness, self._size(material)[1], length, hc.cutter_in)
         return made, problems, {a.name: a.id for a in atts}
 
     def _bands(self, used_along, beside_used: Sequence[int], offcut_id: Optional[str],
@@ -704,10 +715,12 @@ class Runner:
         bands of the rooms beside earlier cuts it used. Another piece of stock takes the same program if
         these are clear on it."""
         bands = [list(used_along)] if used_along else []
-        rooms = (self.offcuts.get(offcut_id) or {}).get("beside", []) if offcut_id else []
+        piece = (self.offcuts.get(offcut_id) or {}) if offcut_id else {}
+        rooms = piece.get("beside", [])
+        length, width = self._size(piece.get("material"))
         for i in beside_used:
             if 0 <= i < len(rooms):
-                r = turn_rect(tuple(rooms[i]), self.cfg.sheet.width_in, self.cfg.sheet.length_in) if turned \
+                r = turn_rect(tuple(rooms[i]), width, length) if turned \
                     else tuple(rooms[i])
                 bands.append([r[1], r[3]])
         return bands
@@ -717,7 +730,7 @@ class Runner:
         """An offcut on the rack that the same program fits as it is (its used stretches clear of every band by
         the loading slack), and which way round: not spun if it can be helped, then the one with least room."""
         on_board = {c.id for c in self.t.list_cards("offcuts")}
-        gap, length = self.cfg.nest.offcut_gap_in, self.cfg.sheet.length_in
+        gap, length = self.cfg.nest.offcut_gap_in, self._size(material)[0]
         best = None
         for offcut_id, piece in self.offcuts.all().items():
             if (offcut_id == skip or offcut_id not in on_board or piece.get("missing") or piece.get("reserved_by")
@@ -727,7 +740,7 @@ class Runner:
             for turned in ((last,) if piece.get("scrap") else (last, not last)):
                 used = as_loaded([tuple(s) for s in piece["used"]], length, turned)
                 if all(b <= u0 - gap or a >= u1 + gap for a, b in bands for u0, u1 in used):
-                    rank = (turned != last, self._free_after([tuple(s) for s in piece["used"]]))
+                    rank = (turned != last, self._free_after([tuple(s) for s in piece["used"]], material))
                     if best is None or rank < best[0]:
                         best = (rank, offcut_id, turned)
                     break
@@ -805,8 +818,8 @@ class Runner:
         if offcut_id is None:
             used: Tuple = ()
             for b in bands:
-                used = add_used(used, tuple(b), self.cfg.sheet.length_in, False)
-            entry["rest_in"] = round(self._free_after(used), 2)
+                used = add_used(used, tuple(b), self._size(info.get("material"))[0], False)
+            entry["rest_in"] = round(self._free_after(used, info.get("material")), 2)
         self.s.store._write_sheets(reg)
         number = (self.offcuts.get(offcut_id) or {}).get("number") if offcut_id else None
         title = re.sub(r" offcut( #\d+)?", f" offcut #{number}" if offcut_id else "", card.name, count=1)
@@ -947,8 +960,8 @@ class Runner:
         if PLACE_MYSELF_RE.search(card.desc or ""):
             self._own_by_hand(card, att, data, key, thickness, cutter, box)
             return
-        fx = sheet_fixture(cfg)
-        width, length = cfg.sheet.width_in, cfg.sheet.length_in
+        fx = sheet_fixture(cfg, key)
+        length, width = self._size(key)
         on_board = {c.id for c in self.t.list_cards("offcuts")}
         pieces = {oid: p for oid, p in self.offcuts.all().items()
                   if oid in on_board and not p.get("reserved_by") and not p.get("missing")
@@ -1091,7 +1104,7 @@ class Runner:
             piece["reserved_by"] = None
             self._apply_hand_cuts(piece, [cut], record=False)
             piece["last"] = last
-            free = self._free_after([tuple(s) for s in piece["used"]])
+            free = self._free_after([tuple(s) for s in piece["used"]], piece["material"])
             rooms = compact(piece["beside"])
             if free < cfg.nest.offcut_min_in and not rooms:
                 self.t.comment(offcut_id, f"Used up: {label} ({own['program']}) was cut from it.")
@@ -1110,7 +1123,7 @@ class Runner:
             piece = {"material": info["material"], "thickness_in": info["thickness_in"], "used": [], "beside": [],
                      "last": last, "reserved_by": None}
             self._apply_hand_cuts(piece, [cut], record=False)
-            free = self._free_after([tuple(s) for s in piece["used"]])
+            free = self._free_after([tuple(s) for s in piece["used"]], piece["material"])
             if free < cfg.nest.offcut_min_in and not piece["beside"]:
                 return
             piece["number"] = self.offcuts.next_number()
@@ -1776,8 +1789,8 @@ class Runner:
                           for f in text.fit_series(ing.job, sheet)] if vs.cuttable else []}
         if sheet.used_y_in:
             before = (self.offcuts.get(sheet.offcut_id) or {}).get("used", []) if sheet.offcut_id else []
-            extra["rest_in"] = round(self._free_after(add_used(before, sheet.used_y_in, cfg.sheet.length_in,
-                                                               sheet.offcut_turned)), 2)
+            extra["rest_in"] = round(self._free_after(add_used(before, sheet.used_y_in, self._size(js.material)[0],
+                                                               sheet.offcut_turned), js.material), 2)
         store.register_sheet(card_id, run_id, vs.cuttable,
                              [js.parts[p.part_key] for p in vs.sheet.parts if p.part_key in js.parts],
                              job=job_id, material=js.material, thickness_in=vs.sheet.thickness_in,

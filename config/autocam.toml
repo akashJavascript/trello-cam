@@ -128,6 +128,8 @@ color = "MAXComposite"
 thicknesses_in = [0.125, 0.1875, 0.25]
 use_mist = false
 program_prefix = "SRPPmax"
+sheet_length_in = 47.0          # its new sheets: nested, clamped and priced as 47 x 23 (the user, 2026-11-02)
+sheet_width_in = 23.0
 
 [materials.srpp_swyft]          # SWYFT Composite: sold 24 x 24 in (610 mm), 3 and 6 mm thick
 name = "SRPP"
@@ -136,6 +138,8 @@ color = "SWYFT"
 thicknesses_in = [0.125, 0.1875, 0.25]
 use_mist = false
 program_prefix = "SRPPswyft"
+sheet_length_in = 24.0          # its new sheets: 24 x 24 (610 mm square)
+sheet_width_in = 24.0
 
 # Tools are identified by GUID only. number/diameter/flute are checked against the pinned
 # library, never used to pick a tool. cutter_label is what the sheet card tells the operator to load.
@@ -490,13 +494,13 @@ nest_efficiency = 0.7           # the share of a sheet that ends up as parts (th
 "0.1875" = 199.99
 "0.25" = 249.99
 
-[costs.sheet_prices.srpp_maxcomposite]   # REV MAXComposite (revrobotics.com, read 2026-11-02): $150 to $225 for a
-"0.125" = 159.86                # 47 x 23 in sheet, 0.1 in (REV-21-3098) or 0.2 in (REV-21-3095); the thinner
-"0.1875" = 239.78               # taken as the $150 one. Scaled to a 24 x 48 sheet's area (x 1.066). No 1/4 in
+[costs.sheet_prices.srpp_maxcomposite]   # REV MAXComposite (revrobotics.com, read 2026-11-02): $150 to $225 for its
+"0.125" = 150.00                # 47 x 23 in sheet, 0.1 in (REV-21-3098) or 0.2 in (REV-21-3095); the thinner
+"0.1875" = 225.00               # taken as the $150 one. No 1/4 in. (Each material's own sheet size.)
 
-[costs.sheet_prices.srpp_swyft] # SWYFT Composite (swyftrobotics.com, read 2026-11-02): 610 x 610 mm sheets, 3 mm
-"0.125" = 159.98                # $79.99, 6 mm (foam core) $89.99; doubled for a 24 x 48 sheet. No 3/16 in
-"0.25" = 179.98
+[costs.sheet_prices.srpp_swyft] # SWYFT Composite (swyftrobotics.com, read 2026-11-02): its 610 x 610 mm sheet, 3 mm
+"0.125" = 79.99                 # $79.99, 6 mm (foam core) $89.99. No 3/16 in
+"0.25" = 89.99
 
 [paths]                         # relative to the repo root
 queue = "queue"

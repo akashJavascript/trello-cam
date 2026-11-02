@@ -100,9 +100,11 @@ def fit_spec(cfg: Config, store: Optional["fitting.FitStore"], material: str, fi
                    diameter_in=fit[1])
 
 
-def sheet_fixture(cfg: Config) -> fixture.Fixture:
+def sheet_fixture(cfg: Config, material: Optional[str] = None) -> fixture.Fixture:
+    """Where parts may go on a new sheet of this material (its own size, Config.sheet_for)."""
+    sheet = cfg.sheet_for(material)
     return fixture.build(
-        sheet_length_in=cfg.sheet.length_in, sheet_width_in=cfg.sheet.width_in, reach_in=cfg.machine.reach_y_in,
+        sheet_length_in=sheet.length_in, sheet_width_in=sheet.width_in, reach_in=cfg.machine.reach_y_in,
         edge_margin_in=cfg.nest.edge_margin_in, reach_margin_in=cfg.nest.reach_margin_in,
         clamp_edges=cfg.clamps.edges, clamp_reach_in=cfg.clamps.reach_in, clamp_clearance_in=cfg.clamps.clearance_in,
         clamp_height_in=cfg.clamps.height_in)
@@ -122,7 +124,7 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
     if small is not None:
         tools[small.key] = small
 
-    fx = sheet_fixture(cfg)
+    fx = sheet_fixture(cfg, batch.material_key)
     scribe = scribe_spec(cfg)
 
     parts: List[PartSpec] = []
@@ -149,7 +151,8 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
         material=MaterialSpec(key=m.key, name=m.name, family=m.family, color=m.color,
                               thicknesses_in=tuple(m.thicknesses_in), thickness_tol_in=cfg.plate.thickness_tol_in,
                               use_mist=m.use_mist, program_prefix=m.program_prefix),
-        sheet=SheetSpec(cfg.sheet.length_in, cfg.sheet.width_in, cfg.machine.reach_y_in),
+        sheet=SheetSpec(cfg.sheet_for(batch.material_key).length_in, cfg.sheet_for(batch.material_key).width_in,
+                        cfg.machine.reach_y_in),
         fixture=FixtureSpec(fx.nest_region_in, fx.clamp_zones_in, cfg.clamps.height_in,
                             cfg.clamps.min_clear_above_stock_in),
         nest=NestSpec(cfg.nest.part_spacing_in, cfg.nest.max_sheets_per_group, cfg.nest.rotation,

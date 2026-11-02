@@ -17,6 +17,7 @@ class CutSheet:
     from_offcut: bool
     parts_area_in2: Optional[float]     # None: not on record (a sheet card from before 2026-10-02)
     by_hand: bool = False               # a part placed by hand, cut from a piece of its own
+    sheet_area_in2: float = 0.0         # a new sheet of its material (0: season_text's); SWYFT's is 24 x 24
 
 
 def season_text(cut: Sequence[CutSheet], since: datetime, sheet_area_in2: float, on_shelf: int) -> str:
@@ -36,7 +37,8 @@ def season_text(cut: Sequence[CutSheet], since: datetime, sheet_area_in2: float,
     known = [c.parts_area_in2 for c in cut if c.parts_area_in2 is not None]
     if new and known:
         parts = sum(known)
-        text += f" Parts: {parts:.0f} sq in, {100 * parts / (len(new) * sheet_area_in2):.0f}% of the new sheets"
+        bought = sum(c.sheet_area_in2 or sheet_area_in2 for c in new)
+        text += f" Parts: {parts:.0f} sq in, {100 * parts / bought:.0f}% of the new sheets"
         text += f" ({on_shelf} offcut{'s' if on_shelf != 1 else ''} still on the shelf)." if on_shelf else "."
     missing = len(cut) - len(known)
     if missing:

@@ -160,13 +160,15 @@ def _not_a_plate(thickness: float, stock: Tuple[float, ...]) -> Optional[List[Di
 
 def use(cfg: Config, material_key: str, thickness: Optional[float], extra: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """How much of a sheet one part takes and what that costs: its outline's area, plus its share of the gaps
-    ([costs] nest_efficiency), at the sheet's price ([costs] sheet_prices). None without a price or an outline."""
+    ([costs] nest_efficiency), at the sheet's price ([costs] sheet_prices; a material with its own sheet size
+    is priced and measured by its own sheet). None without a price or an outline."""
     area = float(extra.get("outline_area_in2") or 0.0)
     prices = cfg.costs.sheet_prices.get(material_key) or {}
     price = next((v for t, v in prices.items() if thickness is not None and abs(t - thickness) < 1e-6), None)
     if area <= 0:
         return None
-    share = area / cfg.costs.nest_efficiency / (cfg.sheet.length_in * cfg.sheet.width_in)
+    sheet = cfg.sheet_for(material_key)
+    share = area / cfg.costs.nest_efficiency / (sheet.length_in * sheet.width_in)
     return {"area_in2": round(area, 1), "sheet_share": share, "each": round(price * share, 2) if price else None,
             "box_in": extra.get("box_in")}
 

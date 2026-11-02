@@ -61,3 +61,56 @@ def test_srpp_picked_for_a_part_with_no_material_is_set_to_polycarbonate_and_nam
     assert json.loads(body)["properties"][0]["value"]["displayName"] == "Polycarbonate"
     [card] = card_in(p, "ready_for_cam")
     assert "Material: SRPP SWYFT" in card.desc
+
+
+# ---- each material's own sheet size (MAXComposite 47 x 23, SWYFT 24 x 24)
+
+def test_maxcomposite_and_swyft_have_their_own_sheet_size():
+    assert (CFG.sheet_for("srpp_swyft").length_in, CFG.sheet_for("srpp_swyft").width_in) == (24.0, 24.0)
+    assert (CFG.sheet_for("srpp_maxcomposite").length_in, CFG.sheet_for("srpp_maxcomposite").width_in) == (47.0, 23.0)
+    assert CFG.sheet_for("srpp_twill") == CFG.sheet and CFG.sheet_for("al6061") == CFG.sheet == CFG.sheet_for(None)
+
+
+def test_a_sheet_size_needs_both_sides_and_the_width_is_the_short_one():
+    import copy
+    import pytest
+    from autocam_service.config import ConfigError, parse_config
+    from test_config import RAW, REPO_ROOT
+    for sizes, why in (({"sheet_length_in": 24.0}, "give both"),
+                       ({"sheet_length_in": 20.0, "sheet_width_in": 30.0}, "the short side")):
+        data = copy.deepcopy(RAW)
+        data["materials"]["srpp_twill"].update(sizes)
+        with pytest.raises(ConfigError, match=why):
+            parse_config(data, root=REPO_ROOT)
+
+
+def test_the_panel_prices_a_part_by_its_own_sheet():
+    from autocam_service.panel.checks import use
+    swyft = use(CFG, "srpp_swyft", 0.125, {"outline_area_in2": 57.6})
+    assert abs(swyft["sheet_share"] - 57.6 / CFG.costs.nest_efficiency / 576.0) < 1e-9
+    assert swyft["each"] == round(79.99 * swyft["sheet_share"], 2)
+    twill = use(CFG, "srpp_twill", 0.125, {"outline_area_in2": 57.6})
+    assert abs(twill["sheet_share"] - swyft["sheet_share"] / 2) < 1e-9
+
+
+def test_a_hand_made_swyft_offcut_is_at_most_24_in_long():
+    from autocam_service.materials import resolve_material
+    from autocam_service.offcuts import parse_scrap
+
+    def resolve(hint):
+        c = resolve_material(None, hint, False, CFG.onshape.material_map, CFG.materials)
+        return c.key, c.problem or ""
+    length = lambda key: CFG.sheet_for(key).length_in                        # noqa: E731
+    assert parse_scrap("Material: SRPP SWYFT\nThickness: 1/8\nLength: 20", CFG.materials, length, resolve) == \
+        ("srpp_swyft", 0.125, 20.0)
+    assert "up to 24" in parse_scrap("Material: SRPP SWYFT\nThickness: 1/8\nLength: 30", CFG.materials, length, resolve)
+    assert parse_scrap("Material: SRPP Twill\nThickness: 1/8\nLength: 30", CFG.materials, length, resolve)[2] == 30.0
+
+
+def test_the_season_tally_counts_each_new_sheet_by_its_own_area():
+    from datetime import datetime, timezone
+    from autocam_service import tally
+    cut = [tally.CutSheet("SRPP SWYFT 1/8in", False, 288.0, sheet_area_in2=576.0),
+           tally.CutSheet("6061 1/8in", False, 576.0)]
+    text = tally.season_text(cut, datetime(2026, 9, 1, tzinfo=timezone.utc), 1152.0, 0)
+    assert "864 sq in, 50% of the new sheets" in text                         # 864 of 576 + 1152

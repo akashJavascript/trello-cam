@@ -234,10 +234,11 @@ def _number(text: str) -> Optional[float]:
     return float(m.group(1))
 
 
-def parse_scrap(text: str, materials: Mapping, sheet_length: float,
+def parse_scrap(text: str, materials: Mapping, sheet_length,
                 resolve) -> Union[Tuple[str, float, float], str]:
     """A hand-made card in Offcuts: (material key, thickness, length) or what's wrong. resolve: hint ->
-    (material key or None, problem)."""
+    (material key or None, problem). sheet_length: a new sheet's length, or material key -> its length (a material
+    can have its own sheet size)."""
     def line(name: str) -> Optional[str]:
         m = re.search(rf"^[ \t>\-*]*{name}[ \t*]*[:=][ \t]*(.+?)[ \t*]*$", text, re.IGNORECASE | re.MULTILINE)
         return m.group(1).strip("`* ") if m else None
@@ -253,6 +254,8 @@ def parse_scrap(text: str, materials: Mapping, sheet_length: float,
     if not stock:
         have = ", ".join(f"{x:g}" for x in materials[key].thicknesses_in)
         return f"Thickness {thickness} isn't a stock thickness of {material} (in inches: {have})."
+    if callable(sheet_length):
+        sheet_length = sheet_length(key)
     n = _number(length)
     if n is None or not 0 < n <= sheet_length + 1e-6:
         return f"Length {length} should be the piece's length in inches, up to {sheet_length:g}."
