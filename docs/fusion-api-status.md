@@ -183,7 +183,8 @@ Tabs at points and the shape (2026-10-03, test jobs `tpts1`-`tpts4`, `ttri1`):
   the calls work, but with 0.3 in triangular tabs Fusion **crashed** (CER report) after generating, in its stock
   simulation (`SubtractiveStockGenerator` -> `ToolpathToNCStreamBinder::onCircularMove` ->
   `ToolSpaceGeometrySimulator::onLinear`), on both attempts of `tsize1`. 0.157 in never did. Placement now
-  keeps tabs on one edge; 0.3 in is untested since.
+  keeps tabs on one edge, and 0.3 in **still crashed** Fusion in `generate()` on the same 4 plates
+  (r054, 2026-11-01, right after `set_tab_points`). Kept at the template's 0.157 in.
 
 Since the tab counts (2026-10-03): `tabPositioning` = 'tabCount' with `tabsPerContour` (the template's own
 parameter, 1 there), on outline ops and on copies of the `[inner]` op (`fx_cam.copy_op`:
