@@ -10,6 +10,9 @@ Reads:
   each one's definition, GET /assemblies/d/{did}/{wvm}/{wvmid}/e/{aid}?excludeSuppressed=true (getAssemblyDefinition).
   That's 1 + up to max_assemblies calls, kept assembly_cache_s for every part of the document. A part's quantity
   in an assembly is how many of its occurrences (subassemblies included) are that part.
+- a part's shape, for the design checks: GET /parts/d/{did}/{wvm}/{wvmid}/e/{eid}/partid/{pid}/bodydetails. One
+  call per part per state of the Part Studio (keyed by the parts list's microversion), kept on disk as AutoCAM's part
+  model (geometry.py), not the raw response (a plate's can be 2 MB).
 Write:
 - a part's material: POST /metadata/d/{did}/w/{wid}/e/{eid}/p/{pid}, setting the Material property. One call.
   The value is a material object copied from a part that already has that material (in this Part Studio, or
@@ -28,9 +31,15 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from urllib.parse import quote
+
+from autocam_core.geometry import PartGeometry
+from autocam_core.hotfolder import write_atomic
+from autocam_core.names import safe_token
 
 from ..onshape.client import API, BudgetExceeded, OnshapeClient, OnshapeError
 from ..onshape.ledger import Ledger
+from .geometry import body_geometry, solid_body
 
 log = logging.getLogger("autocam.panel")
 
@@ -110,6 +119,7 @@ class PanelOnshape:
         self._lock = threading.RLock()        # one Onshape request at a time: two students never pay twice
         self._parts: Dict[Tuple[str, str, str, str], _Entry] = {}
         self._assemblies: Dict[Tuple[str, str, str], _Entry] = {}
+        self._shapes: Dict[Tuple[str, ...], PartGeometry] = {}
 
     # ---- limits
     def calls_left(self) -> int:
@@ -159,6 +169,44 @@ class PanelOnshape:
     def cached_parts(self, did: str, wvm: str, wvmid: str, eid: str) -> Optional[List[Dict[str, Any]]]:
         hit = self._parts.get((did, wvm, wvmid, eid))
         return None if hit is None else hit.value
+
+    # ---- a part's shape, for the design checks
+    def geometry(self, did: str, wvm: str, wvmid: str, eid: str, pid: str, microversion: str, name: str,
+                 fresh: bool = False) -> PartGeometry:
+        """The part as AutoCAM's model, from memory, disk (same Part Studio state), or one bodydetails call."""
+        key = (did, wvm, wvmid, eid, pid, microversion)
+        path = self.cache_root / "onshape" / (f"geometry_{did}_{wvm}{wvmid}_{eid}_{safe_token(pid)}_"
+                                              f"{safe_token(microversion)}.json")
+        with self._lock:
+            if not fresh and key in self._shapes:
+                return self._shapes[key]
+            if not fresh and microversion and path.is_file():
+                try:
+                    geom = PartGeometry.from_dict(json.loads(path.read_text(encoding="utf-8")))
+                    self._shapes[key] = geom
+                    return geom
+                except (OSError, ValueError, KeyError, TypeError):
+                    pass
+            client = self._client()
+            try:
+                data = client.get_json(f"{API}/parts/d/{did}/{wvm}/{wvmid}/e/{eid}/partid/{quote(pid, safe='')}"
+                                       "/bodydetails", purpose="panel_bodydetails")
+            except BudgetExceeded as e:
+                raise OutOfCalls(str(e)) from e
+            except OnshapeError as e:
+                if e.status in (403, 404):
+                    raise NoAccess(str(e)) from e
+                raise PanelOnshapeError(f"Onshape couldn't describe the part's shape ({e.status or 'no answer'}).") \
+                    from e
+            body = solid_body(data, pid)
+            if body is None:
+                raise PanelOnshapeError("Onshape didn't return the part's shape.")
+            geom = body_geometry(body, name)
+            self._shapes[key] = geom
+            if microversion:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                write_atomic(path, json.dumps(geom.to_dict()).encode("utf-8"))
+            return geom
 
     # ---- quantities from the document's assemblies
     def assembly_counts(self, did: str, wvm: str, wvmid: str, eid: str, pid: str,

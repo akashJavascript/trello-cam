@@ -22,6 +22,16 @@ preview), cut, or sent back with the reason.
     refuses (or the tab is a version), the card gets a `Material:` line instead, which the run reads.
   - **Who:** each student types their name once. It's kept for their Onshape user id (`state/panel_users.json`)
     and goes on every card ("Sent from the Onshape panel by ..."). There's no Onshape sign-in (the user's choice).
+- **Design checks** (built 2026-11-01): opening a part checks it with AutoCAM's own plate rules (`plate.py`,
+  `tooling.py`), the ones a run applies after the STEP export, on its shape from Onshape (`panel/geometry.py`, one
+  `bodydetails` call per part per state of the Part Studio, kept on disk). It says either "AutoCAM can cut this" with
+  the stock thickness, cutter and features (2 drilled, 20 bored, ...), or what would send it back, each with a fix:
+  a thickness that isn't stock (and the nearest that is), chamfers, rounded top edges, 3D faces, pockets from both
+  sides, a hole or inside corner too small for any cutter, a pocket with an island, a split top. Notes: sharp inside
+  corners, holes cut around their edge. A feature that only needs the 1/8 in endmill isn't a problem: it says
+  "1/8 in endmill (a 0.130 in hole needs it)" and never asks for a change (the user's choice). Without a material,
+  the shape is checked against every stock size until one is picked. Checked against Fusion on P-2011's real
+  version: the same thickness, cutter and 2 drilled, 20 bored, 2 bearing, 25 cut out.
 - **A part that already has a card:** its status. A second card is refused; the quantity can be changed instead
   (a card already on a sheet goes back to Ready for CAM and is nested again). A card in Drafts can be edited and
   sent; a sent-back card shows why and can be sent again (the same card, made over).
@@ -45,13 +55,14 @@ Onshape after sending doesn't break the card.
 ## Onshape calls
 
 Every call goes through the ledger (run id `panel`) and is counted apart from runs': `[panel]
-onshape_calls_per_day` (40) and `onshape_calls_per_year` (1500), beside runs' `yearly_cap_calls` (1500). Both
+onshape_calls_per_day` (60) and `onshape_calls_per_year` (1500), beside runs' `yearly_cap_calls` (1500). Both
 are shares of the enterprise's 10,000 a year; config-check refuses more than that together.
 
 | What | Calls | Kept |
 |---|---|---|
 | A Part Studio's parts (opening the panel) | 1 | 10 min (`parts_cache_s`), or until Refresh |
 | Quantities: the document's assemblies | 1 + up to 4 (`max_assemblies`) | 30 min, for every part of the document |
+| A part's shape, for the design checks | 1 | on disk, until the Part Studio changes |
 | Setting a material | 1 | |
 | Status, sending, changing a quantity | 0 (Trello only) | |
 

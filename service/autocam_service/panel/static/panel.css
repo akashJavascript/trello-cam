@@ -102,6 +102,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .notice.good { background: var(--good-container); color: var(--on-good-container); }
 .notice.bad { background: var(--error-container); color: var(--on-error-container); }
 .notice.info { background: var(--surface-container); color: var(--on-surface-variant); }
+.problems { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.problems li span { display: block; margin-top: 2px; opacity: .85; }
+.check { gap: 8px; }
+.check-note { margin: 0; padding: 0 2px; }
 
 .parts { display: flex; flex-direction: column; }
 .group > .link-btn { align-self: flex-start; margin-top: 8px; }

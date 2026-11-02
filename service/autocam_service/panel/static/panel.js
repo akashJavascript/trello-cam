@@ -136,6 +136,7 @@
     partId: null,
     detail: null,          // /api/part: {part, card}
     qty: null,             // /api/qty for the open part (null: counting)
+    check: null,           // /api/check for the open part (null: checking)
     form: null,
     editing: false,        // the form, making the open part's Drafts or sent-back card over
     sent: null,            // /api/send's answer
@@ -180,7 +181,7 @@
   }
 
   function openPart(id, keepNotice) {
-    S.mode = "part"; S.partId = id; S.detail = null; S.qty = null; S.sent = null; S.editing = false;
+    S.mode = "part"; S.partId = id; S.detail = null; S.qty = null; S.check = null; S.sent = null; S.editing = false;
     S.changing = null; S.form = null;
     if (!keepNotice) S.notice = "";
     var listed = (S.studio && S.studio.parts.filter(function (p) { return p.id === id; })[0]) || null;
@@ -197,6 +198,20 @@
       render();
     });
     loadQty(id, false);
+    loadCheck(id, "");
+  }
+
+  function loadCheck(id, material) {
+    S.check = null;
+    api("GET", "/api/check", where({ p: id, m: material || "" })).then(function (r) {
+      if (S.partId !== id) return;
+      S.check = r;
+      render();
+    }, function (err) {
+      if (S.partId !== id) return;
+      S.check = { unavailable: err.message };
+      render();
+    });
   }
 
   function loadQty(id, fresh) {
@@ -423,9 +438,11 @@
     if (card && card.status === "cut") chips.push(chip("Cut before", "cut"));
     if (S.editing && card) chips.push(chip(card.label, card.status));
     add(bodyEl, partHead(d.part, chips));
+    add(bodyEl, checkBlock());
 
     if (pickMaterial) {
-      var sel = h("select", { class: "select wide", "aria-label": "Material", onchange: function () { f.material = sel.value; render(); } },
+      var sel = h("select", { class: "select wide", "aria-label": "Material", onchange: function () {
+        f.material = sel.value; loadCheck(S.partId, f.material); render(); } },
         h("option", { value: "" }, "Choose a material"),
         st.materials.map(function (o) { return h("option", { value: o.value, selected: f.material === o.value ? "selected" : null }, o.label); }));
       add(bodyEl, group("Material", sel, h("span", { class: "hint" },
@@ -495,6 +512,29 @@
       add(actionEl, h("div", { class: "as" }, "Sending as " + S.user + " · ",
         h("button", { class: "link-btn", type: "button", onclick: function () { S.user = ""; stored("name", ""); render(); } }, "change")));
     }
+  }
+
+  // the design checks: AutoCAM's own rules on the part's shape (panel/checks.py)
+  function checkBlock() {
+    var c = S.check;
+    if (c === null) return h("div", { class: "notice info" }, icon("info"), h("div", null, "Checking the part…"));
+    if (c.unavailable) return notice("info", null, "Couldn't check the part: " + c.unavailable);
+    var cutter = c.cutter ? c.cutter + (c.cutterWhy ? " (" + c.cutterWhy + ")" : "") : "";
+    var facts = [c.thickness, cutter, c.features].filter(Boolean).join(" · ");
+    var block = h("div", { class: "group check" });
+    if (!c.ok) {
+      add(block, h("div", { class: "notice bad", role: "alert" }, icon("alert"), h("div", null,
+        h("b", null, "AutoCAM would send this back"),
+        h("ul", { class: "problems" }, c.problems.map(function (p) {
+          return h("li", null, p.title, p.fix ? h("span", null, p.fix) : null);
+        })))));
+    } else if (c.needMaterial) {
+      add(block, notice("info", "The shape can be cut", facts + ". Pick a material to check the thickness and cutter."));
+    } else {
+      add(block, notice("good", "AutoCAM can cut this", facts));
+    }
+    (c.notes || []).forEach(function (n) { add(block, h("p", { class: "hint check-note" }, n)); });
+    return block;
   }
 
   function send(nameInput) {

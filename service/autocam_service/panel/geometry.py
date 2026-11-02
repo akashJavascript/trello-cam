@@ -1,0 +1,183 @@
+"""Onshape's body details -> autocam_core.geometry.PartGeometry: the same model fx_geometry.py makes from Fusion's
+BRep, so the panel runs AutoCAM's own plate checks (plate.py, tooling.py) while the part is still being designed.
+
+The response (GET /parts/d/{did}/{wvm}/{wvmid}/e/{eid}/partid/{pid}/bodydetails) lists the body's faces (surface
+type and parameters, area, loops of coedges), edges (curve, end and mid points) and vertices, in meters.
+Conventions, read off P-2011's real response (2026-11-01) and checked against Fusion's analysis of the same version
+(run r004: 3/16 in, 2 drilled, 20 bored, 2 bearing, 25 cut out):
+- a face's outward normal is its surface's normal, reversed when the face's `orientation` is false;
+- a cylinder face that's reversed points at its axis: it wraps around empty space (a hole or an inside corner);
+- loops run counterclockwise seen from outside (material on the left), so at a straight edge between two flat faces,
+  (n1 x n2) . t > 0 is a convex edge, t being the edge's direction as the first face's loop runs it.
+
+Measured like fx_geometry: the plate axis is the outward normal of the largest flat face; heights along it from the
+part's lowest point; a cylinder's sweep from its area (area / (radius x height)), since STEP and Onshape both split
+holes into pieces.
+"""
+
+import math
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+from autocam_core.geometry import CYLINDER, PLANE, Face, PartGeometry
+
+M_PER_IN = 0.0254
+TOL_M = 1e-8
+Vec = Tuple[float, float, float]
+
+
+def _v(d: Optional[Dict[str, Any]]) -> Optional[Vec]:
+    if not isinstance(d, dict):
+        return None
+    return (float(d.get("x", 0.0)), float(d.get("y", 0.0)), float(d.get("z", 0.0)))
+
+
+def _dot(a: Vec, b: Vec) -> float:
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _cross(a: Vec, b: Vec) -> Vec:
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def _unit(a: Vec) -> Vec:
+    n = math.sqrt(_dot(a, a))
+    return (a[0] / n, a[1] / n, a[2] / n) if n > 0 else (0.0, 0.0, 0.0)
+
+
+def _scale(a: Vec, k: float) -> Vec:
+    return (a[0] * k, a[1] * k, a[2] * k)
+
+
+def _basis(axis: Vec) -> Tuple[Vec, Vec]:
+    helper = (1.0, 0.0, 0.0) if abs(axis[0]) <= 0.9 else (0.0, 1.0, 0.0)
+    u = _unit(_cross(axis, helper))
+    return u, _unit(_cross(axis, u))
+
+
+def _kind(face: Dict[str, Any]) -> str:
+    t = str(((face.get("surface") or {}).get("type") or "unknown")).lower()
+    return {"plane": PLANE, "cylinder": CYLINDER}.get(t, t)
+
+
+def outward_normal(face: Dict[str, Any]) -> Vec:
+    n = _unit(_v((face.get("surface") or {}).get("normal")) or (0.0, 0.0, 0.0))
+    return n if face.get("orientation", True) else _scale(n, -1.0)
+
+
+def _coedges(face: Dict[str, Any]) -> Iterable[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    for loop in face.get("loops") or []:
+        for co in loop.get("coedges") or []:
+            yield loop, co
+
+
+def solid_body(details: Dict[str, Any], part_id: str) -> Optional[Dict[str, Any]]:
+    bodies = details.get("bodies") if isinstance(details, dict) else None
+    for b in bodies or []:
+        if b.get("id") == part_id:
+            return b
+    solids = [b for b in bodies or [] if str(b.get("type", "")).upper() == "SOLID"]
+    return solids[0] if len(solids) == 1 else None
+
+
+def body_geometry(body: Dict[str, Any], name: str) -> PartGeometry:
+    if str(body.get("type", "SOLID")).upper() != "SOLID":
+        return PartGeometry(name, 0, 0.0, ())
+    faces: List[Dict[str, Any]] = [f for f in body.get("faces") or [] if f.get("id")]
+    planes = [f for f in faces if _kind(f) == PLANE]
+    if not planes:
+        return PartGeometry(name, 1, 0.0, ())
+    axis = outward_normal(max(planes, key=lambda f: float(f.get("area") or 0.0)))
+    u, w = _basis(axis)
+
+    vertices = {v.get("id"): _v(v.get("point")) for v in body.get("vertices") or []}
+    edges = {e.get("id"): e for e in body.get("edges") or []}
+
+    def edge_points(eid: str) -> List[Vec]:
+        e = edges.get(eid) or {}
+        pts = [vertices.get(vid) for vid in e.get("vertices") or []]
+        g = e.get("geometry") or {}
+        pts += [_v(g.get(k)) for k in ("startPoint", "endPoint", "midPoint", "quarterPoint")]
+        return [p for p in pts if p is not None]
+
+    every = [p for p in vertices.values() if p is not None] + [p for eid in edges for p in edge_points(eid)]
+    if not every:
+        return PartGeometry(name, 1, 0.0, ())
+    heights = [_dot(p, axis) for p in every]
+    z0, z1 = min(heights), max(heights)
+
+    ids = {f["id"]: i for i, f in enumerate(faces, 1)}
+    faces_of_edge: Dict[str, List[str]] = {}
+    for f in faces:
+        for _, co in _coedges(f):
+            faces_of_edge.setdefault(co.get("edgeId"), [])
+            if f["id"] not in faces_of_edge[co.get("edgeId")]:
+                faces_of_edge[co.get("edgeId")].append(f["id"])
+
+    out = []
+    for f in faces:
+        fid, kind = ids[f["id"]], _kind(f)
+        pts = [p for _, co in _coedges(f) for p in edge_points(co.get("edgeId"))]
+        zs = [_dot(p, axis) - z0 for p in pts] or [0.0]
+        lo, hi = min(zs), max(zs)
+        area = float(f.get("area") or 0.0)
+        data: Dict[str, Any] = dict(id=fid, kind=kind, z_min_in=lo / M_PER_IN, z_max_in=hi / M_PER_IN,
+                                    area_in2=area / (M_PER_IN * M_PER_IN))
+        surface = f.get("surface") or {}
+        if kind == PLANE:
+            data["normal_dot"] = _dot(outward_normal(f), axis)
+            loops = []
+            for loop in f.get("loops") or []:
+                if loop.get("isOuter") or not loop.get("isInner", True):
+                    continue
+                walls: List[int] = []
+                for co in loop.get("coedges") or []:
+                    for other in faces_of_edge.get(co.get("edgeId"), []):
+                        oid = ids.get(other)
+                        if oid is not None and oid != fid and oid not in walls:
+                            walls.append(oid)
+                loops.append(tuple(walls))
+            data["inner_loops"] = tuple(loops)
+        elif kind == CYLINDER:
+            cax = _unit(_v(surface.get("axis")) or (0.0, 0.0, 1.0))
+            r = float(surface.get("radius") or 0.0)
+            origin = _v(surface.get("origin")) or (0.0, 0.0, 0.0)
+            height = hi - lo
+            data.update(radius_in=r / M_PER_IN, axis_dot=abs(_dot(cax, axis)), concave=not f.get("orientation", True),
+                        center_in=(_dot(origin, u) / M_PER_IN, _dot(origin, w) / M_PER_IN),
+                        sweep_deg=min(360.0, math.degrees(area / (r * height))) if r > 0 and height > TOL_M else 0.0)
+        out.append(Face(**data))
+    return PartGeometry(name, 1, (z1 - z0) / M_PER_IN, tuple(out), _sharp_inside_corners(faces, edges, axis))
+
+
+def _sharp_inside_corners(faces: Sequence[Dict[str, Any]], edges: Dict[str, Dict[str, Any]], axis: Vec) -> int:
+    """Straight edges through the thickness where two flat walls meet concave, with no radius."""
+    by_id = {f["id"]: f for f in faces}
+    runs: Dict[str, List[Tuple[str, bool]]] = {}           # edge -> [(face, coedge runs along the edge)]
+    for f in faces:
+        for _, co in _coedges(f):
+            runs.setdefault(co.get("edgeId"), []).append((f["id"], bool(co.get("orientation", True))))
+    count = 0
+    for eid, sides in runs.items():
+        e = edges.get(eid) or {}
+        if len(sides) != 2 or str((e.get("curve") or {}).get("type", "")).upper() != "LINE":
+            continue
+        g = e.get("geometry") or {}
+        a, b = _v(g.get("startPoint")), _v(g.get("endPoint"))
+        if a is None or b is None:
+            continue
+        d = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
+        if math.sqrt(_dot(d, d)) < TOL_M:
+            continue
+        d = _unit(d)
+        if abs(abs(_dot(d, axis)) - 1) > 1e-4:
+            continue
+        (f1, along), (f2, _) = sides
+        if _kind(by_id[f1]) != PLANE or _kind(by_id[f2]) != PLANE:
+            continue
+        n1, n2 = outward_normal(by_id[f1]), outward_normal(by_id[f2])
+        if abs(_dot(n1, n2)) > 1 - 1e-4:
+            continue
+        t = d if along else _scale(d, -1.0)
+        if _dot(_cross(n1, n2), t) < 0:
+            count += 1
+    return count

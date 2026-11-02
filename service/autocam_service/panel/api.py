@@ -6,6 +6,7 @@
     GET  /api/studio?d&wvm&w&e[&fresh][&u]   the Part Studio's parts, each with its card's status
     GET  /api/part?d&wvm&w&e&p               one part, and its card in detail
     GET  /api/qty?d&wvm&w&e&p[&fresh]        how many of it each assembly of the document uses
+    GET  /api/check?d&wvm&w&e&p[&m][&fresh]  the design checks (checks.py) with that material (default: the part's)
     POST /api/send                           make its card (or make a sent-back or Drafts card over)
     POST /api/qty                            change a card's quantity
     POST /api/me                             remember a student's name for their Onshape user id
@@ -34,6 +35,7 @@ from ..cards import MAX_QTY
 from ..config import Config, Material
 from ..fits import parse_fit
 from ..tracker.base import Card
+from . import checks
 from .board import ACTIVE, PanelBoard, Send, read_part_card
 from .onshape_reads import NoAccess, OutOfCalls, PanelOnshape, PanelOnshapeError
 
@@ -154,7 +156,7 @@ class PanelApp:
             if not isinstance(data, dict):
                 raise Refused(400, "Bad request")
             route = {("GET", "/api/studio"): self.studio, ("GET", "/api/part"): self.part,
-                     ("GET", "/api/qty"): self.qty, ("POST", "/api/send"): self.send,
+                     ("GET", "/api/qty"): self.qty, ("GET", "/api/check"): self.check, ("POST", "/api/send"): self.send,
                      ("POST", "/api/qty"): self.change_qty, ("POST", "/api/me"): self.me,
                      ("POST", "/api/selection"): self.selection}.get((method, path))
             if path == "/api/preview" and method == "GET":
@@ -281,6 +283,27 @@ class PanelApp:
             return self.onshape.assembly_counts(did, wvm, wvmid, eid, pid, fresh=q.get("fresh") == "1")
         except OutOfCalls as e:
             return {"assemblies": [], "counted": 0, "total": 0, "note": str(e)}
+
+    def check(self, q: Dict[str, str]) -> Dict[str, Any]:
+        """The design checks. Out of calls, or Onshape not answering, isn't an error for the page: it just says the
+        check waits."""
+        did, wvm, wvmid, eid = self._studio(q)
+        pid = self._part_id(q)
+        part = self._find(did, wvm, wvmid, eid, pid)
+        have = self._part_material(part)
+        key = q.get("m") or (have["key"] if have and have["key"] else None)
+        if key is not None and key not in self.cfg.materials:
+            raise Refused(400, "Bad request")
+        try:
+            geom = self.onshape.geometry(did, wvm, wvmid, eid, pid, str(part.get("microversionId") or ""),
+                                         part.get("name") or pid, fresh=q.get("fresh") == "1")
+        except OutOfCalls as e:
+            return {"unavailable": str(e)}
+        except NoAccess:
+            raise
+        except PanelOnshapeError as e:
+            return {"unavailable": str(e)}
+        return checks.check(geom, self.cfg, key)
 
     def preview(self, q: Dict[str, str]) -> Response:
         sheet = q.get("sheet", "")
