@@ -224,13 +224,16 @@ SCRIBE_OFF = ("doLeadIn", "doLeadOut", "doRamp", "doMultipleDepths", "doMultiple
               "group_tabs", "useStockToLeave", "doChamfer", "useRestMachining")
 
 
-def scribe_params(op, depth_in: float) -> None:
+def scribe_params(op, depth_in: float, trace=lambda line: None) -> None:
     """[scribe]: the tool center on the line (no compensation), straight down to the depth and along it once: no
     leads, ramp, tabs, stock to leave or extra passes. From the stock top down by depth_in."""
+    trace("    compensationType")
     _set_choice(op, "compensationType", ("off",))
     for name in SCRIBE_OFF:
         if op.parameters.itemByName(name) is not None:
+            trace(f"    {name}")
             set_expr(op, name, "false")
+    trace("    heights")
     face_depth(op, depth_in)
 
 

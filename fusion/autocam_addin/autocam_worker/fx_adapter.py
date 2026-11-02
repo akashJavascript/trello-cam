@@ -22,6 +22,21 @@ from .fx_cam import UNCONFIRMED
 from .fx_util import call, to_cm
 
 
+class _Trace(list):
+    """Every adapter call, timed; also appended to `path` as it happens (pipeline sets it to the job's
+    fusion_calls.log), so a Fusion crash leaves behind how far it got (r041 crashed with nothing written)."""
+    path = None
+
+    def append(self, line):
+        super().append(line)
+        if self.path is not None:
+            try:
+                with open(self.path, "a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+            except OSError:
+                pass
+
+
 class FusionAdapter(Adapter):
     capabilities = frozenset({DRILL, BORE, BEARING, INNER, OUTER, POCKET, POCKETFINISH, FACE, SCRIBE})
 
@@ -38,7 +53,7 @@ class FusionAdapter(Adapter):
         self.stocks: Dict[str, object] = {}     # sheet -> its stock solid
         self.used: List[str] = []
         self.run_notes: List[str] = []
-        self.trace: List[str] = []              # every adapter call, timed (the job folder's fusion_calls.log)
+        self.trace: List[str] = _Trace()        # every adapter call, timed (the job folder's fusion_calls.log)
 
     def _used(self, key: str) -> None:
         if UNCONFIRMED[key] not in self.used:
@@ -171,6 +186,7 @@ class FusionAdapter(Adapter):
             call(f"{op_name}: face depth", fx_cam.face_depth, op, fill.depth_in)
         elif fill.tag == SCRIBE:
             self._used("scribe_lines")
+            self.trace.append(f"{_stamp()}   scribe: sketch")
             if sheet not in self.scribe_sketch:
                 root = self.design.rootComponent
                 sk = call("bend lines sketch", root.sketches.add, root.xYConstructionPlane)
@@ -179,8 +195,10 @@ class FusionAdapter(Adapter):
             lines = self.scribe_sketch[sheet].sketchCurves.sketchLines
             made = [call("bend line", lines.addByTwoPoints, adsk.core.Point3D.create(to_cm(x0), to_cm(y0), 0),
                          adsk.core.Point3D.create(to_cm(x1), to_cm(y1), 0)) for x0, y0, x1, y1 in fill.lines]
+            self.trace.append(f"{_stamp()}   scribe: select {len(made)} lines")
             call(f"{op_name}: select bend lines", fx_cam.select_lines, op, made, params["selections"]["contour"])
-            call(f"{op_name}: scribe", fx_cam.scribe_params, op, fill.depth_in)
+            self.trace.append(f"{_stamp()}   scribe: params")
+            call(f"{op_name}: scribe", fx_cam.scribe_params, op, fill.depth_in, self.trace.append)
         elif fill.tag == POCKETFINISH:
             self._used("pocket_walls")
             loops = [fx_geometry.outer_loop(fx_design.face_by_id(self._occ(cid), fid)) for cid, fid in fill.floors]

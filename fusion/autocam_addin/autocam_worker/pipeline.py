@@ -1542,6 +1542,9 @@ def process_job(job: Job, adapter: Adapter, out_dir: Path, *, attempt: int = 1, 
     if job_running():
         raise JobFailed(f"another job ({job_running()}) is already running in this Fusion")
     setattr(sys, _RUNNING, job.job_id)
+    live = getattr(adapter, "trace", None)
+    if hasattr(live, "path"):                         # written as it goes: a crash leaves how far it got
+        live.path = out_dir / "fusion_calls.log"
     try:
         log(f"job {job.job_id}: {len(job.parts)} parts, material {job.material.key}")
         adapter.begin(job.job_id)
