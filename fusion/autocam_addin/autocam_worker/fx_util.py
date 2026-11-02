@@ -57,13 +57,14 @@ def set_expr(obj, name: str, expression: str) -> None:
 CLOSE_RECOVERED = Path(__file__).with_name("close_recovered.ps1")
 
 
-def start_closing_recovered():
+def start_closing_recovered(wait_s: int = 0, tries: int = 1):
     """Fusion's "Recovered Documents" window (shown over the first document after a crash) silently stops toolpaths
     generating until it's closed (2026-11-02, r055-r059). A PowerShell UI Automation script clicks its Close; it
     runs on its own while the caller keeps Fusion's events going (Fusion must answer it). None if it can't start."""
     try:
         return subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                                 str(CLOSE_RECOVERED), str(os.getpid())], stdout=subprocess.PIPE,
+                                 str(CLOSE_RECOVERED), "-FusionPid", str(os.getpid()), "-WaitSeconds", str(int(wait_s)),
+                                 "-Tries", str(int(tries))], stdout=subprocess.PIPE,
                                 stderr=subprocess.DEVNULL, text=True, creationflags=0x08000000)   # no window
     except OSError:
         return None

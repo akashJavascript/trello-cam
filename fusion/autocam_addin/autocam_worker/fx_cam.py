@@ -11,7 +11,7 @@ import adsk.cam
 import adsk.core
 
 from .adapter import AdapterError, OpState, TemplateOp
-from .fx_util import call, collection, items, param, set_expr, to_cm, wait_for
+from .fx_util import call, collection, items, param, set_expr, start_closing_recovered, to_cm, wait_for
 
 STOCK_BOTTOM = "'from stock bottom'"
 
@@ -444,11 +444,22 @@ def generate(cam, setups, timeout_s: float, used=lambda key: None, trace=lambda 
     all_ops = [o for s in setups.values() for o in ops(s)]
 
     def settle(future, what):
-        wait_for(lambda: future.isGenerationCompleted, timeout_s, what, unblock_after_s=20.0,
-                 said=lambda out: trace(f"  not generating after 20 s; Recovered Documents window: {out or 'no answer'}"))
+        wait_for(lambda: future.isGenerationCompleted, timeout_s, what)
         wait_for(lambda: not any(o.isGenerating for o in all_ops), timeout_s, f"{what} to finish")
 
-    settle(call("generateAllToolpaths", cam.generateAllToolpaths, False), "toolpath generation")
+    # After a crash Fusion shows "Recovered Documents" over the first document, and generateAllToolpaths itself
+    # blocks until it's closed (r055-r062). A script started first, on its own, closes it if it's there.
+    closer = start_closing_recovered(wait_s=15, tries=4)
+    try:
+        settle(call("generateAllToolpaths", cam.generateAllToolpaths, False), "toolpath generation")
+    finally:
+        if closer is not None:
+            if closer.poll() is None:
+                closer.kill()                      # generation finished first: nothing was in the way
+            else:
+                said = (closer.stdout.read() if closer.stdout else "").strip()
+                if "clicked" in said:
+                    trace(f"  Recovered Documents window: {said}")
     # Seen in Fusion (2026-10-01, a 1/4 in plate with 29 cutouts): the outline op came back with no toolpath and
     # no error, and generated fine when asked again by hand. Ask once more for any op like that.
     missing = [o for o in all_ops if not o.hasToolpath and not o.hasError]
