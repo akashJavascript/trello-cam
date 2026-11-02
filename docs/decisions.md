@@ -962,9 +962,12 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   which writes the Smoked label or the Material: line; SRPP picked for a part with no material sets Polycarbonate in
   Onshape and still writes the line.
 - **Prices** (`[costs.sheet_prices]`): WCP Twill from its listings (the page itself refused us); MAXComposite and
-  SWYFT from REV's and SWYFT's pages, scaled to a 24 x 48 sheet's area, since they're sold 47 x 23 in and 24 x 24 in.
-- **Not done:** those two sizes. AutoCAM nests every new sheet as 24 x 48, so a MAXComposite or SWYFT sheet needs to
-  come in as an offcut card, or a sheet size per material (asked the user).
+  SWYFT from REV's and SWYFT's pages, per their own sheets.
+- **A sheet size per material** (the user said yes): MAXComposite is sold 47 x 23 in and SWYFT 24 x 24 in, so
+  `[materials.X] sheet_length_in / sheet_width_in` (both or neither; width the short side, where the clamps aren't).
+  `Config.sheet_for(material)` is a new sheet of it: its jobs' SheetSpec and fixture (nest region, the far clamp
+  strip on its own edge: 21.75 to 23 in on MAXComposite), and every offcut, hand-cut, own-program and stock-text
+  size in the runner. The panel's share of a sheet and the season tally divide by each material's own sheet.
 
 ## 2026-11-02: 0.3 in tabs work, on straight edges with room for the ramp (the user: "fix why 0.3 doesn't work")
 
