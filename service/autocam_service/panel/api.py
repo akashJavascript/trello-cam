@@ -603,7 +603,7 @@ class PanelApp:
         return {}
 
     def which_part(self, q: Dict[str, str]) -> Dict[str, Any]:
-        """A face or edge clicked in the CAD -> the part it's on. Onshape's SELECTION names only the entity's id
+        """A face, edge or corner clicked in the CAD -> the part it's on. Onshape's SELECTION names only the entity's id
         ("selectionType": "ENTITY", "entityType": "FACE", seen 2026-11-01; a whole part is "BODY" with its part id).
         Answered from the shapes AutoCAM already has for this state of the Part Studio (parts opened in the panel),
         never with an Onshape call: an unknown one is {"part": ""} and the page says to pick the part instead."""
@@ -618,7 +618,7 @@ class PanelApp:
             if found is None:
                 continue
             extra = found[1]
-            known = set(extra.get("face_ids") or ())
+            known = set(extra.get("face_ids") or ()) | set(extra.get("vertex_ids") or ())
             for edges in (extra.get("face_edges") or {}).values():
                 known.update(edges)
             if wanted & known:

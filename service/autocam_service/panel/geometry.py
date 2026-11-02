@@ -167,6 +167,7 @@ def read_body(body: Dict[str, Any], name: str) -> Tuple[PartGeometry, Dict[str, 
     extra["face_ids"] = [f["id"] for f in faces]
     extra["face_edges"] = {f["id"]: sorted({co.get("edgeId") for _, co in _coedges(f) if co.get("edgeId")})
                            for f in faces}
+    extra["vertex_ids"] = sorted(str(v["id"]) for v in body.get("vertices") or [] if v.get("id"))   # a click on a corner
     # The outline: the top's outer loop, or for a top split into faces in one plane (a sheet metal flat pattern is
     # split along its bends) the outer loops' co-edges that aren't shared between two of those faces, in order.
     level = _dot(_v((largest.get("surface") or {}).get("origin")) or (0.0, 0.0, 0.0), axis)

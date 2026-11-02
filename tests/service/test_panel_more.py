@@ -373,6 +373,7 @@ def test_a_face_or_edge_clicked_in_the_cad_finds_its_part_without_calling_onshap
     calls = len(p.transport.sent)
     assert p.call("GET", "/api/which-part", {**Q, "ids": "H00"})[1] == {"part": "JHD"}          # a face
     assert p.call("GET", "/api/which-part", {**Q, "ids": "zz9,h0ta"})[1] == {"part": "JHD"}     # an edge
+    assert p.call("GET", "/api/which-part", {**Q, "ids": "t0"})[1] == {"part": "JHD"}          # a corner
     assert p.call("GET", "/api/which-part", {**Q, "ids": "zz9"})[1] == {"part": ""}
     assert p.call("GET", "/api/which-part", {**Q, "ids": "<b>"})[1] == {"part": ""}
     assert len(p.transport.sent) == calls
