@@ -62,7 +62,7 @@ from autocam_core.errors import Issue
 from autocam_core.holes import ToolProfile
 from autocam_core.hotfolder import write_atomic
 from autocam_core.layout import Placed, plan_layout
-from autocam_core.offcuts import Placement, beside_as_loaded, placement_for, room_beside
+from autocam_core.offcuts import Placement, beside_as_loaded, free_rooms, placement_for
 from autocam_core.names import (face_program_name, fit_program_name, instance_id, outer_op_name, program_name,
                                 scribe_op_name, scribe_program_name, small_program_name)
 from autocam_core.ordering import order_outlines
@@ -776,21 +776,18 @@ def _sheet_use(job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> Dict[str, An
         "offcut_id": sheet.offcut_id, "offcut_turned": bool(sheet.offcut and sheet.offcut.turned)}
     left: List[Rect] = []
     beside = dict(sheet.offcut.beside) if sheet.offcut else {}
+    clear = margin + gap                           # the cutter's path, and slack for loading the sheet back
     for which, bs in boxes.items():
-        if which is not None and bs:               # what's left of room beside cuts, to the right of its new parts
-            r = beside[which]
-            room = room_beside(bs, (r[1], r[3]), r[2], margin, gap, least)
-            if room:
-                left.append(room)
+        if which is not None and bs:               # what's left of room beside cuts: every empty corner of it
+            left += free_rooms(bs, tuple(beside[which]), clear, least)
     stretch = next((e for w, e in sheet.areas if w is None), None)
     bs = boxes.get(None, [])
     if stretch is not None and bs:
         used = (round(min(b[1] for b in bs) - margin, 3), round(max(b[3] for b in bs) + margin, 3))
         out["used_y_in"] = used
         out["free_length_in"] = round(max(0.0, stretch[3] - oy - max(b[3] for b in bs)), 2)
-        room = room_beside(bs, used, job.fixture.nest_region_in[2], margin, gap, least)
-        if room:
-            left.append(room)
+        region = job.fixture.nest_region_in        # every empty rectangle among the parts, not just to their right
+        left += free_rooms(bs, (region[0], used[0], region[2], used[1]), clear, least)
     out["beside_used"] = tuple(sorted(w for w, bs in boxes.items() if w is not None and bs))
     out["beside_left_in"] = tuple(left)
     return out

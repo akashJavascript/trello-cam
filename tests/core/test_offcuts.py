@@ -2,7 +2,7 @@
 
 from autocam_core.offcuts import (
     add_used, as_loaded, beside_as_loaded, best_placement, compact, cut_away, free_length, free_stretch, rect_minus,
-    room_beside, to_own, turn_rect,
+    free_rooms, room_beside, to_own, turn_rect,
 )
 
 L, LO, HI, GAP = 48.0, 0.5, 39.5, 0.5     # sheet length, the nest region along X, the gap from old cuts
@@ -124,3 +124,41 @@ def test_a_room_the_hand_cut_takes_whole_keeps_its_place_until_compacted():
     _, beside = cut_away([(0.5, 7.5)], rooms, (8.0, 1.0, 12.0, 7.0), L, ACROSS, MARGIN, GAP, MIN_SIDE)
     assert beside[0] == (8.0, 0.5, 8.0, 0.5) and beside[1] == (14.0, 0.5, 22.75, 7.5)
     assert compact(beside) == [(14.0, 0.5, 22.75, 7.5)]
+
+
+# ---------------------------------------------------------------- every empty corner (2026-11-03)
+
+def test_every_empty_corner_among_the_parts_is_kept():
+    # Like r068: a part at the front left and a long one behind it on the right, in a band 0.5 to 26.55 in. 1 in
+    # clear of each (0.5 spacing + 0.5 loading slack). The room behind the front part (left) and the corner in front
+    # of the long one (right) are both kept, biggest first; the slivers beside them aren't.
+    boxes = [(1.8, 1.0, 11.4, 14.0), (11.9, 8.8, 21.6, 26.0)]
+    assert free_rooms(boxes, (0.5, 0.5, 23.5, 26.55), 1.0, 3.0) == [(0.5, 15.0, 10.9, 26.55), (12.4, 0.5, 23.5, 7.8)]
+
+
+def test_a_single_part_keeps_just_the_room_to_its_right_as_before():
+    assert free_rooms([(1.5, 0.75, 7.5, 3.75)], (0.5, 0.5, 22.75, 4.0), 0.75, 3.0) == [(8.25, 0.5, 22.75, 4.0)]
+    assert free_rooms([], (0.5, 0.5, 22.75, 4.0), 0.75, 3.0) == []
+
+
+def test_rooms_never_overlap_and_stay_clear_of_every_part():
+    import random
+    rnd = random.Random(5940)
+    area, clear, least = (0.5, 0.5, 23.5, 39.5), 1.0, 3.0
+    for _ in range(200):
+        boxes = []
+        for _ in range(rnd.randint(1, 8)):
+            x, y = rnd.uniform(0.5, 20), rnd.uniform(0.5, 36)
+            boxes.append((x, y, min(23.5, x + rnd.uniform(1, 8)), min(39.5, y + rnd.uniform(1, 10))))
+        rooms = free_rooms(boxes, area, clear, least)
+        assert len(rooms) <= 6
+        for i, r in enumerate(rooms):
+            assert r[2] - r[0] >= least - 0.002 and r[3] - r[1] >= least - 0.002
+            assert area[0] - 1e-6 <= r[0] and r[2] <= area[2] + 1e-6 and area[1] - 1e-6 <= r[1] and r[3] <= area[3] + 1e-6
+            for b in boxes:                              # at least `clear` from every part
+                assert r[2] <= b[0] - clear + 0.002 or r[0] >= b[2] + clear - 0.002 or \
+                    r[3] <= b[1] - clear + 0.002 or r[1] >= b[3] + clear - 0.002
+            for q in rooms[i + 1:]:                      # rooms never overlap
+                assert r[2] <= q[0] + 1e-6 or q[2] <= r[0] + 1e-6 or r[3] <= q[1] + 1e-6 or q[3] <= r[1] + 1e-6
+        areas = [(r[2] - r[0]) * (r[3] - r[1]) for r in rooms]
+        assert areas == sorted(areas, reverse=True)      # biggest first

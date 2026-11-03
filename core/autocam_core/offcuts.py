@@ -17,6 +17,11 @@ the edge of the nest region, as deep as the band) is kept too, as rectangles in 
 and the next nest fills it first with whatever fits. What a nest leaves of a rectangle it used (to the right
 of its new parts) is kept the same way.
 
+Since 2026-11-03 (the user: keep any empty corner, not just the room to the right) the rooms are every empty
+rectangle among the parts (free_rooms): in front of a short part, behind it, between two parts, as well as to the
+right. They never overlap, so each gets its own Arrange and parts in two rooms can't meet. A part's bounding box
+counts as used, so the room inside a part's own notches isn't kept.
+
 A part someone cuts out by hand is recorded the same way (cut_away): its stretch along the length is used, and
 the room to its left and right is room beside.
 """
@@ -131,6 +136,51 @@ def room_beside(boxes: Sequence[Rect], band: Stretch, right: float, margin: floa
     if right - x0 < min_side or band[1] - band[0] < min_side:
         return None
     return (round(x0, 3), round(band[0], 3), round(right, 3), round(band[1], 3))
+
+
+MOST_ROOMS = 6                        # rooms kept per band (each is one more Arrange in Fusion on the next nest)
+
+
+def free_rooms(boxes: Sequence[Rect], area: Rect, clear: float, min_side: float, most: int = MOST_ROOMS) -> List[Rect]:
+    """The empty rectangles in `area` (sheet coordinates: a band the parts were nested in, or a room they went in),
+    at least `clear` from every part's box (the cutter's path and the loading slack, like room_beside), biggest
+    first, never overlapping, each at least min_side both ways; at most `most`. Greedy: the biggest empty rectangle,
+    then the biggest one left beside it, and so on."""
+    if not boxes:
+        return []
+    ax0, ay0, ax1, ay1 = area
+    blocked = [(max(ax0, b[0] - clear), max(ay0, b[1] - clear), min(ax1, b[2] + clear), min(ay1, b[3] + clear))
+               for b in boxes]
+    blocked = [b for b in blocked if b[2] > b[0] and b[3] > b[1]]
+    rooms: List[Rect] = []
+    while len(rooms) < most:
+        best = _biggest_empty(area, blocked + rooms, min_side)
+        if best is None:
+            break
+        rooms.append(best)
+    return [tuple(round(v, 3) for v in r) for r in rooms]
+
+
+def _biggest_empty(area: Rect, blocked: Sequence[Rect], min_side: float) -> Optional[Rect]:
+    """The biggest rectangle in `area` overlapping nothing in `blocked`, at least min_side both ways. Its top and
+    bottom are at the area's or a blocked rectangle's edges, so trying every such pair of Ys, with the widest gap
+    across between what blocks that band, finds it."""
+    ax0, ay0, ax1, ay1 = area
+    ys = sorted({ay0, ay1} | {y for b in blocked for y in (b[1], b[3]) if ay0 < y < ay1})
+    best: Optional[Rect] = None
+    best_area = 0.0
+    for i, y0 in enumerate(ys):
+        for y1 in ys[i + 1:]:
+            if y1 - y0 < min_side - 1e-9:
+                continue
+            cuts = sorted((b[0], b[2]) for b in blocked if b[1] < y1 - 1e-9 and b[3] > y0 + 1e-9)
+            x = ax0
+            for c0, c1 in cuts + [(ax1, ax1)]:
+                g0, g1 = x, min(c0, ax1)
+                if g1 - g0 >= min_side - 1e-9 and (g1 - g0) * (y1 - y0) > best_area + 1e-9:
+                    best, best_area = (g0, y0, g1, y1), (g1 - g0) * (y1 - y0)
+                x = max(x, c1)
+    return best
 
 
 def to_own(r: Rect, width: float, length: float, turned: bool) -> Rect:
