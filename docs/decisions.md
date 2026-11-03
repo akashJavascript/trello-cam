@@ -982,6 +982,8 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   count changes (never changed by itself: Make it 6), "ordered 9 days ago", a note per part. Not per-subsystem bins
   from the robot assembly: the user sends from subassemblies.
 - **The sheet's link is in `.env`**, not the public repo: the sheet has students' names.
+- **Order copies the sheet's row** (the user asked; the sheet's columns E to I: Description, Link, Supplier, Part
+  Number, Units), pasted by the person at Description. Still never written by AutoCAM.
 
 ## 2026-11-02: SRPP, three kinds, cut as polycarbonate (the user)
 

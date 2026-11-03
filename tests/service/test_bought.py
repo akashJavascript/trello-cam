@@ -336,3 +336,19 @@ def test_the_order_sheet_link_is_the_same_on_every_phone(tmp_path):
     p = bought_panel(tmp_path, sheet="")
     p.app = PanelApp(p.app.cfg, KEY, p.onshape, p.board, p.names, clock=p.clock, parts=p.parts, order_sheet=mine)
     assert p.call("GET", "/api/shop", {"device": PHONE}, key=shop_key(KEY))[1]["orderSheet"] == sheet_link(mine)
+
+
+def test_order_copies_the_sheets_row_from_what_the_part_knows(tmp_path):
+    bom = bought_bom()
+    bom["headers"] = HEADERS + [{"id": "v", "propertyName": "vendor"}, {"id": "pn", "propertyName": "partNumber"}]
+    bom["rows"][1]["headerIdToValue"].update(v="WCP", pn="WCP-0322")
+    p = bought_panel(tmp_path, [bom])
+    a = p.call("GET", "/api/assembly", Q)[1]
+    keys = {b["name"]: b["key"] for b in a["bought"]}
+    p.call("POST", "/api/send-many", body={**Q, "name": "Siddhi", "items": [], "bought": [
+        {"key": keys[WHEEL], "qty": 3}, {"key": keys["2766T21 Rubber bumper"], "qty": 4},
+        {"key": keys["130T 3M 6mm Wide Belt"], "qty": 2}]})
+    shop = {x["name"]: x for x in p.call("GET", "/api/shop", {"device": PHONE}, key=shop_key(KEY))[1]["parts"]}
+    # Description, Link, Supplier, Part Number, Units: the sheet's columns E to I (shop.js joins them with tabs)
+    assert [(x["vendor"], x["number"], x["link"]) for x in shop.values()] == [
+        ("WCP", "WCP-0322", ""), ("McMaster", "2766T21", "https://www.mcmaster.com/2766T21/"), ("", "", "")]

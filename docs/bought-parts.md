@@ -6,9 +6,12 @@ belts. They're sent from the Onshape panel with an assembly's plates and shafts,
 bought.
 
 **AutoCAM never writes to the order sheet** (the user: people write the row themselves, so everything is checked
-before money is spent). Order opens the team's Google Sheet in a new tab and copies the part's name (the sheet's
-Description column; its Name column is who asks); the card then asks "Added 2 to it?", and only **It's on the
-sheet** counts them as ordered.
+before money is spent). Order opens the team's Google Sheet in a new tab and copies the part's **row**: Description,
+Link, Supplier, Part Number, Units (the sheet's columns E to I, tab-separated, so pasting in a new row's
+Description cell fills all five). Name (who asks), Why, Subteam and Project are the person's to fill in; $/Unit and
+Total aren't touched. What AutoCAM knows: the part's name; a link and number only for McMaster numbers (their page);
+the BOM's Vendor and Part number columns when the part has them. The card then asks "Added 2 to it?", and only
+**It's on the sheet** counts them as ordered.
 
 **Counts, not just a state** (the user, 2026-11-02): a part needs a quantity; some of it can be in the bin, some on
 the order sheet, the rest still needed. "2 of 4 in the bin", then Order orders the other 2.

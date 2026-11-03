@@ -651,7 +651,8 @@ class PanelApp:
                     raise Refused(400, "is a screw or nut: those aren't on the parts list")
                 self.parts.add([{"source": f"{ref['key']}|{key}", "assembly": ref,
                                  "row": {"did": r["did"], "eid": r["eid"], "pid": r["pid"], "configuration": r["configuration"]},
-                                 "name": label, "vendor": _vendor(r), "qty": self._qty(item), "sender": sender,
+                                 "name": label, "vendor": _vendor(r), "number": _part_number(r), "link": _link(r),
+                                 "qty": self._qty(item), "sender": sender,
                                  "cad_qty": max(1, r["qty"]), "note": clean_text(item.get("note"), MAX_NOTE)}])
                 results.append({"key": key, "name": label, "sent": True, "bought": True})
             except (Refused, ShaftError) as e:
@@ -1239,6 +1240,21 @@ def _vendor(r: Dict[str, Any]) -> str:
     if v:
         return v[:40]
     return "McMaster" if MCMASTER_RE.match(r.get("name") or "") else ""
+
+
+def _part_number(r: Dict[str, Any]) -> str:
+    """A bought part's number for the order sheet: the BOM's Part number if set, else a McMaster name's number."""
+    v = str(r.get("number") or "").strip()
+    if v:
+        return v[:40]
+    m = MCMASTER_RE.match(r.get("name") or "")
+    return m.group(0).rstrip("_ .-") if m else ""
+
+
+def _link(r: Dict[str, Any]) -> str:
+    """Where to buy it, when that's known from the part alone: McMaster's page for its number."""
+    m = MCMASTER_RE.match(r.get("name") or "")
+    return f"https://www.mcmaster.com/{m.group(0).rstrip('_ .-')}/" if m else ""
 
 
 def _row_key(r: Dict[str, Any]) -> str:

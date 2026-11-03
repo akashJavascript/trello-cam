@@ -225,7 +225,7 @@
         openLink(p.url)),
       p.note ? h("p", { class: "note" }, p.note) : null,
       ask && ask.kind === "order" ? h("div", { class: "order-box" },
-        h("p", null, (S.copied ? "The order sheet opened in a new tab, and the part's name is copied for Description. "
+        h("p", null, (S.copied ? "The order sheet opened in a new tab, and the row is copied: paste it in a new row's Description cell. "
           : "The order sheet opened in a new tab. ") + "Added " + p.left + " to it?"),
         h("div", { class: "row" },
           h("button", { class: "btn btn-ghost btn-small", type: "button", onclick: function () { S.ask = null; render(); } }, "Not yet"),
@@ -251,14 +251,23 @@
         } }, icon("bin"), "In the bin")));
   }
 
-  // Order: copy the part's name, open the order sheet in a new tab, then ask whether they added it. The copy goes
+  // The order sheet's columns E to I, tab-separated so pasting at Description fills the row: Description, Link,
+  // Supplier, Part Number, Units (the team's sheet, 2026-11-02). Name, why, subteam and project are the person's.
+  function sheetRow(p) {
+    return [p.name, p.link || "", p.vendor || "", p.number || "", String(p.left)].map(function (x) {
+      return String(x).replace(/[\t\r\n]+/g, " ");
+    }).join("\t");
+  }
+
+  // Order: copy the part's row, open the order sheet in a new tab, then ask whether they added it. The copy goes
   // first, while this page still has the focus (a phone switches to the new tab).
   function order(p) {
     var url = S.data && S.data.orderSheet;
     if (!SHEET_RE.test(url || "")) return;
-    var copied = copyNow(p.name);
+    var row = sheetRow(p);
+    var copied = copyNow(row);
     if (!copied && navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(p.name).then(function () { if (S.ask && S.ask.id === p.id) { S.copied = true; render(); } }, function () {});
+      navigator.clipboard.writeText(row).then(function () { if (S.ask && S.ask.id === p.id) { S.copied = true; render(); } }, function () {});
     }
     window.open(url, "_blank", "noopener,noreferrer");
     S.ask = { id: p.id, kind: "order" }; S.copied = copied;

@@ -7,8 +7,9 @@ on the order sheet, and the rest are still needed. "2 of 4 in the bin" and order
 Each In the bin is logged, so a phone can undo its own last one the same day.
 
 AutoCAM never writes to the team's order sheet (the user: people write the row themselves, so it's checked before
-money is spent). Order opens the sheet in a new tab and copies the part's name; the part only counts as ordered once
-the person says they added it.
+money is spent). Order opens the sheet in a new tab and copies the part's row (Description, Link, Supplier, Part
+Number, Units: the sheet's columns E to I, pasted at Description); the part only counts as ordered once the person
+says they added it.
 
 When the assembly's count changes after a part was sent (4 wheels become 6), the part says "CAD has 6"; the panel's
 Make it 6 (or changing the quantity) settles it. The list never changes by itself.
@@ -187,6 +188,7 @@ class PartList(ShopList):
         for x in self.all():
             qty, in_bin, on_order = counts(x)
             item = {"id": x["id"], "name": x.get("name") or "", "vendor": x.get("vendor") or "", "qty": qty,
+                    "number": x.get("number") or "", "link": x.get("link") or "",
                     "assembly": x.get("assembly", {}).get("name", ""), "url": x.get("assembly", {}).get("url", "")}
             if x["status"] in ACTIVE:
                 stamp = x.get("ordered_at") or ""
