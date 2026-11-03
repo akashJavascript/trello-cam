@@ -15,8 +15,13 @@ page instead, at `https://autocam.team5940.org/shop`.
   showed up as plates). Each row is the stock and finished length, like `1/2 hex, 18.250 in`; shafts are never
   named. Identical ones (same tab, same length) are one row with the assembly's count.
 - The pencil opens a shaft: quantity, **Tap** for each end (10-32, 1/4-20, Other with a size typed in, None;
-  10-32 by default), and **Lathe** steps: Turn down (End 1 or 2, Diameter, Length) and Groove (distance from the
-  end; 0.020 per side, fixed). A Standoff with an OD that isn't a bar size gets "Turn to Ø..." from the model.
+  hex shafts start at 10-32, standoffs start untapped: they're bought-style spacers, the user), **Lathe** steps:
+  Turn down (End 1 or 2, Diameter, Length) and Groove (distance from the end; 0.020 per side, fixed), and a
+  **Note** that goes on the card. A Standoff with an OD that isn't a bar size gets "Turn down to Ø0.313 from 3/8
+  round" from the model (the next bar up).
+- **Click a part in the assembly** and its row in the list lights up (plates and shafts). Onshape's SELECTION
+  message gives the occurrence path; its last id is the part's instance, looked up in the assembly's definition
+  (one call, kept 30 minutes; read again once if the part is new).
 - Send sends ticked plates and shafts together. **Rush** applies to both; **Send plates to Drafts** only to plates.
   After sending, a shaft row shows nothing while it waits, then **In progress** or **Done**.
 - A waiting shaft can still be changed (the pencil) or taken off the list (Take it off the list). Once someone
@@ -67,6 +72,11 @@ The Shooter assembly's BOM (one call): 23 library rows. Lengths come in meters w
 Hex Shaft, 3/8 Hex shaft, 3/8 hex lite and Standoff was read right; Hex Spacers, Spline XS spacers, pulleys and the
 3d printed standoff were left out. Lengths are rounded halves up (7.8125 is 7.813, the same on the phone page).
 
-**Standoff taps come from its hole:** the Shooter's standoffs have IDs of 0.156 (5/32, the 10-32 tap drill),
-0.196-0.197 (a #10 clearance hole) and 0.203. Only the 10-32 drill size (0.150-0.166) gets "Tap 10-32" by default;
-any other hole gets no tap (the sender can pick one). The hole itself isn't a step on the card.
+**Standoffs start untapped** (the user), whatever their hole (the Shooter has 0.156, 0.196-0.197 and 0.203). The
+hole comes with the bar ("no one drills it"), so it's no step on the card.
+
+**Bought parts and the library's prints aren't plates.** The Shooter's wheels and sushi rollers (Polycarbonate),
+nut strip and spline adapter (6061) come from vendor libraries: public documents owned by the MKCad account, not
+by Team 5940 BREAD (`[panel] company_id`). A part from a document the team doesn't own is a "Bought part"; a part
+from the common parts library that isn't a shaft (PLA-STNDF, set to 6061) is a "Library part". Neither is offered
+or sent. Each document's owner is one call, read once and kept in `cache/document_owners.json`.

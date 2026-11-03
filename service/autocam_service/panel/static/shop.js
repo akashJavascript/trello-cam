@@ -125,6 +125,7 @@
         /^https:\/\/[a-z0-9.-]*onshape\.com\//.test(s.url) ? h("a", { class: "open", href: s.url, target: "_blank",
           rel: "noopener noreferrer", "aria-label": "Open the assembly in Onshape", title: "Open in Onshape" }, icon("open")) : null),
       s.steps.length ? h("ul", { class: "todo" }, s.steps.map(function (x) { return h("li", null, x); })) : null,
+      s.note ? h("p", { class: "note" }, s.note) : null,
       h("div", { class: "item-btns" },
         s.started && s.mine
           ? h("button", { class: "btn btn-ghost", type: "button", disabled: off, onclick: function () { act("stop", s); } }, "Stop")

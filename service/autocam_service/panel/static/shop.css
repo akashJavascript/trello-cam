@@ -55,6 +55,9 @@ button { font: inherit; color: inherit; }
 .todo li { display: flex; align-items: baseline; gap: 8px; }
 .todo li::before { content: ""; flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--outline); transform: translateY(-2px); }
 
+.note { margin: 0; padding: 8px 10px; border-radius: 10px; background: var(--surface-container); color: var(--on-surface);
+  font-size: 14px; overflow-wrap: anywhere; }
+
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 999px; height: 48px; padding: 0 12px;
   font-weight: 600; font-size: 15px; cursor: pointer; border: 0; white-space: nowrap; }
 .btn:active { transform: scale(0.97); }

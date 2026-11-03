@@ -122,6 +122,7 @@
       selectionsLogged++;
       api("POST", "/api/selection", { message: m }).catch(function () {});
     }
+    if (S.mode === "assembly" && S.asm) return highlightFromCad(m);
     if (pickFit(m)) return;
     var id = selectedPart(m);
     if (id) {
@@ -130,6 +131,24 @@
     }
     whichPart(m);
   });
+  // A part clicked in the assembly: its row in the list lights up (the occurrence path's last id is its instance)
+  function highlightFromCad(m) {
+    var sel = (Array.isArray(m.selections) ? m.selections : []).filter(function (x) {
+      return x && Array.isArray(x.occurrencePath) && x.occurrencePath.length;
+    });
+    if (!sel.length) { if (S.highlight) { S.highlight = ""; render(); } return; }
+    var path = sel[0].occurrencePath, inst = path[path.length - 1];
+    if (typeof inst !== "string" || S.busy) return;
+    api("GET", "/api/which-row", where({ inst: inst })).then(function (r) {
+      if (S.mode !== "assembly") return;
+      S.highlight = r.key || "";
+      render();
+      if (!r.key) return;
+      var row = bodyEl.querySelector('[data-key="' + CSS.escape(r.key) + '"]');
+      if (!row && !S.showOther) { S.showOther = true; render(); row = bodyEl.querySelector('[data-key="' + CSS.escape(r.key) + '"]'); }
+      if (row) row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }, function () {});
+  }
   function whichPart(m) {
     // A face or edge clicked (Onshape sends only its id): the server knows the parts already opened in the panel.
     var ids = (Array.isArray(m.selections) ? m.selections : []).filter(function (s) {
@@ -203,6 +222,7 @@
     asmResult: null,       // /api/send-many's answer
     shaftSel: {},          // shaft key -> {on, qty, ends, other, ops} (the assembly's library shafts)
     shaft: null,           // the shaft editor: {row, listedId, draft, error, saving}
+    highlight: "",         // the row of the part clicked in the assembly
     form: null,
     editing: false,        // the form, making the open part's Drafts or sent-back card over
     sent: null,            // /api/send's answer
@@ -276,7 +296,7 @@
     var ssel = {};
     (a.shafts || []).forEach(function (s) {
       var old = S.shaftSel[s.key];
-      ssel[s.key] = old || { on: s.sendable && !s.listed, qty: s.qty, ends: s.ends.slice(), other: [false, false],
+      ssel[s.key] = old || { on: s.sendable && !s.listed, qty: s.qty, ends: s.ends.slice(), other: [false, false], note: "",
         ops: s.ops.map(function (o) { return Object.assign({}, o); }) };
       if (!s.sendable) ssel[s.key].on = false;
     });
@@ -516,7 +536,7 @@
     }
     var list = h("div", { class: "parts" }, cut.map(row), S.showOther ? other.map(row) : null);
     var more = other.length ? h("button", { class: "link-btn", type: "button", onclick: function () { S.showOther = !S.showOther; render(); } },
-      S.showOther ? "Hide parts in other materials" : other.length + " more in materials AutoCAM doesn't cut") : null;
+      S.showOther ? "Hide the parts AutoCAM doesn't cut" : other.length + " more AutoCAM doesn't cut") : null;
     add(bodyEl, group("In this Part Studio", list, more));
   }
 
@@ -530,7 +550,8 @@
         skipped.length ? h("ul", { class: "problems" }, skipped.map(function (x) { return h("li", null, x.name + " " + x.why + "."); })) : null)));
     }
     add(bodyEl, queueLine(a.queue));
-    var ours = a.items.filter(function (i) { return (i.material && i.material.key) || i.chip.status !== "none"; });
+    // bought parts (a vendor's library) and the common parts library's prints aren't offered, whatever their material
+    var ours = a.items.filter(function (i) { return !i.notOurs && ((i.material && i.material.key) || i.chip.status !== "none"); });
     var other = a.items.filter(function (i) { return ours.indexOf(i) < 0; });
     function row(i) {
       var sel = S.asmSel[i.key];
@@ -540,10 +561,10 @@
         "aria-label": i.name + " quantity", onchange: function (ev) { sel.qty = Math.max(1, Math.min(a.maxQty, parseInt(ev.target.value, 10) || 1)); render(); } })
         : h("span", { class: "hint" }, "×" + i.qty);
       var tag = i.chip.status !== "none" && i.chip.label ? chip(i.chip.label, i.chip.status) : i.why ? chip(i.why, "bad") : null;
-      return h("label", { class: "arow" }, box, h("span", { class: "name" }, i.name), qty, tag);
+      return h("label", { class: "arow" + (S.highlight === i.key ? " hl" : ""), "data-key": i.key }, box, h("span", { class: "name" }, i.name), qty, tag);
     }
     var more = other.length ? h("button", { class: "link-btn", type: "button", onclick: function () { S.showOther = !S.showOther; render(); } },
-      S.showOther ? "Hide parts in other materials" : other.length + " more in materials AutoCAM doesn't cut") : null;
+      S.showOther ? "Hide the parts AutoCAM doesn't cut" : other.length + " more AutoCAM doesn't cut") : null;
     add(bodyEl, group(a.name ? "Parts in " + a.name : "Parts in this assembly",
       ours.length ? h("div", { class: "parts" }, ours.map(row), S.showOther ? other.map(row) : null) : h("p", { class: "muted" }, "No parts AutoCAM cuts."),
       more));
@@ -589,7 +610,7 @@
     S.busy = true; render();
     api("POST", "/api/send-many", where({
       items: chosen.map(function (i) { return { key: i.key, qty: S.asmSel[i.key].qty }; }),
-      shafts: shafts.map(function (x) { var sel = S.shaftSel[x.key]; return { key: x.key, qty: sel.qty, ends: sel.ends, ops: sel.ops }; }),
+      shafts: shafts.map(function (x) { var sel = S.shaftSel[x.key]; return { key: x.key, qty: sel.qty, ends: sel.ends, ops: sel.ops, note: sel.note || "" }; }),
       tabs: o.tabs, nest: o.nest, face: o.face, rush: o.rush, drafts: o.drafts, name: S.user, u: ctx.u, server: ctx.server
     })).then(function (r) {
       S.busy = false; S.asmResult = r;
@@ -638,10 +659,10 @@
       var right = L.status === "waiting"
         ? [h("span", { class: "hint" }, "×" + L.qty), editBtn(s.label, function () { openShaft(s, L); })]
         : h("span", { class: "chip-cell" }, chip(L.chip.label || "In progress", L.chip.status || "queued"));
-      return h("div", { class: "arow shaft" }, h("span", { class: "mark ok" }, icon("check")), h("span", { class: "name" }, s.label), right);
+      return h("div", { class: "arow shaft" + (S.highlight === s.key ? " hl" : ""), "data-key": s.key }, h("span", { class: "mark ok" }, icon("check")), h("span", { class: "name" }, s.label), right);
     }
     var sub = s.problem ? h("span", { class: "sub bad-text" }, s.problem) : L && L.status === "done" ? h("span", { class: "sub" }, "Done") : null;
-    return h("div", { class: "arow shaft" },
+    return h("div", { class: "arow shaft" + (S.highlight === s.key ? " hl" : ""), "data-key": s.key },
       s.sendable ? h("input", { type: "checkbox", checked: sel.on, "aria-label": "Send " + s.label,
         onchange: function (ev) { sel.on = ev.target.checked; render(); } }) : h("span"),
       h("span", { class: "name" }, s.label, sub),
@@ -662,7 +683,7 @@
     var tap = (S.asm && S.asm.shaftTap) || "10-32";
     var ends = from.ends.slice();
     S.shaft = { row: s, listedId: listed ? listed.id : null, error: "", saving: false, draft: {
-      qty: from.qty, ends: ends,
+      qty: from.qty, ends: ends, note: from.note || "",
       other: from.other ? from.other.slice() : ends.map(function (t) { return !!t && t !== tap && t !== "10-32" && t !== "1/4-20"; }),
       ops: from.ops.map(function (o) { return Object.assign({}, o); }) } };
     S.mode = "shaft";
@@ -681,11 +702,11 @@
     var E = S.shaft, d = E.draft;
     var ends = [0, 1].map(function (i) { return (d.ends[i] || "").trim(); });
     if (!E.listedId) {                         // not sent yet: it's what Send will send
-      S.shaftSel[E.row.key] = { on: true, qty: d.qty, ends: ends, other: d.other, ops: d.ops };
+      S.shaftSel[E.row.key] = { on: true, qty: d.qty, ends: ends, other: d.other, ops: d.ops, note: d.note.trim() };
       return closeShaft();
     }
     E.saving = true; E.error = ""; render();
-    api("POST", "/api/shaft", { id: E.listedId, qty: d.qty, ends: ends, ops: d.ops }).then(function () {
+    api("POST", "/api/shaft", { id: E.listedId, qty: d.qty, ends: ends, ops: d.ops, note: d.note.trim() }).then(function () {
       S.shaft = null; S.mode = "assembly"; return reloadAssembly();
     }, function (err) { E.saving = false; E.error = err.message; render(); });
   }
@@ -734,7 +755,8 @@
         ? h("div", { class: "fields" }, field("Diameter", o, "d", o.auto), o.end ? field("Length", o, "l") : null)
         : h("div", { class: "fields" }, field("From end", o, "at"),
             h("div", { class: "field" }, "Depth per side", h("span", { class: "fixed" }, fmt(S.asm.grooveDepth))));
-      add(ops, h("div", { class: "op" }, h("div", { class: "op-top" }, h("b", null, o.kind === "turn" ? "Turn down" : "Groove"), right), fields));
+      add(ops, h("div", { class: "op" }, h("div", { class: "op-top" },
+        h("b", null, o.kind === "groove" ? "Groove" : o.auto ? "Turn down from " + s.stock : "Turn down"), right), fields));
     });
     add(ops, h("div", { class: "add-row" },
       h("button", { class: "btn btn-secondary btn-small", type: "button", onclick: function () {
@@ -746,6 +768,8 @@
         d.ops.push({ kind: "groove", end: 1, at: 0.5 }); render();
       } }, icon("plus"), "Groove")));
     add(bodyEl, group("Lathe", ops));
+    add(bodyEl, group("Note", h("textarea", { class: "textarea", maxlength: "200", rows: "2", "aria-label": "Note for the shop",
+      placeholder: "Anything the shop should know", oninput: function (ev) { d.note = ev.target.value; } }, d.note)));
     var bad = shaftProblems(s, d.ops, d.ends, d.other);
     if (E.error) add(bodyEl, notice("bad", null, E.error));
     if (bad.length) add(bodyEl, notice("bad", null, bad.join("\n")));

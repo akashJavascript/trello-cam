@@ -31,7 +31,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote, unquote
 
 from autocam_core.geometry import PartGeometry
@@ -48,6 +48,8 @@ log = logging.getLogger("autocam.panel")
 MATERIAL_PROPERTY = "57f3fb8efa3416c06701d615"   # Onshape's Material property (a real BOM's headers, 2026-11-01;
                                                  # ...d60f is Part number)
 REFRESH_MIN_S = 10.0                             # a Refresh this soon after a read uses that read
+OWNERS_FILE = "document_owners.json"             # cache/: each document's owner, read once (they don't change)
+OWNER_LOOKUPS_PER_READ = 12                      # new documents looked up per assembly read (the rest next time)
 TOP_NAMES = re.compile(r"robot|main|full|top|master|final", re.IGNORECASE)
 
 
@@ -334,6 +336,80 @@ class PanelOnshape:
             self._elements[key] = _Entry(self.clock(), found)
             return found
 
+    # ---- who owns a document: bought (COTS) parts come from vendors' public libraries (2026-11-02: the Shooter's
+    # wheels, sushi rollers and nut strip are in documents owned by the MKCad account, set to Polycarbonate or 6061)
+    def document_owners(self, dids: Iterable[str], cached_only: bool = False,
+                        most: int = OWNER_LOOKUPS_PER_READ) -> Dict[str, str]:
+        """did -> its owner's id ("" not known yet). GET /documents/{did}, one call per document, kept for good in
+        cache/document_owners.json. At most `most` new ones per read; cached_only never calls Onshape. A document
+        AutoCAM's account can't open is "noaccess" (until the service restarts)."""
+        path = self.cache_root / OWNERS_FILE
+        with self._lock:
+            if not hasattr(self, "_owners"):
+                try:
+                    self._owners: Dict[str, str] = dict(json.loads(path.read_text(encoding="utf-8")))
+                except (OSError, ValueError):
+                    self._owners = {}
+            out: Dict[str, str] = {}
+            wanted = [d for d in dict.fromkeys(dids) if d]
+            new = [d for d in wanted if d not in self._owners][:0 if cached_only else most]
+            client, saved = None, False
+            for did in new:
+                try:
+                    client = client or self._client()
+                    info = client.get_json(f"{API}/documents/{did}", purpose="panel_document_owner")
+                except (OutOfCalls, BudgetExceeded):
+                    break
+                except OnshapeError as e:
+                    if e.status in (403, 404):
+                        self._owners[did] = "noaccess"
+                        continue
+                    log.warning("panel: who owns document %s: %s", did, e)
+                    break
+                owner = str(((info or {}).get("owner") or {}).get("id") or "")
+                if owner:
+                    self._owners[did] = owner
+                    saved = True
+            if saved:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                kept = {k: v for k, v in self._owners.items() if v != "noaccess"}
+                write_atomic(path, (json.dumps(kept, indent=1, sort_keys=True) + "\n").encode("utf-8"))
+            for did in wanted:
+                out[did] = self._owners.get(did, "")
+            return out
+
+    # ---- a part clicked in an assembly (its occurrence path's last id is the part's instance; seen 2026-11-02)
+    def assembly_instances(self, did: str, wvm: str, wvmid: str, aid: str, fresh: bool = False) -> Dict[str, Dict[str, Any]]:
+        """instance id -> {"documentId", "elementId", "partId", "configuration", ...} for every part instance in the
+        assembly and its subassemblies: GET /assemblies/... (one call), kept assembly_cache_s. fresh: read again
+        (a part just added), unless it was read in the last minute."""
+        key = (did, wvm, wvmid, aid)
+        with self._lock:
+            hit = getattr(self, "_instances", {}).get(key)
+            age = None if hit is None else self.clock() - hit.at
+            if hit is not None and (age < 60 or (not fresh and age < self.assembly_cache_s)):
+                return hit.value
+            client = self._client()
+            try:
+                d = client.get_json(f"{API}/assemblies/d/{did}/{wvm}/{wvmid}/e/{aid}",
+                                    query={"excludeSuppressed": "true"}, purpose="panel_assembly_instances")
+            except BudgetExceeded as e:
+                raise OutOfCalls(str(e)) from e
+            except OnshapeError as e:
+                if e.status in (403, 404):
+                    raise NoAccess(str(e)) from e
+                raise PanelOnshapeError(f"Onshape couldn't read the assembly ({e.status or 'no answer'}).") from e
+            found: Dict[str, Dict[str, Any]] = {}
+            d = d if isinstance(d, dict) else {}
+            for group in [d.get("rootAssembly") or {}] + list(d.get("subAssemblies") or []):
+                for i in group.get("instances") or []:
+                    if isinstance(i, dict) and i.get("type") == "Part" and i.get("id"):
+                        found.setdefault(i["id"], i)
+            if not hasattr(self, "_instances"):
+                self._instances: Dict[Tuple[str, str, str, str], _Entry] = {}
+            self._instances[key] = _Entry(self.clock(), found)
+            return found
+
     def cached_elements(self, did: str, wvm: str, wvmid: str) -> Optional[List[Dict[str, Any]]]:
         hit = self._elements.get((did, wvm, wvmid))
         return None if hit is None else hit.value
@@ -565,6 +641,43 @@ class PanelOnshape:
             path.parent.mkdir(parents=True, exist_ok=True)
             write_atomic(path, png)
         return png
+
+
+def _config_value(v: str) -> Any:
+    m = _QUANTITY_RE.match(v)
+    if m and m[2].lower() in _TO_IN:
+        try:
+            return round(float(m[1]) * _TO_IN[m[2].lower()], 5)
+        except ValueError:
+            pass
+    return v.strip().lower()
+
+
+def row_for_instance(inst: Dict[str, Any], rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The BOM row a part instance is counted in. An instance's configuration string isn't spelled like the BOM's:
+    it carries every parameter (Auto_Name_Part=true too) where the row leaves defaults out, and the float noise can
+    differ (the Shooter's standoffs, 2026-11-02). So: the same part, and every parameter the row names has the
+    instance's value; the row naming the most parameters wins."""
+    same = [r for r in rows if (r["did"], r["eid"], r["pid"]) ==
+            (inst.get("documentId"), inst.get("elementId"), inst.get("partId"))]
+    if len(same) <= 1:
+        return same[0] if same else None
+
+    def values(cfg: str) -> Dict[str, Any]:
+        out = {}
+        for entry in (cfg or "").split(";"):
+            k, eq, v = entry.partition("=")
+            if eq:
+                out[unquote(k).strip().lower()] = _config_value(unquote(v))
+        return out
+
+    have = values(normal_configuration(inst.get("configuration")))
+    best, most = None, -1
+    for r in same:
+        want = values(r["configuration"])
+        if all(have.get(k) == v for k, v in want.items()) and len(want) > most:
+            best, most = r, len(want)
+    return best
 
 
 def bom_rows(data: Dict[str, Any]) -> List[Dict[str, Any]]:

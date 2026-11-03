@@ -66,9 +66,10 @@ def test_real_rows_from_the_shooters_bom():
     assert recognize(lib(HEX38, "Length=0.0333412084+meter"), SHAFTS).label == "3/8 hex, 1.313 in"
     assert recognize(lib(LITE, "Length=3.5"), SHAFTS).label == "3/8 hex lite, 3.500 in"
     tapped = recognize(lib(STANDOFF, "ID=0.0039624000000000005+meter;Length=0.0762+meter"), SHAFTS)
-    assert (tapped.label, tapped.tapped) == ("3/8 round, 3.000 in", True)                 # ID 0.156: the 10-32 drill
+    assert (tapped.label, tapped.tapped) == ("3/8 round, 3.000 in", False)       # standoffs start untapped (the user)
     clear = recognize(lib(STANDOFF, "ID=0.004978400000000001+meter;Length=0.0158242+meter"), SHAFTS)
-    assert (clear.label, clear.tapped) == ("3/8 round, 0.623 in", False)                  # ID 0.196: a clearance hole
+    assert (clear.label, clear.tapped) == ("3/8 round, 0.623 in", False)
+    assert recognize(lib(HEX, "Length=0.18415+meter"), SHAFTS).tapped                  # hex shafts: 10-32 to start
     turned = recognize(lib(STANDOFF, "ID=0.005+meter;Length=0.028473400000000003+meter;OD=0.0066040000000000005+meter"),
                        SHAFTS)
     assert turned.label == "3/8 round, 1.121 in" and turned.ops == [Op("turn", 0, d=0.2600, auto=True)]
@@ -87,7 +88,8 @@ def test_one_short_line_per_step():
     assert steps(5.25, tap, [Op("turn", 1, d=0.375, l=0.3)], 0.02) == ["Turn one end to Ø0.375 × 0.300", "Tap 10-32 both ends"]
     assert steps(3, ["10-32", ""], [], 0.02) == ["Tap 10-32 in one end"]
     assert steps(3, ["8-32", "8-32"], [], 0.02) == ["Tap 8-32 both ends"]
-    assert steps(1.25, tap, [Op("turn", 0, d=0.3, auto=True)], 0.02) == ["Turn to Ø0.300", "Tap 10-32 both ends"]
+    assert steps(1.25, ["", ""], [Op("turn", 0, d=0.3125, auto=True)], 0.02, "3/8 round") == [
+        "Turn down to Ø0.313 from 3/8 round"]                                   # a Standoff's OD that isn't a bar
     assert steps(7, ["", ""], [], 0.02) == []
     # two different one-end steps: then each says which end
     assert steps(6, ["10-32", ""], [Op("groove", 2, at=0.5)], 0.02) == [
@@ -225,7 +227,7 @@ def test_an_assembly_lists_its_shafts_apart_from_its_plates(tmp_path):
     assert shafts["1/2 hex, 18.250 in"]["qty"] == 4 and shafts["1/2 hex, 18.250 in"]["ends"] == ["10-32", "10-32"]
     assert shafts["1/2 hex, 18.250 in"]["sendable"] and shafts["1/2 hex, 18.250 in"]["listed"] is None
     assert shafts["1/2 round, 1.000 in"]["problem"].startswith("OD 0.750") and not shafts["1/2 round, 1.000 in"]["sendable"]
-    assert shafts["3/8 round, 0.750 in"]["ends"] == ["", ""]                    # a clearance hole: no tap by default
+    assert shafts["3/8 round, 0.750 in"]["ends"] == shafts["3/8 round, 2.500 in"]["ends"] == ["", ""]   # untapped
     assert a["grooveDepth"] == 0.02 and a["shaftTap"] == "10-32"
 
 
@@ -369,3 +371,96 @@ def test_the_qr_page_to_print_keeps_the_link_out_of_the_terminal(tmp_path, capsy
     assert "<h1>Shafts</h1>" in page and "<svg" in page
     printed = capsys.readouterr().out
     assert shop_key(KEY) not in printed and "Wrote" in printed
+
+
+# ---------------------------------------------------------------- bought and printed parts aren't plates
+
+VENDOR, TEAMDOC = "8293a9c30ec90f3f3078fde2", "1" * 24
+
+
+def owner_panel(tmp_path):
+    bom = {"headers": HEADERS, "rows": [
+        row(D, "w", W, E, "JHD", "P-2014 gusset", 4, "Aluminum - 6061"),
+        row(VENDOR, "v", "6" * 24, "7" * 24, "JQA", 'Sushi Roller (60A, 3/8" Hex Bore)', 9, "Polycarbonate"),
+        row(TEAMDOC, "v", "6" * 24, "8" * 24, "JQB", "P-3001 side plate", 2, "Aluminum - 6061"),
+        row(LIB, "v", LIBV, PRINTED, "JFD", "PLA-STNDF-0.2403", 1, "Aluminum - 6061", configuration="Length=0.006+meter")]}
+    mkcad = {"owner": {"id": "594ae8f3feede50f8a5cb929", "type": 0, "name": "Milkenknights Test Account"}, "public": True}
+    ours = {"owner": {"id": CFG.panel.company_id, "type": 1, "name": "Team 5940 BREAD"}, "public": False}
+    transport = FakeTransport([("GET", "/bom", [resp(body=bom)] * 3),
+                               ("GET", "/elements", [resp(body=[{"id": E, "name": "Intake", "elementType": "ASSEMBLY"}])] * 3),
+                               ("GET", f"/documents/{VENDOR}", [resp(body=mkcad)]),
+                               ("GET", f"/documents/{TEAMDOC}", [resp(body=ours)])])
+    p = Panel(tmp_path, transport=transport)
+    p.app = PanelApp(p.h.cfg, KEY, p.onshape, p.board, p.names, clock=p.clock,
+                     shafts=ShaftList(p.h.cfg.paths.state / "shafts.json", now=Clock()))
+    return p
+
+
+def test_bought_parts_and_library_prints_arent_offered_as_plates(tmp_path):
+    p = owner_panel(tmp_path)
+    a = p.call("GET", "/api/assembly", Q)[1]
+    items = {i["name"]: (i["sendable"], i["why"], i["notOurs"]) for i in a["items"]}
+    assert items == {"P-2014 gusset": (True, "", False), "P-3001 side plate": (True, "", False),
+                     'Sushi Roller (60A, 3/8" Hex Bore)': (False, "Bought part", True),
+                     "PLA-STNDF-0.2403 (Length: 0.2362 in)": (False, "Library part", True)}
+    p.call("GET", "/api/assembly", Q)                                          # owners are read once
+    assert [u for u in p.onshape_calls() if u.startswith("/documents/") and "/elements" not in u] == [
+        f"/documents/{VENDOR}", f"/documents/{TEAMDOC}"]
+    assert VENDOR in (p.h.cfg.paths.cache / "document_owners.json").read_text()   # and kept for good
+    keys = {i["name"]: i["key"] for i in a["items"]}
+    r = p.call("POST", "/api/send-many", body={**Q, "name": "Siddhi", "items": [
+        {"key": keys['Sushi Roller (60A, 3/8" Hex Bore)'], "qty": 9}, {"key": keys["PLA-STNDF-0.2403 (Length: 0.2362 in)"], "qty": 1}]})[1]
+    assert [x["why"] for x in r["results"]] == ["is a bought part", "is in the common parts library (printed or bought)"]
+
+
+def test_the_pages_own_refresh_never_looks_up_owners(tmp_path):
+    p = owner_panel(tmp_path)
+    p.call("GET", "/api/assembly", Q)                    # the BOM read (fresh owners are looked up here) ...
+    before = len(p.onshape_calls())
+    p.call("GET", "/api/assembly", {**Q, "cached": "1"})
+    assert len(p.onshape_calls()) == before
+
+
+# ---------------------------------------------------------------- a part clicked in the assembly
+
+def test_a_part_clicked_in_the_assembly_finds_its_row(tmp_path):
+    definition = {"rootAssembly": {"instances": [
+        {"id": "i1", "type": "Part", "documentId": D, "elementId": E, "partId": "JHD", "configuration": "default"},
+        {"id": "IfBvAf3KuZudYUjEe", "type": "Part", "documentId": LIB, "elementId": STANDOFF, "partId": "JFD",
+         "configuration": "Auto_Name_Part=true;Length=0.0635+meter;OD=0.009525+meter"}]},
+        "subAssemblies": [{"instances": [{"id": "Mpp/5tF1I3bXlPgoO", "type": "Assembly"},
+                                         {"id": "j2", "type": "Part", "documentId": LIB, "elementId": HEX, "partId": "JFD",
+                                          "configuration": "Auto_Name_Part=true;Length=0.2794+meter"}]}]}
+    transport = FakeTransport([("GET", "/bom", [resp(body=bom_rows_with_shafts())] * 3),
+                               ("GET", "/elements", [resp(body=[{"id": E, "name": "Intake", "elementType": "ASSEMBLY"}])] * 3),
+                               ("GET", "/assemblies/", [resp(body=definition)] * 3)])
+    p = Panel(tmp_path, transport=transport)
+    p.app = PanelApp(p.h.cfg, KEY, p.onshape, p.board, p.names, clock=p.clock,
+                     shafts=ShaftList(p.h.cfg.paths.state / "shafts.json", now=Clock()))
+    a = p.call("GET", "/api/assembly", Q)[1]
+    shafts = {s["label"]: s["key"] for s in a["shafts"]}
+    which = lambda inst: p.call("GET", "/api/which-row", {**Q, "inst": inst})[1]["key"]   # noqa: E731
+    assert which("IfBvAf3KuZudYUjEe") == shafts["3/8 round, 2.500 in"]     # Auto_Name_Part and meters: still found
+    assert which("j2") == shafts["1/2 hex, 11.000 in"]                     # in a subassembly
+    assert which("i1") == next(i["key"] for i in a["items"] if i["name"] == "P-2014 gusset")
+    assert which("Mpp/5tF1I3bXlPgoO") == "" and which("<script>") == ""
+    def reads():
+        return len([u for u in p.onshape_calls() if u.startswith("/assemblies/") and "/bom" not in u])
+    assert reads() == 1                      # one read for all of these (an unknown id within the minute: no new read)
+    p.clock.t += 120
+    assert which("Inew0ne") == "" and reads() == 2       # a part it doesn't know, later: read again once
+
+
+# ---------------------------------------------------------------- a note on a shaft
+
+def test_a_note_goes_from_the_panel_to_the_card(tmp_path):
+    p = shaft_panel(tmp_path)
+    a = p.call("GET", "/api/assembly", Q)[1]
+    body = send_body(a)
+    body["shafts"][0]["note"] = "Leave the ends\nsquare, it's a spacer too"
+    p.call("POST", "/api/send-many", body=body)
+    card = p.call("GET", "/api/shop", key=shop_key(KEY))[1]["shafts"][0]
+    assert card["note"] == "Leave the ends square, it's a spacer too"         # one line
+    sid = card["id"]
+    p.call("POST", "/api/shaft", body={"id": sid, "qty": 4, "ends": ["10-32", "10-32"], "ops": [], "note": "x" * 300})
+    assert p.call("GET", "/api/shop", key=shop_key(KEY))[1]["shafts"][0]["note"] == "x" * 200

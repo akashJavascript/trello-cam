@@ -20,6 +20,7 @@
     POST /api/me                             remember a student's name for their Onshape user id
     POST /api/selection                      log what Onshape's SELECTION messages look like (a few a day)
     GET  /api/preview?key=...&sheet=...      a sheet card's preview picture
+    GET  /api/which-row?d&wvm&w&e&inst       a part clicked in an assembly (its instance id) -> its row in the list
     POST /api/shaft                          change a shaft on the shop's list (while nobody has started it)
     POST /api/shaft-remove                   take a shaft off the list (same)
 
@@ -59,9 +60,9 @@ from . import checks
 from .board import ACTIVE, PanelBoard, Send, read_part_card
 from .geometry import differences, shape_key
 from .hooks import HOOK_PREFIX, ChangeInbox, secret_ok
-from .onshape_reads import NoAccess, OutOfCalls, PanelOnshape, PanelOnshapeError
-from ..shafts import (ACTIVE as SHAFT_ACTIVE, DEVICE_RE, STOCKS, Found, ShaftError, ShaftList, clean_ends, clean_ops,
-                      problems, recognize, status_chip)
+from .onshape_reads import NoAccess, OutOfCalls, PanelOnshape, PanelOnshapeError, row_for_instance
+from ..shafts import (ACTIVE as SHAFT_ACTIVE, DEVICE_RE, MAX_NOTE, STOCKS, Found, ShaftError, ShaftList, clean_ends,
+                      clean_ops, problems, recognize, status_chip)
 from ..onshape.urls import configuration_of, configuration_tag, normal_configuration
 
 log = logging.getLogger("autocam.panel")
@@ -73,6 +74,7 @@ ID_RE = re.compile(r"^[0-9a-f]{24}$")
 PART_RE = re.compile(r"^[A-Za-z0-9_.+/=-]{1,64}$")
 USER_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 ENTITY_RE = re.compile(r"^[A-Za-z0-9]{1,24}$")       # a face or edge id from Onshape's SELECTION
+INSTANCE_RE = re.compile(r"^[A-Za-z0-9+/=_-]{1,40}$")  # an assembly instance id ("IfBvAf3KuZudYUjEe", "Mpp/5tF1I3bXlPgoO")
 MAX_BODY = 16 * 1024
 MAX_PROGRAM_BODY = 4 * 1024 * 1024        # /api/send-program carries the .tap
 PROGRAM_PATH = "/api/send-program"
@@ -228,7 +230,7 @@ class PanelApp:
                      ("POST", PROGRAM_PATH): self.send_program,
                      ("POST", "/api/qty"): self.change_qty, ("POST", "/api/me"): self.me,
                      ("POST", "/api/selection"): self.selection,
-                     ("GET", "/api/which-part"): self.which_part,
+                     ("GET", "/api/which-part"): self.which_part, ("GET", "/api/which-row"): self.which_row,
                      ("POST", "/api/shaft"): self.edit_shaft, ("POST", "/api/shaft-remove"): self.remove_shaft,
                      }.get((method, path))
             if path == "/api/preview" and method == "GET":
@@ -429,6 +431,7 @@ class PanelApp:
             log.warning("panel: reading the board: %s", e)
             board_error = "Couldn't read the Trello board just now, so statuses are missing."
         items, shaft_rows = [], []
+        owners = self._owners(did, rows, cached_only=cached)
         for r in rows:
             if r["standard"]:
                 continue                                 # Onshape's standard content: screws, nuts
@@ -440,13 +443,14 @@ class PanelApp:
             pc = None if cards is None else self.board.for_part(r["did"], r["eid"], r["pid"], r["name"], cards,
                                                                 cfg=r["configuration"])
             chip = {"status": "unknown", "label": ""} if cards is None else self.board.chip(pc)
-            why = "No material" if material is None else "" if material["key"] else "Not cut here"
+            not_ours = self._not_ours(did, r, owners)
+            why = not_ours or ("No material" if material is None else "" if material["key"] else "Not cut here")
             shown = r["name"] or r["pid"]
             if r["configuration"]:                       # its configuration, named only if already read (no call)
                 label = self.onshape.configuration_label(r["did"], r["wvm"], r["wvmid"], r["eid"], r["configuration"],
                                                          cached_only=True)
                 shown = f"{shown} ({label})"
-            items.append({"key": _row_key(r), "name": shown, "qty": r["qty"],
+            items.append({"key": _row_key(r), "name": shown, "qty": r["qty"], "notOurs": bool(not_ours),
                           "material": material, "chip": chip, "why": why, "here": r["did"] == did,
                           "sendable": not why and cards is not None and (pc is None or pc.status not in ACTIVE)})
         # this document's parts first: parts from other documents are often bought ones (a vendor's library)
@@ -463,6 +467,30 @@ class PanelApp:
                 "user": self.names.get(uid) if USER_RE.match(uid or "") else "", "tabsDefault": self.cfg.tabs.default,
                 "maxQty": MAX_QTY, "callsLeft": self.onshape.calls_left(), "autoRefreshS": self.cfg.panel.auto_refresh_s}
 
+    def _owners(self, did: str, rows: List[Dict[str, Any]], cached_only: bool) -> Dict[str, str]:
+        """Who owns each other document the assembly's parts come from (only with [panel] company_id)."""
+        if not self.cfg.panel.company_id:
+            return {}
+        lib = self.cfg.shafts.library_document
+        others = [r["did"] for r in rows if r["did"] not in (did, lib) and not r["standard"]]
+        try:
+            return self.onshape.document_owners(others, cached_only=cached_only)
+        except PanelOnshapeError:
+            return {}
+
+    def _not_ours(self, did: str, r: Dict[str, Any], owners: Dict[str, str]) -> str:
+        """Why a part in the assembly isn't one AutoCAM cuts though its material might say so ("" it might be):
+        the common parts library's parts that aren't shafts are printed or bought (the user: PLA-STNDF is a print,
+        set to 6061), and a part from a document the team doesn't own is bought (a vendor's library)."""
+        if r["did"] == did:
+            return ""
+        if self.cfg.shafts.library_document and r["did"] == self.cfg.shafts.library_document:
+            return "Library part"
+        owner = owners.get(r["did"], "")
+        if self.cfg.panel.company_id and owner and owner != self.cfg.panel.company_id:
+            return "Bought part"
+        return ""
+
     def _assembly_shafts(self, did: str, eid: str, shaft_rows: List[Tuple[Dict[str, Any], Any]]) -> Dict[str, Any]:
         """The assembly's library shafts for the panel, each with what's on the list for it. Reading the assembly is
         also when a shaft on the list that's no longer in it (its length changed in CAD) gets "Changed in CAD"."""
@@ -475,7 +503,8 @@ class PanelApp:
             x = self.shafts.latest(f"{asm}|{_row_key(r)}")
             label, kind = status_chip(x)
             listed = None if x is None else {"id": x["id"], "status": x["status"], "qty": x["qty"], "ends": x["ends"],
-                                             "ops": x["ops"], "chip": {"label": label, "status": kind}}
+                                             "ops": x["ops"], "note": x.get("note") or "",
+                                             "chip": {"label": label, "status": kind}}
             st = STOCKS[found.stock]
             out.append({"key": _row_key(r), "label": found.label, "stock": found.stock, "length": found.length_in,
                         "qty": max(1, r["qty"]), "ends": [tap, tap] if found.tapped else ["", ""],
@@ -524,7 +553,8 @@ class PanelApp:
                 self.shafts.add([{"source": f"{asm}|{key}", "assembly": {"key": asm, "name": name, "url": url},
                                   "row": {"did": r["did"], "eid": r["eid"], "configuration": r["configuration"]},
                                   "stock": found.stock, "length_in": found.length_in, "qty": qty, "ends": ends,
-                                  "ops": [o.to_dict() for o in ops], "rush": rush, "sender": sender}])
+                                  "ops": [o.to_dict() for o in ops], "rush": rush, "sender": sender,
+                                  "note": clean_text(item.get("note"), MAX_NOTE)}])
                 results.append({"key": key, "name": label, "sent": True, "shaft": True})
             except (Refused, ShaftError) as e:
                 results.append({"key": key, "name": label, "sent": False, "why": str(e), "shaft": True})
@@ -540,7 +570,8 @@ class PanelApp:
             raise ShaftError("That shaft isn't on the list any more.", status=404)
         autos = [o for o in clean_ops(x.get("ops")) if o.auto]
         ops = autos + [o for o in clean_ops(d.get("ops")) if not o.auto]
-        self.shafts.edit(sid, self._qty(d), clean_ends(d.get("ends"), self.cfg.shafts.tap), ops)
+        self.shafts.edit(sid, self._qty(d), clean_ends(d.get("ends"), self.cfg.shafts.tap), ops,
+                         clean_text(d.get("note"), MAX_NOTE))
         log.info("panel: shaft %s changed (%s, %s in)", sid, x["stock"], x["length_in"])
         return {"ok": True}
 
@@ -563,6 +594,7 @@ class PanelApp:
         face = bool(d.get("face")) and self.cfg.face is not None
         wanted = d.get("items") if isinstance(d.get("items"), list) else []
         rows = {_row_key(r): r for r in self.onshape.bom(did, wvm, wvmid, eid)}
+        owners = self._owners(did, list(rows.values()), cached_only=True)
         cards = self.board.part_cards(fresh=True)
         host = self._host(d.get("server"))
         results, seen = [], set()
@@ -578,6 +610,10 @@ class PanelApp:
                     raise Refused(409, "isn't in this assembly any more")
                 if self.shafts is not None and recognize(r, self.cfg.shafts) is not None:
                     raise Refused(400, "is a shaft: it goes on the shaft list")
+                not_ours = self._not_ours(did, r, owners)
+                if not_ours:
+                    raise Refused(400, "is a bought part" if not_ours == "Bought part" else
+                                  "is in the common parts library (printed or bought)")
                 qty = self._qty(item)
                 material = self._material_of(r["material"])
                 if material is None or not material["key"]:
@@ -810,6 +846,21 @@ class PanelApp:
             if wanted & known:
                 return {"part": part["partId"]}
         return {"part": ""}
+
+    def which_row(self, q: Dict[str, str]) -> Dict[str, Any]:
+        """A part clicked in an assembly -> its row in the panel's list ({"key": ""}: not found). Onshape's SELECTION
+        gives the occurrence path; its last id is the part's instance (2026-11-02). The assembly's instances are one
+        call kept assembly_cache_s, read again once if the instance is new (a part just added)."""
+        did, wvm, wvmid, eid = self._studio(q)
+        inst_id = str(q.get("inst") or "")
+        rows = self.onshape.cached_bom(did, wvm, wvmid, eid)
+        if not INSTANCE_RE.match(inst_id) or rows is None:
+            return {"key": ""}
+        inst = self.onshape.assembly_instances(did, wvm, wvmid, eid).get(inst_id)
+        if inst is None:
+            inst = self.onshape.assembly_instances(did, wvm, wvmid, eid, fresh=True).get(inst_id)
+        row = row_for_instance(inst, rows) if inst else None
+        return {"key": _row_key(row) if row else ""}
 
     def _rate_limit(self) -> None:
         with self._lock:

@@ -41,10 +41,8 @@ STOCKS: Dict[str, Stock] = {s.name: s for s in (
 ORDER = list(STOCKS)                       # the shop page's groups, in this order
 ROUND = "round"                            # a library tab whose stock is round bar picked by its OD (Standoff)
 WALL_IN = 0.03                             # 3/8 hex lite: thinner than this around the bore is cutting into it
-TAP_DRILL_10_32 = (0.150, 0.166)           # a Standoff's ID in here is the 10-32 tap drill (5/32, #21): tapped 10-32.
-                                           # Any other ID (0.196: a #10 clearance hole) isn't tapped by default; the
-                                           # Shooter has both (2026-11-02)
 MAX_OPS = 8
+MAX_NOTE = 200                             # a shaft's note (the sender's, shown on its card)
 TAP_RE = re.compile(r"^[A-Za-z0-9./ x-]{1,12}$")   # "10-32", "1/4-20", "8-32", "M5x0.8"
 DEVICE_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 ID_RE = re.compile(r"^[0-9a-f]{12}$")
@@ -136,8 +134,7 @@ class Found:
     length_in: float
     ops: List[Op] = field(default_factory=list)     # from the model (a Standoff turned to its OD)
     problem: str = ""                               # it can't be made from any bar the shop has
-    tapped: bool = True                             # gets the default tap (a Standoff only if its ID is the tap drill)
-    id_in: float = 0.0                              # a Standoff's ID ("" in its configuration: the default)
+    tapped: bool = True                             # gets the default tap; a Standoff starts with none (the user)
 
     @property
     def label(self) -> str:
@@ -158,15 +155,15 @@ def recognize(row: Dict[str, Any], shafts: Any) -> Optional[Found]:
     if tab.stock != ROUND:
         return Found(tab.stock, length)
     od = inches(values.get("od")) or tab.od_in
-    hole = inches(values.get("id")) or 0.0
-    tapped = not hole or TAP_DRILL_10_32[0] <= hole <= TAP_DRILL_10_32[1]
     rounds = sorted((s for s in STOCKS.values() if s.shape == "round"), key=lambda s: s.size_in)
     bar = next((s for s in rounds if s.size_in >= od - 0.0005), None)
     if bar is None:
         return Found(rounds[-1].name, length, problem=f"OD {_n(od)} is bigger than any round bar "
-                                                       f"({_n(rounds[-1].size_in)} at most)", tapped=tapped, id_in=hole)
+                                                       f"({_n(rounds[-1].size_in)} at most)", tapped=False)
     ops = [] if abs(bar.size_in - od) < 0.0005 else [Op("turn", 0, d=round(od, 4), auto=True)]
-    return Found(bar.name, length, ops, tapped=tapped, id_in=hole)
+    # Standoffs start untapped (the user, 2026-11-02: "it should start out as not being tapped"); the sender picks a
+    # tap if one's wanted. Their hole comes with the bar ("no one drills it"), so it's no step either.
+    return Found(bar.name, length, ops, tapped=False)
 
 
 # ---------------------------------------------------------------- what the card says, and what can't be made
@@ -177,7 +174,7 @@ def _n(x: float) -> str:
     return str(Decimal(repr(float(x))).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
 
 
-def steps(length_in: float, ends: List[str], ops: List[Op], groove_depth_in: float) -> List[str]:
+def steps(length_in: float, ends: List[str], ops: List[Op], groove_depth_in: float, stock: str = "") -> List[str]:
     """One short line per step (the mockup the user approved, 2026-11-02): the same step on both ends is one line;
     a step on just one end says "one end" unless both ends have their own. No "Face to" line (people know) and
     every length in three decimals, like the calipers."""
@@ -194,8 +191,8 @@ def steps(length_in: float, ends: List[str], ops: List[Op], groove_depth_in: flo
     out, seen = [], set()
     depth = f", {_n(groove_depth_in)} per side"
     for o in ops:
-        if o.kind == "turn" and o.end == 0:
-            out.append(f"Turn to Ø{_n(o.d)}")
+        if o.kind == "turn" and o.end == 0:     # the whole length, from the bar it's cut from (the user, 2026-11-02)
+            out.append(f"Turn down to Ø{_n(o.d)}" + (f" from {stock}" if stock else ""))
         elif twin(o):
             key = (o.kind, o.d, o.l, o.at)
             if key in seen:
@@ -336,7 +333,7 @@ class ShaftList:
         self._change(go)
         return made
 
-    def edit(self, sid: str, qty: int, ends: List[str], ops: List[Op]) -> Dict[str, Any]:
+    def edit(self, sid: str, qty: int, ends: List[str], ops: List[Op], note: str = "") -> Dict[str, Any]:
         def go(items):
             x = self._find(items, sid)
             if x.get("status") != "waiting":
@@ -344,7 +341,7 @@ class ShaftList:
             bad = problems(x["stock"], x["length_in"], ops)
             if bad:
                 raise ShaftError(bad[0])
-            x.update(qty=qty, ends=ends, ops=[o.to_dict() for o in ops])
+            x.update(qty=qty, ends=ends, ops=[o.to_dict() for o in ops], note=note)
             return dict(x)
         return self._change(go)
 
@@ -423,8 +420,8 @@ class ShaftList:
             ends, ops = x.get("ends") or ["", ""], [Op.from_dict(o) for o in x.get("ops") or []]
             item = {"id": x["id"], "stock": x["stock"], "length": x["length_in"], "qty": x["qty"],
                     "assembly": x.get("assembly", {}).get("name", ""), "url": x.get("assembly", {}).get("url", ""),
-                    "rush": bool(x.get("rush")), "changed": bool(x.get("changed")),
-                    "steps": steps(x["length_in"], ends, ops, self.groove_depth_in)}
+                    "rush": bool(x.get("rush")), "changed": bool(x.get("changed")), "note": x.get("note") or "",
+                    "steps": steps(x["length_in"], ends, ops, self.groove_depth_in, x["stock"])}
             if x["status"] in ACTIVE:
                 out.append({**item, "started": x["status"] == "started", "startedAt": x.get("started_at") or "",
                             "mine": x["status"] == "started" and x.get("started_by") == device})

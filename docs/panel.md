@@ -219,6 +219,10 @@ the app > Extensions > Edit).
 An assembly's library shafts are listed under **Shafts**, not with its plates, and go on the shop's phone page
 (`/shop`) instead of Trello. See `docs/shafts.md`.
 
+Bought parts (from documents the team doesn't own, like the MKCad vendor libraries) and the common parts library's
+prints are never offered as plates, whatever material they're set to. Clicking a part in the assembly lights up its
+row. Both are in `docs/shafts.md`.
+
 ## Not confirmed yet
 
 - **Selecting in the CAD: seen 2026-11-01.** Onshape's `SELECTION` message (logged from a real Part Studio):
