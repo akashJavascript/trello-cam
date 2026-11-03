@@ -985,6 +985,18 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - **Order copies the sheet's row** (the user asked; the sheet's columns E to I: Description, Link, Supplier, Part
   Number, Units), pasted by the person at Description. Still never written by AutoCAM.
 
+## 2026-11-03: offcuts keep every empty corner (the user: "yes do that")
+
+- A cut sheet's offcut kept only the strip behind its parts and the room to their right. Now every empty rectangle
+  among the parts is kept (`offcuts.free_rooms`): biggest first, never overlapping (each is its own Arrange next
+  time, shrunk by the part spacing, so parts in two rooms can't meet), each at least 3 in both ways
+  (`nest.offcut_beside_min_in`), 1 part spacing + the loading slack clear of every part's box, at most 6 per band.
+  A single part keeps just the room to its right, as before. core 0.20.6.
+- Seen in Fusion on r068's two parts (r073, r075): the 10.4 x 7.25 in corner in front of the long part is kept,
+  (12.35, 0.5, 22.75, 7.75). The room behind the front part isn't: the long part's box covers it (it has an arm
+  that reaches left at the back).
+- Not rectangles (a part's own notches, the triangle by an angled edge): a part's bounding box counts as used.
+
 ## 2026-11-03: the polycarbonate cutters are the team's WCP bits (the user)
 
 - The team runs WCP's single-flute DLC end mills: 4 mm WCP-1513 and 1/8 in WCP-1517, both 12 mm cut length. WCP
@@ -993,8 +1005,12 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   per rev at 18,000 rpm, the gentle end of 0.002-0.004 for a 1/8 in single flute in plastic. At 10 (0.0006) it rubs and
   melts polycarbonate. Seen in Fusion: r070, 16 holes in 11 s, F40. Watch the first cut: melted rims, go faster
   (about 55); chatter, slower (about 35).
-- The 4 mm poly cutter is 12 mm long (the library said 18, a guess); vendor and part numbers in the pinned library and
-  the templates. Sheet cards say "4 mm WCP POLY" / "1/8 in WCP POLY" ("O-flute" was a bit the team doesn't have).
+- The 4 mm poly cutter is 12 mm long (the library said 18, a guess). Sheet cards say "4 mm WCP POLY" / "1/8 in WCP
+  POLY" ("O-flute" was a bit the team doesn't have).
+- **Vendor and part numbers only in the pinned library, never in the templates:** with them in the ops (the product
+  link most likely) Fusion failed a two-part sheet's second outline with "Failed to write Job File" (r071, r072,
+  r074; one part alone was fine, r070). Without them: r073, r075 passed. It was live on main for about 20 minutes
+  (058150f), with no real runs.
 - Not changed (the user's pick): the 4 mm also drills at only 20 in/min (0.0011 in per rev), and outlines go full
   depth at 100 in/min whatever the thickness (1/4 in may want about 75 or two passes): watch the first cuts.
 

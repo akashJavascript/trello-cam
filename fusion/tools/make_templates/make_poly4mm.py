@@ -1,8 +1,8 @@
 """poly_4mm from alu_4mm: the same ops and settings, the "4mm 0 flute Poly" tool and its preset feeds.
 
 Exact text replacements with expected counts, so nothing else in the file can change (both tools are in mm and
-differ only in coolant, feeds and the product: the team's 4 mm cutters are WCP-1513, 12 mm cut length, the user
-2026-11-03; the library's 18 mm was a guess). Run it again whenever alu_4mm changes (repo root):
+differ only in coolant and feeds; the team's 4 mm cutters are WCP-1513 with a 12 mm cut length, the user
+2026-11-03: the library's 18 mm was a guess). Run it again whenever alu_4mm changes (repo root):
 
     python fusion/tools/make_templates/make_poly4mm.py fusion/templates/alu_4mm.f3dhsm-template \
         fusion/templates/poly_4mm.f3dhsm-template
@@ -31,10 +31,8 @@ swaps = [
     ('<parameter key="tool_feedTransition" value="1524.0028162639564"/>', '<parameter key="tool_feedTransition" value="2540.0016937688974"/>', N),
     # the ops' own copies of the tool's values (the op's coolant stays 'disabled': mist comes from the material)
     ("<parameter expression=\"'4mm 0 flute Aluminum'\" name=\"tool_description\"/>", "<parameter expression=\"'4mm 0 flute Poly'\" name=\"tool_description\"/>", N),
-    ("<parameter expression=\"''\" name=\"tool_vendor\"/>", "<parameter expression=\"'WCP'\" name=\"tool_vendor\"/>", N),
-    ("<parameter expression=\"''\" name=\"tool_productId\"/>", "<parameter expression=\"'WCP-1513'\" name=\"tool_productId\"/>", N),
-    ("<parameter expression=\"''\" name=\"tool_productLink\"/>",
-     "<parameter expression=\"'https://wcproducts.com/products/wcp-1513'\" name=\"tool_productLink\"/>", N),
+    # NOT the product (vendor, product id, link) though the library has it: with it in the ops Fusion failed an
+    # outline with "Failed to write Job File" (r071, r072, r074; without it r073 and r075 passed, 2026-11-03)
     ('<parameter expression="1524.00281626395645" name="tool_feedCutting"/>', '<parameter expression="2540.0016937688974" name="tool_feedCutting"/>', N - 1),
     ('<parameter expression="1524." name="tool_feedEntry"/>', '<parameter expression="2540." name="tool_feedEntry"/>', N - 1),
     ('<parameter expression="1524." name="tool_feedExit"/>', '<parameter expression="2540." name="tool_feedExit"/>', N - 1),

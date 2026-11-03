@@ -76,9 +76,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'4mm 0 flute Poly'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="'WCP'" name="tool_vendor"/>
-    <parameter expression="'WCP-1513'" name="tool_productId"/>
-    <parameter expression="'https://wcproducts.com/products/wcp-1513'" name="tool_productLink"/>
+    <parameter expression="''" name="tool_vendor"/>
+    <parameter expression="''" name="tool_productId"/>
+    <parameter expression="''" name="tool_productLink"/>
     <parameter expression="4." name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -454,9 +454,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'4mm 0 flute Poly'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="'WCP'" name="tool_vendor"/>
-    <parameter expression="'WCP-1513'" name="tool_productId"/>
-    <parameter expression="'https://wcproducts.com/products/wcp-1513'" name="tool_productLink"/>
+    <parameter expression="''" name="tool_vendor"/>
+    <parameter expression="''" name="tool_productId"/>
+    <parameter expression="''" name="tool_productLink"/>
     <parameter expression="4." name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -873,9 +873,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'4mm 0 flute Poly'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="'WCP'" name="tool_vendor"/>
-    <parameter expression="'WCP-1513'" name="tool_productId"/>
-    <parameter expression="'https://wcproducts.com/products/wcp-1513'" name="tool_productLink"/>
+    <parameter expression="''" name="tool_vendor"/>
+    <parameter expression="''" name="tool_productId"/>
+    <parameter expression="''" name="tool_productLink"/>
     <parameter expression="4." name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -1388,9 +1388,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'4mm 0 flute Poly'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="'WCP'" name="tool_vendor"/>
-    <parameter expression="'WCP-1513'" name="tool_productId"/>
-    <parameter expression="'https://wcproducts.com/products/wcp-1513'" name="tool_productLink"/>
+    <parameter expression="''" name="tool_vendor"/>
+    <parameter expression="''" name="tool_productId"/>
+    <parameter expression="''" name="tool_productLink"/>
     <parameter expression="4." name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -1699,9 +1699,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'4mm 0 flute Poly'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="'WCP'" name="tool_vendor"/>
-    <parameter expression="'WCP-1513'" name="tool_productId"/>
-    <parameter expression="'https://wcproducts.com/products/wcp-1513'" name="tool_productLink"/>
+    <parameter expression="''" name="tool_vendor"/>
+    <parameter expression="''" name="tool_productId"/>
+    <parameter expression="''" name="tool_productLink"/>
     <parameter expression="4." name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -2013,9 +2013,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'4mm 0 flute Poly'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="'WCP'" name="tool_vendor"/>
-    <parameter expression="'WCP-1513'" name="tool_productId"/>
-    <parameter expression="'https://wcproducts.com/products/wcp-1513'" name="tool_productLink"/>
+    <parameter expression="''" name="tool_vendor"/>
+    <parameter expression="''" name="tool_productId"/>
+    <parameter expression="''" name="tool_productLink"/>
     <parameter expression="4." name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -2525,9 +2525,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'4mm 0 flute Poly'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="'WCP'" name="tool_vendor"/>
-    <parameter expression="'WCP-1513'" name="tool_productId"/>
-    <parameter expression="'https://wcproducts.com/products/wcp-1513'" name="tool_productLink"/>
+    <parameter expression="''" name="tool_vendor"/>
+    <parameter expression="''" name="tool_productId"/>
+    <parameter expression="''" name="tool_productLink"/>
     <parameter expression="4." name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
