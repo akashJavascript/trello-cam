@@ -10,7 +10,7 @@ before money is spent). Order opens the team's Google Sheet in a new tab and cop
 Link, Supplier, Part Number, Units (the sheet's columns E to I, tab-separated, so pasting in a new row's
 Description cell fills all five). Name (who asks), Why, Subteam and Project are the person's to fill in; $/Unit and
 Total aren't touched. What AutoCAM knows: the part's name; a link and number only for McMaster numbers (their page);
-the BOM's Vendor and Part number columns when the part has them. The card then asks "Added 2 to it?", and only
+the BOM's Vendor and Part number columns when the part has them. The card then says "Row copied: paste it in Description. Added 2 to the sheet?", and only
 **It's on the sheet** counts them as ordered.
 
 **Counts, not just a state** (the user, 2026-11-02): a part needs a quantity; some of it can be in the bin, some on
