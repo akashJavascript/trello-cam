@@ -141,7 +141,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .skeleton.w60 { width: 60%; } .skeleton.w40 { width: 40%; } .skeleton.w80 { width: 80%; }
 
 /* shafts (the shop's list, shafts.py): rows under the plates, and the shaft editor */
-.arow.shaft, .arow.bought { grid-template-columns: 20px minmax(0, 1fr) 52px 28px; cursor: default; }
+.arow.shaft { grid-template-columns: 20px minmax(0, 1fr) 52px 28px; cursor: default; }
+.arow.bought { grid-template-columns: 20px minmax(0, 1fr) minmax(52px, auto) 28px; cursor: default; }
+.arow .name .sub .link-btn { font-size: 12px; }
 .arow.bought { padding-block: 4px; }
 .arow.bought .name { white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }   /* vendors' names are long */
 .arow .name.locatable { cursor: pointer; }

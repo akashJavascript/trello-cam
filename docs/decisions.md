@@ -978,6 +978,10 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - **No screws or nuts** (the user): standard content was never listed; bought parts named like a screw, bolt or nut
   are left out too.
 - Shares the shaft list's page, key, phone ids, Undo and "Changed in CAD" (`shoplist.py`). `docs/bought-parts.md`.
+- **Then (the user's picks from a list):** counts (some in the bin, order the rest), "CAD has 6" when the assembly's
+  count changes (never changed by itself: Make it 6), "ordered 9 days ago", a note per part. Not per-subsystem bins
+  from the robot assembly: the user sends from subassemblies.
+- **The sheet's link is in `.env`**, not the public repo: the sheet has students' names.
 
 ## 2026-11-02: SRPP, three kinds, cut as polycarbonate (the user)
 

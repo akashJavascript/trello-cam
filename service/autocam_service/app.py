@@ -122,12 +122,17 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
         from .shafts import ShaftList
         shafts = ShaftList(cfg.paths.state / "shafts.json", groove_depth_in=cfg.shafts.groove_depth_in,
                            keep_done_days=cfg.shafts.keep_done_days)
-    parts = None
+    parts, sheet = None, ""
     if cfg.parts.enabled:
-        from .bought import PartList
+        from .bought import PartList, sheet_link
         parts = PartList(cfg.paths.state / "bought_parts.json", keep_days=cfg.parts.keep_days)
+        sheet = cfg.parts.order_sheet_url
+        if not sheet and creds.has("AUTOCAM_ORDER_SHEET_URL"):
+            sheet = sheet_link(creds.get("AUTOCAM_ORDER_SHEET_URL"))
+            if not sheet:
+                log.warning("panel: AUTOCAM_ORDER_SHEET_URL in .env isn't a Google Sheets link, so there's no Order button")
     app = PanelApp(cfg, creds.get("AUTOCAM_PANEL_KEY"), onshape, board, Names(cfg.paths.state / "panel_users.json"),
-                   inbox=inbox, hook_secret=secret, shafts=shafts, parts=parts)
+                   inbox=inbox, hook_secret=secret, shafts=shafts, parts=parts, order_sheet=sheet)
     start_server(app, p.port)
     pictures = PictureWatch(onshape, services.store, tracker) if p.pictures else None
     usage = None

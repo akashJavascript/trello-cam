@@ -83,6 +83,12 @@ button { font: inherit; color: inherit; }
 .order-box p { margin: 0; font-size: 14px; }
 .order-box .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .done-row .name.wrap { overflow-wrap: anywhere; }
+.from.late { color: var(--rush); font-weight: 600; }            /* ordered two weeks ago or more */
+.count { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.stepper { display: inline-flex; align-items: center; flex: none; border: 1px solid var(--outline-variant); border-radius: 999px; background: var(--surface-lowest); overflow: hidden; }
+.stepper button { width: 44px; height: 40px; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; color: var(--on-surface-variant); }
+.stepper button svg { width: 16px; height: 16px; }
+.stepper span { min-width: 30px; text-align: center; font-family: var(--font-mono); font-weight: 600; font-size: 17px; font-variant-numeric: tabular-nums; }
 .copy-buffer { position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
 .done-row { display: flex; align-items: center; gap: 10px; min-height: 48px; border-bottom: 1px solid var(--hair); }

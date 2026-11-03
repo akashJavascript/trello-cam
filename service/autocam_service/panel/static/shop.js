@@ -19,6 +19,8 @@
     undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>',
     open: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
     bin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18"/><path d="M5 7l1.5 13h11L19 7"/><path d="M9 7V4h6v3"/></svg>',
+    minus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.5 12h12l2-8H6.2"/></svg>'
   };
   function icon(name) {
@@ -74,7 +76,7 @@
 
   // tab: "#parts" in the link picks Parts (for a QR code at the bins); otherwise the last one used on this phone
   var S = { data: null, error: "", busy: false, tab: location.hash === "#parts" ? "parts" : location.hash === "#shafts" ? "shafts" : remember("tab") || "shafts",
-            asking: "", copied: false };
+            ask: null, copied: false };        // ask: a part's Order or In the bin question, {id, kind, n}
   var toastTimer = 0;
   function toast(text) {
     toastEl.textContent = text; toastEl.hidden = false;
@@ -89,9 +91,9 @@
     }, function (e) { S.error = e.message; render(); });
   }
 
-  function post(action, item) {
+  function post(action, item, extra) {
     S.busy = true; render();
-    return api("POST", "/api/shop/" + action, { id: item.id, device: DEVICE }).then(function () {
+    return api("POST", "/api/shop/" + action, Object.assign({ id: item.id, device: DEVICE }, extra || {})).then(function () {
       S.busy = false; return load();
     }, function (e) {
       S.busy = false;
@@ -102,7 +104,7 @@
 
   Array.prototype.forEach.call(tabsEl.querySelectorAll("button"), function (b) {
     b.addEventListener("click", function () {
-      S.tab = b.getAttribute("data-tab"); S.asking = "";
+      S.tab = b.getAttribute("data-tab"); S.ask = null;
       remember("tab", S.tab);
       try { history.replaceState(null, "", "#" + S.tab); } catch (e) { /* fine */ }
       render(); window.scrollTo(0, 0);
@@ -186,42 +188,67 @@
   }
 
   // ---------------------------------------------------------------- bought parts
+  // A part needs qty: inBin are in the bin, onOrder are on the order sheet, left are still needed (bought.py).
   function renderParts(d) {
     function byName(a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true }); }
-    var needed = d.parts.filter(function (p) { return p.status === "needed"; });
+    var needed = d.parts.filter(function (p) { return p.left > 0; });
     var asms = needed.map(function (p) { return p.assembly; }).filter(function (a, i, all) { return all.indexOf(a) === i; }).sort();
     asms.forEach(function (a) {          // each subsystem's parts together: they go in its bin
-      section(a ? a + " bin" : "Bin", needed.filter(function (p) { return p.assembly === a; }).sort(byName), partCard);
+      section(a ? a + " bin" : "Bin", needed.filter(function (p) { return p.assembly === a; }).sort(byName),
+        function (p) { return partCard(p, "need"); });
     });
     if (!needed.length) add(listEl, h("p", { class: "muted" }, "Nothing needed."));
-    section("On the order sheet", d.parts.filter(function (p) { return p.status === "ordered"; })
-      .sort(function (a, b) { return a.assembly.localeCompare(b.assembly) || byName(a, b); }), partCard);
+    section("On the order sheet", d.parts.filter(function (p) { return p.left <= 0 && p.onOrder > 0; })
+      .sort(function (a, b) { return a.assembly.localeCompare(b.assembly) || byName(a, b); }), function (p) { return partCard(p, "ordered"); });
     add(listEl, h("section", { class: "group" }, h("div", { class: "group-label" }, "In the bin today"),
       d.bin.length ? h("div", null, d.bin.map(binRow)) : h("p", { class: "muted" }, "Nothing yet.")));
   }
 
-  function partCard(p) {
-    var off = S.busy, ordered = p.status === "ordered", sheet = SHEET_RE.test(S.data.orderSheet || "");
-    var sub = ordered ? (p.assembly ? p.assembly + " · on the order sheet" : "On the order sheet") : p.vendor;
-    var asking = S.asking === p.id && !ordered;
-    return h("article", { class: "item" + (ordered ? " ordered" : "") },
+  function ago(days) { return days === 0 ? "ordered today" : days === 1 ? "ordered yesterday" : "ordered " + days + " days ago"; }
+
+  function partCard(p, where) {
+    var off = S.busy, sheet = SHEET_RE.test(S.data.orderSheet || ""), ask = S.ask && S.ask.id === p.id ? S.ask : null;
+    var bits = [];
+    if (where === "need" && p.vendor) bits.push(p.vendor);
+    if (where === "ordered" && p.assembly) bits.push(p.assembly);
+    if (p.inBin) bits.push(p.inBin + " of " + p.qty + " in the bin");
+    if (where === "need" && p.onOrder) bits.push(p.onOrder + " on the order sheet");
+    if (where === "ordered" && p.orderedDays !== null && p.orderedDays !== undefined) bits.push(ago(p.orderedDays));
+    var most = p.qty - p.inBin;
+    return h("article", { class: "item" + (where === "ordered" ? " ordered" : "") },
       h("div", { class: "item-top" },
-        h("div", { class: "item-name part-name" }, p.name, sub ? h("span", { class: "from" }, sub) : null),
-        p.changed ? h("span", { class: "chip bad" }, "Changed in CAD") : null,
-        h("span", { class: "qty", "aria-label": "Quantity " + p.qty }, "×" + p.qty),
+        h("div", { class: "item-name part-name" }, p.name,
+          bits.length ? h("span", { class: "from" + (where === "ordered" && p.late ? " late" : "") }, bits.join(" · ")) : null),
+        p.changed ? h("span", { class: "chip bad" }, "Changed in CAD")
+          : p.cadNow ? h("span", { class: "chip bad" }, "CAD has " + p.cadNow) : null,
+        h("span", { class: "qty", "aria-label": "Quantity " + (where === "need" ? p.left : p.onOrder) }, "×" + (where === "need" ? p.left : p.onOrder)),
         openLink(p.url)),
-      asking ? h("div", { class: "order-box" },
-        h("p", null, S.copied ? "The order sheet opened in a new tab, and the part's name is copied. Added it?"
-          : "The order sheet opened in a new tab. Added it?"),
+      p.note ? h("p", { class: "note" }, p.note) : null,
+      ask && ask.kind === "order" ? h("div", { class: "order-box" },
+        h("p", null, (S.copied ? "The order sheet opened in a new tab, and the part's name is copied for Description. "
+          : "The order sheet opened in a new tab. ") + "Added " + p.left + " to it?"),
         h("div", { class: "row" },
-          h("button", { class: "btn btn-ghost btn-small", type: "button", onclick: function () { S.asking = ""; render(); } }, "Not yet"),
+          h("button", { class: "btn btn-ghost btn-small", type: "button", onclick: function () { S.ask = null; render(); } }, "Not yet"),
           h("button", { class: "btn btn-primary btn-small", type: "button", disabled: off,
-            onclick: function () { S.asking = ""; post("part-ordered", p); } }, "It's on the sheet"))) : null,
-      asking ? null : h("div", { class: "item-btns" + (!ordered && !sheet ? " one" : "") },
-        ordered ? h("span") : sheet ? h("button", { class: "btn btn-secondary", type: "button", disabled: off,
+            onclick: function () { S.ask = null; post("part-ordered", p); } }, "It's on the sheet"))) : null,
+      ask && ask.kind === "bin" ? h("div", { class: "order-box" },
+        h("div", { class: "count" }, h("p", null, "How many went in the bin?"),
+          h("span", { class: "stepper" },
+            h("button", { type: "button", "aria-label": "One fewer", onclick: function () { ask.n = Math.max(1, ask.n - 1); render(); } }, icon("minus")),
+            h("span", { "aria-live": "polite" }, String(ask.n)),
+            h("button", { type: "button", "aria-label": "One more", onclick: function () { ask.n = Math.min(most, ask.n + 1); render(); } }, icon("plus")))),
+        h("div", { class: "row" },
+          h("button", { class: "btn btn-ghost btn-small", type: "button", onclick: function () { S.ask = null; render(); } }, "Cancel"),
+          h("button", { class: "btn btn-primary btn-small", type: "button", disabled: off,
+            onclick: function () { var n = ask.n; S.ask = null; post("part-bin", p, { n: n }); } }, "Put " + ask.n + " in the bin"))) : null,
+      ask ? null : h("div", { class: "item-btns" + (where === "need" && !sheet ? " one" : "") },
+        where === "ordered" ? h("span") : sheet ? h("button", { class: "btn btn-secondary", type: "button", disabled: off,
           onclick: function () { order(p); } }, icon("cart"), "Order") : null,
-        h("button", { class: "btn btn-primary", type: "button", disabled: off,
-          onclick: function () { if (S.asking === p.id) S.asking = ""; post("part-bin", p); } }, icon("bin"), "In the bin")));
+        h("button", { class: "btn btn-primary", type: "button", disabled: off, onclick: function () {
+          // more than one: ask how many (all the rest to start; on the order sheet: the ones ordered)
+          if (most > 1) { S.ask = { id: p.id, kind: "bin", n: where === "ordered" ? p.onOrder : most }; render(); }
+          else post("part-bin", p, { n: most });
+        } }, icon("bin"), "In the bin")));
   }
 
   // Order: copy the part's name, open the order sheet in a new tab, then ask whether they added it. The copy goes
@@ -231,10 +258,10 @@
     if (!SHEET_RE.test(url || "")) return;
     var copied = copyNow(p.name);
     if (!copied && navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(p.name).then(function () { if (S.asking === p.id) { S.copied = true; render(); } }, function () {});
+      navigator.clipboard.writeText(p.name).then(function () { if (S.ask && S.ask.id === p.id) { S.copied = true; render(); } }, function () {});
     }
     window.open(url, "_blank", "noopener,noreferrer");
-    S.asking = p.id; S.copied = copied;
+    S.ask = { id: p.id, kind: "order" }; S.copied = copied;
     render();
   }
 
@@ -250,7 +277,8 @@
 
   function binRow(p) {
     return h("div", { class: "done-row" }, h("span", { class: "mark" }, icon("check")),
-      h("span", { class: "name wrap" }, p.name, h("span", { class: "sub" }, (p.assembly ? p.assembly + " · " : "") + "×" + p.qty + " · " + p.when)),
+      h("span", { class: "name wrap" }, p.name, h("span", { class: "sub" },
+        (p.assembly ? p.assembly + " · " : "") + "×" + p.n + (p.n < p.qty ? " of " + p.qty : "") + " · " + p.when)),
       p.undo ? h("button", { class: "btn btn-ghost btn-small", type: "button", disabled: S.busy, onclick: function () { post("part-undo", p); } },
         icon("undo"), "Undo") : null);
   }

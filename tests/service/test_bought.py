@@ -97,7 +97,8 @@ def test_screws_and_nuts_are_hardware():
 def test_the_order_sheet_must_be_a_google_sheet():
     raw = copy.deepcopy(RAW)
     raw["parts"] = {"enabled": True, "order_sheet_url": SHEET}
-    assert parse_config(raw, root=REPO_ROOT).parts == Parts(enabled=True, order_sheet_url=SHEET, keep_days=14)
+    assert parse_config(raw, root=REPO_ROOT).parts == Parts(enabled=True, keep_days=14,
+                                                            order_sheet_url=SHEET.split("#")[0])   # "#gid=0" off
     raw["parts"]["order_sheet_url"] = "https://evil.example/spreadsheets/x"
     with pytest.raises(ConfigError, match="order_sheet_url"):
         parse_config(raw, root=REPO_ROOT)
@@ -238,3 +239,100 @@ def test_with_the_parts_list_off_bought_parts_stay_where_they_were(tmp_path):
     a = p.call("GET", "/api/assembly", Q)[1]
     assert "bought" not in a
     assert {i["name"]: i["why"] for i in a["items"]}["91259A496_NO THREADS_Alloy Steel Shoulder Screw"] == "Bought part"
+
+
+# ---------------------------------------------------------------- some in the bin, CAD's count, how long ago, notes
+
+def test_some_in_the_bin_and_the_rest_ordered(tmp_path):
+    clock = Clock()
+    lst = PartList(tmp_path / "bought_parts.json", now=clock)
+    x = lst.add([entry(qty=4)])[0]
+    lst.bin(x["id"], PHONE, 2)                                         # found 2 of the 4
+    part = lst.shop_view(PHONE)["parts"][0]
+    assert (part["status"], part["inBin"], part["onOrder"], part["left"]) == ("needed", 2, 0, 2)
+    assert status_chip(lst.all()[0]) == ("2 of 4 in bin", "good")
+    with pytest.raises(ListError, match="Between 1 and 2"):
+        lst.bin(x["id"], PHONE, 3)
+    lst.ordered(x["id"], PHONE)                                        # the other 2 go on the order sheet
+    part = lst.shop_view(PHONE)["parts"][0]
+    assert (part["status"], part["inBin"], part["onOrder"], part["left"], part["orderedDays"]) == ("ordered", 2, 2, 0, 0)
+    clock.t = DAY + timedelta(days=15)
+    part = lst.shop_view(PHONE)["parts"][0]
+    assert part["orderedDays"] == 15 and part["late"] is True          # two weeks: it shows in orange
+    lst.bin(x["id"], OTHER_PHONE)                                      # they came in
+    assert lst.all()[0]["status"] == "bin" and lst.shop_view(PHONE)["parts"] == []
+    assert [(b["n"], b["undo"]) for b in lst.shop_view(OTHER_PHONE)["bin"]] == [(2, True)]
+    lst.undo(x["id"], OTHER_PHONE)                                     # back on order, 2 in the bin
+    assert counts_of(lst) == (4, 2, 2)
+
+
+def counts_of(lst):
+    from autocam_service.bought import counts
+    return counts(lst.all()[0])
+
+
+def test_only_the_last_in_the_bin_can_be_undone(tmp_path):
+    lst = PartList(tmp_path / "bought_parts.json", now=Clock())
+    x = lst.add([entry(qty=4)])[0]
+    lst.bin(x["id"], PHONE, 1)
+    lst.bin(x["id"], OTHER_PHONE, 1)
+    assert [(b["n"], b["undo"]) for b in lst.shop_view(PHONE)["bin"]] == [(1, False), (1, False)]
+    with pytest.raises(ListError, match="Only the phone"):
+        lst.undo(x["id"], PHONE)
+    lst.undo(x["id"], OTHER_PHONE)
+    assert counts_of(lst) == (4, 1, 0)
+
+
+def test_a_count_changed_in_cad_shows_until_someone_settles_it(tmp_path):
+    more = bought_bom()
+    more["rows"][1]["headerIdToValue"]["q"] = 6.0                     # 3 wheels became 6
+    p = bought_panel(tmp_path, [bought_bom(), more])
+    a = p.call("GET", "/api/assembly", Q)[1]
+    keys = {b["name"]: b["key"] for b in a["bought"]}
+    p.call("POST", "/api/send-many", body={**Q, "name": "Siddhi", "items": [],
+                                           "bought": [{"key": keys[WHEEL], "qty": 4, "note": "Get the\n45A ones"}]})
+    a = p.call("GET", "/api/assembly", {**Q, "cached": "1"})[1]
+    wheel = {b["name"]: b for b in a["bought"]}[WHEEL]
+    assert wheel["listed"]["cadNow"] is None and wheel["listed"]["qty"] == 4   # sent 4 on purpose: no flag
+    assert wheel["listed"]["note"] == "Get the 45A ones"
+    p.clock.t += 700
+    a = p.call("GET", "/api/assembly", {**Q, "fresh": "1"})[1]
+    wheel = {b["name"]: b for b in a["bought"]}[WHEEL]
+    assert wheel["listed"]["cadNow"] == 6
+    shop = p.call("GET", "/api/shop", {"device": PHONE}, key=shop_key(KEY))[1]
+    assert shop["parts"][0]["cadNow"] == 6 and shop["parts"][0]["note"] == "Get the 45A ones"
+    sid = wheel["listed"]["id"]
+    assert p.call("POST", "/api/part", body={"id": sid, "qty": 6, "note": "Get the 45A ones"})[0] == 200   # Make it 6
+    a = p.call("GET", "/api/assembly", {**Q, "cached": "1"})[1]
+    wheel = {b["name"]: b for b in a["bought"]}[WHEEL]
+    assert wheel["listed"]["cadNow"] is None and wheel["listed"]["qty"] == 6
+
+
+def test_the_panel_changes_a_parts_quantity_and_note(tmp_path):
+    p = bought_panel(tmp_path)
+    a = p.call("GET", "/api/assembly", Q)[1]
+    keys = {b["name"]: b["key"] for b in a["bought"]}
+    p.call("POST", "/api/send-many", body={**Q, "name": "Siddhi", "items": [], "bought": [{"key": keys[WHEEL], "qty": 3}]})
+    sid = p.parts.all()[0]["id"]
+    p.call("POST", "/api/shop/part-bin", body={"id": sid, "device": PHONE, "n": 2}, key=shop_key(KEY))
+    status, r = p.call("POST", "/api/part", body={"id": sid, "qty": 1, "note": ""})
+    assert status == 400 and "2 are in the bin already" in r["error"]
+    assert p.call("POST", "/api/part", body={"id": sid, "qty": 5, "note": "x" * 300})[0] == 200
+    x = p.parts.all()[0]
+    assert (x["qty"], x["in_bin"], x["status"], len(x["note"])) == (5, 2, "needed", 200)
+    assert p.call("POST", "/api/part-remove", body={"id": sid})[0] == 409        # some are in the bin: it stays
+    assert p.call("POST", "/api/shop/part-bin", body={"id": sid, "device": PHONE, "n": "3"}, key=shop_key(KEY))[0] == 400
+
+
+def test_the_order_sheet_link_is_the_same_on_every_phone(tmp_path):
+    from autocam_service.bought import sheet_link
+    from autocam_service.credentials import load_credentials
+    mine = "https://docs.google.com/spreadsheets/u/3/d/1FaKe-x_Y/edit?gid=150574251#gid=150574251"
+    assert sheet_link(mine) == "https://docs.google.com/spreadsheets/d/1FaKe-x_Y/edit?gid=150574251"
+    assert sheet_link("https://docs.google.com.evil.example/spreadsheets/d/x") == ""
+    env = tmp_path / ".env"
+    env.write_text(f'AUTOCAM_ORDER_SHEET_URL="{mine}"\n', encoding="utf-8")
+    assert load_credentials(env, environ={}).get("AUTOCAM_ORDER_SHEET_URL") == mine     # kept out of the public repo
+    p = bought_panel(tmp_path, sheet="")
+    p.app = PanelApp(p.app.cfg, KEY, p.onshape, p.board, p.names, clock=p.clock, parts=p.parts, order_sheet=mine)
+    assert p.call("GET", "/api/shop", {"device": PHONE}, key=shop_key(KEY))[1]["orderSheet"] == sheet_link(mine)

@@ -6,8 +6,12 @@ belts. They're sent from the Onshape panel with an assembly's plates and shafts,
 bought.
 
 **AutoCAM never writes to the order sheet** (the user: people write the row themselves, so everything is checked
-before money is spent). Order opens the team's Google Sheet in a new tab and copies the part's name; the card then
-asks "Added it?", and only **It's on the sheet** moves it to **On the order sheet**.
+before money is spent). Order opens the team's Google Sheet in a new tab and copies the part's name (the sheet's
+Description column; its Name column is who asks); the card then asks "Added 2 to it?", and only **It's on the
+sheet** counts them as ordered.
+
+**Counts, not just a state** (the user, 2026-11-02): a part needs a quantity; some of it can be in the bin, some on
+the order sheet, the rest still needed. "2 of 4 in the bin", then Order orders the other 2.
 
 ## What counts as a bought part
 
@@ -27,9 +31,15 @@ metals stay "AutoCAM doesn't cut": neither is on this list.
 - An assembly's bought parts are listed under **Bought parts**, under Shafts. Each row is the part's name (it wraps:
   vendors' names are long) and the assembly's count. They start **unticked** (the team may have most of them).
 - Send sends ticked plates, shafts and bought parts together ("Send 3 parts and 2 bought parts").
-- After sending, a row shows a check and its count while it's needed, with an × to take it off the list; **Ordered**
-  once someone says it's on the order sheet; "In the bin" under its name once it's in the bin, ticked off and
-  sendable again (for when more are needed).
+- After sending, a row shows a check and where it's at: ×4 (all still needed), **2 of 4 in bin**, **Ordered** (the
+  rest are on the sheet); "In the bin" under its name once all of it is, ticked off and sendable again.
+- **The pencil:** the quantity and a **note** shown on the phone's card ("The flanged ones, not the plain ones").
+  Before sending, it sets what Send sends; after, it changes the part on the list (never fewer than are in the bin),
+  and **Take it off the list** while none are in the bin or ordered.
+- **CAD's count changed:** when the assembly's count isn't the one the part was sent with (4 wheels became 6), the
+  row says "CAD has 6 now · **Make it 6**" and the phone card has a red "CAD has 6". The list never changes by
+  itself (someone may have sent a different number on purpose); Make it 6, or the pencil, settles it. A part all in
+  the bin gets it too, since more may be needed now.
 - A part taken out of the assembly gets **Changed in CAD**, in the panel and on the phone, like a shaft.
 - Clicking a row lights the part up in Onshape, and clicking the part in Onshape lights up its row (the same as
   plates and shafts).
@@ -38,22 +48,28 @@ metals stay "AutoCAM doesn't cut": neither is on this list.
 
 - **Shafts | Parts** at the top. The last tab used is remembered on the phone; a link ending in `#parts` opens on
   Parts (for a QR code at the bins later).
-- **<Assembly> bin:** what each subsystem still needs, one card per part with its count: **Order** (only if
-  `[parts] order_sheet_url` is set) and **In the bin**.
-- **On the order sheet:** ordered and waiting to come in. **In the bin** when it does.
-- **In the bin today**, with **Undo** on the phone that did it (the same day).
+- **<Assembly> bin:** what each subsystem still needs (the assembly it was sent from; the user sends from
+  subassemblies), one card per part with how many are still needed: **Order** (only with an order sheet link) and
+  **In the bin**. More than one: In the bin asks "How many went in the bin?" (all of them to start).
+- **On the order sheet:** ordered and waiting to come in, with "ordered 9 days ago" (orange from 14 days).
+- **In the bin today:** each In the bin (×2 of 4), with **Undo** on the phone that did the part's latest one, the
+  same day.
 - The vendor shows under the name when the BOM has a Vendor column, or "McMaster" for a McMaster number.
 - Parts in the bin drop off after 14 days (`[parts] keep_days`).
 
 ## Setup
 
-    [parts]
+    [parts]                       config/autocam.toml
     enabled = true
-    order_sheet_url = "https://docs.google.com/spreadsheets/d/.../edit"   # the team's order sheet (only a Google Sheet)
     keep_days = 14
 
-With no `order_sheet_url` there's no Order button (In the bin only). The link is only opened on the phone; AutoCAM
-doesn't read the sheet or need access to it. The shop link and its key are the shaft list's (`docs/shafts.md`).
+    AUTOCAM_ORDER_SHEET_URL=...   the laptop's .env (set 2026-11-02)
+
+The order sheet's link goes in `.env`, not the config: it isn't a secret, but the repo is public and the sheet has
+students' names. (`[parts] order_sheet_url` works too and wins.) Only a Google Sheets link is taken; "/u/3/" (one
+person's third Google account) and "#gid=" are taken off so it opens right on every phone. With no link there's no
+Order button. The link is only opened on the phone; AutoCAM doesn't read the sheet or need access to it. The shop
+link and its key are the shaft list's (`docs/shafts.md`).
 
 ## Where it is
 
@@ -61,5 +77,6 @@ doesn't read the sheet or need access to it. The shop link and its key are the s
 - `service/autocam_service/shoplist.py`: what the shaft list and this one share (the file, dropping finished ones,
   "Changed in CAD").
 - `panel/api.py`: the Bought parts rows, sending, `/api/part-remove`, and `/api/shop/part-ordered`, `part-bin`,
-  `part-undo`. `panel/static/panel.js` (the rows), `shop.js` / `shop.css` / `shop.html` (the tab).
+  `part-undo`, `/api/part` (the pencil, Make it 6). `panel/static/panel.js` (the rows, the pencil), `shop.js` /
+  `shop.css` / `shop.html` (the tab).
 - Tests: `tests/service/test_bought.py`.

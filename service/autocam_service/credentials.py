@@ -16,6 +16,8 @@ GROUPS: Dict[str, tuple] = {
     "onshape": ("ONSHAPE_ACCESS_KEY", "ONSHAPE_SECRET_KEY"),
     "panel": ("AUTOCAM_PANEL_KEY",),         # the Onshape panel's link carries it (panel/)
     "webhook": ("AUTOCAM_WEBHOOK_SECRET",),  # the address Onshape's webhook calls ends with it (panel/hooks.py)
+    # not a secret, but kept out of the public repo: the order sheet has students' names (bought.py; optional)
+    "order_sheet": ("AUTOCAM_ORDER_SHEET_URL",),
 }
 ALL_KEYS = tuple(k for keys in GROUPS.values() for k in keys)
 

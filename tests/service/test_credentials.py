@@ -30,7 +30,7 @@ def test_missing_file_and_empty_values_count_as_missing(tmp_path):
     assert not load_credentials(env, environ={}).has("ONSHAPE_ACCESS_KEY")
     assert load_credentials(tmp_path / "nope.env", environ={}).missing() == [
         "TRELLO_API_KEY", "TRELLO_TOKEN", "ONSHAPE_ACCESS_KEY", "ONSHAPE_SECRET_KEY", "AUTOCAM_PANEL_KEY",
-        "AUTOCAM_WEBHOOK_SECRET"]
+        "AUTOCAM_WEBHOOK_SECRET", "AUTOCAM_ORDER_SHEET_URL"]
 
 
 def test_require_names_missing_keys_without_values(tmp_path):

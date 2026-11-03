@@ -286,7 +286,8 @@ class Parts:
     """The shop's bought-parts list (bought.py, docs/bought-parts.md; 2026-11-02): an assembly's bought parts sent from
     the Onshape panel, checked off on the /shop page's Parts tab (In the bin, or Order)."""
     enabled: bool = False
-    order_sheet_url: str = ""                  # the team's Google Sheet: Order opens it (AutoCAM never writes to it)
+    order_sheet_url: str = ""                  # the team's Google Sheet: Order opens it (AutoCAM never writes to it).
+                                               # Usually AUTOCAM_ORDER_SHEET_URL in .env instead: the repo is public
     keep_days: int = 14                        # parts in the bin drop off the list after this long
 
 
@@ -942,9 +943,10 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
 
     parts = Parts()
     if "parts" in top.data:
-        from .bought import SHEET_RE
+        from .bought import SHEET_RE, sheet_link
         t = top.table("parts")
-        parts = Parts(enabled=t.boolean("enabled"), order_sheet_url=t.string("order_sheet_url", pattern=SHEET_RE, default=""),
+        parts = Parts(enabled=t.boolean("enabled"),
+                      order_sheet_url=sheet_link(t.string("order_sheet_url", pattern=SHEET_RE, default="")),
                       keep_days=t.integer("keep_days", minimum=1, default=14))
         t.finish()
 

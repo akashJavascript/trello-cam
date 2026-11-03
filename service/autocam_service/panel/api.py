@@ -64,7 +64,7 @@ from .hooks import HOOK_PREFIX, ChangeInbox, secret_ok
 from .onshape_reads import NoAccess, OutOfCalls, PanelOnshape, PanelOnshapeError, row_for_instance
 from ..shafts import (ACTIVE as SHAFT_ACTIVE, DEVICE_RE, MAX_NOTE, STOCKS, Found, ShaftError, ShaftList, clean_ends,
                       clean_ops, problems, recognize, status_chip)
-from ..bought import ACTIVE as PART_ACTIVE, PartList, is_hardware, status_chip as part_chip
+from ..bought import ACTIVE as PART_ACTIVE, PartList, counts as part_counts, is_hardware, sheet_link, status_chip as part_chip
 from ..onshape.urls import configuration_of, configuration_tag, normal_configuration
 
 log = logging.getLogger("autocam.panel")
@@ -192,11 +192,12 @@ class PanelApp:
                  clock: Callable[[], float] = time.monotonic,
                  today: Callable[[], str] = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                  inbox: Optional[ChangeInbox] = None, hook_secret: str = "", shafts: Optional[ShaftList] = None,
-                 parts: Optional[PartList] = None):
+                 parts: Optional[PartList] = None, order_sheet: str = ""):
         if not key:
             raise ValueError("the panel needs AUTOCAM_PANEL_KEY")
         self.shafts = shafts if cfg.shafts.enabled else None    # the shop's shaft list (None: off)
         self.parts = parts if cfg.parts.enabled else None       # the shop's bought-parts list (None: off)
+        self.order_sheet = sheet_link(order_sheet) or cfg.parts.order_sheet_url   # Order opens it ("" no Order)
         self._shop_key = shop_key(key).encode("utf-8")
         self.cfg = cfg
         self.inbox = inbox                    # Onshape's webhook events (hooks.py); None: no webhook
@@ -246,7 +247,7 @@ class PanelApp:
                      ("GET", "/api/which-part"): self.which_part, ("GET", "/api/which-row"): self.which_row,
                      ("GET", "/api/occurrences"): self.occurrences,
                      ("POST", "/api/shaft"): self.edit_shaft, ("POST", "/api/shaft-remove"): self.remove_shaft,
-                     ("POST", "/api/part-remove"): self.remove_part,
+                     ("POST", "/api/part-remove"): self.remove_part, ("POST", "/api/part"): self.edit_part,
                      }.get((method, path))
             if path == "/api/preview" and method == "GET":
                 return self.preview(query)
@@ -299,7 +300,7 @@ class PanelApp:
             shafts = self.shafts.shop_view(device) if self.shafts is not None else {"shafts": [], "done": [], "order": []}
             parts = self.parts.shop_view(device) if self.parts is not None else {"parts": [], "bin": []}
             return _json(200, {**shafts, **parts, "shaftsOn": self.shafts is not None, "partsOn": self.parts is not None,
-                               "orderSheet": self.cfg.parts.order_sheet_url if self.parts is not None else ""})
+                               "orderSheet": self.order_sheet if self.parts is not None else ""})
         action = path[len("/api/shop/"):]
         lst, verb = (self.shafts, action) if action in SHOP_ACTIONS else (self.parts, PART_ACTIONS.get(action))
         if method != "POST" or lst is None or verb is None:
@@ -308,7 +309,10 @@ class PanelApp:
         device = str((data or {}).get("device") or "") if isinstance(data, dict) else ""
         if not DEVICE_RE.match(device):
             raise Refused(400, "Bad request")
-        getattr(lst, verb)(data.get("id"), device)
+        if verb == "bin" and lst is self.parts:
+            lst.bin(data.get("id"), device, data.get("n"))          # how many went in (None: all the rest)
+        else:
+            getattr(lst, verb)(data.get("id"), device)
         return _json(200, {"ok": True})
 
     def _static(self, name: str) -> Response:
@@ -601,13 +605,17 @@ class PanelApp:
         if self.parts is None:
             return {}
         asm = f"{did}/{eid}"
-        self.parts.mark_changed(asm, [f"{asm}|{_row_key(r)}" for r in bought_rows])
+        self.parts.mark_read(asm, {f"{asm}|{_row_key(r)}": max(1, r["qty"]) for r in bought_rows})
         out = []
         for r in bought_rows:
             x = self.parts.latest(f"{asm}|{_row_key(r)}")
             label, kind = part_chip(x)
-            listed = None if x is None else {"id": x["id"], "status": x["status"], "qty": x["qty"],
-                                             "chip": {"label": label, "status": kind}}
+            listed = None
+            if x is not None:
+                qty, in_bin, on_order = part_counts(x)
+                listed = {"id": x["id"], "status": x["status"], "qty": qty, "inBin": in_bin, "onOrder": on_order,
+                          "cadNow": x.get("cad_now"), "note": x.get("note") or "",
+                          "chip": {"label": label, "status": kind}}
             out.append({"key": _row_key(r), "name": self._shown(r), "qty": max(1, r["qty"]), "vendor": _vendor(r),
                         "listed": listed, "sendable": x is None or x["status"] not in PART_ACTIVE})
         out.sort(key=lambda i: _natural(i["name"]))
@@ -643,11 +651,20 @@ class PanelApp:
                     raise Refused(400, "is a screw or nut: those aren't on the parts list")
                 self.parts.add([{"source": f"{ref['key']}|{key}", "assembly": ref,
                                  "row": {"did": r["did"], "eid": r["eid"], "pid": r["pid"], "configuration": r["configuration"]},
-                                 "name": label, "vendor": _vendor(r), "qty": self._qty(item), "sender": sender}])
+                                 "name": label, "vendor": _vendor(r), "qty": self._qty(item), "sender": sender,
+                                 "cad_qty": max(1, r["qty"]), "note": clean_text(item.get("note"), MAX_NOTE)}])
                 results.append({"key": key, "name": label, "sent": True, "bought": True})
             except (Refused, ShaftError) as e:
                 results.append({"key": key, "name": label, "sent": False, "why": str(e), "bought": True})
         return results
+
+    def edit_part(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        """A bought part's quantity or note, from the panel (its pencil, or "Make it 6" when the CAD's count changed)."""
+        if self.parts is None:
+            raise Refused(400, "The parts list is off.")
+        x = self.parts.edit(d.get("id"), self._qty(d), clean_text(d.get("note"), MAX_NOTE))
+        log.info("panel: bought part %s changed (x%d)", x["id"], x["qty"])
+        return {"ok": True}
 
     def remove_part(self, d: Dict[str, Any]) -> Dict[str, Any]:
         if self.parts is None:

@@ -495,8 +495,9 @@ od_in = 0.375
                                 # on the phone page's Parts tab: In the bin (the team has it) or Order. Screws and nuts
                                 # aren't on it
 enabled = true
-order_sheet_url = ""            # the team's Google Sheet (https://docs.google.com/spreadsheets/...): Order opens it in a
-                                # new tab and copies the part's name. AutoCAM never writes to it. Empty: no Order button
+order_sheet_url = ""            # empty on purpose: the team's sheet link is AUTOCAM_ORDER_SHEET_URL in the laptop's .env
+                                # (the repo is public; the sheet has students' names). Order opens it in a new tab and
+                                # copies the part's name. AutoCAM never writes to it. No link anywhere: no Order button
 keep_days = 14                  # parts put in the bin drop off the list after this long
 
 [costs]                         # the Onshape panel's cost and sheet use estimate. Prices: WCP's for a 24 x 48 in sheet
