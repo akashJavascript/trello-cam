@@ -16,7 +16,7 @@
       <coolant mode="mist"/>
       <material name="carbide"/>
       <body assembly-gauge-length="1" body-length="1" coolant-support="no" diameter="0.125" flute-length="0.472441" number-of-flutes="1" overall-length="1.49606" shaft-diameter="0.125" shoulder-diameter="0.125" shoulder-length="0.669291" thread-pitch="0" thread-profile-angle="60"/>
-      <motion clockwise="yes" cutting-feedrate="96.000001515" entry-feedrate="96" exit-feedrate="96" feed-mode="per-minute" plunge-feedrate="10" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="96.000001515"/>
+      <motion clockwise="yes" cutting-feedrate="96.000001515" entry-feedrate="96" exit-feedrate="96" feed-mode="per-minute" plunge-feedrate="40" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="96.000001515"/>
       <presets>
         <preset description="" id="{a6c8602b-441c-166c-d02f-6b8a145c6042}" name="Default preset">
           <parameter key="tool_coolant" value="mist"/>
@@ -25,7 +25,7 @@
           <parameter key="tool_feedCutting" value="96.0000015150595"/>
           <parameter key="tool_feedEntry" value="96.0"/>
           <parameter key="tool_feedExit" value="96.0"/>
-          <parameter key="tool_feedPlunge" value="10.0"/>
+          <parameter key="tool_feedPlunge" value="40.0"/>
           <parameter key="tool_feedTransition" value="96.0000015150595"/>
           <parameter key="tool_feedRamp" value="47.99999999999999"/>
           <parameter key="tool_presetMaterialCategory" value="all"/>
@@ -63,9 +63,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'1/8 polycarbonate'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="''" name="tool_vendor"/>
-    <parameter expression="''" name="tool_productId"/>
-    <parameter expression="''" name="tool_productLink"/>
+    <parameter expression="'WCP'" name="tool_vendor"/>
+    <parameter expression="'WCP-1517'" name="tool_productId"/>
+    <parameter expression="'https://wcproducts.com/products/wcp-1517'" name="tool_productLink"/>
     <parameter expression="0.125" name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -115,7 +115,7 @@
     <parameter expression="2438.3999999999996" name="tool_feedExit"/>
     <parameter expression="tool_feedCutting" name="tool_feedTransition"/>
     <parameter expression="1219.1999999999998" name="tool_feedRamp"/>
-    <parameter expression="254.0" name="tool_feedPlunge"/>
+    <parameter expression="1016.0" name="tool_feedPlunge"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedPlunge/tool_spindleSpeed : 0.0" name="tool_feedPerRevolution"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRetract"/>
     <parameter expression="true" name="tool_clockwise"/>
@@ -378,7 +378,7 @@
       <coolant mode="mist"/>
       <material name="carbide"/>
       <body assembly-gauge-length="1" body-length="1" coolant-support="no" diameter="0.125" flute-length="0.472441" number-of-flutes="1" overall-length="1.49606" shaft-diameter="0.125" shoulder-diameter="0.125" shoulder-length="0.669291" thread-pitch="0" thread-profile-angle="60"/>
-      <motion clockwise="yes" cutting-feedrate="96.000001515" entry-feedrate="96" exit-feedrate="96" feed-mode="per-minute" plunge-feedrate="10" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="96.000001515"/>
+      <motion clockwise="yes" cutting-feedrate="96.000001515" entry-feedrate="96" exit-feedrate="96" feed-mode="per-minute" plunge-feedrate="40" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="96.000001515"/>
       <presets>
         <preset description="" id="{a6c8602b-441c-166c-d02f-6b8a145c6042}" name="Default preset">
           <parameter key="tool_coolant" value="mist"/>
@@ -387,7 +387,7 @@
           <parameter key="tool_feedCutting" value="96.0000015150595"/>
           <parameter key="tool_feedEntry" value="96.0"/>
           <parameter key="tool_feedExit" value="96.0"/>
-          <parameter key="tool_feedPlunge" value="10.0"/>
+          <parameter key="tool_feedPlunge" value="40.0"/>
           <parameter key="tool_feedTransition" value="96.0000015150595"/>
           <parameter key="tool_feedRamp" value="47.99999999999999"/>
           <parameter key="tool_presetMaterialCategory" value="all"/>
@@ -428,9 +428,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'1/8 polycarbonate'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="''" name="tool_vendor"/>
-    <parameter expression="''" name="tool_productId"/>
-    <parameter expression="''" name="tool_productLink"/>
+    <parameter expression="'WCP'" name="tool_vendor"/>
+    <parameter expression="'WCP-1517'" name="tool_productId"/>
+    <parameter expression="'https://wcproducts.com/products/wcp-1517'" name="tool_productLink"/>
     <parameter expression="0.125" name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -480,7 +480,7 @@
     <parameter expression="2438.3999999999996" name="tool_feedExit"/>
     <parameter expression="tool_feedCutting" name="tool_feedTransition"/>
     <parameter expression="1219.1999999999998" name="tool_feedRamp"/>
-    <parameter expression="254.0" name="tool_feedPlunge"/>
+    <parameter expression="1016.0" name="tool_feedPlunge"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedPlunge/tool_spindleSpeed : 0.0" name="tool_feedPerRevolution"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRetract"/>
     <parameter expression="true" name="tool_clockwise"/>
@@ -781,7 +781,7 @@
       <coolant mode="mist"/>
       <material name="carbide"/>
       <body assembly-gauge-length="1" body-length="1" coolant-support="no" diameter="0.125" flute-length="0.472441" number-of-flutes="1" overall-length="1.49606" shaft-diameter="0.125" shoulder-diameter="0.125" shoulder-length="0.669291" thread-pitch="0" thread-profile-angle="60"/>
-      <motion clockwise="yes" cutting-feedrate="0" entry-feedrate="0" exit-feedrate="0" feed-mode="per-minute" plunge-feedrate="10" ramp-angle="2" ramp-feedrate="0" ramp-spindle-rpm="0" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="0"/>
+      <motion clockwise="yes" cutting-feedrate="0" entry-feedrate="0" exit-feedrate="0" feed-mode="per-minute" plunge-feedrate="40" ramp-angle="2" ramp-feedrate="0" ramp-spindle-rpm="0" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="0"/>
       <presets>
         <preset description="" id="{a6c8602b-441c-166c-d02f-6b8a145c6042}" name="Default preset">
           <parameter key="tool_coolant" value="mist"/>
@@ -790,7 +790,7 @@
           <parameter key="tool_feedCutting" value="96.0000015150595"/>
           <parameter key="tool_feedEntry" value="96.0"/>
           <parameter key="tool_feedExit" value="96.0"/>
-          <parameter key="tool_feedPlunge" value="10.0"/>
+          <parameter key="tool_feedPlunge" value="40.0"/>
           <parameter key="tool_feedTransition" value="96.0000015150595"/>
           <parameter key="tool_feedRamp" value="47.99999999999999"/>
           <parameter key="tool_presetMaterialCategory" value="all"/>
@@ -834,9 +834,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'1/8 polycarbonate'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="''" name="tool_vendor"/>
-    <parameter expression="''" name="tool_productId"/>
-    <parameter expression="''" name="tool_productLink"/>
+    <parameter expression="'WCP'" name="tool_vendor"/>
+    <parameter expression="'WCP-1517'" name="tool_productId"/>
+    <parameter expression="'https://wcproducts.com/products/wcp-1517'" name="tool_productLink"/>
     <parameter expression="0.125" name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -887,7 +887,7 @@
     <parameter expression="tool_isDepositing ? 40inpm : tool_feedCutting" name="tool_feedExit"/>
     <parameter expression="tool_feedCutting" name="tool_feedTransition"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRamp"/>
-    <parameter expression="254.0" name="tool_feedPlunge"/>
+    <parameter expression="1016.0" name="tool_feedPlunge"/>
     <parameter expression="(tool_spindleSpeed > 0) ? tool_feedPlunge / tool_spindleSpeed : 0.0" name="tool_feedPerRevolution"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRetract"/>
     <parameter expression="(tool_spindleSpeed > 0) ? tool_feedRetract / tool_spindleSpeed : 0.0" name="tool_feedRetractPerRevolution"/>
@@ -1289,7 +1289,7 @@
       <coolant mode="mist"/>
       <material name="carbide"/>
       <body assembly-gauge-length="1" body-length="1" coolant-support="no" diameter="0.125" flute-length="0.472441" number-of-flutes="1" overall-length="1.49606" shaft-diameter="0.125" shoulder-diameter="0.125" shoulder-length="0.669291" thread-pitch="0" thread-profile-angle="60"/>
-      <motion clockwise="yes" cutting-feedrate="96.000001515" entry-feedrate="96" exit-feedrate="96" feed-mode="per-minute" plunge-feedrate="10" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="96.000001515"/>
+      <motion clockwise="yes" cutting-feedrate="96.000001515" entry-feedrate="96" exit-feedrate="96" feed-mode="per-minute" plunge-feedrate="40" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="96.000001515"/>
       <presets>
         <preset description="" id="{a6c8602b-441c-166c-d02f-6b8a145c6042}" name="Default preset">
           <parameter key="tool_coolant" value="mist"/>
@@ -1298,7 +1298,7 @@
           <parameter key="tool_feedCutting" value="96.0000015150595"/>
           <parameter key="tool_feedEntry" value="96.0"/>
           <parameter key="tool_feedExit" value="96.0"/>
-          <parameter key="tool_feedPlunge" value="10.0"/>
+          <parameter key="tool_feedPlunge" value="40.0"/>
           <parameter key="tool_feedTransition" value="96.0000015150595"/>
           <parameter key="tool_feedRamp" value="47.99999999999999"/>
           <parameter key="tool_presetMaterialCategory" value="all"/>
@@ -1336,9 +1336,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'1/8 polycarbonate'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="''" name="tool_vendor"/>
-    <parameter expression="''" name="tool_productId"/>
-    <parameter expression="''" name="tool_productLink"/>
+    <parameter expression="'WCP'" name="tool_vendor"/>
+    <parameter expression="'WCP-1517'" name="tool_productId"/>
+    <parameter expression="'https://wcproducts.com/products/wcp-1517'" name="tool_productLink"/>
     <parameter expression="0.125" name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -1388,7 +1388,7 @@
     <parameter expression="2438.3999999999996" name="tool_feedExit"/>
     <parameter expression="tool_feedCutting" name="tool_feedTransition"/>
     <parameter expression="1219.1999999999998" name="tool_feedRamp"/>
-    <parameter expression="254.0" name="tool_feedPlunge"/>
+    <parameter expression="1016.0" name="tool_feedPlunge"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedPlunge/tool_spindleSpeed : 0.0" name="tool_feedPerRevolution"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRetract"/>
     <parameter expression="true" name="tool_clockwise"/>
@@ -1587,7 +1587,7 @@
       <coolant mode="mist"/>
       <material name="carbide"/>
       <body assembly-gauge-length="1" body-length="1" coolant-support="no" diameter="0.125" flute-length="0.472441" number-of-flutes="1" overall-length="1.49606" shaft-diameter="0.125" shoulder-diameter="0.125" shoulder-length="0.669291" thread-pitch="0" thread-profile-angle="60"/>
-      <motion clockwise="yes" cutting-feedrate="96.000001515" entry-feedrate="96" exit-feedrate="96" feed-mode="per-minute" plunge-feedrate="10" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="96.000001515"/>
+      <motion clockwise="yes" cutting-feedrate="96.000001515" entry-feedrate="96" exit-feedrate="96" feed-mode="per-minute" plunge-feedrate="40" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="96.000001515"/>
       <presets>
         <preset description="" id="{a6c8602b-441c-166c-d02f-6b8a145c6042}" name="Default preset">
           <parameter key="tool_coolant" value="mist"/>
@@ -1596,7 +1596,7 @@
           <parameter key="tool_feedCutting" value="96.0000015150595"/>
           <parameter key="tool_feedEntry" value="96.0"/>
           <parameter key="tool_feedExit" value="96.0"/>
-          <parameter key="tool_feedPlunge" value="10.0"/>
+          <parameter key="tool_feedPlunge" value="40.0"/>
           <parameter key="tool_feedTransition" value="96.0000015150595"/>
           <parameter key="tool_feedRamp" value="47.99999999999999"/>
           <parameter key="tool_presetMaterialCategory" value="all"/>
@@ -1634,9 +1634,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'1/8 polycarbonate'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="''" name="tool_vendor"/>
-    <parameter expression="''" name="tool_productId"/>
-    <parameter expression="''" name="tool_productLink"/>
+    <parameter expression="'WCP'" name="tool_vendor"/>
+    <parameter expression="'WCP-1517'" name="tool_productId"/>
+    <parameter expression="'https://wcproducts.com/products/wcp-1517'" name="tool_productLink"/>
     <parameter expression="0.125" name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -1686,7 +1686,7 @@
     <parameter expression="2438.3999999999996" name="tool_feedExit"/>
     <parameter expression="tool_feedCutting" name="tool_feedTransition"/>
     <parameter expression="1219.1999999999998" name="tool_feedRamp"/>
-    <parameter expression="254.0" name="tool_feedPlunge"/>
+    <parameter expression="1016.0" name="tool_feedPlunge"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedPlunge/tool_spindleSpeed : 0.0" name="tool_feedPerRevolution"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRetract"/>
     <parameter expression="true" name="tool_clockwise"/>
@@ -1885,7 +1885,7 @@
       <coolant mode="mist"/>
       <material name="carbide"/>
       <body assembly-gauge-length="1" body-length="1" coolant-support="no" diameter="0.125" flute-length="0.472441" number-of-flutes="1" overall-length="1.49606" shaft-diameter="0.125" shoulder-diameter="0.125" shoulder-length="0.669291" thread-pitch="0" thread-profile-angle="60"/>
-      <motion clockwise="yes" cutting-feedrate="96.000001515" entry-feedrate="96" exit-feedrate="96" feed-mode="per-minute" plunge-feedrate="10" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="96.000001515"/>
+      <motion clockwise="yes" cutting-feedrate="96.000001515" entry-feedrate="96" exit-feedrate="96" feed-mode="per-minute" plunge-feedrate="40" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="96.000001515"/>
       <presets>
         <preset description="" id="{a6c8602b-441c-166c-d02f-6b8a145c6042}" name="Default preset">
           <parameter key="tool_coolant" value="mist"/>
@@ -1894,7 +1894,7 @@
           <parameter key="tool_feedCutting" value="96.0000015150595"/>
           <parameter key="tool_feedEntry" value="96.0"/>
           <parameter key="tool_feedExit" value="96.0"/>
-          <parameter key="tool_feedPlunge" value="10.0"/>
+          <parameter key="tool_feedPlunge" value="40.0"/>
           <parameter key="tool_feedTransition" value="96.0000015150595"/>
           <parameter key="tool_feedRamp" value="47.99999999999999"/>
           <parameter key="tool_presetMaterialCategory" value="all"/>
@@ -1935,9 +1935,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'1/8 polycarbonate'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="''" name="tool_vendor"/>
-    <parameter expression="''" name="tool_productId"/>
-    <parameter expression="''" name="tool_productLink"/>
+    <parameter expression="'WCP'" name="tool_vendor"/>
+    <parameter expression="'WCP-1517'" name="tool_productId"/>
+    <parameter expression="'https://wcproducts.com/products/wcp-1517'" name="tool_productLink"/>
     <parameter expression="0.125" name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -1987,7 +1987,7 @@
     <parameter expression="2438.3999999999996" name="tool_feedExit"/>
     <parameter expression="tool_feedCutting" name="tool_feedTransition"/>
     <parameter expression="1219.1999999999998" name="tool_feedRamp"/>
-    <parameter expression="254.0" name="tool_feedPlunge"/>
+    <parameter expression="1016.0" name="tool_feedPlunge"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedPlunge/tool_spindleSpeed : 0.0" name="tool_feedPerRevolution"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRetract"/>
     <parameter expression="true" name="tool_clockwise"/>
@@ -2384,7 +2384,7 @@
       <coolant mode="mist"/>
       <material name="carbide"/>
       <body assembly-gauge-length="1" body-length="1" coolant-support="no" diameter="0.125" flute-length="0.472441" number-of-flutes="1" overall-length="1.49606" shaft-diameter="0.125" shoulder-diameter="0.125" shoulder-length="0.669291" thread-pitch="0" thread-profile-angle="60"/>
-      <motion clockwise="yes" cutting-feedrate="96.000001515" entry-feedrate="96" exit-feedrate="96" feed-mode="per-minute" plunge-feedrate="10" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="96.000001515"/>
+      <motion clockwise="yes" cutting-feedrate="96.000001515" entry-feedrate="96" exit-feedrate="96" feed-mode="per-minute" plunge-feedrate="40" ramp-angle="2" ramp-feedrate="48" ramp-spindle-rpm="18000" retract-feedrate="0" spindle-rpm="18000.011534081" transition-feedrate="96.000001515"/>
       <presets>
         <preset description="" id="{a6c8602b-441c-166c-d02f-6b8a145c6042}" name="Default preset">
           <parameter key="tool_coolant" value="mist"/>
@@ -2393,7 +2393,7 @@
           <parameter key="tool_feedCutting" value="96.0000015150595"/>
           <parameter key="tool_feedEntry" value="96.0"/>
           <parameter key="tool_feedExit" value="96.0"/>
-          <parameter key="tool_feedPlunge" value="10.0"/>
+          <parameter key="tool_feedPlunge" value="40.0"/>
           <parameter key="tool_feedTransition" value="96.0000015150595"/>
           <parameter key="tool_feedRamp" value="47.99999999999999"/>
           <parameter key="tool_presetMaterialCategory" value="all"/>
@@ -2434,9 +2434,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'1/8 polycarbonate'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="''" name="tool_vendor"/>
-    <parameter expression="''" name="tool_productId"/>
-    <parameter expression="''" name="tool_productLink"/>
+    <parameter expression="'WCP'" name="tool_vendor"/>
+    <parameter expression="'WCP-1517'" name="tool_productId"/>
+    <parameter expression="'https://wcproducts.com/products/wcp-1517'" name="tool_productLink"/>
     <parameter expression="0.125" name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -2486,7 +2486,7 @@
     <parameter expression="2438.3999999999996" name="tool_feedExit"/>
     <parameter expression="tool_feedCutting" name="tool_feedTransition"/>
     <parameter expression="1219.1999999999998" name="tool_feedRamp"/>
-    <parameter expression="254.0" name="tool_feedPlunge"/>
+    <parameter expression="1016.0" name="tool_feedPlunge"/>
     <parameter expression="tool_spindleSpeed > 0 ? tool_feedPlunge/tool_spindleSpeed : 0.0" name="tool_feedPerRevolution"/>
     <parameter expression="tool_feedPlunge" name="tool_feedRetract"/>
     <parameter expression="true" name="tool_clockwise"/>

@@ -15,7 +15,7 @@
       <nc break-control="0" diameter-offset="1" length-offset="1" live-tool="1" manual-tool-change="0" number="1" turret="0"/>
       <coolant mode="air"/>
       <material name="carbide"/>
-      <body assembly-gauge-length="53" body-length="24" coolant-support="no" diameter="4" flute-length="18" number-of-flutes="1" overall-length="24" shaft-diameter="4" shoulder-diameter="4" shoulder-length="21" thread-pitch="0" thread-profile-angle="60"/>
+      <body assembly-gauge-length="53" body-length="24" coolant-support="no" diameter="4" flute-length="12" number-of-flutes="1" overall-length="24" shaft-diameter="4" shoulder-diameter="4" shoulder-length="21" thread-pitch="0" thread-profile-angle="60"/>
       <holder description="Default Holder" gauge-length="29">
         <section diameter="25" length="0"/>
         <section diameter="30" length="5"/>
@@ -76,9 +76,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'4mm 0 flute Poly'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="''" name="tool_vendor"/>
-    <parameter expression="''" name="tool_productId"/>
-    <parameter expression="''" name="tool_productLink"/>
+    <parameter expression="'WCP'" name="tool_vendor"/>
+    <parameter expression="'WCP-1513'" name="tool_productId"/>
+    <parameter expression="'https://wcproducts.com/products/wcp-1513'" name="tool_productLink"/>
     <parameter expression="4." name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -91,7 +91,7 @@
     <parameter expression="(((tool_type == 'thread mill' ? tool_threadPitch / 4 : tool_maximumThreadPitch / (tool_internalThread ? 8 : 4))) / 2) / Math.cos(tool_threadProfileAngle / 2 radians)" name="tool_threadTipRadius"/>
     <parameter expression="60." name="tool_threadProfileAngle"/>
     <parameter expression="0.0" name="tool_tipLength"/>
-    <parameter expression="18." name="tool_fluteLength"/>
+    <parameter expression="12." name="tool_fluteLength"/>
     <parameter expression="21." name="tool_shoulderLength"/>
     <parameter expression="24." name="tool_bodyLength"/>
     <parameter expression="24." name="tool_overallLength"/>
@@ -390,7 +390,7 @@
       <nc break-control="0" diameter-offset="1" length-offset="1" live-tool="1" manual-tool-change="0" number="1" turret="0"/>
       <coolant mode="air"/>
       <material name="carbide"/>
-      <body assembly-gauge-length="53" body-length="24" coolant-support="no" diameter="4" flute-length="18" number-of-flutes="1" overall-length="24" shaft-diameter="4" shoulder-diameter="4" shoulder-length="21" thread-pitch="0" thread-profile-angle="60"/>
+      <body assembly-gauge-length="53" body-length="24" coolant-support="no" diameter="4" flute-length="12" number-of-flutes="1" overall-length="24" shaft-diameter="4" shoulder-diameter="4" shoulder-length="21" thread-pitch="0" thread-profile-angle="60"/>
       <holder description="Default Holder" gauge-length="29">
         <section diameter="25" length="0"/>
         <section diameter="30" length="5"/>
@@ -454,9 +454,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'4mm 0 flute Poly'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="''" name="tool_vendor"/>
-    <parameter expression="''" name="tool_productId"/>
-    <parameter expression="''" name="tool_productLink"/>
+    <parameter expression="'WCP'" name="tool_vendor"/>
+    <parameter expression="'WCP-1513'" name="tool_productId"/>
+    <parameter expression="'https://wcproducts.com/products/wcp-1513'" name="tool_productLink"/>
     <parameter expression="4." name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -469,7 +469,7 @@
     <parameter expression="(((tool_type == 'thread mill' ? tool_threadPitch / 4 : tool_maximumThreadPitch / (tool_internalThread ? 8 : 4))) / 2) / Math.cos(tool_threadProfileAngle / 2 radians)" name="tool_threadTipRadius"/>
     <parameter expression="60." name="tool_threadProfileAngle"/>
     <parameter expression="0.0" name="tool_tipLength"/>
-    <parameter expression="18." name="tool_fluteLength"/>
+    <parameter expression="12." name="tool_fluteLength"/>
     <parameter expression="21." name="tool_shoulderLength"/>
     <parameter expression="24." name="tool_bodyLength"/>
     <parameter expression="24." name="tool_overallLength"/>
@@ -806,7 +806,7 @@
       <nc break-control="0" diameter-offset="1" length-offset="1" live-tool="1" manual-tool-change="0" number="1" turret="0"/>
       <coolant mode="air"/>
       <material name="carbide"/>
-      <body assembly-gauge-length="53" body-length="24" coolant-support="no" diameter="4" flute-length="18" number-of-flutes="1" overall-length="24" shaft-diameter="4" shoulder-diameter="4" shoulder-length="21" thread-pitch="0" thread-profile-angle="60"/>
+      <body assembly-gauge-length="53" body-length="24" coolant-support="no" diameter="4" flute-length="12" number-of-flutes="1" overall-length="24" shaft-diameter="4" shoulder-diameter="4" shoulder-length="21" thread-pitch="0" thread-profile-angle="60"/>
       <holder description="Default Holder" gauge-length="29">
         <section diameter="25" length="0"/>
         <section diameter="30" length="5"/>
@@ -873,9 +873,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'4mm 0 flute Poly'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="''" name="tool_vendor"/>
-    <parameter expression="''" name="tool_productId"/>
-    <parameter expression="''" name="tool_productLink"/>
+    <parameter expression="'WCP'" name="tool_vendor"/>
+    <parameter expression="'WCP-1513'" name="tool_productId"/>
+    <parameter expression="'https://wcproducts.com/products/wcp-1513'" name="tool_productLink"/>
     <parameter expression="4." name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -888,7 +888,7 @@
     <parameter expression="(((tool_type == 'thread mill' ? tool_threadPitch / 4 : tool_maximumThreadPitch / (tool_internalThread ? 8 : 4))) / 2) / Math.cos(tool_threadProfileAngle / 2 radians)" name="tool_threadTipRadius"/>
     <parameter expression="60." name="tool_threadProfileAngle"/>
     <parameter expression="0.0" name="tool_tipLength"/>
-    <parameter expression="18." name="tool_fluteLength"/>
+    <parameter expression="12." name="tool_fluteLength"/>
     <parameter expression="21." name="tool_shoulderLength"/>
     <parameter expression="24." name="tool_bodyLength"/>
     <parameter expression="24." name="tool_overallLength"/>
@@ -1327,7 +1327,7 @@
       <nc break-control="0" diameter-offset="1" length-offset="1" live-tool="1" manual-tool-change="0" number="1" turret="0"/>
       <coolant mode="air"/>
       <material name="carbide"/>
-      <body assembly-gauge-length="53" body-length="24" coolant-support="no" diameter="4" flute-length="18" number-of-flutes="1" overall-length="24" shaft-diameter="4" shoulder-diameter="4" shoulder-length="21" thread-pitch="0" thread-profile-angle="60"/>
+      <body assembly-gauge-length="53" body-length="24" coolant-support="no" diameter="4" flute-length="12" number-of-flutes="1" overall-length="24" shaft-diameter="4" shoulder-diameter="4" shoulder-length="21" thread-pitch="0" thread-profile-angle="60"/>
       <holder description="Default Holder" gauge-length="29">
         <section diameter="25" length="0"/>
         <section diameter="30" length="5"/>
@@ -1388,9 +1388,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'4mm 0 flute Poly'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="''" name="tool_vendor"/>
-    <parameter expression="''" name="tool_productId"/>
-    <parameter expression="''" name="tool_productLink"/>
+    <parameter expression="'WCP'" name="tool_vendor"/>
+    <parameter expression="'WCP-1513'" name="tool_productId"/>
+    <parameter expression="'https://wcproducts.com/products/wcp-1513'" name="tool_productLink"/>
     <parameter expression="4." name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -1403,7 +1403,7 @@
     <parameter expression="(((tool_type == 'thread mill' ? tool_threadPitch / 4 : tool_maximumThreadPitch / (tool_internalThread ? 8 : 4))) / 2) / Math.cos(tool_threadProfileAngle / 2 radians)" name="tool_threadTipRadius"/>
     <parameter expression="60." name="tool_threadProfileAngle"/>
     <parameter expression="0.0" name="tool_tipLength"/>
-    <parameter expression="18." name="tool_fluteLength"/>
+    <parameter expression="12." name="tool_fluteLength"/>
     <parameter expression="21." name="tool_shoulderLength"/>
     <parameter expression="24." name="tool_bodyLength"/>
     <parameter expression="24." name="tool_overallLength"/>
@@ -1638,7 +1638,7 @@
       <nc break-control="0" diameter-offset="1" length-offset="1" live-tool="1" manual-tool-change="0" number="1" turret="0"/>
       <coolant mode="air"/>
       <material name="carbide"/>
-      <body assembly-gauge-length="53" body-length="24" coolant-support="no" diameter="4" flute-length="18" number-of-flutes="1" overall-length="24" shaft-diameter="4" shoulder-diameter="4" shoulder-length="21" thread-pitch="0" thread-profile-angle="60"/>
+      <body assembly-gauge-length="53" body-length="24" coolant-support="no" diameter="4" flute-length="12" number-of-flutes="1" overall-length="24" shaft-diameter="4" shoulder-diameter="4" shoulder-length="21" thread-pitch="0" thread-profile-angle="60"/>
       <holder description="Default Holder" gauge-length="29">
         <section diameter="25" length="0"/>
         <section diameter="30" length="5"/>
@@ -1699,9 +1699,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'4mm 0 flute Poly'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="''" name="tool_vendor"/>
-    <parameter expression="''" name="tool_productId"/>
-    <parameter expression="''" name="tool_productLink"/>
+    <parameter expression="'WCP'" name="tool_vendor"/>
+    <parameter expression="'WCP-1513'" name="tool_productId"/>
+    <parameter expression="'https://wcproducts.com/products/wcp-1513'" name="tool_productLink"/>
     <parameter expression="4." name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -1714,7 +1714,7 @@
     <parameter expression="(((tool_type == 'thread mill' ? tool_threadPitch / 4 : tool_maximumThreadPitch / (tool_internalThread ? 8 : 4))) / 2) / Math.cos(tool_threadProfileAngle / 2 radians)" name="tool_threadTipRadius"/>
     <parameter expression="60." name="tool_threadProfileAngle"/>
     <parameter expression="0.0" name="tool_tipLength"/>
-    <parameter expression="18." name="tool_fluteLength"/>
+    <parameter expression="12." name="tool_fluteLength"/>
     <parameter expression="21." name="tool_shoulderLength"/>
     <parameter expression="24." name="tool_bodyLength"/>
     <parameter expression="24." name="tool_overallLength"/>
@@ -1949,7 +1949,7 @@
       <nc break-control="0" diameter-offset="1" length-offset="1" live-tool="1" manual-tool-change="0" number="1" turret="0"/>
       <coolant mode="air"/>
       <material name="carbide"/>
-      <body assembly-gauge-length="53" body-length="24" coolant-support="no" diameter="4" flute-length="18" number-of-flutes="1" overall-length="24" shaft-diameter="4" shoulder-diameter="4" shoulder-length="21" thread-pitch="0" thread-profile-angle="60"/>
+      <body assembly-gauge-length="53" body-length="24" coolant-support="no" diameter="4" flute-length="12" number-of-flutes="1" overall-length="24" shaft-diameter="4" shoulder-diameter="4" shoulder-length="21" thread-pitch="0" thread-profile-angle="60"/>
       <holder description="Default Holder" gauge-length="29">
         <section diameter="25" length="0"/>
         <section diameter="30" length="5"/>
@@ -2013,9 +2013,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'4mm 0 flute Poly'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="''" name="tool_vendor"/>
-    <parameter expression="''" name="tool_productId"/>
-    <parameter expression="''" name="tool_productLink"/>
+    <parameter expression="'WCP'" name="tool_vendor"/>
+    <parameter expression="'WCP-1513'" name="tool_productId"/>
+    <parameter expression="'https://wcproducts.com/products/wcp-1513'" name="tool_productLink"/>
     <parameter expression="4." name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -2028,7 +2028,7 @@
     <parameter expression="(((tool_type == 'thread mill' ? tool_threadPitch / 4 : tool_maximumThreadPitch / (tool_internalThread ? 8 : 4))) / 2) / Math.cos(tool_threadProfileAngle / 2 radians)" name="tool_threadTipRadius"/>
     <parameter expression="60." name="tool_threadProfileAngle"/>
     <parameter expression="0.0" name="tool_tipLength"/>
-    <parameter expression="18." name="tool_fluteLength"/>
+    <parameter expression="12." name="tool_fluteLength"/>
     <parameter expression="21." name="tool_shoulderLength"/>
     <parameter expression="24." name="tool_bodyLength"/>
     <parameter expression="24." name="tool_overallLength"/>
@@ -2461,7 +2461,7 @@
       <nc break-control="0" diameter-offset="1" length-offset="1" live-tool="1" manual-tool-change="0" number="1" turret="0"/>
       <coolant mode="air"/>
       <material name="carbide"/>
-      <body assembly-gauge-length="53" body-length="24" coolant-support="no" diameter="4" flute-length="18" number-of-flutes="1" overall-length="24" shaft-diameter="4" shoulder-diameter="4" shoulder-length="21" thread-pitch="0" thread-profile-angle="60"/>
+      <body assembly-gauge-length="53" body-length="24" coolant-support="no" diameter="4" flute-length="12" number-of-flutes="1" overall-length="24" shaft-diameter="4" shoulder-diameter="4" shoulder-length="21" thread-pitch="0" thread-profile-angle="60"/>
       <holder description="Default Holder" gauge-length="29">
         <section diameter="25" length="0"/>
         <section diameter="30" length="5"/>
@@ -2525,9 +2525,9 @@
     <parameter expression="'carbide'" name="tool_material"/>
     <parameter expression="'4mm 0 flute Poly'" name="tool_description"/>
     <parameter expression="''" name="tool_comment"/>
-    <parameter expression="''" name="tool_vendor"/>
-    <parameter expression="''" name="tool_productId"/>
-    <parameter expression="''" name="tool_productLink"/>
+    <parameter expression="'WCP'" name="tool_vendor"/>
+    <parameter expression="'WCP-1513'" name="tool_productId"/>
+    <parameter expression="'https://wcproducts.com/products/wcp-1513'" name="tool_productLink"/>
     <parameter expression="4." name="tool_diameter"/>
     <parameter expression="tool_diameter + 2*tool_fluteLength*Math.tan(tool_taperAngle)" name="tool_maximumCuttingDiameter"/>
     <parameter expression="0.0" name="tool_tipDiameter"/>
@@ -2540,7 +2540,7 @@
     <parameter expression="(((tool_type == 'thread mill' ? tool_threadPitch / 4 : tool_maximumThreadPitch / (tool_internalThread ? 8 : 4))) / 2) / Math.cos(tool_threadProfileAngle / 2 radians)" name="tool_threadTipRadius"/>
     <parameter expression="60." name="tool_threadProfileAngle"/>
     <parameter expression="0.0" name="tool_tipLength"/>
-    <parameter expression="18." name="tool_fluteLength"/>
+    <parameter expression="12." name="tool_fluteLength"/>
     <parameter expression="21." name="tool_shoulderLength"/>
     <parameter expression="24." name="tool_bodyLength"/>
     <parameter expression="24." name="tool_overallLength"/>

@@ -20,7 +20,7 @@ def lib():
 
 @pytest.mark.parametrize("guid, number, diameter_in, flute_in", [
     (ALU_4MM, 1, 4 / 25.4, 12 / 25.4),
-    (POLY_4MM, 1, 4 / 25.4, 18 / 25.4),
+    (POLY_4MM, 1, 4 / 25.4, 12 / 25.4),          # WCP-1513, 12 mm cut length (2026-11-03)
     (ALU_EIGHTH, 12, 0.125, 0.472441),
     (POLY_EIGHTH, 12, 0.125, 0.472441),
 ])

@@ -88,7 +88,11 @@ for name_, old, new, n in (("tool_unit", "'millimeters'", "'inches'", N),
                            ("tool_feedEntry", "1524.", num(pre["v_f_leadIn"] * MM), N - 1),
                            ("tool_feedExit", "1524.", num(pre["v_f_leadOut"] * MM), N - 1),
                            ("tool_feedRamp", "1524.", num(pre["v_f_ramp"] * MM), N - 1),
-                           ("tool_feedPlunge", "508.", num(pre["v_f_plunge"] * MM), N)):
+                           ("tool_feedPlunge", "508.", num(pre["v_f_plunge"] * MM), N),
+                           # the product (the team's are WCP: 1/8 polycarbonate is WCP-1517, the user 2026-11-03)
+                           ("tool_vendor", "''", "'%s'" % tool.get("vendor", ""), N),
+                           ("tool_productId", "''", "'%s'" % tool.get("product-id", ""), N),
+                           ("tool_productLink", "''", "'%s'" % tool.get("product-link", ""), N)):
     sub(f'<parameter expression="{old}" name="{name_}"/>', f'<parameter expression="{new}" name="{name_}"/>', n)
 for leftover in (ALU_GUID, ALU_PRESET, "Aluminum", "1524.0028", "\"508", "508.\"", "unit=\"millimeters\"", "\x27millimeters\x27\" name=\"tool_unit"):
     assert leftover not in t, f"{leftover} still in the file"
