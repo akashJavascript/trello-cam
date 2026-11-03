@@ -13,18 +13,16 @@ What's here is pure, apart from ShaftList's one JSON file:
                   "Changed in CAD" tag when the shaft sent is no longer in its assembly
 """
 
-import json
 import re
 import secrets
-import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import unquote
 
-from autocam_core.hotfolder import write_atomic
+from .shoplist import DEVICE_RE, ID_RE, ListError, ShopList   # noqa: F401 - DEVICE_RE and ID_RE are used from here
 
 
 @dataclass(frozen=True)
@@ -44,21 +42,13 @@ WALL_IN = 0.03                             # 3/8 hex lite: thinner than this aro
 MAX_OPS = 8
 MAX_NOTE = 200                             # a shaft's note (the sender's, shown on its card)
 TAP_RE = re.compile(r"^[A-Za-z0-9./ x-]{1,12}$")   # "10-32", "1/4-20", "8-32", "M5x0.8"
-DEVICE_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
-ID_RE = re.compile(r"^[0-9a-f]{12}$")
 
 _TO_IN = {"meter": 1 / 0.0254, "m": 1 / 0.0254, "millimeter": 1 / 25.4, "mm": 1 / 25.4, "centimeter": 1 / 2.54,
           "cm": 1 / 2.54, "inch": 1.0, "in": 1.0, "foot": 12.0, "ft": 12.0}
 _LENGTH_RE = re.compile(r"^\s*(-?[0-9.]+(?:e-?[0-9]+)?)\s*\+?\s*([A-Za-z]*)\s*$")
 
 
-class ShaftError(Exception):
-    """Something the person can fix, said plainly. status: the HTTP status the panel answers with."""
-
-    def __init__(self, message: str, status: int = 400, kind: str = ""):
-        super().__init__(message)
-        self.status = status
-        self.kind = kind
+ShaftError = ListError          # something the person can fix, said plainly (shoplist.py; both lists share it)
 
 
 # ---------------------------------------------------------------- reading a library shaft off an assembly row
@@ -262,64 +252,16 @@ def clean_ops(ops: Any) -> List[Op]:
 ACTIVE = ("waiting", "started")
 
 
-class ShaftList:
+class ShaftList(ShopList):
     """state/shafts.json: every shaft sent, newest last. Done ones stay `keep_done_days`, then drop off."""
+    FILE_KEY, NOUN, ACTIVE, FINISHED, FINISHED_AT = "shafts", "shaft", ACTIVE, "done", "done_at"
 
     def __init__(self, path: Path, groove_depth_in: float = 0.020, keep_done_days: int = 14,
                  now: Callable[[], datetime] = datetime.now):
-        self.path = Path(path)
+        super().__init__(path, keep_days=keep_done_days, now=now)
         self.groove_depth_in = groove_depth_in
-        self.keep_done_days = keep_done_days
-        self.now = now                           # the laptop's local time: "Done today" is the shop's day
-        self._lock = threading.RLock()
-
-    # ---- the file
-    def _load(self) -> List[Dict[str, Any]]:
-        try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return []
-        return [x for x in data.get("shafts", []) if isinstance(x, dict)] if isinstance(data, dict) else []
-
-    def _save(self, items: List[Dict[str, Any]]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        write_atomic(self.path, (json.dumps({"shafts": items}, indent=1, ensure_ascii=False) + "\n").encode("utf-8"))
-
-    def _pruned(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        cut = (self.now() - timedelta(days=self.keep_done_days)).isoformat(timespec="seconds")
-        return [x for x in items if x.get("status") != "done" or (x.get("done_at") or "") >= cut]
-
-    def all(self) -> List[Dict[str, Any]]:
-        with self._lock:
-            return self._pruned(self._load())
-
-    def _change(self, fn: Callable[[List[Dict[str, Any]]], Any]) -> Any:
-        with self._lock:
-            items = self._pruned(self._load())
-            result = fn(items)
-            self._save(items)
-            return result
-
-    def _find(self, items: List[Dict[str, Any]], sid: Any) -> Dict[str, Any]:
-        if not isinstance(sid, str) or not ID_RE.match(sid):
-            raise ShaftError("Bad request")
-        for x in items:
-            if x.get("id") == sid:
-                return x
-        raise ShaftError("That shaft isn't on the list any more.", status=404, kind="gone")
-
-    def _stamp(self) -> str:
-        return self.now().isoformat(timespec="seconds")
 
     # ---- from the panel
-    def active(self, source: str) -> Optional[Dict[str, Any]]:
-        """The shaft on the list (waiting or started) for this assembly row, if there is one."""
-        return next((x for x in reversed(self.all()) if x.get("source") == source and x.get("status") in ACTIVE), None)
-
-    def latest(self, source: str) -> Optional[Dict[str, Any]]:
-        """The newest shaft sent for this assembly row (done ones too, until they drop off)."""
-        return next((x for x in reversed(self.all()) if x.get("source") == source), None)
-
     def add(self, entries: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
         made = []
 
@@ -352,28 +294,6 @@ class ShaftList:
                 raise ShaftError("Someone already started it, so it stays on the list.", status=409)
             items.remove(x)
         self._change(go)
-
-    def mark_changed(self, assembly: str, present: Iterable[str]) -> int:
-        """The assembly was just read: its shafts on the list that aren't in it any more (their length changed, or
-        they were taken out) get "Changed in CAD"; ones back in it lose it. Returns how many changed state."""
-        here = set(present)
-
-        def go(items):
-            n = 0
-            for x in items:
-                if x.get("assembly", {}).get("key") != assembly or x.get("status") not in ACTIVE:
-                    continue
-                gone = x.get("source") not in here
-                if bool(x.get("changed")) != gone:
-                    x["changed"] = gone
-                    n += 1
-            return n
-        with self._lock:
-            items = self._pruned(self._load())
-            n = go(items)
-            if n:
-                self._save(items)
-            return n
 
     # ---- from the shop page
     def start(self, sid: str, device: str) -> None:
@@ -409,9 +329,6 @@ class ShaftList:
             x.update(status=back, done_by="", done_at="", **({} if back == "started" else {"started_by": ""}))
         self._change(go)
 
-    def _today(self, stamp: Optional[str]) -> bool:
-        return bool(stamp) and str(stamp)[:10] == self.now().date().isoformat()
-
     def shop_view(self, device: str) -> Dict[str, Any]:
         """What the shop page shows: everything waiting or started, and what was done today. Nobody's device id
         leaves the server: each shaft just says whether it's this phone's."""
@@ -426,8 +343,7 @@ class ShaftList:
                 out.append({**item, "started": x["status"] == "started", "startedAt": x.get("started_at") or "",
                             "mine": x["status"] == "started" and x.get("started_by") == device})
             elif self._today(x.get("done_at")):
-                when = datetime.fromisoformat(x["done_at"]).strftime("%I:%M %p").lstrip("0")
-                done.append({**item, "when": when, "undo": x.get("done_by") == device, "doneAt": x["done_at"]})
+                done.append({**item, "when": self._clock(x["done_at"]), "undo": x.get("done_by") == device, "doneAt": x["done_at"]})
         done.sort(key=lambda d: d["doneAt"], reverse=True)
         return {"shafts": out, "done": done, "order": ORDER}
 

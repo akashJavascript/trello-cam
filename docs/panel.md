@@ -223,6 +223,9 @@ Bought parts (from documents the team doesn't own, like the MKCad vendor librari
 prints are never offered as plates, whatever material they're set to. Clicking a part in the assembly lights up its
 row. Both are in `docs/shafts.md`.
 
+Bought parts (no screws or nuts) are listed under **Bought parts** and go on the same phone page's Parts tab: In
+the bin, or Order. See `docs/bought-parts.md`.
+
 ## Not confirmed yet
 
 - **Selecting in the CAD: seen 2026-11-01.** Onshape's `SELECTION` message (logged from a real Part Studio):

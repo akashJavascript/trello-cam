@@ -968,6 +968,17 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   "Changed in CAD" when it's no longer in its assembly, done shafts drop off after two weeks, a link to the assembly
   on each card.
 
+## 2026-11-02: bought parts, on the same phone page (the user approved the mockup)
+
+- **In the bin or Order, one card per part** (the user: "a button that you check if we have it and you put it in
+  the bin, and a button to press that means you ordered it").
+- **AutoCAM never writes to the order sheet** (the user: people write it in, "making sure everything is correct
+  there before they spend money"). Order opens the sheet and copies the part's name; the person says when it's on
+  the sheet. So the sheet's link is all AutoCAM needs (`[parts] order_sheet_url`), not access to it.
+- **No screws or nuts** (the user): standard content was never listed; bought parts named like a screw, bolt or nut
+  are left out too.
+- Shares the shaft list's page, key, phone ids, Undo and "Changed in CAD" (`shoplist.py`). `docs/bought-parts.md`.
+
 ## 2026-11-02: SRPP, three kinds, cut as polycarbonate (the user)
 
 - **What the team does:** SRPP parts are set to Polycarbonate in Onshape (close in weight) and cut exactly like

@@ -64,6 +64,7 @@ from .hooks import HOOK_PREFIX, ChangeInbox, secret_ok
 from .onshape_reads import NoAccess, OutOfCalls, PanelOnshape, PanelOnshapeError, row_for_instance
 from ..shafts import (ACTIVE as SHAFT_ACTIVE, DEVICE_RE, MAX_NOTE, STOCKS, Found, ShaftError, ShaftList, clean_ends,
                       clean_ops, problems, recognize, status_chip)
+from ..bought import ACTIVE as PART_ACTIVE, PartList, is_hardware, status_chip as part_chip
 from ..onshape.urls import configuration_of, configuration_tag, normal_configuration
 
 log = logging.getLogger("autocam.panel")
@@ -78,6 +79,7 @@ ENTITY_RE = re.compile(r"^[A-Za-z0-9]{1,24}$")       # a face or edge id from On
 INSTANCE_RE = re.compile(r"^[A-Za-z0-9+/=_-]{1,40}$")  # an assembly instance id ("IfBvAf3KuZudYUjEe", "Mpp/5tF1I3bXlPgoO")
 MCMASTER_RE = re.compile(r"^\d{4,5}[A-Z]\d{1,5}(?:[_ .-]|$)")   # "91259A496_NO THREADS_Alloy Steel Shoulder Screw"
 PRINTED_RE = re.compile(r"print|\bPLA\b|\bABS\b|PETG|TPU|nylon|onyx|\bASA\b", re.IGNORECASE)
+BOUGHT = "Bought part"
 RUBBER_RE = re.compile(r"rubber|neoprene|viton|urethane|silicone|EPDM|nitrile|buna|latex|elastomer|santoprene",
                        re.IGNORECASE)                    # belts, wheels, O-rings: bought
 MAX_BODY = 16 * 1024
@@ -89,7 +91,8 @@ CSP = ("default-src 'none'; script-src 'self'; style-src 'self' https://fonts.go
        "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
        "frame-ancestors https://*.onshape.com https://onshape.com; base-uri 'none'; form-action 'none'")
 LIST_NAMES = {"inbox": "Drafts", "ready_for_cam": "Ready for CAM"}
-SHOP_ACTIONS = ("start", "stop", "done", "undo")
+SHOP_ACTIONS = ("start", "stop", "done", "undo")             # a shaft, on the phone page
+PART_ACTIONS = {"part-ordered": "ordered", "part-bin": "bin", "part-undo": "undo"}   # a bought part
 
 
 def shop_key(panel_key: str) -> str:
@@ -188,10 +191,12 @@ class PanelApp:
     def __init__(self, cfg: Config, key: str, onshape: PanelOnshape, board: PanelBoard, names: Names,
                  clock: Callable[[], float] = time.monotonic,
                  today: Callable[[], str] = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-                 inbox: Optional[ChangeInbox] = None, hook_secret: str = "", shafts: Optional[ShaftList] = None):
+                 inbox: Optional[ChangeInbox] = None, hook_secret: str = "", shafts: Optional[ShaftList] = None,
+                 parts: Optional[PartList] = None):
         if not key:
             raise ValueError("the panel needs AUTOCAM_PANEL_KEY")
         self.shafts = shafts if cfg.shafts.enabled else None    # the shop's shaft list (None: off)
+        self.parts = parts if cfg.parts.enabled else None       # the shop's bought-parts list (None: off)
         self._shop_key = shop_key(key).encode("utf-8")
         self.cfg = cfg
         self.inbox = inbox                    # Onshape's webhook events (hooks.py); None: no webhook
@@ -212,7 +217,7 @@ class PanelApp:
         try:
             if path == "/panel" and method == "GET":
                 return self._page(query)
-            if path == "/shop" and method == "GET" and self.shafts is not None:
+            if path == "/shop" and method == "GET" and (self.shafts is not None or self.parts is not None):
                 return self._page(query, shop=True)
             if path.startswith("/static/") and method == "GET":
                 return self._static(path[len("/static/"):])
@@ -241,6 +246,7 @@ class PanelApp:
                      ("GET", "/api/which-part"): self.which_part, ("GET", "/api/which-row"): self.which_row,
                      ("GET", "/api/occurrences"): self.occurrences,
                      ("POST", "/api/shaft"): self.edit_shaft, ("POST", "/api/shaft-remove"): self.remove_shaft,
+                     ("POST", "/api/part-remove"): self.remove_part,
                      }.get((method, path))
             if path == "/api/preview" and method == "GET":
                 return self.preview(query)
@@ -279,9 +285,9 @@ class PanelApp:
                             b" link (the key is wrong). Ask a mentor.", "text/plain; charset=utf-8", headers)
         return Response(200, versioned_page("shop.html" if shop else "index.html"), "text/html; charset=utf-8", headers)
 
-    # ---- the shop's shaft list (its own key)
+    # ---- the shop's lists: shafts and bought parts (their own key)
     def _shop(self, method: str, path: str, query: Dict[str, str], given: str, body: bytes) -> Response:
-        if self.shafts is None:
+        if self.shafts is None and self.parts is None:
             return _json(404, {"error": "Not found"})
         if not self._shop_key_ok(given):
             return _json(403, {"error": "This isn't AutoCAM's shop link (the key is wrong). Ask a mentor."})
@@ -289,15 +295,20 @@ class PanelApp:
             return _json(413, {"error": "That's too much text."})
         if path == "/api/shop" and method == "GET":
             device = query.get("device", "")
-            return _json(200, self.shafts.shop_view(device if DEVICE_RE.match(device) else ""))
+            device = device if DEVICE_RE.match(device) else ""
+            shafts = self.shafts.shop_view(device) if self.shafts is not None else {"shafts": [], "done": [], "order": []}
+            parts = self.parts.shop_view(device) if self.parts is not None else {"parts": [], "bin": []}
+            return _json(200, {**shafts, **parts, "shaftsOn": self.shafts is not None, "partsOn": self.parts is not None,
+                               "orderSheet": self.cfg.parts.order_sheet_url if self.parts is not None else ""})
         action = path[len("/api/shop/"):]
-        if method != "POST" or action not in SHOP_ACTIONS:
+        lst, verb = (self.shafts, action) if action in SHOP_ACTIONS else (self.parts, PART_ACTIONS.get(action))
+        if method != "POST" or lst is None or verb is None:
             return _json(404, {"error": "Not found"})
         data = json.loads(body.decode("utf-8")) if body else {}
         device = str((data or {}).get("device") or "") if isinstance(data, dict) else ""
         if not DEVICE_RE.match(device):
             raise Refused(400, "Bad request")
-        getattr(self.shafts, action)(data.get("id"), device)
+        getattr(lst, verb)(data.get("id"), device)
         return _json(200, {"ok": True})
 
     def _static(self, name: str) -> Response:
@@ -440,7 +451,7 @@ class PanelApp:
         except Exception as e:  # noqa: BLE001
             log.warning("panel: reading the board: %s", e)
             board_error = "Couldn't read the Trello board just now, so statuses are missing."
-        items, shaft_rows = [], []
+        items, shaft_rows, bought_rows = [], [], []
         owners = self._owners(did, rows, cached_only=cached)
         for r in rows:
             if r["standard"]:
@@ -450,16 +461,16 @@ class PanelApp:
                 shaft_rows.append((r, found))
                 continue
             material = self._material_of(r["material"])
+            not_ours = self._not_ours(did, r, owners)
+            why = not_ours or _why_not_cut(r, material)
+            if why == BOUGHT and self.parts is not None:
+                if not is_hardware(r["name"]):           # screws and nuts aren't on the parts list (the user)
+                    bought_rows.append(r)
+                continue
             pc = None if cards is None else self.board.for_part(r["did"], r["eid"], r["pid"], r["name"], cards,
                                                                 cfg=r["configuration"])
             chip = {"status": "unknown", "label": ""} if cards is None else self.board.chip(pc)
-            not_ours = self._not_ours(did, r, owners)
-            why = not_ours or _why_not_cut(r, material)
-            shown = r["name"] or r["pid"]
-            if r["configuration"]:                       # its configuration, named only if already read (no call)
-                label = self.onshape.configuration_label(r["did"], r["wvm"], r["wvmid"], r["eid"], r["configuration"],
-                                                         cached_only=True)
-                shown = f"{shown} ({label})"
+            shown = self._shown(r)
             items.append({"key": _row_key(r), "name": shown, "qty": r["qty"], "notOurs": bool(not_ours),
                           "material": material, "chip": chip, "why": why, "here": r["did"] == did,
                           "sendable": not why and cards is not None and (pc is None or pc.status not in ACTIVE)})
@@ -473,10 +484,26 @@ class PanelApp:
             pass
         uid = q.get("u", "")
         shafts = self._assembly_shafts(did, eid, shaft_rows)
-        return {"name": name, "items": items, **shafts, "boardError": board_error, "queue": self._queue(), "face": self.cfg.face is not None,
+        bought = self._assembly_bought(did, eid, bought_rows)
+        return {"name": name, "items": items, **shafts, **bought, "boardError": board_error, "queue": self._queue(), "face": self.cfg.face is not None,
                 "user": self.names.get(uid) if USER_RE.match(uid or "") else "", "tabsDefault": self.cfg.tabs.default,
                 "maxQty": MAX_QTY, "callsLeft": self.onshape.calls_left(), "autoRefreshS": self.cfg.panel.auto_refresh_s,
                 "build": static_hash("panel.js")}
+
+    def _shown(self, r: Dict[str, Any]) -> str:
+        """A row's name in the panel, with its configuration if that was already read (no call)."""
+        shown = r["name"] or r["pid"]
+        if r["configuration"]:
+            label = self.onshape.configuration_label(r["did"], r["wvm"], r["wvmid"], r["eid"], r["configuration"],
+                                                     cached_only=True)
+            shown = f"{shown} ({label})"
+        return shown
+
+    def _asm_ref(self, did: str, wvm: str, wvmid: str, eid: str, host: str) -> Dict[str, str]:
+        """The assembly an item on a shop list came from: its key, tab name (already read) and link."""
+        tabs = self.onshape.cached_elements(did, wvm, wvmid) or []
+        return {"key": f"{did}/{eid}", "name": next((e.get("name") or "" for e in tabs if e.get("id") == eid), ""),
+                "url": f"https://{host}/documents/{did}/{wvm}/{wvmid}/e/{eid}"}
 
     def _owners(self, did: str, rows: List[Dict[str, Any]], cached_only: bool) -> Dict[str, str]:
         """Who owns each other document the assembly's parts come from (only with [panel] company_id)."""
@@ -536,10 +563,8 @@ class PanelApp:
             return []
         if self.shafts is None:
             raise Refused(400, "The shaft list is off.")
-        asm = f"{did}/{eid}"
-        tabs = self.onshape.cached_elements(did, wvm, wvmid) or []
-        name = next((e.get("name") or "" for e in tabs if e.get("id") == eid), "")
-        url = f"https://{host}/documents/{did}/{wvm}/{wvmid}/e/{eid}"
+        ref = self._asm_ref(did, wvm, wvmid, eid, host)
+        asm = ref["key"]
         results, seen = [], set()
         for item in wanted[:MAX_ASSEMBLY_SEND]:
             key = str((item or {}).get("key") or "")
@@ -561,7 +586,7 @@ class PanelApp:
                 bad = problems(found.stock, found.length_in, ops)
                 if bad:
                     raise Refused(400, bad[0])
-                self.shafts.add([{"source": f"{asm}|{key}", "assembly": {"key": asm, "name": name, "url": url},
+                self.shafts.add([{"source": f"{asm}|{key}", "assembly": ref,
                                   "row": {"did": r["did"], "eid": r["eid"], "configuration": r["configuration"]},
                                   "stock": found.stock, "length_in": found.length_in, "qty": qty, "ends": ends,
                                   "ops": [o.to_dict() for o in ops], "rush": rush, "sender": sender,
@@ -570,6 +595,66 @@ class PanelApp:
             except (Refused, ShaftError) as e:
                 results.append({"key": key, "name": label, "sent": False, "why": str(e), "shaft": True})
         return results
+
+    def _assembly_bought(self, did: str, eid: str, bought_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """The assembly's bought parts for the panel (no screws or nuts), each with what's on the parts list for it."""
+        if self.parts is None:
+            return {}
+        asm = f"{did}/{eid}"
+        self.parts.mark_changed(asm, [f"{asm}|{_row_key(r)}" for r in bought_rows])
+        out = []
+        for r in bought_rows:
+            x = self.parts.latest(f"{asm}|{_row_key(r)}")
+            label, kind = part_chip(x)
+            listed = None if x is None else {"id": x["id"], "status": x["status"], "qty": x["qty"],
+                                             "chip": {"label": label, "status": kind}}
+            out.append({"key": _row_key(r), "name": self._shown(r), "qty": max(1, r["qty"]), "vendor": _vendor(r),
+                        "listed": listed, "sendable": x is None or x["status"] not in PART_ACTIVE})
+        out.sort(key=lambda i: _natural(i["name"]))
+        gone = [{"id": x["id"], "name": x.get("name") or "", "waiting": x["status"] == "needed"}
+                for x in self.parts.all() if x.get("assembly", {}).get("key") == asm and x.get("changed")
+                and x.get("status") in PART_ACTIVE]
+        return {"bought": out, "boughtGone": gone}
+
+    def _send_bought(self, d: Dict[str, Any], did: str, wvm: str, wvmid: str, eid: str,
+                     rows: Dict[str, Dict[str, Any]], owners: Dict[str, str], sender: str, host: str) -> List[Dict[str, Any]]:
+        """The ticked bought parts onto the shop's parts list (never the order sheet: people write that themselves)."""
+        wanted = d.get("bought") if isinstance(d.get("bought"), list) else []
+        if not wanted:
+            return []
+        if self.parts is None:
+            raise Refused(400, "The parts list is off.")
+        ref = self._asm_ref(did, wvm, wvmid, eid, host)
+        results, seen = [], set()
+        for item in wanted[:MAX_ASSEMBLY_SEND]:
+            key = str((item or {}).get("key") or "")
+            if key in seen:
+                continue
+            seen.add(key)
+            r = rows.get(key)
+            label = self._shown(r) if r is not None else key
+            try:
+                if r is None:
+                    raise Refused(409, "isn't in this assembly any more")
+                why = self._not_ours(did, r, owners) or _why_not_cut(r, self._material_of(r["material"]))
+                if r["standard"] or why != BOUGHT:
+                    raise Refused(400, "isn't a bought part")
+                if is_hardware(r["name"]):
+                    raise Refused(400, "is a screw or nut: those aren't on the parts list")
+                self.parts.add([{"source": f"{ref['key']}|{key}", "assembly": ref,
+                                 "row": {"did": r["did"], "eid": r["eid"], "pid": r["pid"], "configuration": r["configuration"]},
+                                 "name": label, "vendor": _vendor(r), "qty": self._qty(item), "sender": sender}])
+                results.append({"key": key, "name": label, "sent": True, "bought": True})
+            except (Refused, ShaftError) as e:
+                results.append({"key": key, "name": label, "sent": False, "why": str(e), "bought": True})
+        return results
+
+    def remove_part(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        if self.parts is None:
+            raise Refused(400, "The parts list is off.")
+        self.parts.remove(d.get("id"))
+        log.info("panel: bought part %s taken off the list", d.get("id"))
+        return {"ok": True}
 
     def edit_shaft(self, d: Dict[str, Any]) -> Dict[str, Any]:
         """A shaft on the list changed from the panel (its quantity, taps, lathe steps) while nobody has started it."""
@@ -623,7 +708,7 @@ class PanelApp:
                     raise Refused(400, "is a shaft: it goes on the shaft list")
                 not_ours = self._not_ours(did, r, owners)
                 if not_ours:
-                    raise Refused(400, "is a bought part" if not_ours == "Bought part" else
+                    raise Refused(400, "is a bought part" if not_ours == BOUGHT else
                                   "is in the common parts library (printed or bought)")
                 qty = self._qty(item)
                 material = self._material_of(r["material"])
@@ -647,7 +732,11 @@ class PanelApp:
         if shafts:
             log.info("panel: %s sent %d of %d shafts to the shaft list", sender, sum(1 for x in shafts if x["sent"]),
                      len(shafts))
-        return {"results": results + shafts, "list": "Drafts" if drafts else "Ready for CAM"}
+        bought = self._send_bought(d, did, wvm, wvmid, eid, rows, owners, sender, host)
+        if bought:
+            log.info("panel: %s sent %d of %d bought parts to the parts list", sender,
+                     sum(1 for x in bought if x["sent"]), len(bought))
+        return {"results": results + shafts + bought, "list": "Drafts" if drafts else "Ready for CAM"}
 
     def _mark(self, did: str, wvm: str, wvmid: str, eid: str, part: Dict[str, Any],
               material: Optional[Dict[str, Any]], cfg: str = "") -> Optional[str]:
@@ -1125,6 +1214,14 @@ def _why_not_cut(r: Dict[str, Any], material: Optional[Dict[str, Any]]) -> str:
     if PRINTED_RE.search(name):
         return "Printed part"
     return "Bought part" if RUBBER_RE.search(name) else "AutoCAM doesn't cut"
+
+
+def _vendor(r: Dict[str, Any]) -> str:
+    """Who sells a bought part: the BOM's Vendor column if the part has one, McMaster from its number, else ""."""
+    v = str(r.get("vendor") or "").strip()
+    if v:
+        return v[:40]
+    return "McMaster" if MCMASTER_RE.match(r.get("name") or "") else ""
 
 
 def _row_key(r: Dict[str, Any]) -> str:

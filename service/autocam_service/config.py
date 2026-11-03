@@ -282,6 +282,15 @@ class Shafts:
 
 
 @dataclass(frozen=True)
+class Parts:
+    """The shop's bought-parts list (bought.py, docs/bought-parts.md; 2026-11-02): an assembly's bought parts sent from
+    the Onshape panel, checked off on the /shop page's Parts tab (In the bin, or Order)."""
+    enabled: bool = False
+    order_sheet_url: str = ""                  # the team's Google Sheet: Order opens it (AutoCAM never writes to it)
+    keep_days: int = 14                        # parts in the bin drop off the list after this long
+
+
+@dataclass(frozen=True)
 class Scribe:
     """Bend lines scribed on bent parts that ask for it (core 0.18.0): with the sheet's own cutter in its program,
     or with the chamfer mill (identified by GUID, checked against the library) in a SCRIBE program of its own."""
@@ -421,6 +430,7 @@ class Config:
     panel: Panel = Panel()
     costs: Costs = Costs()
     shafts: Shafts = Shafts()
+    parts: Parts = Parts()
 
     def stock_types(self) -> List[Tuple[Material, float]]:
         return [(m, t) for m in self.materials.values() for t in m.thicknesses_in]
@@ -930,6 +940,14 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                         keep_done_days=t.integer("keep_done_days", minimum=1, default=14))
         t.finish()
 
+    parts = Parts()
+    if "parts" in top.data:
+        from .bought import SHEET_RE
+        t = top.table("parts")
+        parts = Parts(enabled=t.boolean("enabled"), order_sheet_url=t.string("order_sheet_url", pattern=SHEET_RE, default=""),
+                      keep_days=t.integer("keep_days", minimum=1, default=14))
+        t.finish()
+
     t = top.table("paths")
     paths = Paths(**{k: root / t.string(k, required=True) for k in ("queue", "cache", "state", "logs")})
     t.finish()
@@ -945,7 +963,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         op_tags=op_tags, templates=MappingProxyType(templates), labels=labels, onshape=onshape,
         trello=trello, fusion=fusion, tapguard=tapguard, fusion_team=fusion_team, status=status, paths=paths,
         placeholders=tuple(_placeholders(data)), warnings=(), tabs=tabs, face=face, scribe=scribe, hand_cuts=hand_cuts,
-        fit=fit, panel=panel, costs=costs, shafts=shafts,
+        fit=fit, panel=panel, costs=costs, shafts=shafts, parts=parts,
     )
     warnings: List[str] = []
     _cross_check(cfg, data, errors, warnings)

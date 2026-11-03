@@ -490,6 +490,15 @@ stock = "round"
 length_in = 1.0
 od_in = 0.375
 
+[parts]                         # the shop's bought-parts list (service/autocam_service/bought.py, docs/bought-parts.md;
+                                # 2026-11-02): an assembly's bought parts are sent from the Onshape panel and checked off
+                                # on the phone page's Parts tab: In the bin (the team has it) or Order. Screws and nuts
+                                # aren't on it
+enabled = true
+order_sheet_url = ""            # the team's Google Sheet (https://docs.google.com/spreadsheets/...): Order opens it in a
+                                # new tab and copies the part's name. AutoCAM never writes to it. Empty: no Order button
+keep_days = 14                  # parts put in the bin drop off the list after this long
+
 [costs]                         # the Onshape panel's cost and sheet use estimate. Prices: WCP's for a 24 x 48 in sheet
                                 # (wcproducts.com, read 2026-11-01; the user's choice), else another vendor's (named on
                                 # the line). A thickness with no price shows only its share of a sheet

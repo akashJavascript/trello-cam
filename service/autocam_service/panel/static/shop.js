@@ -1,4 +1,8 @@
-// The shop's shaft list on a phone (panel/api.py: /api/shop; shafts.py). One card per shaft: Start, Done.
+// The shop's phone page (panel/api.py: /api/shop). Two tabs:
+//   Shafts (shafts.py): one card per shaft: Start, Done.
+//   Parts (bought.py): bought parts sent from an assembly: In the bin (the team has it), or Order. Order opens the
+//   team's order sheet in a new tab and copies the part's name; people write the row themselves (AutoCAM never
+//   writes to the sheet), then say "It's on the sheet".
 // "Yours" is what this phone started (a random id kept on the phone; no names). Plain JavaScript, no build step;
 // everything from the server goes in as text, never as HTML.
 (function () {
@@ -7,10 +11,15 @@
   var KEY = new URLSearchParams(location.search).get("key") || "";
   var listEl = document.getElementById("list");
   var toastEl = document.getElementById("toast");
+  var tabsEl = document.getElementById("tabs");
+  var titleEl = document.getElementById("title");
+  var SHEET_RE = /^https:\/\/docs\.google\.com\/spreadsheets\//;
   var ICONS = {
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
     undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>',
-    open: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>'
+    open: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
+    bin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18"/><path d="M5 7l1.5 13h11L19 7"/><path d="M9 7V4h6v3"/></svg>',
+    cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.5 12h12l2-8H6.2"/></svg>'
   };
   function icon(name) {
     var t = document.createElement("template");
@@ -34,16 +43,20 @@
     for (var i = 2; i < arguments.length; i++) add(el, arguments[i]);
     return el;
   }
+  function remember(name, value) {
+    try { if (value === undefined) return localStorage.getItem("autocam.shop." + name) || ""; localStorage.setItem("autocam.shop." + name, value); }
+    catch (e) { /* private mode: this visit only */ }
+    return "";
+  }
 
   // This phone's id: what it started is "Yours". Kept on the phone; a new one if storage is blocked.
   var DEVICE = (function () {
-    var id = "";
-    try { id = localStorage.getItem("autocam.shop.device") || ""; } catch (e) { /* private mode */ }
+    var id = remember("device");
     if (!/^[A-Za-z0-9_-]{8,64}$/.test(id)) {
       var b = new Uint8Array(12);
       crypto.getRandomValues(b);
       id = Array.prototype.map.call(b, function (x) { return ("0" + x.toString(16)).slice(-2); }).join("");
-      try { localStorage.setItem("autocam.shop.device", id); } catch (e) { /* fine: this visit only */ }
+      remember("device", id);
     }
     return id;
   })();
@@ -59,7 +72,9 @@
     }, function () { throw new Error("Can't reach AutoCAM. Check the Wi-Fi."); });
   }
 
-  var S = { data: null, error: "", busy: false };
+  // tab: "#parts" in the link picks Parts (for a QR code at the bins); otherwise the last one used on this phone
+  var S = { data: null, error: "", busy: false, tab: location.hash === "#parts" ? "parts" : location.hash === "#shafts" ? "shafts" : remember("tab") || "shafts",
+            asking: "", copied: false };
   var toastTimer = 0;
   function toast(text) {
     toastEl.textContent = text; toastEl.hidden = false;
@@ -74,9 +89,9 @@
     }, function (e) { S.error = e.message; render(); });
   }
 
-  function act(action, item) {
+  function post(action, item) {
     S.busy = true; render();
-    api("POST", "/api/shop/" + action, { id: item.id, device: DEVICE }).then(function () {
+    return api("POST", "/api/shop/" + action, { id: item.id, device: DEVICE }).then(function () {
       S.busy = false; return load();
     }, function (e) {
       S.busy = false;
@@ -85,32 +100,59 @@
     });
   }
 
-  // ---------------------------------------------------------------- the list
+  Array.prototype.forEach.call(tabsEl.querySelectorAll("button"), function (b) {
+    b.addEventListener("click", function () {
+      S.tab = b.getAttribute("data-tab"); S.asking = "";
+      remember("tab", S.tab);
+      try { history.replaceState(null, "", "#" + S.tab); } catch (e) { /* fine */ }
+      render(); window.scrollTo(0, 0);
+    });
+  });
+
+  // ---------------------------------------------------------------- the page
   function render() {
     listEl.textContent = "";
-    if (S.error) add(listEl, h("div", { class: "notice" }, S.error));
     var d = S.data;
+    var both = !!(d && d.shaftsOn && d.partsOn);
+    var tab = d && !both ? (d.partsOn ? "parts" : "shafts") : S.tab;
+    tabsEl.hidden = !both; titleEl.hidden = both;
+    titleEl.textContent = !d ? "Shop" : tab === "parts" ? "Parts" : "Shafts";
+    Array.prototype.forEach.call(tabsEl.querySelectorAll("button"), function (b) {
+      b.setAttribute("aria-pressed", String(b.getAttribute("data-tab") === tab));
+    });
+    document.title = tab === "parts" ? "Parts" : "Shafts";
+    if (S.error) add(listEl, h("div", { class: "notice" }, S.error));
     if (!d) { if (!S.error) add(listEl, h("p", { class: "muted" }, "Loading…")); return; }
+    if (tab === "parts") renderParts(d); else renderShafts(d);
+  }
+
+  function section(title, items, draw) {
+    if (!items.length) return;
+    add(listEl, h("section", { class: "group" }, h("div", { class: "group-label" }, title), items.map(draw)));
+  }
+
+  function openLink(url) {
+    return /^https:\/\/[a-z0-9.-]*onshape\.com\//.test(url || "") ? h("a", { class: "open", href: url, target: "_blank",
+      rel: "noopener noreferrer", "aria-label": "Open the assembly in Onshape", title: "Open in Onshape" }, icon("open")) : null;
+  }
+
+  // ---------------------------------------------------------------- shafts
+  function renderShafts(d) {
     var all = d.shafts;
     function by(a, b) { return (a.startedAt || "").localeCompare(b.startedAt || ""); }
     // one subsystem's shafts together: by assembly, then length (Rush: by stock first)
     function byAsm(a, b) { return a.assembly.localeCompare(b.assembly) || a.length - b.length; }
     function byStock(a, b) { return d.order.indexOf(a.stock) - d.order.indexOf(b.stock) || byAsm(a, b); }
-    section("Yours", all.filter(function (s) { return s.started && s.mine; }).sort(by), "yours");
-    section("Rush", all.filter(function (s) { return s.rush && !s.started; }).sort(byStock), "rush");
+    function cards(ctx) { return function (s) { return card(s, ctx); }; }
+    section("Yours", all.filter(function (s) { return s.started && s.mine; }).sort(by), cards("yours"));
+    section("Rush", all.filter(function (s) { return s.rush && !s.started; }).sort(byStock), cards("rush"));
     d.order.forEach(function (stock) {
-      section(stock, all.filter(function (s) { return s.stock === stock && !s.started && !s.rush; }).sort(byAsm), "stock");
+      section(stock, all.filter(function (s) { return s.stock === stock && !s.started && !s.rush; }).sort(byAsm), cards("stock"));
     });
-    section("In progress", all.filter(function (s) { return s.started && !s.mine; }).sort(by), "others");
+    section("In progress", all.filter(function (s) { return s.started && !s.mine; }).sort(by), cards("others"));
     if (!all.length) add(listEl, h("p", { class: "muted" }, "Nothing to make."));
     add(listEl, h("section", { class: "group" }, h("div", { class: "group-label" }, "Done today"),
       d.done.length ? h("div", null, d.done.map(doneRow)) : h("p", { class: "muted" }, "Nothing yet.")));
-  }
-
-  function section(title, items, ctx) {
-    if (!items.length) return;
-    add(listEl, h("section", { class: "group" }, h("div", { class: "group-label" }, title),
-      items.map(function (s) { return card(s, ctx); })));
   }
 
   function len(x) { return Number(x).toFixed(3); }
@@ -125,27 +167,96 @@
         s.changed ? h("span", { class: "chip bad" }, "Changed in CAD") : null,
         s.rush && ctx !== "rush" ? h("span", { class: "chip rush" }, "Rush") : null,
         h("span", { class: "qty", "aria-label": "Quantity " + s.qty }, "×" + s.qty),
-        /^https:\/\/[a-z0-9.-]*onshape\.com\//.test(s.url) ? h("a", { class: "open", href: s.url, target: "_blank",
-          rel: "noopener noreferrer", "aria-label": "Open the assembly in Onshape", title: "Open in Onshape" }, icon("open")) : null),
+        openLink(s.url)),
       s.steps.length ? h("ul", { class: "todo" }, s.steps.map(function (x) { return h("li", null, x); })) : null,
       s.note ? h("p", { class: "note" }, s.note) : null,
       h("div", { class: "item-btns" },
         s.started && s.mine
-          ? h("button", { class: "btn btn-ghost", type: "button", disabled: off, onclick: function () { act("stop", s); } }, "Stop")
+          ? h("button", { class: "btn btn-ghost", type: "button", disabled: off, onclick: function () { post("stop", s); } }, "Stop")
           : s.started ? h("span")
-          : h("button", { class: "btn btn-secondary", type: "button", disabled: off, onclick: function () { act("start", s); } }, "Start"),
-        h("button", { class: "btn btn-primary", type: "button", disabled: off, onclick: function () { act("done", s); } }, icon("check"), "Done")));
+          : h("button", { class: "btn btn-secondary", type: "button", disabled: off, onclick: function () { post("start", s); } }, "Start"),
+        h("button", { class: "btn btn-primary", type: "button", disabled: off, onclick: function () { post("done", s); } }, icon("check"), "Done")));
   }
 
   function doneRow(s) {
     return h("div", { class: "done-row" }, h("span", { class: "mark" }, icon("check")),
       h("span", { class: "name" }, s.stock + ", " + len(s.length) + " ×" + s.qty, h("span", { class: "sub" }, s.assembly + " · " + s.when)),
-      s.undo ? h("button", { class: "btn btn-ghost btn-small", type: "button", disabled: S.busy, onclick: function () { act("undo", s); } },
+      s.undo ? h("button", { class: "btn btn-ghost btn-small", type: "button", disabled: S.busy, onclick: function () { post("undo", s); } },
+        icon("undo"), "Undo") : null);
+  }
+
+  // ---------------------------------------------------------------- bought parts
+  function renderParts(d) {
+    function byName(a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true }); }
+    var needed = d.parts.filter(function (p) { return p.status === "needed"; });
+    var asms = needed.map(function (p) { return p.assembly; }).filter(function (a, i, all) { return all.indexOf(a) === i; }).sort();
+    asms.forEach(function (a) {          // each subsystem's parts together: they go in its bin
+      section(a ? a + " bin" : "Bin", needed.filter(function (p) { return p.assembly === a; }).sort(byName), partCard);
+    });
+    if (!needed.length) add(listEl, h("p", { class: "muted" }, "Nothing needed."));
+    section("On the order sheet", d.parts.filter(function (p) { return p.status === "ordered"; })
+      .sort(function (a, b) { return a.assembly.localeCompare(b.assembly) || byName(a, b); }), partCard);
+    add(listEl, h("section", { class: "group" }, h("div", { class: "group-label" }, "In the bin today"),
+      d.bin.length ? h("div", null, d.bin.map(binRow)) : h("p", { class: "muted" }, "Nothing yet.")));
+  }
+
+  function partCard(p) {
+    var off = S.busy, ordered = p.status === "ordered", sheet = SHEET_RE.test(S.data.orderSheet || "");
+    var sub = ordered ? (p.assembly ? p.assembly + " · on the order sheet" : "On the order sheet") : p.vendor;
+    var asking = S.asking === p.id && !ordered;
+    return h("article", { class: "item" + (ordered ? " ordered" : "") },
+      h("div", { class: "item-top" },
+        h("div", { class: "item-name part-name" }, p.name, sub ? h("span", { class: "from" }, sub) : null),
+        p.changed ? h("span", { class: "chip bad" }, "Changed in CAD") : null,
+        h("span", { class: "qty", "aria-label": "Quantity " + p.qty }, "×" + p.qty),
+        openLink(p.url)),
+      asking ? h("div", { class: "order-box" },
+        h("p", null, S.copied ? "The order sheet opened in a new tab, and the part's name is copied. Added it?"
+          : "The order sheet opened in a new tab. Added it?"),
+        h("div", { class: "row" },
+          h("button", { class: "btn btn-ghost btn-small", type: "button", onclick: function () { S.asking = ""; render(); } }, "Not yet"),
+          h("button", { class: "btn btn-primary btn-small", type: "button", disabled: off,
+            onclick: function () { S.asking = ""; post("part-ordered", p); } }, "It's on the sheet"))) : null,
+      asking ? null : h("div", { class: "item-btns" + (!ordered && !sheet ? " one" : "") },
+        ordered ? h("span") : sheet ? h("button", { class: "btn btn-secondary", type: "button", disabled: off,
+          onclick: function () { order(p); } }, icon("cart"), "Order") : null,
+        h("button", { class: "btn btn-primary", type: "button", disabled: off,
+          onclick: function () { if (S.asking === p.id) S.asking = ""; post("part-bin", p); } }, icon("bin"), "In the bin")));
+  }
+
+  // Order: copy the part's name, open the order sheet in a new tab, then ask whether they added it. The copy goes
+  // first, while this page still has the focus (a phone switches to the new tab).
+  function order(p) {
+    var url = S.data && S.data.orderSheet;
+    if (!SHEET_RE.test(url || "")) return;
+    var copied = copyNow(p.name);
+    if (!copied && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(p.name).then(function () { if (S.asking === p.id) { S.copied = true; render(); } }, function () {});
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+    S.asking = p.id; S.copied = copied;
+    render();
+  }
+
+  function copyNow(text) {
+    var ta = h("textarea", { class: "copy-buffer", readonly: true, "aria-hidden": "true", tabindex: "-1" });
+    ta.value = text;
+    document.body.appendChild(ta);
+    var ok = false;
+    try { ta.select(); ta.setSelectionRange(0, text.length); ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return !!ok;
+  }
+
+  function binRow(p) {
+    return h("div", { class: "done-row" }, h("span", { class: "mark" }, icon("check")),
+      h("span", { class: "name wrap" }, p.name, h("span", { class: "sub" }, (p.assembly ? p.assembly + " · " : "") + "×" + p.qty + " · " + p.when)),
+      p.undo ? h("button", { class: "btn btn-ghost btn-small", type: "button", disabled: S.busy, onclick: function () { post("part-undo", p); } },
         icon("undo"), "Undo") : null);
   }
 
   // ---------------------------------------------------------------- staying current
-  // Every 10 seconds while the page is showing (only the list on the laptop: no Onshape or Trello calls).
+  // Every 10 seconds while the page is showing (only the lists on the laptop: no Onshape or Trello calls).
   load();
   setInterval(function () { if (!document.hidden) load(); }, 10000);
   document.addEventListener("visibilitychange", function () { if (!document.hidden) load(); });

@@ -7,7 +7,8 @@ the horizontal bandsaw, sometimes turned and grooved on the lathe, and tapped wi
 Spline XL, Hex Spacer, the spline spacers and "3d printed standoff" are printed, so they aren't on this list.
 
 No Trello: the Free plan stops at 10 members, and everyone who makes shafts would need a seat. Shafts go on a phone
-page instead, at `https://autocam.team5940.org/shop`.
+page instead, at `https://autocam.team5940.org/shop` (its Shafts tab; bought parts are its Parts tab,
+`docs/bought-parts.md`).
 
 ## Sending them (the Onshape panel, Assembly tab)
 

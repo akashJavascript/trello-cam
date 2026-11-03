@@ -70,6 +70,21 @@ button { font: inherit; color: inherit; }
 .btn-small svg { width: 15px; height: 15px; }
 .item-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
+.item-btns.one { grid-template-columns: 1fr; }
+
+/* the Shafts | Parts switch, and the Parts tab (bought.py) */
+.tabs { display: flex; gap: 2px; padding: 2px; margin-left: auto; border: 1px solid var(--outline-variant); border-radius: 999px; background: var(--surface-lowest); }
+.tabs button { height: 34px; padding: 0 16px; border: 0; border-radius: 999px; background: transparent; font-weight: 600; font-size: 14px;
+  color: var(--on-surface-variant); cursor: pointer; }
+.tabs button[aria-pressed="true"] { background: var(--primary-container); color: var(--on-primary); }
+.item.ordered { border-color: var(--accent-coral); }
+.part-name { font-weight: 600; font-size: 16px; line-height: 1.3; overflow-wrap: anywhere; }
+.order-box { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 12px; background: var(--surface-container); }
+.order-box p { margin: 0; font-size: 14px; }
+.order-box .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.done-row .name.wrap { overflow-wrap: anywhere; }
+.copy-buffer { position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
 .done-row { display: flex; align-items: center; gap: 10px; min-height: 48px; border-bottom: 1px solid var(--hair); }
 .done-row:last-child { border-bottom: 0; }
 .done-row .mark { color: var(--good); display: grid; place-items: center; }

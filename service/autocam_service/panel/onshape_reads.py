@@ -718,9 +718,11 @@ def bom_rows(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             qty = int(round(float(values.get(headers.get("quantity")) or 0)))
         except (TypeError, ValueError):
             qty = 0
+        vendor = values.get(headers.get("vendor")) if headers.get("vendor") else ""   # a bought part's (if set)
         out.append({"did": src.get("documentId") or "", "wvm": src.get("wvmType") or "w", "wvmid": src.get("wvmId") or "",
                     "eid": src["elementId"], "pid": src["partId"], "name": str(values.get(headers.get("name")) or ""),
                     "qty": qty, "material": material or "",
                     "configuration": normal_configuration(src.get("configuration")),
-                    "standard": bool(src.get("isStandardContent"))})
+                    "standard": bool(src.get("isStandardContent")),
+                    "vendor": vendor.strip() if isinstance(vendor, str) else ""})
     return out

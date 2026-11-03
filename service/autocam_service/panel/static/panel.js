@@ -250,6 +250,7 @@
     asmResult: null,       // /api/send-many's answer
     shaftSel: {},          // shaft key -> {on, qty, ends, other, ops} (the assembly's library shafts)
     shaft: null,           // the shaft editor: {row, listedId, draft, error, saving}
+    boughtSel: {},         // bought part key -> {on, qty} (the assembly's bought parts, for the shop's parts list)
     highlight: "",         // the row of the part clicked in the assembly
     form: null,
     editing: false,        // the form, making the open part's Drafts or sent-back card over
@@ -332,6 +333,13 @@
       if (!s.sendable) ssel[s.key].on = false;
     });
     S.shaftSel = ssel;
+    var bsel = {};
+    (a.bought || []).forEach(function (b) {
+      // unticked to start, like shafts: the team may have most of them already
+      bsel[b.key] = S.boughtSel[b.key] || { on: false, qty: b.qty };
+      if (!b.sendable) bsel[b.key].on = false;
+    });
+    S.boughtSel = bsel;
     S.mode = "assembly";
     startAuto(a.autoRefreshS);
     render();
@@ -604,6 +612,9 @@
     if ((a.shafts && a.shafts.length) || (a.shaftsGone && a.shaftsGone.length)) {
       add(bodyEl, group("Shafts", h("div", { class: "parts" }, a.shafts.map(shaftRow), a.shaftsGone.map(goneRow))));
     }
+    if ((a.bought && a.bought.length) || (a.boughtGone && a.boughtGone.length)) {
+      add(bodyEl, group("Bought parts", h("div", { class: "parts" }, a.bought.map(boughtRow), a.boughtGone.map(boughtGoneRow))));
+    }
     add(bodyEl, group("Options",
       switchLine("Hold them in with tabs", o.tabs, function (v) { o.tabs = v; render(); }),
       switchLine("Nest them with other parts", o.nest, function (v) { o.nest = v; render(); }),
@@ -621,19 +632,22 @@
     }
     var shafts = (a.shafts || []).filter(function (x) { return x.sendable && S.shaftSel[x.key] && S.shaftSel[x.key].on; });
     var stuck = shafts.filter(function (x) { var sel = S.shaftSel[x.key]; return shaftProblems(x, sel.ops, sel.ends, sel.other).length; });
-    var n = chosen.length, m = shafts.length;
-    var words = !m ? "Send " + n + " part" + (n === 1 ? "" : "s") + " to " + (o.drafts ? "Drafts" : "Ready for CAM")
-      : (n ? "Send " + n + " part" + (n === 1 ? "" : "s") + " and " : "Send ") + m + " shaft" + (m === 1 ? "" : "s");
+    var bought = (a.bought || []).filter(function (x) { return x.sendable && S.boughtSel[x.key] && S.boughtSel[x.key].on; });
+    var n = chosen.length, m = shafts.length, k = bought.length;
+    function count(x, one) { return x + " " + one + (x === 1 ? "" : "s"); }
+    var bits = [n ? count(n, "part") : "", m ? count(m, "shaft") : "", k ? count(k, "bought part") : ""].filter(Boolean);
+    var words = !m && !k ? "Send " + count(n, "part") + " to " + (o.drafts ? "Drafts" : "Ready for CAM")
+      : "Send " + (bits.length > 1 ? bits.slice(0, -1).join(", ") + " and " + bits[bits.length - 1] : bits[0]);
     if (stuck.length) add(actionEl, h("div", { class: "as" }, "Fix " + stuck.map(function (x) { return x.label; }).join(", ") + " first (the pencil)."));
-    add(actionEl, h("button", { class: "btn btn-primary", type: "button", disabled: S.busy || !(n + m) || stuck.length > 0,
-      onclick: function () { sendMany(chosen, shafts, nameInput); } }, S.busy ? "Sending…" : words));
+    add(actionEl, h("button", { class: "btn btn-primary", type: "button", disabled: S.busy || !(n + m + k) || stuck.length > 0,
+      onclick: function () { sendMany(chosen, shafts, bought, nameInput); } }, S.busy ? "Sending…" : words));
     if (S.user) {
       add(actionEl, h("div", { class: "as" }, "Sending as " + S.user + " · ",
         h("button", { class: "link-btn", type: "button", onclick: function () { S.user = ""; stored("name", ""); render(); } }, "change")));
     }
   }
 
-  function sendMany(chosen, shafts, nameInput) {
+  function sendMany(chosen, shafts, bought, nameInput) {
     if (nameInput) {
       var typed = nameInput.value.trim();
       if (!typed) { S.asmResult = { results: [{ name: "", sent: false, why: "Type your name first (it goes on the cards)" }], list: "" }; render(); return; }
@@ -644,6 +658,7 @@
     api("POST", "/api/send-many", where({
       items: chosen.map(function (i) { return { key: i.key, qty: S.asmSel[i.key].qty }; }),
       shafts: shafts.map(function (x) { var sel = S.shaftSel[x.key]; return { key: x.key, qty: sel.qty, ends: sel.ends, ops: sel.ops, note: sel.note || "" }; }),
+      bought: bought.map(function (x) { return { key: x.key, qty: S.boughtSel[x.key].qty }; }),
       tabs: o.tabs, nest: o.nest, face: o.face, rush: o.rush, drafts: o.drafts, name: S.user, u: ctx.u, server: ctx.server
     })).then(function (r) {
       S.busy = false; S.asmResult = r;
@@ -717,6 +732,44 @@
       h("span", { class: "name" }, x.label, h("span", { class: "sub bad-text" }, "Changed in CAD")),
       x.waiting ? h("button", { class: "icon-btn row-btn", type: "button", "aria-label": "Take " + x.label + " off the list",
         title: "Take it off the list", onclick: function () { removeShaft(x.id); } }, icon("x")) : h("span"), h("span"));
+  }
+
+  // ---------------------------------------------------------------- bought parts (the shop's parts list; bought.py)
+  function boughtRow(b) {
+    var L = b.listed, sel = S.boughtSel[b.key], cls = "arow bought locate-row" + (S.highlight === b.key ? " hl" : "");
+    function locateRow(ev) { rowLocate(b.key, ev); }
+    if (L && (L.status === "needed" || L.status === "ordered")) {           // on the list already
+      var right = L.chip.label ? h("span", { class: "chip-cell" }, chip(L.chip.label, L.chip.status))
+        : [h("span", { class: "hint" }, "×" + L.qty),
+           h("button", { class: "icon-btn row-btn", type: "button", "aria-label": "Take " + b.name + " off the list",
+             title: "Take it off the list", disabled: S.busy, onclick: function () { removePart(L.id); } }, icon("x"))];
+      return h("div", { class: cls, "data-key": b.key, title: "Show it in Onshape", onclick: locateRow },
+        h("span", { class: "mark ok" }, icon("check")), h("span", { class: "name locatable" }, b.name), right);
+    }
+    var sub = L && L.status === "bin" ? h("span", { class: "sub" }, "In the bin") : null;
+    return h("div", { class: cls, "data-key": b.key, title: "Show it in Onshape", onclick: locateRow },
+      b.sendable ? h("input", { type: "checkbox", checked: sel.on, "aria-label": "Send " + b.name,
+        onchange: function (ev) { sel.on = ev.target.checked; render(); } }) : h("span"),
+      h("span", { class: "name locatable" }, b.name, sub),
+      b.sendable ? h("input", { class: "qty-in", type: "number", min: "1", max: String(S.asm.maxQty || 100), value: String(sel.qty),
+        "aria-label": b.name + " quantity", onchange: function (ev) { sel.qty = Math.max(1, Math.min(S.asm.maxQty || 100, parseInt(ev.target.value, 10) || 1)); render(); } }) : h("span"),
+      h("span"));
+  }
+
+  function boughtGoneRow(x) {   // on the list, but not in the assembly any more
+    return h("div", { class: "arow bought" }, h("span"),
+      h("span", { class: "name" }, x.name, h("span", { class: "sub bad-text" }, "Changed in CAD")),
+      x.waiting ? h("button", { class: "icon-btn row-btn", type: "button", "aria-label": "Take " + x.name + " off the list",
+        title: "Take it off the list", disabled: S.busy, onclick: function () { removePart(x.id); } }, icon("x")) : h("span"), h("span"));
+  }
+
+  function removePart(id) {
+    S.busy = true; render();
+    api("POST", "/api/part-remove", { id: id }).then(function () {
+      S.busy = false; return reloadAssembly();
+    }, function (err) {
+      S.busy = false; S.asmResult = { results: [{ name: "", sent: false, why: err.message }], list: "" }; render();
+    });
   }
 
   function openShaft(s, listed) {

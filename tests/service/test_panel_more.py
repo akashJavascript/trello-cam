@@ -164,7 +164,7 @@ def assembly_panel(tmp_path):
 def test_the_bom_is_read_flattened():
     rows = bom_rows(BOM)
     assert rows[0] == {"did": D, "wvm": "w", "wvmid": W, "eid": E, "pid": "JHD", "name": "P-2014 gusset", "qty": 4,
-                       "material": "Aluminum - 6061", "configuration": "", "standard": False}
+                       "material": "Aluminum - 6061", "configuration": "", "standard": False, "vendor": ""}
     assert rows[4]["configuration"] and rows[5]["standard"]
 
 

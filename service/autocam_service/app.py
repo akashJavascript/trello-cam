@@ -122,8 +122,12 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
         from .shafts import ShaftList
         shafts = ShaftList(cfg.paths.state / "shafts.json", groove_depth_in=cfg.shafts.groove_depth_in,
                            keep_done_days=cfg.shafts.keep_done_days)
+    parts = None
+    if cfg.parts.enabled:
+        from .bought import PartList
+        parts = PartList(cfg.paths.state / "bought_parts.json", keep_days=cfg.parts.keep_days)
     app = PanelApp(cfg, creds.get("AUTOCAM_PANEL_KEY"), onshape, board, Names(cfg.paths.state / "panel_users.json"),
-                   inbox=inbox, hook_secret=secret, shafts=shafts)
+                   inbox=inbox, hook_secret=secret, shafts=shafts, parts=parts)
     start_server(app, p.port)
     pictures = PictureWatch(onshape, services.store, tracker) if p.pictures else None
     usage = None
