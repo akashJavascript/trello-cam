@@ -16,6 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+qr = ["segno>=1.5"]           # `autocam shop-qr`: the shaft list's QR code to print (cli.py)
 
 [project.scripts]
 autocam = "autocam_service.cli:main"

@@ -11,6 +11,7 @@
     trello-setup      create the board's lists, control/status cards and labels (only what's missing)
     onshape-check     one logged Onshape call: do the keys and onshape.base_url work, and whose are they
     preview-labels    draw the part labels on a finished job's sheet previews, to look at what the card gets
+    shop-qr           a page to print for the saw and the lathe: the shop's shaft list as a QR code (needs segno)
 """
 
 import argparse
@@ -60,6 +61,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     pl = sub.add_parser("preview-labels", help="draw the part labels on a finished job's sheet previews")
     pl.add_argument("path", type=Path, help="a job folder (queue/done/<job>) or one sheet's .png")
     pl.add_argument("--out", type=Path, help="where to write it (one .png only; default: <sheet>.labelled.png beside it)")
+    sq = sub.add_parser("shop-qr", help="a page to print: the shop's shaft list as a QR code (pip install segno)")
+    sq.add_argument("--out", type=Path, help="default: state/shop-qr.html")
     argv = list(sys.argv[1:] if argv is None else argv)
     args = parser.parse_args(argv)
 
@@ -99,10 +102,51 @@ def main(argv: Optional[List[str]] = None) -> int:
             return onshape_check(cfg, env_file)
         if args.command == "trello-setup":
             return trello_setup(cfg, env_file, args.board, args.create, args.workspace)
+        if args.command == "shop-qr":
+            return shop_qr(cfg, env_file, args.out)
     except CredentialsError as e:
         print(f"Credentials: {e}")
         return 1
     return 2
+
+
+SHOP_QR_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Shafts: scan me</title>
+<style>
+  body { margin: 0; font-family: "Hanken Grotesk", system-ui, sans-serif; color: #1c1b1a; background: #fff; text-align: center; }
+  main { padding: 48px 24px; }
+  h1 { margin: 0 0 8px; font-size: 64px; color: #692c00; }
+  p { margin: 0 0 32px; font-size: 24px; color: #54433b; }
+  svg { width: min(70vw, 70vh); height: auto; }
+</style></head>
+<body><main><h1>Shafts</h1><p>Scan to open the shaft list</p>{svg}</main></body></html>
+"""
+
+
+def shop_qr(cfg, env_file: Path, out: Optional[Path]) -> int:
+    """A page to print and tape up at the saw and the lathe: the shop's shaft list (panel/api.py /shop) as a QR code.
+    The link carries the shop's key, so it goes only into that file, never to the terminal or a log."""
+    if not cfg.shafts.enabled or not cfg.panel.public_url:
+        print("The shaft list needs [shafts] enabled = true and [panel] public_url.")
+        return 1
+    creds = load_credentials(env_file)
+    if creds.missing("panel"):
+        print("AUTOCAM_PANEL_KEY isn't in .env (the shop's key is worked out from it).")
+        return 1
+    try:
+        import segno
+    except ImportError:
+        print("This needs the segno package: pip install segno")
+        return 1
+    from autocam_core.hotfolder import write_atomic
+    from .panel.api import shop_key
+    link = f"{cfg.panel.public_url.rstrip('/')}/shop?key={shop_key(creds.get('AUTOCAM_PANEL_KEY'))}"
+    page = SHOP_QR_PAGE.replace("{svg}", segno.make(link, error="m").svg_inline(scale=8, border=2))
+    out = out or cfg.paths.state / "shop-qr.html"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_atomic(out, page.encode("utf-8"))
+    print(f"Wrote {out}. Open it on this computer and print it: one for the saw, one for the lathe.")
+    return 0
 
 
 def preview_labels(path: Path, out: Optional[Path]) -> int:

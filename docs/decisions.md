@@ -949,6 +949,25 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - **Quantities from 2 assemblies** (`max_assemblies`, was 4): 1 + 2 calls per document per 30 minutes.
 - Not changed (offered): `assembly_cache_s` and `parts_cache_s`.
 
+## 2026-11-02: the shaft list, on a phone page (the user approved the mockup)
+
+- **No Trello for shafts:** the Free plan's 10 members can't cover everyone who makes shafts. A page AutoCAM serves
+  at `/shop` instead, with its own key worked out from the panel's (nothing new in `.env`; that link can only start
+  and finish shafts). `docs/shafts.md`.
+- **One item per shaft, not a list per machine** (the user: three lists is micro-tracking nobody would keep up).
+  Start, Done; In progress by someone else sits at the bottom, yours at the top, Rush right under yours.
+- **What the user cut from the mockup:** names (a phone id says what's "yours"), a done-today count, inches of bar,
+  a drawing of the shaft, a "Face to" step, the saw allowance (the card's length is the finished length; people add
+  their own), "On the list" tags, fractions (three decimals, like the calipers).
+- **Library shafts only** (Hex Shaft, 3/8 Hex shaft, 3/8 hex lite, Standoff), known from the assembly's BOM row:
+  its document and tab, and Length/OD from its configuration string. No extra Onshape call. Team-modeled shafts are
+  a later phase.
+- **Taps:** 10-32 both ends by default (the user: "we normally tap 10/32 on everything"), 1/4-20 or any size typed
+  in. **Grooves:** 0.020 per side, fixed (the user).
+- **Approved extras:** take a waiting shaft off the list, change it after sending, design checks before sending,
+  "Changed in CAD" when it's no longer in its assembly, done shafts drop off after two weeks, a link to the assembly
+  on each card.
+
 ## 2026-11-02: SRPP, three kinds, cut as polycarbonate (the user)
 
 - **What the team does:** SRPP parts are set to Polycarbonate in Onshape (close in weight) and cut exactly like

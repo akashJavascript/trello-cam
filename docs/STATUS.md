@@ -1,6 +1,6 @@
 # Status
 
-_Last updated 2026-11-01 (branch `main`)._
+_Last updated 2026-11-02 (branch `main`)._
 
 ## Where things are
 
@@ -16,6 +16,7 @@ _Last updated 2026-11-01 (branch `main`)._
 | Board flow (2026-10-02) | Runs start by themselves 2 min after cards land in Ready for CAM; "Nest this part" box; new parts fill sheets nobody has started reviewing (cards updated in place). Tested offline; first real run (r005) published fine. **Options** on sheet cards since 2026-10-02: cut without stopping, and an air test (a raised copy that cuts nothing). Tested offline and on r005's real program; the service applies them on the real board. The service restarts itself into new code (seen working twice) |
 | M5 ops | **Built 2026-10-02:** the System card's description is a live status (Fusion alive, run, waiting cards, Onshape budget, last error), with one comment when jobs wait for a closed Fusion; one service at a time (a lock); `ops/install-autostart.ps1` starts the service and Fusion at logon (dry run checked; not installed yet). Checks in `docs/manual-tests.md` → M5 |
 | M6 tabs | **Built 2026-10-03** (tape alone didn't hold parts in the team's trials): a "Hold it in with tabs" box on part cards, ticked by default (`[tabs] default`); the template's tabs on that part's outline and every cutout, 2 to 6 per contour by its length, triangular (from the template), placed on straight edges clear of corners where possible, at points. Works in Fusion (test jobs); not cut yet |
+| Shaft list (2026-11-02) | **Built, tested offline and in a local browser**: library shafts sent from the Onshape panel go on a phone page (`/shop`) instead of Trello. `docs/shafts.md`. Not yet checked on a real assembly with library shafts, and not on the laptop yet |
 
 M1.1 pure core covers:
 - the `.tap` guard and pause insertion/verification;

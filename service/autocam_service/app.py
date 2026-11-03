@@ -117,8 +117,13 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
         hooks = WebhookSetup(onshape, p.public_url, secret, cfg.paths.state / "panel_webhook.json")
     elif p.webhooks:
         log.info("panel: no Onshape webhook (needs AUTOCAM_WEBHOOK_SECRET in .env, [panel] public_url and Onshape keys)")
+    shafts = None
+    if cfg.shafts.enabled:
+        from .shafts import ShaftList
+        shafts = ShaftList(cfg.paths.state / "shafts.json", groove_depth_in=cfg.shafts.groove_depth_in,
+                           keep_done_days=cfg.shafts.keep_done_days)
     app = PanelApp(cfg, creds.get("AUTOCAM_PANEL_KEY"), onshape, board, Names(cfg.paths.state / "panel_users.json"),
-                   inbox=inbox, hook_secret=secret)
+                   inbox=inbox, hook_secret=secret, shafts=shafts)
     start_server(app, p.port)
     pictures = PictureWatch(onshape, services.store, tracker) if p.pictures else None
     usage = None

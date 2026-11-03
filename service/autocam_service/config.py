@@ -261,6 +261,27 @@ class Panel:
 
 
 @dataclass(frozen=True)
+class ShaftTab:
+    """A library Part Studio that's a shaft: its stock (a name in shafts.STOCKS, or "round": round bar picked by the
+    part's OD), and its default configuration's length (and OD) for a row in the default configuration."""
+    stock: str
+    length_in: float
+    od_in: float = 0.0
+
+
+@dataclass(frozen=True)
+class Shafts:
+    """The shop's shaft list (shafts.py, docs/shafts.md; 2026-11-02): library shafts sent from the Onshape panel,
+    made from the /shop page."""
+    enabled: bool = False
+    library_document: str = ""                 # the team's common parts library (its shaft tabs are below)
+    tabs: Mapping[str, "ShaftTab"] = field(default_factory=dict)   # the library tab's element id -> what it is
+    tap: str = "10-32"                         # every end, unless the sender picks another
+    groove_depth_in: float = 0.020             # per side, every snap-ring groove
+    keep_done_days: int = 14                   # done shafts drop off the list after this long
+
+
+@dataclass(frozen=True)
 class Scribe:
     """Bend lines scribed on bent parts that ask for it (core 0.18.0): with the sheet's own cutter in its program,
     or with the chamfer mill (identified by GUID, checked against the library) in a SCRIBE program of its own."""
@@ -399,6 +420,7 @@ class Config:
     fit: Fit = Fit()
     panel: Panel = Panel()
     costs: Costs = Costs()
+    shafts: Shafts = Shafts()
 
     def stock_types(self) -> List[Tuple[Material, float]]:
         return [(m, t) for m in self.materials.values() for t in m.thicknesses_in]
@@ -887,6 +909,27 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                       nest_efficiency=t.number("nest_efficiency", positive=True, default=0.8))
         t.finish()
 
+    shafts = Shafts()
+    if "shafts" in top.data:
+        from .shafts import ROUND, STOCKS, TAP_RE
+        t = top.table("shafts")
+        shaft_tabs: Dict[str, ShaftTab] = {}
+        tt = t.table("tabs")
+        for eid, row in tt.subtables():
+            if not re.match(r"^[0-9a-f]{24}$", eid):
+                errors.append(f"shafts.tabs.{eid}: the key must be the library tab's element id")
+            stock = row.string("stock", choices=tuple(STOCKS) + (ROUND,))
+            shaft_tabs[eid] = ShaftTab(stock=stock, length_in=row.number("length_in", positive=True),
+                                 od_in=row.number("od_in", positive=True) if stock == ROUND else 0.0)
+            row.finish()
+        tt.finish()
+        shafts = Shafts(enabled=t.boolean("enabled"),
+                        library_document=t.string("library_document", pattern=re.compile(r"^[0-9a-f]{24}$"), required=True),
+                        tabs=MappingProxyType(shaft_tabs), tap=t.string("tap", pattern=TAP_RE, default="10-32"),
+                        groove_depth_in=t.number("groove_depth_in", positive=True, default=0.020),
+                        keep_done_days=t.integer("keep_done_days", minimum=1, default=14))
+        t.finish()
+
     t = top.table("paths")
     paths = Paths(**{k: root / t.string(k, required=True) for k in ("queue", "cache", "state", "logs")})
     t.finish()
@@ -902,7 +945,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         op_tags=op_tags, templates=MappingProxyType(templates), labels=labels, onshape=onshape,
         trello=trello, fusion=fusion, tapguard=tapguard, fusion_team=fusion_team, status=status, paths=paths,
         placeholders=tuple(_placeholders(data)), warnings=(), tabs=tabs, face=face, scribe=scribe, hand_cuts=hand_cuts,
-        fit=fit, panel=panel, costs=costs,
+        fit=fit, panel=panel, costs=costs, shafts=shafts,
     )
     warnings: List[str] = []
     _cross_check(cfg, data, errors, warnings)

@@ -38,7 +38,9 @@
     lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
     minus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg>',
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg>',
-    back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>'
+    back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+    x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>'
   };
 
   // ---------------------------------------------------------------- small helpers
@@ -199,6 +201,8 @@
     asmSel: {},            // part key -> {on, qty}
     asmOpts: null,         // {tabs, nest, drafts} for the whole assembly
     asmResult: null,       // /api/send-many's answer
+    shaftSel: {},          // shaft key -> {on, qty, ends, other, ops} (the assembly's library shafts)
+    shaft: null,           // the shaft editor: {row, listedId, draft, error, saving}
     form: null,
     editing: false,        // the form, making the open part's Drafts or sent-back card over
     sent: null,            // /api/send's answer
@@ -269,6 +273,14 @@
       sel[i.key] = { on: i.sendable && (old ? old.on : i.here && i.chip.status === "none"), qty: old ? old.qty : Math.max(1, i.qty) };
     });
     S.asmSel = sel;
+    var ssel = {};
+    (a.shafts || []).forEach(function (s) {
+      var old = S.shaftSel[s.key];
+      ssel[s.key] = old || { on: s.sendable && !s.listed, qty: s.qty, ends: s.ends.slice(), other: [false, false],
+        ops: s.ops.map(function (o) { return Object.assign({}, o); }) };
+      if (!s.sendable) ssel[s.key].on = false;
+    });
+    S.shaftSel = ssel;
     S.mode = "assembly";
     startAuto(a.autoRefreshS);
     render();
@@ -450,6 +462,7 @@
     if (S.mode === "error") return renderError();
     if (S.mode === "list") return renderList();
     if (S.mode === "assembly") return renderAssembly();
+    if (S.mode === "shaft") return renderShaft();
     return renderPart();
   }
 
@@ -513,7 +526,7 @@
     if (S.asmResult) {
       var r = S.asmResult, sent = r.results.filter(function (x) { return x.sent; }), skipped = r.results.filter(function (x) { return !x.sent; });
       add(bodyEl, h("div", { class: "notice " + (sent.length ? "good" : "info") }, icon(sent.length ? "check" : "info"), h("div", null,
-        h("b", null, sent.length ? "Sent " + sent.length + " to " + r.list : "Nothing sent"),
+        h("b", null, sent.length ? "Sent" : "Nothing sent"),
         skipped.length ? h("ul", { class: "problems" }, skipped.map(function (x) { return h("li", null, x.name + " " + x.why + "."); })) : null)));
     }
     add(bodyEl, queueLine(a.queue));
@@ -534,12 +547,15 @@
     add(bodyEl, group(a.name ? "Parts in " + a.name : "Parts in this assembly",
       ours.length ? h("div", { class: "parts" }, ours.map(row), S.showOther ? other.map(row) : null) : h("p", { class: "muted" }, "No parts AutoCAM cuts."),
       more));
+    if ((a.shafts && a.shafts.length) || (a.shaftsGone && a.shaftsGone.length)) {
+      add(bodyEl, group("Shafts", h("div", { class: "parts" }, a.shafts.map(shaftRow), a.shaftsGone.map(goneRow))));
+    }
     add(bodyEl, group("Options",
       switchLine("Hold them in with tabs", o.tabs, function (v) { o.tabs = v; render(); }),
       switchLine("Nest them with other parts", o.nest, function (v) { o.nest = v; render(); }),
       a.face ? switchLine("Face their tops", o.face, function (v) { o.face = v; render(); }) : null,
       switchLine("Rush", o.rush, function (v) { o.rush = v; render(); }),
-      switchLine("Send to Drafts", o.drafts, function (v) { o.drafts = v; render(); }),
+      switchLine("Send plates to Drafts", o.drafts, function (v) { o.drafts = v; render(); }),
       h("span", { class: "hint" }, "A fit is set on one part, from its Part Studio.")));
 
     var chosen = a.items.filter(function (i) { return i.sendable && S.asmSel[i.key].on; });
@@ -549,16 +565,21 @@
       nameInput = h("input", { class: "input wide", type: "text", placeholder: "Your name (it goes on the cards)", maxlength: "40", "aria-label": "Your name" });
       add(actionEl, nameInput);
     }
-    var n = chosen.length;
-    add(actionEl, h("button", { class: "btn btn-primary", type: "button", disabled: S.busy || !n, onclick: function () { sendMany(chosen, nameInput); } },
-      S.busy ? "Sending…" : "Send " + n + " part" + (n === 1 ? "" : "s") + " to " + (o.drafts ? "Drafts" : "Ready for CAM")));
+    var shafts = (a.shafts || []).filter(function (x) { return x.sendable && S.shaftSel[x.key] && S.shaftSel[x.key].on; });
+    var stuck = shafts.filter(function (x) { var sel = S.shaftSel[x.key]; return shaftProblems(x, sel.ops, sel.ends, sel.other).length; });
+    var n = chosen.length, m = shafts.length;
+    var words = !m ? "Send " + n + " part" + (n === 1 ? "" : "s") + " to " + (o.drafts ? "Drafts" : "Ready for CAM")
+      : (n ? "Send " + n + " part" + (n === 1 ? "" : "s") + " and " : "Send ") + m + " shaft" + (m === 1 ? "" : "s");
+    if (stuck.length) add(actionEl, h("div", { class: "as" }, "Fix " + stuck.map(function (x) { return x.label; }).join(", ") + " first (the pencil)."));
+    add(actionEl, h("button", { class: "btn btn-primary", type: "button", disabled: S.busy || !(n + m) || stuck.length > 0,
+      onclick: function () { sendMany(chosen, shafts, nameInput); } }, S.busy ? "Sending…" : words));
     if (S.user) {
       add(actionEl, h("div", { class: "as" }, "Sending as " + S.user + " · ",
         h("button", { class: "link-btn", type: "button", onclick: function () { S.user = ""; stored("name", ""); render(); } }, "change")));
     }
   }
 
-  function sendMany(chosen, nameInput) {
+  function sendMany(chosen, shafts, nameInput) {
     if (nameInput) {
       var typed = nameInput.value.trim();
       if (!typed) { S.asmResult = { results: [{ name: "", sent: false, why: "Type your name first (it goes on the cards)" }], list: "" }; render(); return; }
@@ -568,6 +589,7 @@
     S.busy = true; render();
     api("POST", "/api/send-many", where({
       items: chosen.map(function (i) { return { key: i.key, qty: S.asmSel[i.key].qty }; }),
+      shafts: shafts.map(function (x) { var sel = S.shaftSel[x.key]; return { key: x.key, qty: sel.qty, ends: sel.ends, ops: sel.ops }; }),
       tabs: o.tabs, nest: o.nest, face: o.face, rush: o.rush, drafts: o.drafts, name: S.user, u: ctx.u, server: ctx.server
     })).then(function (r) {
       S.busy = false; S.asmResult = r;
@@ -575,6 +597,169 @@
     }, function (err) {
       S.busy = false; S.asmResult = { results: [{ name: "", sent: false, why: err.message }], list: "" }; render();
     });
+  }
+
+  // ---------------------------------------------------------------- shafts (the shop's list; shafts.py)
+  function fmt(x) { return Number(x || 0).toFixed(3); }
+  var TAP_RE = /^[A-Za-z0-9./ x-]{1,12}$/;
+
+  // What can't be made: the same rules as shafts.problems() on the server, so Send waits until they're fixed
+  function shaftProblems(s, ops, ends, other) {
+    var out = [], per = { 1: 0, 2: 0 };
+    ops.forEach(function (o) {
+      if (o.kind === "turn") {
+        if (!(o.d > 0)) out.push("A turn-down needs a diameter.");
+        else if (!o.auto && (s.shape === "hex" ? o.d > s.size + 1e-9 : o.d >= s.size - 1e-9)) out.push("Ø" + fmt(o.d) + " isn't smaller than the " + s.stock + ".");
+        else if (s.bore && o.d < s.bore + 0.06) out.push("Ø" + fmt(o.d) + " cuts into the " + s.bore.toFixed(3) + " hole of the " + s.stock + ".");
+        if (o.end) {
+          if (!(o.l > 0 && o.l < s.length)) out.push("A turn-down must be shorter than the shaft (" + fmt(s.length) + ").");
+          per[o.end] = Math.max(per[o.end], o.l || 0);
+        }
+      } else if (!(o.at > 0 && o.at < s.length)) {
+        out.push("A groove " + fmt(o.at) + " from the end is off the " + fmt(s.length) + " shaft.");
+      }
+    });
+    if (per[1] && per[2] && per[1] + per[2] > s.length) out.push("The turn-downs on the two ends overlap.");
+    [0, 1].forEach(function (i) {
+      if (other && other[i] && !ends[i]) out.push("Type a tap size for end " + (i + 1) + ", or pick None.");
+      else if (ends[i] && !TAP_RE.test(ends[i])) out.push("\"" + ends[i] + "\" isn't a tap size (like 8-32 or M5).");
+    });
+    return out.filter(function (x, i) { return out.indexOf(x) === i; });
+  }
+
+  function editBtn(label, onclick) {
+    return h("button", { class: "icon-btn row-btn", type: "button", "aria-label": "Lathe work and taps for " + label,
+      title: "Lathe work and taps", onclick: onclick }, icon("edit"));
+  }
+
+  function shaftRow(s) {
+    var L = s.listed, sel = S.shaftSel[s.key];
+    if (L && (L.status === "waiting" || L.status === "started")) {           // on the list already
+      var right = L.status === "waiting"
+        ? [h("span", { class: "hint" }, "×" + L.qty), editBtn(s.label, function () { openShaft(s, L); })]
+        : h("span", { class: "chip-cell" }, chip(L.chip.label || "In progress", L.chip.status || "queued"));
+      return h("div", { class: "arow shaft" }, h("span", { class: "mark ok" }, icon("check")), h("span", { class: "name" }, s.label), right);
+    }
+    var sub = s.problem ? h("span", { class: "sub bad-text" }, s.problem) : L && L.status === "done" ? h("span", { class: "sub" }, "Done") : null;
+    return h("div", { class: "arow shaft" },
+      s.sendable ? h("input", { type: "checkbox", checked: sel.on, "aria-label": "Send " + s.label,
+        onchange: function (ev) { sel.on = ev.target.checked; render(); } }) : h("span"),
+      h("span", { class: "name" }, s.label, sub),
+      s.sendable ? h("input", { class: "qty-in", type: "number", min: "1", max: String(S.asm.maxQty || 100), value: String(sel.qty),
+        "aria-label": s.label + " quantity", onchange: function (ev) { sel.qty = Math.max(1, Math.min(S.asm.maxQty || 100, parseInt(ev.target.value, 10) || 1)); render(); } }) : h("span"),
+      s.sendable ? editBtn(s.label, function () { openShaft(s, null); }) : h("span"));
+  }
+
+  function goneRow(x) {     // on the list, but not in the assembly any more (its length changed in CAD)
+    return h("div", { class: "arow shaft" }, h("span"),
+      h("span", { class: "name" }, x.label, h("span", { class: "sub bad-text" }, "Changed in CAD")),
+      x.waiting ? h("button", { class: "icon-btn row-btn", type: "button", "aria-label": "Take " + x.label + " off the list",
+        title: "Take it off the list", onclick: function () { removeShaft(x.id); } }, icon("x")) : h("span"), h("span"));
+  }
+
+  function openShaft(s, listed) {
+    var from = listed || S.shaftSel[s.key];
+    var tap = (S.asm && S.asm.shaftTap) || "10-32";
+    var ends = from.ends.slice();
+    S.shaft = { row: s, listedId: listed ? listed.id : null, error: "", saving: false, draft: {
+      qty: from.qty, ends: ends,
+      other: from.other ? from.other.slice() : ends.map(function (t) { return !!t && t !== tap && t !== "10-32" && t !== "1/4-20"; }),
+      ops: from.ops.map(function (o) { return Object.assign({}, o); }) } };
+    S.mode = "shaft";
+    render();
+  }
+  function closeShaft() { S.shaft = null; S.mode = "assembly"; render(); }
+
+  function reloadAssembly() {
+    return api("GET", "/api/assembly", where({ cached: "1", u: ctx.u })).then(function (a) {
+      if (a.stale) return loadAssembly(false);
+      showAssembly(a);
+    }, function () { return loadAssembly(false); });
+  }
+
+  function saveShaft() {
+    var E = S.shaft, d = E.draft;
+    var ends = [0, 1].map(function (i) { return (d.ends[i] || "").trim(); });
+    if (!E.listedId) {                         // not sent yet: it's what Send will send
+      S.shaftSel[E.row.key] = { on: true, qty: d.qty, ends: ends, other: d.other, ops: d.ops };
+      return closeShaft();
+    }
+    E.saving = true; E.error = ""; render();
+    api("POST", "/api/shaft", { id: E.listedId, qty: d.qty, ends: ends, ops: d.ops }).then(function () {
+      S.shaft = null; S.mode = "assembly"; return reloadAssembly();
+    }, function (err) { E.saving = false; E.error = err.message; render(); });
+  }
+
+  function removeShaft(id) {
+    S.busy = true; render();
+    api("POST", "/api/shaft-remove", { id: id }).then(function () {
+      S.busy = false; S.shaft = null; S.mode = "assembly"; return reloadAssembly();
+    }, function (err) {
+      S.busy = false;
+      if (S.shaft) S.shaft.error = err.message;
+      else S.asmResult = { results: [{ name: "", sent: false, why: err.message }], list: "" };
+      render();
+    });
+  }
+
+  function seg(options, current, set, name, wide) {
+    return h("span", { class: "seg" + (wide ? " wide" : ""), role: "group", "aria-label": name }, options.map(function (o) {
+      return h("button", { type: "button", "aria-pressed": String(current === o[0]), onclick: function () { set(o[0]); render(); } }, o[1]);
+    }));
+  }
+
+  function renderShaft() {
+    var E = S.shaft, s = E.row, d = E.draft;
+    add(bodyEl, h("button", { class: "back-link", type: "button", onclick: closeShaft }, icon("back"), (S.asm && S.asm.name) || "Assembly"));
+    add(bodyEl, h("div", { class: "part-name" }, s.label));
+    add(bodyEl, h("div", { class: "line" }, h("span", { class: "name" }, "Quantity"), stepper(d.qty, function (n) { d.qty = n; render(); }, "Quantity")));
+    add(bodyEl, group("Tap", [0, 1].map(function (i) {
+      var pick = d.other[i] ? "other" : d.ends[i];
+      return h("div", { class: "tap-end" },
+        h("div", { class: "line" }, h("span", { class: "name" }, "End " + (i + 1)),
+          seg([["10-32", "10-32"], ["1/4-20", "1/4-20"], ["other", "Other"], ["", "None"]], pick, function (v) {
+            if (v === "other") { if (!d.other[i]) { d.other[i] = true; d.ends[i] = ""; } }
+            else { d.other[i] = false; d.ends[i] = v; }
+          }, "End " + (i + 1) + " tap", true)),
+        d.other[i] ? h("input", { class: "input input-other", type: "text", maxlength: "12", value: d.ends[i],
+          placeholder: "Size, like 8-32 or M5", "aria-label": "End " + (i + 1) + " tap size",
+          oninput: function (ev) { d.ends[i] = ev.target.value.trim(); }, onchange: function () { render(); } }) : null);
+    })));
+    var ops = h("div", { class: "ops" });
+    d.ops.forEach(function (o, idx) {
+      var right = o.auto ? chip("From the model")
+        : [seg([[1, "End 1"], [2, "End 2"]], o.end, function (v) { o.end = v; }, "Which end"),
+           h("button", { class: "icon-btn", type: "button", "aria-label": "Remove", onclick: function () { d.ops.splice(idx, 1); render(); } }, icon("x"))];
+      var fields = o.kind === "turn"
+        ? h("div", { class: "fields" }, field("Diameter", o, "d", o.auto), o.end ? field("Length", o, "l") : null)
+        : h("div", { class: "fields" }, field("From end", o, "at"),
+            h("div", { class: "field" }, "Depth per side", h("span", { class: "fixed" }, fmt(S.asm.grooveDepth))));
+      add(ops, h("div", { class: "op" }, h("div", { class: "op-top" }, h("b", null, o.kind === "turn" ? "Turn down" : "Groove"), right), fields));
+    });
+    add(ops, h("div", { class: "add-row" },
+      h("button", { class: "btn btn-secondary btn-small", type: "button", onclick: function () {
+        var used = d.ops.filter(function (o) { return o.kind === "turn" && o.end; }).map(function (o) { return o.end; });
+        d.ops.push({ kind: "turn", end: used.indexOf(1) < 0 ? 1 : 2, d: s.shape === "hex" ? s.size : +(s.size - 0.125).toFixed(3), l: 0.5 });
+        render();
+      } }, icon("plus"), "Turn down"),
+      h("button", { class: "btn btn-secondary btn-small", type: "button", onclick: function () {
+        d.ops.push({ kind: "groove", end: 1, at: 0.5 }); render();
+      } }, icon("plus"), "Groove")));
+    add(bodyEl, group("Lathe", ops));
+    var bad = shaftProblems(s, d.ops, d.ends, d.other);
+    if (E.error) add(bodyEl, notice("bad", null, E.error));
+    if (bad.length) add(bodyEl, notice("bad", null, bad.join("\n")));
+    actionEl.hidden = false;
+    add(actionEl, h("button", { class: "btn btn-primary", type: "button", disabled: E.saving || S.busy || bad.length > 0, onclick: saveShaft },
+      E.saving ? "Saving…" : "Done"));
+    if (E.listedId) add(actionEl, h("button", { class: "btn btn-ghost", type: "button", disabled: E.saving || S.busy,
+      onclick: function () { removeShaft(E.listedId); } }, "Take it off the list"));
+
+    function field(name, o, key, readOnly) {
+      return h("label", { class: "field" }, name,
+        h("input", { class: "num", type: "text", inputmode: "decimal", value: fmt(o[key]), readonly: readOnly,
+          onchange: function (ev) { var v = parseFloat(ev.target.value); o[key] = v > 0 ? +v.toFixed(4) : 0; render(); } }));
+    }
   }
 
   function renderPart() {

@@ -464,6 +464,32 @@ change_quiet_s = 120            # an Onshape-reported change is checked once nob
 company_id = "652459d6412ce911b57afb73"   # Team 5940 BREAD's Onshape enterprise
 team_usage_hours = 168          # the whole team's Onshape API count on the System card: one call a week (0: off)
 
+[shafts]                        # the shop's shaft list (service/autocam_service/shafts.py, docs/shafts.md; 2026-11-02):
+                                # library shafts in an assembly are sent from the Onshape panel with its plates and made
+                                # from the phone page at <public_url>/shop (one item per shaft: Start, Done; no Trello)
+enabled = true
+library_document = "dee14b205b4629c493a3df74"   # the team's common parts library
+tap = "10-32"                   # every shaft end gets this unless the sender picks another (1/4-20 is rare)
+groove_depth_in = 0.020         # per side, every snap-ring groove (the user, 2026-11-02)
+keep_done_days = 14             # done shafts drop off the list after this long
+
+# The library's shaft tabs (element id -> stock). length_in: the default configuration's length, for a part left in
+# it. "round" picks round bar by the part's OD (3/8 or 1/2); any other OD is turned from the next size up. Spline XL,
+# Hex Spacer, the spline spacers and "3d printed standoff" are printed, so they aren't here.
+[shafts.tabs.74fa9fa49ead33d7ba3d5ae0]   # Hex Shaft
+stock = "1/2 hex"
+length_in = 1.0
+[shafts.tabs.33e281a702f193825b86827f]   # 3/8 Hex shaft
+stock = "3/8 hex"
+length_in = 1.0
+[shafts.tabs.8c1ad05ff19d9d749c567410]   # 3/8 hex lite (a 0.159 hole through it)
+stock = "3/8 hex lite"
+length_in = 1.0
+[shafts.tabs.ac38d53cc6fec9e9cc926402]   # Standoff (3/8 round; OD 0.5 is 1/2 round)
+stock = "round"
+length_in = 1.0
+od_in = 0.375
+
 [costs]                         # the Onshape panel's cost and sheet use estimate. Prices: WCP's for a 24 x 48 in sheet
                                 # (wcproducts.com, read 2026-11-01; the user's choice), else another vendor's (named on
                                 # the line). A thickness with no price shows only its share of a sheet

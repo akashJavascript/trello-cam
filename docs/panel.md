@@ -214,6 +214,11 @@ URLs is pasted by a person, never typed by Claude:
 Changing the key later: change `.env` (the service restarts by itself) and both Action URLs together (portal >
 the app > Extensions > Edit).
 
+## Shafts (2026-11-02)
+
+An assembly's library shafts are listed under **Shafts**, not with its plates, and go on the shop's phone page
+(`/shop`) instead of Trello. See `docs/shafts.md`.
+
 ## Not confirmed yet
 
 - **Selecting in the CAD: seen 2026-11-01.** Onshape's `SELECTION` message (logged from a real Part Studio):

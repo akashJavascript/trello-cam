@@ -20,6 +20,14 @@
     POST /api/me                             remember a student's name for their Onshape user id
     POST /api/selection                      log what Onshape's SELECTION messages look like (a few a day)
     GET  /api/preview?key=...&sheet=...      a sheet card's preview picture
+    POST /api/shaft                          change a shaft on the shop's list (while nobody has started it)
+    POST /api/shaft-remove                   take a shaft off the list (same)
+
+The shop's shaft list (shafts.py, 2026-11-02), with its own key (shop_key(): someone with the shop's link can start
+and finish shafts, nothing else):
+    GET  /shop?key=...                       the phone page
+    GET  /api/shop?device=...                the shafts to make, and the ones done today
+    POST /api/shop/start|stop|done|undo      {id, device}
 
 Every /api request carries the key in an X-AutoCAM-Key header (the preview, an <img>, in its query instead).
 """
@@ -52,6 +60,8 @@ from .board import ACTIVE, PanelBoard, Send, read_part_card
 from .geometry import differences, shape_key
 from .hooks import HOOK_PREFIX, ChangeInbox, secret_ok
 from .onshape_reads import NoAccess, OutOfCalls, PanelOnshape, PanelOnshapeError
+from ..shafts import (ACTIVE as SHAFT_ACTIVE, DEVICE_RE, STOCKS, ShaftError, ShaftList, clean_ends, clean_ops, problems,
+                      recognize, status_chip)
 from ..onshape.urls import configuration_of, configuration_tag, normal_configuration
 
 log = logging.getLogger("autocam.panel")
@@ -72,6 +82,13 @@ CSP = ("default-src 'none'; script-src 'self'; style-src 'self' https://fonts.go
        "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
        "frame-ancestors https://*.onshape.com https://onshape.com; base-uri 'none'; form-action 'none'")
 LIST_NAMES = {"inbox": "Drafts", "ready_for_cam": "Ready for CAM"}
+SHOP_ACTIONS = ("start", "stop", "done", "undo")
+
+
+def shop_key(panel_key: str) -> str:
+    """The shop page's key, worked out from the panel's: nothing new to keep in .env, and the shop's link (on a QR
+    code at the saw) can't send cards."""
+    return hmac.new(panel_key.encode("utf-8"), b"autocam shop page", hashlib.sha256).hexdigest()[:32]
 
 
 def body_limit(path: str) -> int:
@@ -143,11 +160,11 @@ class Names:
             write_atomic(self.path, (json.dumps(names, indent=1, sort_keys=True) + "\n").encode("utf-8"))
 
 
-def versioned_page() -> bytes:
-    """index.html with each /static/ link stamped with its file's hash. Cloudflare tells browsers to keep static files
-    for 4 hours whatever this server says (seen 2026-11-01: an old panel.js kept running after a deploy); the page
-    itself is no-store, so a changed file gets a new address and is fetched at once."""
-    html = (STATIC / "index.html").read_text(encoding="utf-8")
+def versioned_page(name: str = "index.html") -> bytes:
+    """index.html (or shop.html) with each /static/ link stamped with its file's hash. Cloudflare tells browsers to
+    keep static files for 4 hours whatever this server says (seen 2026-11-01: an old panel.js kept running after a
+    deploy); the page itself is no-store, so a changed file gets a new address and is fetched at once."""
+    html = (STATIC / name).read_text(encoding="utf-8")
 
     def stamp(m: "re.Match[str]") -> str:
         f = STATIC / m.group(1)
@@ -161,9 +178,11 @@ class PanelApp:
     def __init__(self, cfg: Config, key: str, onshape: PanelOnshape, board: PanelBoard, names: Names,
                  clock: Callable[[], float] = time.monotonic,
                  today: Callable[[], str] = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-                 inbox: Optional[ChangeInbox] = None, hook_secret: str = ""):
+                 inbox: Optional[ChangeInbox] = None, hook_secret: str = "", shafts: Optional[ShaftList] = None):
         if not key:
             raise ValueError("the panel needs AUTOCAM_PANEL_KEY")
+        self.shafts = shafts if cfg.shafts.enabled else None    # the shop's shaft list (None: off)
+        self._shop_key = shop_key(key).encode("utf-8")
         self.cfg = cfg
         self.inbox = inbox                    # Onshape's webhook events (hooks.py); None: no webhook
         self._hook_secret = hook_secret
@@ -183,6 +202,8 @@ class PanelApp:
         try:
             if path == "/panel" and method == "GET":
                 return self._page(query)
+            if path == "/shop" and method == "GET" and self.shafts is not None:
+                return self._page(query, shop=True)
             if path.startswith("/static/") and method == "GET":
                 return self._static(path[len("/static/"):])
             if not path.startswith("/api/"):
@@ -190,6 +211,8 @@ class PanelApp:
             if path.startswith(HOOK_PREFIX):                 # Onshape's webhook: its address is its password
                 return self.hook(method, path, body)
             given = query.get("key", "") if path == "/api/preview" else headers.get("x-autocam-key", "")
+            if path == "/api/shop" or path.startswith("/api/shop/"):
+                return self._shop(method, path, query, given, body)
             if not self._key_ok(given):
                 return _json(403, {"error": "This isn't AutoCAM's panel link (the key is wrong). Ask a mentor."})
             if len(body) > body_limit(path):
@@ -205,7 +228,9 @@ class PanelApp:
                      ("POST", PROGRAM_PATH): self.send_program,
                      ("POST", "/api/qty"): self.change_qty, ("POST", "/api/me"): self.me,
                      ("POST", "/api/selection"): self.selection,
-                     ("GET", "/api/which-part"): self.which_part}.get((method, path))
+                     ("GET", "/api/which-part"): self.which_part,
+                     ("POST", "/api/shaft"): self.edit_shaft, ("POST", "/api/shaft-remove"): self.remove_shaft,
+                     }.get((method, path))
             if path == "/api/preview" and method == "GET":
                 return self.preview(query)
             if route is None:
@@ -213,6 +238,8 @@ class PanelApp:
             return _json(200, route(query if method == "GET" else data))
         except Refused as e:
             return _json(e.status, {"error": str(e), **e.extra})
+        except ShaftError as e:
+            return _json(e.status, {"error": str(e), **({"kind": e.kind} if e.kind else {})})
         except NoAccess:
             return _json(403, {"error": "AutoCAM's Onshape account can't open this document. Share it with the "
                                         "team in Onshape, then reopen this panel.", "kind": "noaccess"})
@@ -229,14 +256,38 @@ class PanelApp:
     def _key_ok(self, given: str) -> bool:
         return bool(given) and hmac.compare_digest(given.encode("utf-8"), self._key)
 
+    def _shop_key_ok(self, given: str) -> bool:
+        return bool(given) and hmac.compare_digest(given.encode("utf-8"), self._shop_key)
+
     # ---- the page
-    def _page(self, query: Dict[str, str]) -> Response:
+    def _page(self, query: Dict[str, str], shop: bool = False) -> Response:
         headers = {"Content-Security-Policy": CSP, "Referrer-Policy": "no-referrer", "Cache-Control": "no-store",
                    "X-Content-Type-Options": "nosniff"}
-        if not self._key_ok(query.get("key", "")):
-            return Response(403, b"This isn't AutoCAM's panel link (the key is wrong). Ask a mentor.",
-                            "text/plain; charset=utf-8", headers)
-        return Response(200, versioned_page(), "text/html; charset=utf-8", headers)
+        if not (self._shop_key_ok if shop else self._key_ok)(query.get("key", "")):
+            return Response(403, b"This isn't AutoCAM's " + (b"shop" if shop else b"panel") +
+                            b" link (the key is wrong). Ask a mentor.", "text/plain; charset=utf-8", headers)
+        return Response(200, versioned_page("shop.html" if shop else "index.html"), "text/html; charset=utf-8", headers)
+
+    # ---- the shop's shaft list (its own key)
+    def _shop(self, method: str, path: str, query: Dict[str, str], given: str, body: bytes) -> Response:
+        if self.shafts is None:
+            return _json(404, {"error": "Not found"})
+        if not self._shop_key_ok(given):
+            return _json(403, {"error": "This isn't AutoCAM's shop link (the key is wrong). Ask a mentor."})
+        if len(body) > MAX_BODY:
+            return _json(413, {"error": "That's too much text."})
+        if path == "/api/shop" and method == "GET":
+            device = query.get("device", "")
+            return _json(200, self.shafts.shop_view(device if DEVICE_RE.match(device) else ""))
+        action = path[len("/api/shop/"):]
+        if method != "POST" or action not in SHOP_ACTIONS:
+            return _json(404, {"error": "Not found"})
+        data = json.loads(body.decode("utf-8")) if body else {}
+        device = str((data or {}).get("device") or "") if isinstance(data, dict) else ""
+        if not DEVICE_RE.match(device):
+            raise Refused(400, "Bad request")
+        getattr(self.shafts, action)(data.get("id"), device)
+        return _json(200, {"ok": True})
 
     def _static(self, name: str) -> Response:
         path = STATIC / name
@@ -377,10 +428,14 @@ class PanelApp:
         except Exception as e:  # noqa: BLE001
             log.warning("panel: reading the board: %s", e)
             board_error = "Couldn't read the Trello board just now, so statuses are missing."
-        items = []
+        items, shaft_rows = [], []
         for r in rows:
             if r["standard"]:
                 continue                                 # Onshape's standard content: screws, nuts
+            found = recognize(r, self.cfg.shafts) if self.shafts is not None else None
+            if found is not None:                        # a library shaft (6061, but it's not a plate)
+                shaft_rows.append((r, found))
+                continue
             material = self._material_of(r["material"])
             pc = None if cards is None else self.board.for_part(r["did"], r["eid"], r["pid"], r["name"], cards,
                                                                 cfg=r["configuration"])
@@ -403,9 +458,96 @@ class PanelApp:
         except PanelOnshapeError:
             pass
         uid = q.get("u", "")
-        return {"name": name, "items": items, "boardError": board_error, "queue": self._queue(), "face": self.cfg.face is not None,
+        shafts = self._assembly_shafts(did, eid, shaft_rows)
+        return {"name": name, "items": items, **shafts, "boardError": board_error, "queue": self._queue(), "face": self.cfg.face is not None,
                 "user": self.names.get(uid) if USER_RE.match(uid or "") else "", "tabsDefault": self.cfg.tabs.default,
                 "maxQty": MAX_QTY, "callsLeft": self.onshape.calls_left(), "autoRefreshS": self.cfg.panel.auto_refresh_s}
+
+    def _assembly_shafts(self, did: str, eid: str, shaft_rows: List[Tuple[Dict[str, Any], Any]]) -> Dict[str, Any]:
+        """The assembly's library shafts for the panel, each with what's on the list for it. Reading the assembly is
+        also when a shaft on the list that's no longer in it (its length changed in CAD) gets "Changed in CAD"."""
+        if self.shafts is None:
+            return {}
+        asm = f"{did}/{eid}"
+        self.shafts.mark_changed(asm, [f"{asm}|{_row_key(r)}" for r, _ in shaft_rows])
+        tap, out = self.cfg.shafts.tap, []
+        for r, found in shaft_rows:
+            x = self.shafts.latest(f"{asm}|{_row_key(r)}")
+            label, kind = status_chip(x)
+            listed = None if x is None else {"id": x["id"], "status": x["status"], "qty": x["qty"], "ends": x["ends"],
+                                             "ops": x["ops"], "chip": {"label": label, "status": kind}}
+            st = STOCKS[found.stock]
+            out.append({"key": _row_key(r), "label": found.label, "stock": found.stock, "length": found.length_in,
+                        "qty": max(1, r["qty"]), "ends": [tap, tap], "ops": [o.to_dict() for o in found.ops],
+                        "problem": found.problem, "shape": st.shape, "size": st.size_in, "bore": st.bore_in,
+                        "listed": listed, "sendable": not found.problem and (x is None or x["status"] not in SHAFT_ACTIVE)})
+        out.sort(key=lambda i: (list(STOCKS).index(i["stock"]), i["length"]))
+        gone = [{"id": x["id"], "label": f"{x['stock']}, {x['length_in']:.3f} in", "waiting": x["status"] == "waiting"}
+                for x in self.shafts.all() if x.get("assembly", {}).get("key") == asm and x.get("changed")
+                and x.get("status") in SHAFT_ACTIVE]
+        return {"shafts": out, "shaftsGone": gone, "shaftTap": tap, "grooveDepth": self.cfg.shafts.groove_depth_in}
+
+    def _send_shafts(self, d: Dict[str, Any], did: str, wvm: str, wvmid: str, eid: str,
+                     rows: Dict[str, Dict[str, Any]], sender: str, rush: bool, host: str) -> List[Dict[str, Any]]:
+        """The ticked shafts onto the shop's list. "Send plates to Drafts" doesn't touch them (the user)."""
+        wanted = d.get("shafts") if isinstance(d.get("shafts"), list) else []
+        if not wanted:
+            return []
+        if self.shafts is None:
+            raise Refused(400, "The shaft list is off.")
+        asm = f"{did}/{eid}"
+        tabs = self.onshape.cached_elements(did, wvm, wvmid) or []
+        name = next((e.get("name") or "" for e in tabs if e.get("id") == eid), "")
+        url = f"https://{host}/documents/{did}/{wvm}/{wvmid}/e/{eid}"
+        results, seen = [], set()
+        for item in wanted[:MAX_ASSEMBLY_SEND]:
+            key = str((item or {}).get("key") or "")
+            if key in seen:
+                continue
+            seen.add(key)
+            r = rows.get(key)
+            found = recognize(r, self.cfg.shafts) if r is not None else None
+            label = found.label if found else key
+            try:
+                if found is None:
+                    raise Refused(409, "isn't in this assembly any more")
+                if found.problem:
+                    raise Refused(400, found.problem)
+                qty = self._qty(item)
+                ends = clean_ends(item.get("ends"), self.cfg.shafts.tap)
+                ops = found.ops + [o for o in clean_ops(item.get("ops")) if not o.auto]
+                bad = problems(found.stock, found.length_in, ops)
+                if bad:
+                    raise Refused(400, bad[0])
+                self.shafts.add([{"source": f"{asm}|{key}", "assembly": {"key": asm, "name": name, "url": url},
+                                  "row": {"did": r["did"], "eid": r["eid"], "configuration": r["configuration"]},
+                                  "stock": found.stock, "length_in": found.length_in, "qty": qty, "ends": ends,
+                                  "ops": [o.to_dict() for o in ops], "rush": rush, "sender": sender}])
+                results.append({"key": key, "name": label, "sent": True, "shaft": True})
+            except (Refused, ShaftError) as e:
+                results.append({"key": key, "name": label, "sent": False, "why": str(e), "shaft": True})
+        return results
+
+    def edit_shaft(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        """A shaft on the list changed from the panel (its quantity, taps, lathe steps) while nobody has started it."""
+        if self.shafts is None:
+            raise Refused(400, "The shaft list is off.")
+        sid = d.get("id")
+        x = next((s for s in self.shafts.all() if s.get("id") == sid), None)
+        if x is None:
+            raise ShaftError("That shaft isn't on the list any more.", status=404)
+        autos = [o for o in clean_ops(x.get("ops")) if o.auto]
+        ops = autos + [o for o in clean_ops(d.get("ops")) if not o.auto]
+        self.shafts.edit(sid, self._qty(d), clean_ends(d.get("ends"), self.cfg.shafts.tap), ops)
+        log.info("panel: shaft %s changed (%s, %s in)", sid, x["stock"], x["length_in"])
+        return {"ok": True}
+
+    def remove_shaft(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        if self.shafts is None:
+            raise Refused(400, "The shaft list is off.")
+        self.shafts.remove(d.get("id"))
+        log.info("panel: shaft %s taken off the list", d.get("id"))
+        return {"ok": True}
 
     def send_many(self, d: Dict[str, Any]) -> Dict[str, Any]:
         """Cards for the ticked parts of an assembly, each in the format a typed card has (its own Part Studio's
@@ -432,6 +574,8 @@ class PanelApp:
             try:
                 if r is None:
                     raise Refused(409, "isn't in this assembly any more")
+                if self.shafts is not None and recognize(r, self.cfg.shafts) is not None:
+                    raise Refused(400, "is a shaft: it goes on the shaft list")
                 qty = self._qty(item)
                 material = self._material_of(r["material"])
                 if material is None or not material["key"]:
@@ -450,7 +594,11 @@ class PanelApp:
         sent = sum(1 for x in results if x["sent"])
         log.info("panel: %s sent %d of %d parts of an assembly to %s", sender, sent, len(results),
                  "Drafts" if drafts else "Ready for CAM")
-        return {"results": results, "list": "Drafts" if drafts else "Ready for CAM"}
+        shafts = self._send_shafts(d, did, wvm, wvmid, eid, rows, sender, rush, host)
+        if shafts:
+            log.info("panel: %s sent %d of %d shafts to the shaft list", sender, sum(1 for x in shafts if x["sent"]),
+                     len(shafts))
+        return {"results": results + shafts, "list": "Drafts" if drafts else "Ready for CAM"}
 
     def _mark(self, did: str, wvm: str, wvmid: str, eid: str, part: Dict[str, Any],
               material: Optional[Dict[str, Any]], cfg: str = "") -> Optional[str]:
