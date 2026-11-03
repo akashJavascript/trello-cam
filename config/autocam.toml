@@ -456,6 +456,10 @@ webhooks = true                 # Onshape webhooks say what changed, within minu
                                 # open sheet (a company-wide one is refused for model changes). Needs
                                 # AUTOCAM_WEBHOOK_SECRET in .env
 webhook_fallback_hours = 72     # with the webhook working, the check above happens only this often
+assembly_check_minutes = 60     # assemblies AutoCAM watches (panel/assemblies.py: ones with shafts or bought parts on the
+                                # shop's lists, or with cards for parts from another document's saved version) are read
+                                # again (one call) after Onshape says they changed, at most this often; with no change
+                                # reported, every change_check_hours (webhook_fallback_hours with a working webhook)
 pictures = true                 # a picture of each part (Onshape's shaded view, one call each) on its card
 auto_refresh_s = 15             # an open panel re-reads the statuses this often by itself (Trello only, never Onshape;
                                 # it stops after 30 min with nobody using it). 0: only on Refresh

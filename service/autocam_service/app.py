@@ -131,8 +131,11 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
             sheet = sheet_link(creds.get("AUTOCAM_ORDER_SHEET_URL"))
             if not sheet:
                 log.warning("panel: AUTOCAM_ORDER_SHEET_URL in .env isn't a Google Sheets link, so there's no Order button")
+    from .panel.assemblies import AssemblyWatch
+    assemblies = AssemblyWatch(onshape, board, cfg, cfg.paths.state / "panel_assemblies.json", shafts=shafts,
+                               parts=parts, hooks=hooks)
     app = PanelApp(cfg, creds.get("AUTOCAM_PANEL_KEY"), onshape, board, Names(cfg.paths.state / "panel_users.json"),
-                   inbox=inbox, hook_secret=secret, shafts=shafts, parts=parts, order_sheet=sheet)
+                   inbox=inbox, hook_secret=secret, shafts=shafts, parts=parts, order_sheet=sheet, assemblies=assemblies)
     start_server(app, p.port)
     pictures = PictureWatch(onshape, services.store, tracker) if p.pictures else None
     usage = None
@@ -140,8 +143,8 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
         from .panel.usage import TEAM_USAGE_FILE, TeamUsage
         usage = TeamUsage(onshape, p.company_id, cfg.paths.state / TEAM_USAGE_FILE, p.team_usage_hours)
     PrecutWatch(onshape, board, services.store, tracker, inbox=inbox, hooks=hooks, pictures=pictures,
-                every_s=p.check_every_s, quiet_s=p.change_quiet_s, usage=usage).keep_running()
-    # (changed before it's cut, pictures, the team's API count)
+                every_s=p.check_every_s, quiet_s=p.change_quiet_s, usage=usage, assemblies=assemblies).keep_running()
+    # (changed before it's cut, pictures, the team's API count, watched assemblies)
     if p.tunnel_dir:
         Tunnel(Path(p.tunnel_dir), cfg.paths.state, cfg.paths.logs).keep_running()
     return True

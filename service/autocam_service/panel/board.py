@@ -501,6 +501,23 @@ class PanelBoard:
             settled += self._settle(card_id, pc, how, why)
         return settled
 
+    def relink(self, pc: PartCard, old_vid: str, new_vid: str, assembly: str, what: List[str]) -> bool:
+        """A card sent from an assembly for a part from another document's saved version follows the assembly to the
+        newer version it uses now (panel/assemblies.py): its link's version changes, with a comment. False when the
+        link isn't that version any more (someone changed it by hand): left alone."""
+        card = self.t.get_card(pc.card.id)
+        lines = (card.desc or "").split("\n")
+        at = next((i for i, ln in enumerate(lines) if first_onshape_url(ln)), None)
+        if at is None or f"/v/{old_vid}/" not in lines[at]:
+            return False
+        lines[at] = lines[at].replace(f"/v/{old_vid}/", f"/v/{new_vid}/", 1)
+        self.t.update_card(card.id, card.name, "\n".join(lines))
+        change = f": {', '.join(what)}" if what else "; its shape is the same"
+        self.t.comment(card.id, f"{assembly or 'Its assembly'} uses a newer version of this part now{change}. "
+                                "This card links to that version now.")
+        self.invalidate()
+        return True
+
     def renest(self, pc: PartCard) -> Card:
         """A card on a sheet back to Ready for CAM, so the next run nests its part as it is now."""
         self.t.move(pc.card.id, "ready_for_cam")

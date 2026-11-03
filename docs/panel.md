@@ -69,6 +69,15 @@ preview), cut, or sent back with the reason.
   `/api/onshape-hook/<AUTOCAM_WEBHOOK_SECRET>` when a document with parts on a sheet changes (one webhook per
   document workspace, made and removed by the service), so CAD changed shows within minutes; each part card on a
   sheet gets Onshape's picture of the part as its cover. `[panel] webhooks`, `pictures`, `webhook_fallback_hours`.
+- **Watched assemblies** (2026-11-02, `panel/assemblies.py`): an assembly with shafts or bought parts on the shop's
+  lists, or with cards for parts from another document's saved version, is read again in the background (its parts
+  list, one call) when Onshape says its document changed, at most once per `[panel] assembly_check_minutes` (60);
+  with no change reported, every `change_check_hours` (`webhook_fallback_hours` while its webhook works). The shop's
+  lists get "Changed in CAD" and "CAD has 6" without anyone opening the panel. A card for a part from another
+  document's version **follows its assembly**: when the assembly uses a newer version of that document, the card's
+  link moves to it (with a comment saying what changed), and a part on a sheet not cut yet whose shape changed gets
+  CAD changed below, so "Nest the new version" nests the new one. Cards already cut, and links changed by hand, are
+  left alone. Only cards sent from the panel after 2026-11-02 are followed (that's when the assembly is recorded).
 - **CAD changed** (2026-11-01): a part that changed after it was CAM'd shows "CAD changed" in the list and on its
   status, with **Nest the new version** and **Cut it as it is** (the same as ticking the box on its card; either
   takes the CAD changed labels off its card and sheet card). See `docs/decisions.md`.

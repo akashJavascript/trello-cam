@@ -44,6 +44,8 @@ metals stay "AutoCAM doesn't cut": neither is on this list.
   itself (someone may have sent a different number on purpose); Make it 6, or the pencil, settles it. A part all in
   the bin gets it too, since more may be needed now.
 - A part taken out of the assembly gets **Changed in CAD**, in the panel and on the phone, like a shaft.
+- Both show up **without anyone opening the panel** (2026-11-02): the service reads the assembly's parts list again
+  (one call) after Onshape says it changed, at most once an hour per assembly (`panel/assemblies.py`).
 - Clicking a row lights the part up in Onshape, and clicking the part in Onshape lights up its row (the same as
   plates and shafts).
 

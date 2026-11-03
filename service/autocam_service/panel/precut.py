@@ -6,7 +6,8 @@ accept box on its card (panel/board.py), cleared once that's ticked or the part 
 Once per sheet program (sheet card + the job that made it): for each part on it CAM'd from a workspace, one call asks
 the workspace's current state. The same state as when it was CAM'd: nothing in that document changed, done. Otherwise
 the part's shape then (kept for good) and now are compared, and a part that really changed gets one comment on the
-sheet card. Parts linked to a version can't change; parts from a .step attachment have nothing to compare.
+sheet card. Parts linked to a version can't change (but the assembly a card came from can move to a newer version:
+assemblies.py, run from this loop); parts from a .step attachment have nothing to compare.
 
 Its calls are the panel's (ledger run "panel"), so runs never pay for it. Out of calls: tried again later.
 """
@@ -39,8 +40,9 @@ class PrecutWatch:
     def __init__(self, onshape: PanelOnshape, board: PanelBoard, store: RunStore, tracker: Tracker,
                  inbox: Optional[ChangeInbox] = None, hooks: Optional[WebhookSetup] = None,
                  pictures: Optional[PictureWatch] = None, every_s: float = CHECK_EVERY_S,
-                 quiet_s: float = QUIET_S, usage: Optional[TeamUsage] = None):
+                 quiet_s: float = QUIET_S, usage: Optional[TeamUsage] = None, assemblies: Any = None):
         self.usage = usage                    # the whole team's API count for the System card (usage.py)
+        self.assemblies = assemblies          # assemblies.AssemblyWatch: the shop's lists and version-linked cards
         self.every_s = every_s                # the loop's pause ([panel] check_every_s)
         self.quiet_s = quiet_s                # a reported change waits this long for edits to stop ([panel] change_quiet_s)
         self.onshape = onshape
@@ -76,6 +78,8 @@ class PrecutWatch:
                     if c.id in ours and not ours[c.id].get("cut") and ours[c.id].get("job")}   # on the board, not cut
         if self.hooks is not None:
             wanted = {(r["did"], r["vid"]) for sid in open_ids for r in self._refs(ours[sid])}
+            if self.assemblies is not None:
+                wanted |= self.assemblies.wanted()     # assemblies with things on the shop's lists, versions followed
             try:
                 self.hooks.ensure(wanted)
             except Exception as e:  # noqa: BLE001 - tried again later
@@ -110,6 +114,11 @@ class PrecutWatch:
                 changed += found
                 if finished:
                     self._mark(mark, info["job"] if list_key == "ready_to_cut" else {"job": info["job"], "at": now})
+        if self.assemblies is not None:
+            try:
+                self.assemblies.tick(told, now)        # before the reported changes are forgotten
+            except Exception as e:  # noqa: BLE001 - tried again next time
+                log.info("panel: reading watched assemblies: %s", e)
         if told and self.inbox is not None:
             self.inbox.forget(told)                    # checked now, or on no open sheet
         try:

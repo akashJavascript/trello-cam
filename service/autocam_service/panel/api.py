@@ -61,11 +61,11 @@ from . import checks
 from .board import ACTIVE, PanelBoard, Send, read_part_card
 from .geometry import differences, shape_key
 from .hooks import HOOK_PREFIX, ChangeInbox, secret_ok
-from .onshape_reads import NoAccess, OutOfCalls, PanelOnshape, PanelOnshapeError, row_for_instance
+from .onshape_reads import NoAccess, OutOfCalls, PanelOnshape, PanelOnshapeError, row_for_instance, row_key
 from ..shafts import (ACTIVE as SHAFT_ACTIVE, DEVICE_RE, MAX_NOTE, STOCKS, Found, ShaftError, ShaftList, clean_ends,
                       clean_ops, problems, recognize, status_chip)
 from ..bought import ACTIVE as PART_ACTIVE, PartList, counts as part_counts, is_hardware, sheet_link, status_chip as part_chip
-from ..onshape.urls import configuration_of, configuration_tag, normal_configuration
+from ..onshape.urls import configuration_of, normal_configuration
 
 log = logging.getLogger("autocam.panel")
 
@@ -192,12 +192,13 @@ class PanelApp:
                  clock: Callable[[], float] = time.monotonic,
                  today: Callable[[], str] = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                  inbox: Optional[ChangeInbox] = None, hook_secret: str = "", shafts: Optional[ShaftList] = None,
-                 parts: Optional[PartList] = None, order_sheet: str = ""):
+                 parts: Optional[PartList] = None, order_sheet: str = "", assemblies: Any = None):
         if not key:
             raise ValueError("the panel needs AUTOCAM_PANEL_KEY")
         self.shafts = shafts if cfg.shafts.enabled else None    # the shop's shaft list (None: off)
         self.parts = parts if cfg.parts.enabled else None       # the shop's bought-parts list (None: off)
         self.order_sheet = sheet_link(order_sheet) or cfg.parts.order_sheet_url   # Order opens it ("" no Order)
+        self.assemblies = assemblies          # assemblies.AssemblyWatch: cards that follow their assembly's versions
         self._shop_key = shop_key(key).encode("utf-8")
         self.cfg = cfg
         self.inbox = inbox                    # Onshape's webhook events (hooks.py); None: no webhook
@@ -711,6 +712,8 @@ class PanelApp:
         owners = self._owners(did, list(rows.values()), cached_only=True)
         cards = self.board.part_cards(fresh=True)
         host = self._host(d.get("server"))
+        asm = {"did": did, "wvm": wvm, "wvmid": wvmid, "eid": eid,
+               "name": self._asm_ref(did, wvm, wvmid, eid, host)["name"]}
         results, seen = [], set()
         for item in wanted[:MAX_ASSEMBLY_SEND]:
             key = str((item or {}).get("key") or "")
@@ -740,6 +743,8 @@ class PanelApp:
                          host=host, qty=qty, nest=nest, tabs=tabs, face=face, rush=rush, drafts=drafts, sender=sender,
                          configuration=r["configuration"])
                 card = self.board.write(s)
+                if self.assemblies is not None and r["wvm"] == "v":   # another document's saved version: followed
+                    self.assemblies.remember(card.id, asm, r)
                 results.append({"key": key, "name": name, "sent": True, "url": card.url})
             except Refused as e:
                 results.append({"key": key, "name": name, "sent": False, "why": str(e)})
@@ -1259,7 +1264,7 @@ def _link(r: Dict[str, Any]) -> str:
 
 def _row_key(r: Dict[str, Any]) -> str:
     """An assembly row's key: the part, and its configuration (each configuration is its own part)."""
-    return f"{r['did']}/{r['eid']}/{r['pid']}" + configuration_tag(r.get("configuration") or "")
+    return row_key(r)
 
 
 def ref_configuration(ref: Dict[str, Any]) -> str:

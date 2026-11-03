@@ -985,6 +985,20 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - **Order copies the sheet's row** (the user asked; the sheet's columns E to I: Description, Link, Supplier, Part
   Number, Units), pasted by the person at Description. Still never written by AutoCAM.
 
+## 2026-11-02: watched assemblies (the user: fix the two gaps)
+
+- **Gap 1, a part from another document's saved version** counted as never changing, so a subassembly updated to a
+  newer version of that document left its card on the old one. Now the card follows the assembly it was sent from:
+  its link moves to the version the assembly uses now (a comment says what changed), and a part on an uncut sheet
+  whose shape changed gets CAD changed, like a workspace part. Why follow rather than just warn: a workspace part's
+  card already always means "the design as it is now", so a version part from an assembly means the same thing.
+  Cut cards and links changed by hand are left alone.
+- **Gap 2, the shop's lists** were marked only when someone opened the assembly in the panel. Now the service reads
+  it again in the background.
+- **Cost:** one parts-list call per watched assembly, only after Onshape's webhook says its document changed and at
+  most once an hour (`[panel] assembly_check_minutes`), else every 12 h (72 h with a working webhook); two
+  bodydetails calls per version a card moves to, kept for good. The panel's 60 calls a day cover it.
+
 ## 2026-11-02: SRPP, three kinds, cut as polycarbonate (the user)
 
 - **What the team does:** SRPP parts are set to Polycarbonate in Onshape (close in weight) and cut exactly like

@@ -246,6 +246,7 @@ class Panel:
     parts_cache_s: int = 600             # a Part Studio's parts list is read again after this long (or on Refresh)
     assembly_cache_s: int = 1800         # the document's assemblies (for quantities)
     max_assemblies: int = 4              # quantities are counted in at most this many assemblies of the document
+    assembly_check_minutes: int = 60     # an assembly AutoCAM watches (panel/assemblies.py) is read at most this often
     board_cache_s: int = 30              # the Trello lists read for each part's status
     sends_per_minute: int = 20
     change_check_hours: float = 12.0     # sheets in Sheet review are checked against Onshape this often (one call
@@ -888,6 +889,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                       parts_cache_s=t.integer("parts_cache_s", minimum=0),
                       assembly_cache_s=t.integer("assembly_cache_s", minimum=0),
                       max_assemblies=t.integer("max_assemblies", minimum=0),
+                      assembly_check_minutes=t.integer("assembly_check_minutes", minimum=5, default=60),
                       board_cache_s=t.integer("board_cache_s", minimum=0),
                       sends_per_minute=t.integer("sends_per_minute", minimum=1),
                       change_check_hours=t.number("change_check_hours", positive=True, default=12.0),

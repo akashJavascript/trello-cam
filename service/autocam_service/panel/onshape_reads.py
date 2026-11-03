@@ -704,6 +704,12 @@ def row_for_instance(inst: Dict[str, Any], rows: List[Dict[str, Any]]) -> Option
     return best
 
 
+def row_key(r: Dict[str, Any]) -> str:
+    """An assembly row's key: the part, and its configuration (each configuration is its own part). The shop's lists
+    keep "<assembly did>/<assembly eid>|<this>" as where an item came from."""
+    return f"{r['did']}/{r['eid']}/{r['pid']}" + configuration_tag(r.get("configuration") or "")
+
+
 def bom_rows(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     headers = {h.get("propertyName"): h.get("id") for h in data.get("headers") or [] if isinstance(h, dict)}
     out = []

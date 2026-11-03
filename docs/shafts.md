@@ -30,9 +30,11 @@ page instead, at `https://autocam.team5940.org/shop` (its Shafts tab; bought par
 - **What can't be made** stops Send until it's fixed: a turn-down that isn't smaller than the stock (1/2 hex to
   0.500 is fine: that takes the corners off), a turn-down or groove past the end, turn-downs on both ends that
   overlap, 3/8 hex lite turned into its hole, a Standoff wider than 1/2 in.
-- **Changed in CAD:** when the assembly is opened again and a shaft on the list isn't in it any more (its length
-  changed, or it was taken out), that shaft gets "Changed in CAD" on the phone and in the panel. No extra Onshape
-  call: it's the assembly's parts list the panel reads anyway.
+- **Changed in CAD:** when the assembly changes and a shaft on the list isn't in it any more (its length changed, or
+  it was taken out), that shaft gets "Changed in CAD" on the phone and in the panel. Seen when someone opens the
+  assembly in the panel, and since 2026-11-02 without anyone opening it: the service reads the assembly's parts list
+  again (one call) after Onshape says it changed, at most once an hour (`panel/assemblies.py`, `[panel]
+  assembly_check_minutes`).
 
 ## Making them (the phone page)
 
