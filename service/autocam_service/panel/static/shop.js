@@ -93,10 +93,13 @@
     if (!d) { if (!S.error) add(listEl, h("p", { class: "muted" }, "Loading…")); return; }
     var all = d.shafts;
     function by(a, b) { return (a.startedAt || "").localeCompare(b.startedAt || ""); }
+    // one subsystem's shafts together: by assembly, then length (Rush: by stock first)
+    function byAsm(a, b) { return a.assembly.localeCompare(b.assembly) || a.length - b.length; }
+    function byStock(a, b) { return d.order.indexOf(a.stock) - d.order.indexOf(b.stock) || byAsm(a, b); }
     section("Yours", all.filter(function (s) { return s.started && s.mine; }).sort(by), "yours");
-    section("Rush", all.filter(function (s) { return s.rush && !s.started; }), "rush");
+    section("Rush", all.filter(function (s) { return s.rush && !s.started; }).sort(byStock), "rush");
     d.order.forEach(function (stock) {
-      section(stock, all.filter(function (s) { return s.stock === stock && !s.started && !s.rush; }), "stock");
+      section(stock, all.filter(function (s) { return s.stock === stock && !s.started && !s.rush; }).sort(byAsm), "stock");
     });
     section("In progress", all.filter(function (s) { return s.started && !s.mine; }).sort(by), "others");
     if (!all.length) add(listEl, h("p", { class: "muted" }, "Nothing to make."));

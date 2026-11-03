@@ -427,9 +427,12 @@ def test_a_part_clicked_in_the_assembly_finds_its_row(tmp_path):
     definition = {"rootAssembly": {"instances": [
         {"id": "i1", "type": "Part", "documentId": D, "elementId": E, "partId": "JHD", "configuration": "default"},
         {"id": "IfBvAf3KuZudYUjEe", "type": "Part", "documentId": LIB, "elementId": STANDOFF, "partId": "JFD",
-         "configuration": "Auto_Name_Part=true;Length=0.0635+meter;OD=0.009525+meter"}],
-        "occurrences": [{"path": ["i1"]}, {"path": ["Mpp/5tF1I3bXlPgoO", "IfBvAf3KuZudYUjEe"]},
-                        {"path": ["MAeTC/ZZkT0fup+er", "IfBvAf3KuZudYUjEe"]}, {"path": ["s1", "j2"]}]},
+         "configuration": "Auto_Name_Part=true;Length=0.0635+meter;OD=0.009525+meter"},
+        {"id": "Ik2", "type": "Part", "documentId": LIB, "elementId": STANDOFF, "partId": "JFD",
+         "configuration": "Length=0.0635+meter;OD=0.009525+meter"}],
+        "occurrences": [{"path": ["i1"]}, {"path": ["IfBvAf3KuZudYUjEe"]}, {"path": ["Ik2"]}, {"path": ["s1", "j2"]}],
+        "parametricInstances": [{"type": "Mirror", "id": "Mpp/5tF1I3bXlPgoO", "children": [
+            {"seedOccurrence": "MAeTC/ZZkT0fup+er.InRI/ZPF+Bb13CpzJ", "instanceIds": ["IfBvAf3KuZudYUjEe"]}]}]},
         "subAssemblies": [{"instances": [{"id": "Mpp/5tF1I3bXlPgoO", "type": "Assembly"},
                                          {"id": "j2", "type": "Part", "documentId": LIB, "elementId": HEX, "partId": "JFD",
                                           "configuration": "Auto_Name_Part=true;Length=0.2794+meter"}]}]}
@@ -447,8 +450,8 @@ def test_a_part_clicked_in_the_assembly_finds_its_row(tmp_path):
     assert which("i1") == next(i["key"] for i in a["items"] if i["name"] == "P-2014 gusset")
     assert which("Mpp/5tF1I3bXlPgoO") == "" and which("<script>") == ""
     occ = p.call("GET", "/api/occurrences", {**Q, "key": shafts["3/8 round, 2.500 in"]})[1]   # to light it up in Onshape
-    assert occ == {"paths": [["Mpp/5tF1I3bXlPgoO", "IfBvAf3KuZudYUjEe"], ["MAeTC/ZZkT0fup+er", "IfBvAf3KuZudYUjEe"]],
-                   "pid": "JFD"}
+    # a Mirror's copy is named by the feature and the copy, as Onshape's own selections name it; a plain one alone
+    assert occ == {"paths": [["Mpp/5tF1I3bXlPgoO", "IfBvAf3KuZudYUjEe"], ["Ik2"]], "pid": "JFD"}
     assert p.call("GET", "/api/occurrences", {**Q, "key": "nope"})[1] == {"paths": [], "pid": ""}
     def reads():
         return len([u for u in p.onshape_calls() if u.startswith("/assemblies/") and "/bom" not in u])

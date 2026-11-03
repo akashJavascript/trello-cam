@@ -317,7 +317,8 @@
     var ssel = {};
     (a.shafts || []).forEach(function (s) {
       var old = S.shaftSel[s.key];
-      ssel[s.key] = old || { on: s.sendable && !s.listed, qty: s.qty, ends: s.ends.slice(), other: [false, false], note: "",
+      // unticked to start (the user, 2026-11-02): sending an assembly's plates shouldn't put all its shafts on the list
+      ssel[s.key] = old || { on: false, qty: s.qty, ends: s.ends.slice(), other: [false, false], note: "",
         ops: s.ops.map(function (o) { return Object.assign({}, o); }) };
       if (!s.sendable) ssel[s.key].on = false;
     });

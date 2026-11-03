@@ -405,11 +405,24 @@ class PanelOnshape:
                 for i in group.get("instances") or []:
                     if isinstance(i, dict) and i.get("type") == "Part" and i.get("id"):
                         found.setdefault(i["id"], i)
+            # A copy made by a Replicate or Mirror (parametricInstances: its feature id, then the copies' instance
+            # ids) is named in Onshape's selections by the feature and the copy, ["MAeTC/ZZkT0fup+er", "InRI/..."],
+            # where the definition's occurrence path has the copy alone (seen in the Shooter, 2026-11-02)
+            made_by: Dict[str, str] = {}
+            for group in [d.get("rootAssembly") or {}] + list(d.get("subAssemblies") or []):
+                for feature in group.get("parametricInstances") or []:
+                    for child in (feature.get("children") or []) if isinstance(feature, dict) else []:
+                        for iid in (child.get("instanceIds") or []) if isinstance(child, dict) else []:
+                            if feature.get("id"):
+                                made_by[str(iid)] = str(feature["id"])
             paths: Dict[str, List[List[str]]] = {}
             for occ in (d.get("rootAssembly") or {}).get("occurrences") or []:
                 path = occ.get("path") if isinstance(occ, dict) else None
                 if isinstance(path, list) and path and path[-1] in found:
-                    paths.setdefault(path[-1], []).append([str(x) for x in path])
+                    full: List[str] = []
+                    for x in path:
+                        full += [made_by[str(x)], str(x)] if str(x) in made_by else [str(x)]
+                    paths.setdefault(path[-1], []).append(full)
             if not hasattr(self, "_instances"):
                 self._instances: Dict[Tuple[str, str, str, str], _Entry] = {}
             self._instances[key] = _Entry(self.clock(), (found, paths))
