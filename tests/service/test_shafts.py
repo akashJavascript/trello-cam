@@ -478,9 +478,12 @@ def test_belts_and_mcmaster_screws_are_bought_and_prints_are_printed(tmp_path):
         row(D, "w", W, E, "JB2", "91259A496_NO THREADS_Alloy Steel Shoulder Screw", 1, None),
         row(D, "w", W, E, "JB3", "P-2021", 1, "3D Printed PLA"),
         row(D, "w", W, E, "JB4", "P-2030", 1, None),
+        row(D, "w", W, E, "JB6", "Part 43", 1, "Brass"),
+        row(D, "w", W, E, "JB7", "P-2025", 1, "Steel ASTM A36"),
         row(D, "w", W, E, "JB5", "P-2014 gusset", 4, "Aluminum - 6061")]}
     p = shaft_panel(tmp_path, [bom])
     a = p.call("GET", "/api/assembly", Q)[1]
     assert {i["name"]: i["why"] for i in a["items"]} == {
         "35T HTD Belt": "Bought part", "91259A496_NO THREADS_Alloy Steel Shoulder Screw": "Bought part",
-        "P-2021": "Printed part", "P-2030": "No material", "P-2014 gusset": ""}   # no material: maybe a plate
+        "P-2021": "Printed part", "P-2030": "No material", "P-2014 gusset": "",   # no material: maybe a plate
+        "Part 43": "AutoCAM doesn't cut", "P-2025": "AutoCAM doesn't cut"}

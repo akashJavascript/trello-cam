@@ -78,6 +78,8 @@ ENTITY_RE = re.compile(r"^[A-Za-z0-9]{1,24}$")       # a face or edge id from On
 INSTANCE_RE = re.compile(r"^[A-Za-z0-9+/=_-]{1,40}$")  # an assembly instance id ("IfBvAf3KuZudYUjEe", "Mpp/5tF1I3bXlPgoO")
 MCMASTER_RE = re.compile(r"^\d{4,5}[A-Z]\d{1,5}(?:[_ .-]|$)")   # "91259A496_NO THREADS_Alloy Steel Shoulder Screw"
 PRINTED_RE = re.compile(r"print|\bPLA\b|\bABS\b|PETG|TPU|nylon|onyx|\bASA\b", re.IGNORECASE)
+RUBBER_RE = re.compile(r"rubber|neoprene|viton|urethane|silicone|EPDM|nitrile|buna|latex|elastomer|santoprene",
+                       re.IGNORECASE)                    # belts, wheels, O-rings: bought
 MAX_BODY = 16 * 1024
 MAX_PROGRAM_BODY = 4 * 1024 * 1024        # /api/send-program carries the .tap
 PROGRAM_PATH = "/api/send-program"
@@ -1104,17 +1106,20 @@ class PanelApp:
 
 
 def _why_not_cut(r: Dict[str, Any], material: Optional[Dict[str, Any]]) -> str:
-    """Why an assembly part isn't sendable ("" it is), past bought and library parts by document: the user wants
-    everything that isn't a plate or a print under "Bought part" (2026-11-02: the Shooter's belts are Viton and
-    Neoprene in its own document, its McMaster screw has no material). A part with no material at all stays "No
-    material": it may be a plate nobody set one on."""
+    """Why an assembly part isn't sendable ("" it is), past bought and library parts by document (the user,
+    2026-11-02): rubber (the Shooter's Viton and Neoprene belts) and McMaster numbers are "Bought part", prints are
+    "Printed part", any other material AutoCAM doesn't cut (brass, steel, 7075) is "AutoCAM doesn't cut". A part
+    with no material at all stays "No material": it may be a plate nobody set one on."""
     if MCMASTER_RE.match(r.get("name") or ""):
         return "Bought part"
     if material is None:
         return "No material"
     if material["key"]:
         return ""
-    return "Printed part" if PRINTED_RE.search(material.get("onshape") or "") else "Bought part"
+    name = material.get("onshape") or ""
+    if PRINTED_RE.search(name):
+        return "Printed part"
+    return "Bought part" if RUBBER_RE.search(name) else "AutoCAM doesn't cut"
 
 
 def _row_key(r: Dict[str, Any]) -> str:
