@@ -229,6 +229,9 @@ def test_an_assembly_lists_its_shafts_apart_from_its_plates(tmp_path):
     assert shafts["1/2 round, 1.000 in"]["problem"].startswith("OD 0.750") and not shafts["1/2 round, 1.000 in"]["sendable"]
     assert shafts["3/8 round, 0.750 in"]["ends"] == shafts["3/8 round, 2.500 in"]["ends"] == ["", ""]   # untapped
     assert a["grooveDepth"] == 0.02 and a["shaftTap"] == "10-32"
+    from autocam_service.panel.api import static_hash                     # an open panel reloads when this changes
+    assert a["build"] == static_hash("panel.js") and len(a["build"]) == 12
+    assert f'/static/panel.js?v={a["build"]}' in p.app.handle("GET", "/panel", {"key": KEY}, {}).body.decode()
 
 
 def send_body(a, **kw):

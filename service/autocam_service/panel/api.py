@@ -167,6 +167,11 @@ class Names:
             write_atomic(self.path, (json.dumps(names, indent=1, sort_keys=True) + "\n").encode("utf-8"))
 
 
+def static_hash(name: str) -> str:
+    f = STATIC / name
+    return hashlib.sha256(f.read_bytes()).hexdigest()[:12] if f.is_file() else "0"
+
+
 def versioned_page(name: str = "index.html") -> bytes:
     """index.html (or shop.html) with each /static/ link stamped with its file's hash. Cloudflare tells browsers to
     keep static files for 4 hours whatever this server says (seen 2026-11-01: an old panel.js kept running after a
@@ -174,9 +179,7 @@ def versioned_page(name: str = "index.html") -> bytes:
     html = (STATIC / name).read_text(encoding="utf-8")
 
     def stamp(m: "re.Match[str]") -> str:
-        f = STATIC / m.group(1)
-        digest = hashlib.sha256(f.read_bytes()).hexdigest()[:12] if f.is_file() else "0"
-        return f'"/static/{m.group(1)}?v={digest}"'
+        return f'"/static/{m.group(1)}?v={static_hash(m.group(1))}"'
 
     return re.sub(r'"/static/([A-Za-z0-9_.-]+)"', stamp, html).encode("utf-8")
 
@@ -410,6 +413,7 @@ class PanelApp:
                 "materials": list(self._materials().values()), "fit": self.cfg.fit.enabled,
                 "face": self.cfg.face is not None, "scribe": self.cfg.scribe is not None,
                 "tabsDefault": self.cfg.tabs.default, "autoRefreshS": self.cfg.panel.auto_refresh_s,
+                "build": static_hash("panel.js"),
                 "callsLeft": self.onshape.calls_left(), "maxQty": MAX_QTY}
 
     def _queue(self) -> Optional[Dict[str, Any]]:
@@ -471,7 +475,8 @@ class PanelApp:
         shafts = self._assembly_shafts(did, eid, shaft_rows)
         return {"name": name, "items": items, **shafts, "boardError": board_error, "queue": self._queue(), "face": self.cfg.face is not None,
                 "user": self.names.get(uid) if USER_RE.match(uid or "") else "", "tabsDefault": self.cfg.tabs.default,
-                "maxQty": MAX_QTY, "callsLeft": self.onshape.calls_left(), "autoRefreshS": self.cfg.panel.auto_refresh_s}
+                "maxQty": MAX_QTY, "callsLeft": self.onshape.calls_left(), "autoRefreshS": self.cfg.panel.auto_refresh_s,
+                "build": static_hash("panel.js")}
 
     def _owners(self, did: str, rows: List[Dict[str, Any]], cached_only: bool) -> Dict[str, str]:
         """Who owns each other document the assembly's parts come from (only with [panel] company_id)."""

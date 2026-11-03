@@ -27,6 +27,13 @@
     kind: P.get("kind") === "assembly" ? "assembly" : "studio",  // the Assembly extension's link says kind=assembly
     c: configuration                                             // a configured Part Studio's ({$configuration})
   };
+  // This page's own build (panel.js?v=<hash>): when the server's is newer, the panel reloads itself at a quiet
+  // moment (an open panel kept running old code after a deploy, 2026-11-02)
+  var BUILD = ((document.currentScript && document.currentScript.src || "").match(/[?&]v=([0-9a-f]+)/) || [])[1] || "";
+  function checkBuild(build) {
+    if (!build || !BUILD || build === BUILD || S.busy || typing() || (S.mode !== "list" && S.mode !== "assembly")) return;
+    location.reload();
+  }
   var bodyEl = document.getElementById("body");
   var actionEl = document.getElementById("action");
   var refreshBtn = document.getElementById("refresh");
@@ -284,6 +291,7 @@
     if (ctx.kind === "assembly") return loadAssembly(fresh);
     return api("GET", "/api/studio", where({ fresh: fresh ? "1" : "", u: ctx.u })).then(function (st) {
       S.studio = st;
+      checkBuild(st.build);
       if (st.user) { S.user = st.user; stored("name", st.user); }
       if (S.mode === "loading" || S.mode === "error") S.mode = "list";
       startAuto(st.autoRefreshS);
@@ -304,6 +312,7 @@
   }
 
   function showAssembly(a) {
+    checkBuild(a.build);
     S.asm = a;
     if (a.user) { S.user = a.user; stored("name", a.user); }
     if (!S.asmOpts) S.asmOpts = { tabs: a.tabsDefault, nest: true, face: false, rush: false, drafts: false };
@@ -360,6 +369,7 @@
       api("GET", "/api/studio", where({ cached: "1", u: ctx.u })).then(function (st) {
         if (st.stale || S.mode !== "list" || leaveAlone()) return;
         S.studio = st;
+        checkBuild(st.build);
         render();
       }, function () {});
     } else if (S.mode === "assembly") {
@@ -682,17 +692,24 @@
       var right = L.status === "waiting"
         ? [h("span", { class: "hint" }, "×" + L.qty), editBtn(s.label, function () { openShaft(s, L); })]
         : h("span", { class: "chip-cell" }, chip(L.chip.label || "In progress", L.chip.status || "queued"));
-      return h("div", { class: "arow shaft" + (S.highlight === s.key ? " hl" : ""), "data-key": s.key }, h("span", { class: "mark ok" }, icon("check")),
-        h("span", { class: "name locatable", title: "Show it in Onshape", onclick: function (ev) { locate(s.key, ev); } }, s.label), right);
+      return h("div", { class: "arow shaft locate-row" + (S.highlight === s.key ? " hl" : ""), "data-key": s.key, title: "Show it in Onshape",
+        onclick: function (ev) { rowLocate(s.key, ev); } }, h("span", { class: "mark ok" }, icon("check")),
+        h("span", { class: "name locatable" }, s.label), right);
     }
     var sub = s.problem ? h("span", { class: "sub bad-text" }, s.problem) : L && L.status === "done" ? h("span", { class: "sub" }, "Done") : null;
-    return h("div", { class: "arow shaft" + (S.highlight === s.key ? " hl" : ""), "data-key": s.key },
+    return h("div", { class: "arow shaft locate-row" + (S.highlight === s.key ? " hl" : ""), "data-key": s.key, title: "Show it in Onshape",
+      onclick: function (ev) { rowLocate(s.key, ev); } },
       s.sendable ? h("input", { type: "checkbox", checked: sel.on, "aria-label": "Send " + s.label,
         onchange: function (ev) { sel.on = ev.target.checked; render(); } }) : h("span"),
-      h("span", { class: "name locatable", title: "Show it in Onshape", onclick: function (ev) { locate(s.key, ev); } }, s.label, sub),
+      h("span", { class: "name locatable" }, s.label, sub),
       s.sendable ? h("input", { class: "qty-in", type: "number", min: "1", max: String(S.asm.maxQty || 100), value: String(sel.qty),
         "aria-label": s.label + " quantity", onchange: function (ev) { sel.qty = Math.max(1, Math.min(S.asm.maxQty || 100, parseInt(ev.target.value, 10) || 1)); render(); } }) : h("span"),
       s.sendable ? editBtn(s.label, function () { openShaft(s, null); }) : h("span"));
+  }
+
+  function rowLocate(key, ev) {                // anywhere on the row but its checkbox, quantity and pencil
+    if (ev.target.closest && ev.target.closest("input, button, a, select, textarea")) return;
+    locate(key, ev);
   }
 
   function goneRow(x) {     // on the list, but not in the assembly any more (its length changed in CAD)
