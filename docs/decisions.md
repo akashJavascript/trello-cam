@@ -985,6 +985,19 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - **Order copies the sheet's row** (the user asked; the sheet's columns E to I: Description, Link, Supplier, Part
   Number, Units), pasted by the person at Description. Still never written by AutoCAM.
 
+## 2026-11-03: the polycarbonate cutters are the team's WCP bits (the user)
+
+- The team runs WCP's single-flute DLC end mills: 4 mm WCP-1513 and 1/8 in WCP-1517, both 12 mm cut length. WCP
+  publishes no feeds or speeds for them.
+- **The 1/8 in drills at 40 in/min** (the library's plunge feed, which Fusion's drill cycle uses; was 10): 0.0022 in
+  per rev at 18,000 rpm, the gentle end of 0.002-0.004 for a 1/8 in single flute in plastic. At 10 (0.0006) it rubs and
+  melts polycarbonate. Seen in Fusion: r070, 16 holes in 11 s, F40. Watch the first cut: melted rims, go faster
+  (about 55); chatter, slower (about 35).
+- The 4 mm poly cutter is 12 mm long (the library said 18, a guess); vendor and part numbers in the pinned library and
+  the templates. Sheet cards say "4 mm WCP POLY" / "1/8 in WCP POLY" ("O-flute" was a bit the team doesn't have).
+- Not changed (the user's pick): the 4 mm also drills at only 20 in/min (0.0011 in per rev), and outlines go full
+  depth at 100 in/min whatever the thickness (1/4 in may want about 75 or two passes): watch the first cuts.
+
 ## 2026-11-02: watched assemblies (the user: fix the two gaps)
 
 - **Gap 1, a part from another document's saved version** counted as never changing, so a subassembly updated to a

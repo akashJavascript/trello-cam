@@ -126,7 +126,7 @@ def test_full_run(tmp_path):
     sheets = {c.name: c for c in h.sheet_cards()}
     assert set(sheets) == {"5052 1/8in - 4 mm O-flute ALU - 1 part - 15 min - r001 S1",
                            "6061 1/8in - 4 mm O-flute ALU - 2 parts - 15 min - r001 S1",
-                           "PC smoked 1/8in - 4 mm WCP single flute POLY - 1 part - 15 min - r001 S1"}
+                           "PC smoked 1/8in - 4 mm WCP POLY - 1 part - 15 min - r001 S1"}
     alu = sheets["6061 1/8in - 4 mm O-flute ALU - 2 parts - 15 min - r001 S1"]
     assert h.files_on(alu.id) == ["6061_0p125_r001_S1.tap", "6061_0p125_r001_S1.png"]
     assert alu.desc.startswith("LOAD\nStock: 6061 1/8in (0.125), 24 x 48\nCutter: 4 mm O-flute ALU (T1).")
@@ -181,7 +181,7 @@ def test_full_run_through_the_real_worker_loop_and_pipeline(tmp_path, monkeypatc
     sheets = {c.name: c for c in h.sheet_cards()}
     assert set(sheets) == {"5052 1/8in - 4 mm O-flute ALU - 1 part - 10 min - r001 S1",
                            "6061 1/8in - 4 mm O-flute ALU - 2 parts - 10 min - r001 S1",
-                           "PC smoked 1/8in - 4 mm WCP single flute POLY - 1 part - 10 min - r001 S1"}
+                           "PC smoked 1/8in - 4 mm WCP POLY - 1 part - 10 min - r001 S1"}
     alu = sheets["6061 1/8in - 4 mm O-flute ALU - 2 parts - 10 min - r001 S1"]
     assert h.files_on(alu.id)[0] == "6061_0p125_r001_S1.tap"
     for c in ("ca", "cb", "cd"):

@@ -7,8 +7,8 @@ expects:
 |---|---|---|
 | `alu_4mm.f3dhsm-template` | aluminum (6061, 5052) | `4mm 0 flute Aluminum` |
 | `alu_eighth.f3dhsm-template` | aluminum | `1/8 aluminum` (T12) |
-| `poly_4mm.f3dhsm-template` | polycarbonate | `4mm 0 flute Poly` |
-| `poly_eighth.f3dhsm-template` | polycarbonate | `1/8 polycarbonate` (T12) |
+| `poly_4mm.f3dhsm-template` | polycarbonate | `4mm 0 flute Poly` (WCP-1513, 12 mm cut) |
+| `poly_eighth.f3dhsm-template` | polycarbonate | `1/8 polycarbonate` (T12; WCP-1517, drills at 40 in/min) |
 | `face_6mm.f3dhsm-template` | any (the Face label) | `6mm 3 flute Alu` (T2) |
 
 **Only `alu_4mm` is built in Fusion** (its `[bearing]` op was added by `add_bearing.py`). The other three are made from it with `fusion/tools/make_templates/`

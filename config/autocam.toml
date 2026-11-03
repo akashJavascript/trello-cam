@@ -161,7 +161,7 @@ diameter_in = 0.15748
 flute_in = 0.4724                # WCP-1513: 12 mm cut length (the user's bits, 2026-11-03; was 18 mm, a guess)
 min_inside_radius_in = 0.0787
 family = "polycarbonate"
-cutter_label = "4 mm WCP single flute POLY"
+cutter_label = "4 mm WCP POLY"
 
 [tools.t12_eighth_alu]
 guid = "dc1f12bd-dbcc-4d53-9ad2-9a65b2ed6fb5"
@@ -179,7 +179,7 @@ diameter_in = 0.125
 flute_in = 0.4724
 min_inside_radius_in = 0.0625
 family = "polycarbonate"
-cutter_label = "1/8 in WCP single flute POLY"   # WCP-1517
+cutter_label = "1/8 in WCP POLY"   # WCP-1517
 
 [tooling.aluminum]
 default = "t1_4mm_alu"
