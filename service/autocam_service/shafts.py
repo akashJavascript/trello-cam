@@ -19,6 +19,7 @@ import secrets
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import unquote
@@ -40,6 +41,9 @@ STOCKS: Dict[str, Stock] = {s.name: s for s in (
 ORDER = list(STOCKS)                       # the shop page's groups, in this order
 ROUND = "round"                            # a library tab whose stock is round bar picked by its OD (Standoff)
 WALL_IN = 0.03                             # 3/8 hex lite: thinner than this around the bore is cutting into it
+TAP_DRILL_10_32 = (0.150, 0.166)           # a Standoff's ID in here is the 10-32 tap drill (5/32, #21): tapped 10-32.
+                                           # Any other ID (0.196: a #10 clearance hole) isn't tapped by default; the
+                                           # Shooter has both (2026-11-02)
 MAX_OPS = 8
 TAP_RE = re.compile(r"^[A-Za-z0-9./ x-]{1,12}$")   # "10-32", "1/4-20", "8-32", "M5x0.8"
 DEVICE_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -132,10 +136,12 @@ class Found:
     length_in: float
     ops: List[Op] = field(default_factory=list)     # from the model (a Standoff turned to its OD)
     problem: str = ""                               # it can't be made from any bar the shop has
+    tapped: bool = True                             # gets the default tap (a Standoff only if its ID is the tap drill)
+    id_in: float = 0.0                              # a Standoff's ID ("" in its configuration: the default)
 
     @property
     def label(self) -> str:
-        return f"{self.stock}, {self.length_in:.3f} in"
+        return f"{self.stock}, {_n(self.length_in)} in"
 
 
 def recognize(row: Dict[str, Any], shafts: Any) -> Optional[Found]:
@@ -152,19 +158,23 @@ def recognize(row: Dict[str, Any], shafts: Any) -> Optional[Found]:
     if tab.stock != ROUND:
         return Found(tab.stock, length)
     od = inches(values.get("od")) or tab.od_in
+    hole = inches(values.get("id")) or 0.0
+    tapped = not hole or TAP_DRILL_10_32[0] <= hole <= TAP_DRILL_10_32[1]
     rounds = sorted((s for s in STOCKS.values() if s.shape == "round"), key=lambda s: s.size_in)
     bar = next((s for s in rounds if s.size_in >= od - 0.0005), None)
     if bar is None:
-        return Found(rounds[-1].name, length, problem=f"OD {od:.3f} is bigger than any round bar "
-                                                       f"({rounds[-1].size_in:.3f} at most)")
+        return Found(rounds[-1].name, length, problem=f"OD {_n(od)} is bigger than any round bar "
+                                                       f"({_n(rounds[-1].size_in)} at most)", tapped=tapped, id_in=hole)
     ops = [] if abs(bar.size_in - od) < 0.0005 else [Op("turn", 0, d=round(od, 4), auto=True)]
-    return Found(bar.name, length, ops)
+    return Found(bar.name, length, ops, tapped=tapped, id_in=hole)
 
 
 # ---------------------------------------------------------------- what the card says, and what can't be made
 
 def _n(x: float) -> str:
-    return f"{x:.3f}"
+    """Three decimals, halves up like the phone page's toFixed(3): 7.8125 is 7.813 everywhere (Python's own rounding
+    would say 7.812; seen on the Shooter's HEX-0.5-7.8125, 2026-11-02)."""
+    return str(Decimal(repr(float(x))).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
 
 
 def steps(length_in: float, ends: List[str], ops: List[Op], groove_depth_in: float) -> List[str]:

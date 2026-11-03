@@ -60,8 +60,13 @@ the page to print for the saw and the lathe, on the laptop:
 - `[shafts]` in `config/autocam.toml`: the library document, its shaft tabs, the default tap, the groove depth.
 - Tests: `tests/service/test_shafts.py`.
 
-## Not confirmed yet
+## Checked on a real assembly (2026-11-02)
 
-- **How a real assembly's parts list writes a library shaft's configuration.** The code reads `Length=...` and
-  `OD=...` from the row's configuration string, in any unit Onshape uses (meters or inches). Check it on one real
-  assembly with library shafts before relying on it.
+The Shooter assembly's BOM (one call): 23 library rows. Lengths come in meters with float noise
+(`Length=0.19843750000000004+meter`, HEX-0.5-7.8125), and 3/8 hex lite's with no unit (`Length=3.5`, inches). Every
+Hex Shaft, 3/8 Hex shaft, 3/8 hex lite and Standoff was read right; Hex Spacers, Spline XS spacers, pulleys and the
+3d printed standoff were left out. Lengths are rounded halves up (7.8125 is 7.813, the same on the phone page).
+
+**Standoff taps come from its hole:** the Shooter's standoffs have IDs of 0.156 (5/32, the 10-32 tap drill),
+0.196-0.197 (a #10 clearance hole) and 0.203. Only the 10-32 drill size (0.150-0.166) gets "Tap 10-32" by default;
+any other hole gets no tap (the sender can pick one). The hole itself isn't a step on the card.

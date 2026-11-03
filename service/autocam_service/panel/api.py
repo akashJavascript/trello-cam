@@ -60,8 +60,8 @@ from .board import ACTIVE, PanelBoard, Send, read_part_card
 from .geometry import differences, shape_key
 from .hooks import HOOK_PREFIX, ChangeInbox, secret_ok
 from .onshape_reads import NoAccess, OutOfCalls, PanelOnshape, PanelOnshapeError
-from ..shafts import (ACTIVE as SHAFT_ACTIVE, DEVICE_RE, STOCKS, ShaftError, ShaftList, clean_ends, clean_ops, problems,
-                      recognize, status_chip)
+from ..shafts import (ACTIVE as SHAFT_ACTIVE, DEVICE_RE, STOCKS, Found, ShaftError, ShaftList, clean_ends, clean_ops,
+                      problems, recognize, status_chip)
 from ..onshape.urls import configuration_of, configuration_tag, normal_configuration
 
 log = logging.getLogger("autocam.panel")
@@ -478,11 +478,12 @@ class PanelApp:
                                              "ops": x["ops"], "chip": {"label": label, "status": kind}}
             st = STOCKS[found.stock]
             out.append({"key": _row_key(r), "label": found.label, "stock": found.stock, "length": found.length_in,
-                        "qty": max(1, r["qty"]), "ends": [tap, tap], "ops": [o.to_dict() for o in found.ops],
+                        "qty": max(1, r["qty"]), "ends": [tap, tap] if found.tapped else ["", ""],
+                        "ops": [o.to_dict() for o in found.ops],
                         "problem": found.problem, "shape": st.shape, "size": st.size_in, "bore": st.bore_in,
                         "listed": listed, "sendable": not found.problem and (x is None or x["status"] not in SHAFT_ACTIVE)})
         out.sort(key=lambda i: (list(STOCKS).index(i["stock"]), i["length"]))
-        gone = [{"id": x["id"], "label": f"{x['stock']}, {x['length_in']:.3f} in", "waiting": x["status"] == "waiting"}
+        gone = [{"id": x["id"], "label": Found(x["stock"], x["length_in"]).label, "waiting": x["status"] == "waiting"}
                 for x in self.shafts.all() if x.get("assembly", {}).get("key") == asm and x.get("changed")
                 and x.get("status") in SHAFT_ACTIVE]
         return {"shafts": out, "shaftsGone": gone, "shaftTap": tap, "grooveDepth": self.cfg.shafts.groove_depth_in}
@@ -514,7 +515,8 @@ class PanelApp:
                 if found.problem:
                     raise Refused(400, found.problem)
                 qty = self._qty(item)
-                ends = clean_ends(item.get("ends"), self.cfg.shafts.tap)
+                tap = self.cfg.shafts.tap if found.tapped else ""
+                ends = clean_ends(item.get("ends"), tap)
                 ops = found.ops + [o for o in clean_ops(item.get("ops")) if not o.auto]
                 bad = problems(found.stock, found.length_in, ops)
                 if bad:

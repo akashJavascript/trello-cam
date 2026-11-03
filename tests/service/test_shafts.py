@@ -59,6 +59,23 @@ def test_a_standoffs_od_picks_the_round_bar_and_anything_else_is_turned():
     assert recognize(lib(STANDOFF), SHAFTS).stock == "3/8 round"                # default OD 0.375
 
 
+def test_real_rows_from_the_shooters_bom():
+    """Configuration strings exactly as the Shooter's BOM had them (read 2026-11-02): meters with float noise, and
+    3/8 hex lite's Length with no unit at all (it's in inches)."""
+    assert recognize(lib(HEX, "Length=0.19843750000000004+meter"), SHAFTS).label == "1/2 hex, 7.813 in"   # halves up
+    assert recognize(lib(HEX38, "Length=0.0333412084+meter"), SHAFTS).label == "3/8 hex, 1.313 in"
+    assert recognize(lib(LITE, "Length=3.5"), SHAFTS).label == "3/8 hex lite, 3.500 in"
+    tapped = recognize(lib(STANDOFF, "ID=0.0039624000000000005+meter;Length=0.0762+meter"), SHAFTS)
+    assert (tapped.label, tapped.tapped) == ("3/8 round, 3.000 in", True)                 # ID 0.156: the 10-32 drill
+    clear = recognize(lib(STANDOFF, "ID=0.004978400000000001+meter;Length=0.0158242+meter"), SHAFTS)
+    assert (clear.label, clear.tapped) == ("3/8 round, 0.623 in", False)                  # ID 0.196: a clearance hole
+    turned = recognize(lib(STANDOFF, "ID=0.005+meter;Length=0.028473400000000003+meter;OD=0.0066040000000000005+meter"),
+                       SHAFTS)
+    assert turned.label == "3/8 round, 1.121 in" and turned.ops == [Op("turn", 0, d=0.2600, auto=True)]
+    assert recognize(lib(PRINTED, "ID=0.005207+meter;Length=0.006104001+meter"), SHAFTS) is None
+    assert recognize(lib("f2b1cbecc499a785ca866ec0", "Bore_ID=0.009779+meter;Length=0.0119+meter"), SHAFTS) is None
+
+
 # ---------------------------------------------------------------- the card's words
 
 def test_one_short_line_per_step():
@@ -181,6 +198,7 @@ def bom_rows_with_shafts():
         row(LIB, "v", LIBV, HEX, "JFD", "Hex Shaft", 4, "Aluminum - 6061", configuration="Length=0.46355+meter"),
         row(LIB, "v", LIBV, HEX, "JFD", "Hex Shaft", 1, "Aluminum - 6061", configuration="Length=11+in"),
         row(LIB, "v", LIBV, STANDOFF, "JFD", "Standoff", 6, "Aluminum - 6061", configuration="Length=2.5+in;OD=0.375+in"),
+        row(LIB, "v", LIBV, STANDOFF, "JFD", "Standoff", 4, "Aluminum - 6061", configuration="ID=0.196+in;Length=0.75+in"),
         row(LIB, "v", LIBV, STANDOFF, "JFD", "Standoff", 2, "Aluminum - 6061", configuration="Length=1+in;OD=0.75+in"),
         row(LIB, "v", LIBV, PRINTED, "JFD", "3d printed standoff", 4, "PLA")]}
 
@@ -202,10 +220,12 @@ def test_an_assembly_lists_its_shafts_apart_from_its_plates(tmp_path):
     assert status == 200
     assert [i["name"] for i in a["items"]] == ["P-2014 gusset", "3d printed standoff"]   # shafts aren't plates
     shafts = {s["label"]: s for s in a["shafts"]}
-    assert list(shafts) == ["1/2 hex, 11.000 in", "1/2 hex, 18.250 in", "1/2 round, 1.000 in", "3/8 round, 2.500 in"]
+    assert list(shafts) == ["1/2 hex, 11.000 in", "1/2 hex, 18.250 in", "1/2 round, 1.000 in", "3/8 round, 0.750 in",
+                            "3/8 round, 2.500 in"]
     assert shafts["1/2 hex, 18.250 in"]["qty"] == 4 and shafts["1/2 hex, 18.250 in"]["ends"] == ["10-32", "10-32"]
     assert shafts["1/2 hex, 18.250 in"]["sendable"] and shafts["1/2 hex, 18.250 in"]["listed"] is None
     assert shafts["1/2 round, 1.000 in"]["problem"].startswith("OD 0.750") and not shafts["1/2 round, 1.000 in"]["sendable"]
+    assert shafts["3/8 round, 0.750 in"]["ends"] == ["", ""]                    # a clearance hole: no tap by default
     assert a["grooveDepth"] == 0.02 and a["shaftTap"] == "10-32"
 
 
@@ -322,7 +342,7 @@ def test_shafts_off_means_no_shop_page_and_no_shaft_rows(tmp_path):
     p = shaft_panel(tmp_path)
     p.app = PanelApp(p.h.cfg, KEY, p.onshape, p.board, p.names, clock=p.clock, shafts=None)
     a = p.call("GET", "/api/assembly", Q)[1]
-    assert "shafts" not in a and len(a["items"]) == 6
+    assert "shafts" not in a and len(a["items"]) == 7
     assert p.app.handle("GET", "/shop", {"key": shop_key(KEY)}, {}).status == 404
 
 
