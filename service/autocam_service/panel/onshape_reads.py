@@ -388,7 +388,7 @@ class PanelOnshape:
             hit = getattr(self, "_instances", {}).get(key)
             age = None if hit is None else self.clock() - hit.at
             if hit is not None and (age < 60 or (not fresh and age < self.assembly_cache_s)):
-                return hit.value
+                return hit.value[0]
             client = self._client()
             try:
                 d = client.get_json(f"{API}/assemblies/d/{did}/{wvm}/{wvmid}/e/{aid}",
@@ -405,10 +405,21 @@ class PanelOnshape:
                 for i in group.get("instances") or []:
                     if isinstance(i, dict) and i.get("type") == "Part" and i.get("id"):
                         found.setdefault(i["id"], i)
+            paths: Dict[str, List[List[str]]] = {}
+            for occ in (d.get("rootAssembly") or {}).get("occurrences") or []:
+                path = occ.get("path") if isinstance(occ, dict) else None
+                if isinstance(path, list) and path and path[-1] in found:
+                    paths.setdefault(path[-1], []).append([str(x) for x in path])
             if not hasattr(self, "_instances"):
                 self._instances: Dict[Tuple[str, str, str, str], _Entry] = {}
-            self._instances[key] = _Entry(self.clock(), found)
+            self._instances[key] = _Entry(self.clock(), (found, paths))
             return found
+
+    def assembly_occurrences(self, did: str, wvm: str, wvmid: str, aid: str
+                             ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[List[str]]]]:
+        """The same read as assembly_instances, with each part instance's occurrence paths (every copy of it)."""
+        self.assembly_instances(did, wvm, wvmid, aid)
+        return self._instances[(did, wvm, wvmid, aid)].value
 
     def cached_elements(self, did: str, wvm: str, wvmid: str) -> Optional[List[Dict[str, Any]]]:
         hit = self._elements.get((did, wvm, wvmid))

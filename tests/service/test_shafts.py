@@ -427,7 +427,9 @@ def test_a_part_clicked_in_the_assembly_finds_its_row(tmp_path):
     definition = {"rootAssembly": {"instances": [
         {"id": "i1", "type": "Part", "documentId": D, "elementId": E, "partId": "JHD", "configuration": "default"},
         {"id": "IfBvAf3KuZudYUjEe", "type": "Part", "documentId": LIB, "elementId": STANDOFF, "partId": "JFD",
-         "configuration": "Auto_Name_Part=true;Length=0.0635+meter;OD=0.009525+meter"}]},
+         "configuration": "Auto_Name_Part=true;Length=0.0635+meter;OD=0.009525+meter"}],
+        "occurrences": [{"path": ["i1"]}, {"path": ["Mpp/5tF1I3bXlPgoO", "IfBvAf3KuZudYUjEe"]},
+                        {"path": ["MAeTC/ZZkT0fup+er", "IfBvAf3KuZudYUjEe"]}, {"path": ["s1", "j2"]}]},
         "subAssemblies": [{"instances": [{"id": "Mpp/5tF1I3bXlPgoO", "type": "Assembly"},
                                          {"id": "j2", "type": "Part", "documentId": LIB, "elementId": HEX, "partId": "JFD",
                                           "configuration": "Auto_Name_Part=true;Length=0.2794+meter"}]}]}
@@ -444,6 +446,10 @@ def test_a_part_clicked_in_the_assembly_finds_its_row(tmp_path):
     assert which("j2") == shafts["1/2 hex, 11.000 in"]                     # in a subassembly
     assert which("i1") == next(i["key"] for i in a["items"] if i["name"] == "P-2014 gusset")
     assert which("Mpp/5tF1I3bXlPgoO") == "" and which("<script>") == ""
+    occ = p.call("GET", "/api/occurrences", {**Q, "key": shafts["3/8 round, 2.500 in"]})[1]   # to light it up in Onshape
+    assert occ == {"paths": [["Mpp/5tF1I3bXlPgoO", "IfBvAf3KuZudYUjEe"], ["MAeTC/ZZkT0fup+er", "IfBvAf3KuZudYUjEe"]],
+                   "pid": "JFD"}
+    assert p.call("GET", "/api/occurrences", {**Q, "key": "nope"})[1] == {"paths": [], "pid": ""}
     def reads():
         return len([u for u in p.onshape_calls() if u.startswith("/assemblies/") and "/bom" not in u])
     assert reads() == 1                      # one read for all of these (an unknown id within the minute: no new read)
@@ -464,3 +470,17 @@ def test_a_note_goes_from_the_panel_to_the_card(tmp_path):
     sid = card["id"]
     p.call("POST", "/api/shaft", body={"id": sid, "qty": 4, "ends": ["10-32", "10-32"], "ops": [], "note": "x" * 300})
     assert p.call("GET", "/api/shop", key=shop_key(KEY))[1]["shafts"][0]["note"] == "x" * 200
+
+
+def test_belts_and_mcmaster_screws_are_bought_and_prints_are_printed(tmp_path):
+    bom = {"headers": HEADERS, "rows": [
+        row(D, "w", W, E, "JB1", "35T HTD Belt", 1, "Viton Rubber"),
+        row(D, "w", W, E, "JB2", "91259A496_NO THREADS_Alloy Steel Shoulder Screw", 1, None),
+        row(D, "w", W, E, "JB3", "P-2021", 1, "3D Printed PLA"),
+        row(D, "w", W, E, "JB4", "P-2030", 1, None),
+        row(D, "w", W, E, "JB5", "P-2014 gusset", 4, "Aluminum - 6061")]}
+    p = shaft_panel(tmp_path, [bom])
+    a = p.call("GET", "/api/assembly", Q)[1]
+    assert {i["name"]: i["why"] for i in a["items"]} == {
+        "35T HTD Belt": "Bought part", "91259A496_NO THREADS_Alloy Steel Shoulder Screw": "Bought part",
+        "P-2021": "Printed part", "P-2030": "No material", "P-2014 gusset": ""}   # no material: maybe a plate

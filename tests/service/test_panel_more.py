@@ -175,7 +175,7 @@ def test_an_assembly_lists_its_parts_with_counts_and_cards(tmp_path):
     assert [i["here"] for i in a["items"]] == [True] * 5 + [False]          # this document's parts first
     items = {i["name"]: (i["qty"], i["sendable"], i["why"], i["chip"]["status"]) for i in a["items"]}
     assert items == {"P-2014 gusset": (4, True, "", "none"), "P-3001 side plate": (2, True, "", "none"),
-                     "P-2015 window": (1, False, "No material", "none"), "P-2016 spacer": (4, False, "Not cut here", "none"),
+                     "P-2015 window": (1, False, "No material", "none"), "P-2016 spacer": (4, False, "Printed part", "none"),
                      "P-2017 bracket (List_abc: 1)": (2, True, "", "none"),            # configured: sendable now
                      "P-2018 queued": (1, False, "", "queued")}
 

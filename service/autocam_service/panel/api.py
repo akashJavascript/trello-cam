@@ -21,6 +21,7 @@
     POST /api/selection                      log what Onshape's SELECTION messages look like (a few a day)
     GET  /api/preview?key=...&sheet=...      a sheet card's preview picture
     GET  /api/which-row?d&wvm&w&e&inst       a part clicked in an assembly (its instance id) -> its row in the list
+    GET  /api/occurrences?d&wvm&w&e&key      a row's occurrence paths in the assembly (to highlight it in Onshape)
     POST /api/shaft                          change a shaft on the shop's list (while nobody has started it)
     POST /api/shaft-remove                   take a shaft off the list (same)
 
@@ -75,6 +76,8 @@ PART_RE = re.compile(r"^[A-Za-z0-9_.+/=-]{1,64}$")
 USER_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 ENTITY_RE = re.compile(r"^[A-Za-z0-9]{1,24}$")       # a face or edge id from Onshape's SELECTION
 INSTANCE_RE = re.compile(r"^[A-Za-z0-9+/=_-]{1,40}$")  # an assembly instance id ("IfBvAf3KuZudYUjEe", "Mpp/5tF1I3bXlPgoO")
+MCMASTER_RE = re.compile(r"^\d{4,5}[A-Z]\d{1,5}(?:[_ .-]|$)")   # "91259A496_NO THREADS_Alloy Steel Shoulder Screw"
+PRINTED_RE = re.compile(r"print|\bPLA\b|\bABS\b|PETG|TPU|nylon|onyx|\bASA\b", re.IGNORECASE)
 MAX_BODY = 16 * 1024
 MAX_PROGRAM_BODY = 4 * 1024 * 1024        # /api/send-program carries the .tap
 PROGRAM_PATH = "/api/send-program"
@@ -231,6 +234,7 @@ class PanelApp:
                      ("POST", "/api/qty"): self.change_qty, ("POST", "/api/me"): self.me,
                      ("POST", "/api/selection"): self.selection,
                      ("GET", "/api/which-part"): self.which_part, ("GET", "/api/which-row"): self.which_row,
+                     ("GET", "/api/occurrences"): self.occurrences,
                      ("POST", "/api/shaft"): self.edit_shaft, ("POST", "/api/shaft-remove"): self.remove_shaft,
                      }.get((method, path))
             if path == "/api/preview" and method == "GET":
@@ -444,7 +448,7 @@ class PanelApp:
                                                                 cfg=r["configuration"])
             chip = {"status": "unknown", "label": ""} if cards is None else self.board.chip(pc)
             not_ours = self._not_ours(did, r, owners)
-            why = not_ours or ("No material" if material is None else "" if material["key"] else "Not cut here")
+            why = not_ours or _why_not_cut(r, material)
             shown = r["name"] or r["pid"]
             if r["configuration"]:                       # its configuration, named only if already read (no call)
                 label = self.onshape.configuration_label(r["did"], r["wvm"], r["wvmid"], r["eid"], r["configuration"],
@@ -862,6 +866,20 @@ class PanelApp:
         row = row_for_instance(inst, rows) if inst else None
         return {"key": _row_key(row) if row else ""}
 
+    def occurrences(self, q: Dict[str, str]) -> Dict[str, Any]:
+        """A row of the assembly's list -> {"paths": [occurrence paths], "pid": its part id}: every copy of that part
+        in the assembly, for Onshape's requestSelectionHighlight (documented only for Part Studios; tried 2026-11-02).
+        Same assembly read as which-row (one call, kept 30 min)."""
+        did, wvm, wvmid, eid = self._studio(q)
+        key = str(q.get("key") or "")
+        rows = self.onshape.cached_bom(did, wvm, wvmid, eid) or []
+        row = next((r for r in rows if _row_key(r) == key), None)
+        if row is None:
+            return {"paths": [], "pid": ""}
+        instances, paths = self.onshape.assembly_occurrences(did, wvm, wvmid, eid)
+        found = [p for iid, inst in instances.items() if row_for_instance(inst, rows) is row for p in paths.get(iid, [])]
+        return {"paths": found[:60], "pid": row["pid"]}
+
     def _rate_limit(self) -> None:
         with self._lock:
             now = self.clock()
@@ -1083,6 +1101,20 @@ class PanelApp:
         status = "queued" if pc.status == "sheet" else pc.status
         fresh = read_part_card(card, status)
         return {"card": self.board.detail(fresh) if fresh is not None else None, "renest": pc.status == "sheet"}
+
+
+def _why_not_cut(r: Dict[str, Any], material: Optional[Dict[str, Any]]) -> str:
+    """Why an assembly part isn't sendable ("" it is), past bought and library parts by document: the user wants
+    everything that isn't a plate or a print under "Bought part" (2026-11-02: the Shooter's belts are Viton and
+    Neoprene in its own document, its McMaster screw has no material). A part with no material at all stays "No
+    material": it may be a plate nobody set one on."""
+    if MCMASTER_RE.match(r.get("name") or ""):
+        return "Bought part"
+    if material is None:
+        return "No material"
+    if material["key"]:
+        return ""
+    return "Printed part" if PRINTED_RE.search(material.get("onshape") or "") else "Bought part"
 
 
 def _row_key(r: Dict[str, Any]) -> str:

@@ -113,11 +113,15 @@
   }
   ["click", "keydown", "input"].forEach(function (ev) { document.addEventListener(ev, keepAlive, true); });
 
-  var selectionsLogged = 0;
+  var selectionsLogged = 0, repliesLogged = 0;
   window.addEventListener("message", function (ev) {
     if (ctx.server && ev.origin !== ctx.server) return;      // only Onshape's own messages
     var m = ev.data;
-    if (!m || typeof m !== "object" || m.messageName !== "SELECTION") return;
+    if (!m || typeof m !== "object") return;
+    if (m.messageName !== "SELECTION") {                      // Onshape's other messages (its answers): a few logged
+      if (m.messageName && repliesLogged < 5) { repliesLogged++; api("POST", "/api/selection", { message: m }).catch(function () {}); }
+      return;
+    }
     if (selectionsLogged < 5) {                               // what they look like goes in AutoCAM's log
       selectionsLogged++;
       api("POST", "/api/selection", { message: m }).catch(function () {});
@@ -147,6 +151,23 @@
       var row = bodyEl.querySelector('[data-key="' + CSS.escape(r.key) + '"]');
       if (!row && !S.showOther) { S.showOther = true; render(); row = bodyEl.querySelector('[data-key="' + CSS.escape(r.key) + '"]'); }
       if (row) row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }, function () {});
+  }
+  // A row's name clicked: its part lights up in Onshape (every copy). requestSelectionHighlight is documented for Part
+  // Studios only; in an assembly the part is named by its occurrence paths, like Onshape's own SELECTION messages.
+  function locate(key, ev) {
+    if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+    S.highlight = key;
+    render();
+    api("GET", "/api/occurrences", where({ key: key })).then(function (r) {
+      if (!r.paths || !r.paths.length) return;
+      var sels = [];
+      r.paths.forEach(function (p) {
+        sels.push({ selectionType: "BODY", selectionId: r.pid, bodyType: "SOLID", occurrencePath: p });
+        sels.push({ selectionType: "ENTITY", entityType: "BODY", selectionId: r.pid, occurrencePath: p });
+      });
+      window.parent.postMessage({ documentId: ctx.d, workspaceId: ctx.w, elementId: ctx.e,
+        messageName: "requestSelectionHighlight", messageId: "autocam-" + Date.now(), selections: sels }, "*");
     }, function () {});
   }
   function whichPart(m) {
@@ -561,7 +582,8 @@
         "aria-label": i.name + " quantity", onchange: function (ev) { sel.qty = Math.max(1, Math.min(a.maxQty, parseInt(ev.target.value, 10) || 1)); render(); } })
         : h("span", { class: "hint" }, "×" + i.qty);
       var tag = i.chip.status !== "none" && i.chip.label ? chip(i.chip.label, i.chip.status) : i.why ? chip(i.why, "bad") : null;
-      return h("label", { class: "arow" + (S.highlight === i.key ? " hl" : ""), "data-key": i.key }, box, h("span", { class: "name" }, i.name), qty, tag);
+      return h("label", { class: "arow" + (S.highlight === i.key ? " hl" : ""), "data-key": i.key }, box,
+        h("span", { class: "name locatable", title: "Show it in Onshape", onclick: function (ev) { locate(i.key, ev); } }, i.name), qty, tag);
     }
     var more = other.length ? h("button", { class: "link-btn", type: "button", onclick: function () { S.showOther = !S.showOther; render(); } },
       S.showOther ? "Hide the parts AutoCAM doesn't cut" : other.length + " more AutoCAM doesn't cut") : null;
@@ -659,13 +681,14 @@
       var right = L.status === "waiting"
         ? [h("span", { class: "hint" }, "×" + L.qty), editBtn(s.label, function () { openShaft(s, L); })]
         : h("span", { class: "chip-cell" }, chip(L.chip.label || "In progress", L.chip.status || "queued"));
-      return h("div", { class: "arow shaft" + (S.highlight === s.key ? " hl" : ""), "data-key": s.key }, h("span", { class: "mark ok" }, icon("check")), h("span", { class: "name" }, s.label), right);
+      return h("div", { class: "arow shaft" + (S.highlight === s.key ? " hl" : ""), "data-key": s.key }, h("span", { class: "mark ok" }, icon("check")),
+        h("span", { class: "name locatable", title: "Show it in Onshape", onclick: function (ev) { locate(s.key, ev); } }, s.label), right);
     }
     var sub = s.problem ? h("span", { class: "sub bad-text" }, s.problem) : L && L.status === "done" ? h("span", { class: "sub" }, "Done") : null;
     return h("div", { class: "arow shaft" + (S.highlight === s.key ? " hl" : ""), "data-key": s.key },
       s.sendable ? h("input", { type: "checkbox", checked: sel.on, "aria-label": "Send " + s.label,
         onchange: function (ev) { sel.on = ev.target.checked; render(); } }) : h("span"),
-      h("span", { class: "name" }, s.label, sub),
+      h("span", { class: "name locatable", title: "Show it in Onshape", onclick: function (ev) { locate(s.key, ev); } }, s.label, sub),
       s.sendable ? h("input", { class: "qty-in", type: "number", min: "1", max: String(S.asm.maxQty || 100), value: String(sel.qty),
         "aria-label": s.label + " quantity", onchange: function (ev) { sel.qty = Math.max(1, Math.min(S.asm.maxQty || 100, parseInt(ev.target.value, 10) || 1)); render(); } }) : h("span"),
       s.sendable ? editBtn(s.label, function () { openShaft(s, null); }) : h("span"));

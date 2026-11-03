@@ -142,6 +142,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* shafts (the shop's list, shafts.py): rows under the plates, and the shaft editor */
 .arow.shaft { grid-template-columns: 20px minmax(0, 1fr) 52px 28px; cursor: default; }
+.arow .name.locatable { cursor: pointer; }
+.arow .name.locatable:hover { color: var(--primary-container); text-decoration: underline; text-underline-offset: 3px; }
 .arow.hl { background: color-mix(in srgb, var(--accent-coral) 22%, transparent); border-radius: 8px;
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-coral) 22%, transparent); }
 .arow .name .sub { display: block; font-size: 12px; font-weight: 400; color: var(--on-surface-variant); overflow: hidden; text-overflow: ellipsis; }
