@@ -225,8 +225,7 @@
         openLink(p.url)),
       p.note ? h("p", { class: "note" }, p.note) : null,
       ask && ask.kind === "order" ? h("div", { class: "order-box" },
-        h("p", null, (S.copied ? "The order sheet opened in a new tab, and the row is copied: paste it in a new row's Description cell. "
-          : "The order sheet opened in a new tab. ") + "Added " + p.left + " to it?"),
+        h("p", null, (S.copied ? "Row copied: paste it in Description. " : "") + "Added " + p.left + " to the sheet?"),
         h("div", { class: "row" },
           h("button", { class: "btn btn-ghost btn-small", type: "button", onclick: function () { S.ask = null; render(); } }, "Not yet"),
           h("button", { class: "btn btn-primary btn-small", type: "button", disabled: off,
