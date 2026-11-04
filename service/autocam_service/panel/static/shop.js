@@ -1,9 +1,12 @@
-// The shop's phone page (panel/api.py: /api/shop). Two tabs:
+// The shop's phone page (panel/api.py: /api/shop). Three tabs:
 //   Shafts (shafts.py): one card per shaft: Start, Done.
 //   Parts (bought.py): bought parts sent from an assembly: In the bin (the team has it), or Order. Order opens the
 //   team's order sheet in a new tab and copies the part's name; people write the row themselves (AutoCAM never
 //   writes to the sheet), then say "It's on the sheet".
-// "Yours" is what this phone started (a random id kept on the phone; no names). Plain JavaScript, no build step;
+//   Plates (panel/plates.py): the sheets in Ready to cut (and cut today), who cuts each, and who finishes each plate.
+// Who does what (people.py, the mockup approved 2026-11-04): a name tag on every item (+ when nobody), "All" on a
+// group, a picker with the shop's names ("Me" first), and this phone's name at the top right. Soft: anyone can still
+// start anything. "Yours" is what this phone started, or what's assigned to its name. Plain JavaScript, no build step;
 // everything from the server goes in as text, never as HTML.
 (function () {
   "use strict";
@@ -13,6 +16,8 @@
   var toastEl = document.getElementById("toast");
   var tabsEl = document.getElementById("tabs");
   var titleEl = document.getElementById("title");
+  var meEl = document.getElementById("me");
+  var pickerEl = document.getElementById("picker");
   var SHEET_RE = /^https:\/\/docs\.google\.com\/spreadsheets\//;
   var ICONS = {
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
@@ -21,6 +26,7 @@
     bin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18"/><path d="M5 7l1.5 13h11L19 7"/><path d="M9 7V4h6v3"/></svg>',
     minus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>',
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
     cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.5 12h12l2-8H6.2"/></svg>'
   };
   function icon(name) {
@@ -75,8 +81,10 @@
   }
 
   // tab: "#parts" in the link picks Parts (for a QR code at the bins); otherwise the last one used on this phone
-  var S = { data: null, error: "", busy: false, tab: location.hash === "#parts" ? "parts" : location.hash === "#shafts" ? "shafts" : remember("tab") || "shafts",
-            ask: null, copied: false };        // ask: a part's Order or In the bin question, {id, kind, n}
+  var HASH_TAB = { "#parts": "parts", "#shafts": "shafts", "#plates": "plates" }[location.hash];
+  var S = { data: null, error: "", busy: false, tab: HASH_TAB || remember("tab") || "shafts",
+            ask: null, copied: false,          // ask: a part's Order or In the bin question, {id, kind, n}
+            picker: null };                    // the name picker: {title, current, pick(name), whoAmI}
   var toastTimer = 0;
   function toast(text) {
     toastEl.textContent = text; toastEl.hidden = false;
@@ -86,7 +94,8 @@
 
   function load() {
     if (S.busy) return Promise.resolve();
-    return api("GET", "/api/shop?device=" + encodeURIComponent(DEVICE)).then(function (d) {
+    var plates = S.tab === "plates" ? "&plates=1" : "";        // Trello is read only while Plates shows
+    return api("GET", "/api/shop?device=" + encodeURIComponent(DEVICE) + plates).then(function (d) {
       S.data = d; S.error = ""; render();
     }, function (e) { S.error = e.message; render(); });
   }
@@ -108,29 +117,107 @@
       remember("tab", S.tab);
       try { history.replaceState(null, "", "#" + S.tab); } catch (e) { /* fine */ }
       render(); window.scrollTo(0, 0);
+      if (S.tab === "plates") load();
     });
   });
 
   // ---------------------------------------------------------------- the page
+  var TITLES = { shafts: "Shafts", parts: "Parts", plates: "Plates" };
   function render() {
     listEl.textContent = "";
     var d = S.data;
-    var both = !!(d && d.shaftsOn && d.partsOn);
-    var tab = d && !both ? (d.partsOn ? "parts" : "shafts") : S.tab;
-    tabsEl.hidden = !both; titleEl.hidden = both;
-    titleEl.textContent = !d ? "Shop" : tab === "parts" ? "Parts" : "Shafts";
+    var on = !d ? [] : ["shafts", "parts", "plates"].filter(function (t) { return d[t + "On"]; });
+    var tab = on.indexOf(S.tab) >= 0 ? S.tab : on[0] || "shafts";
+    tabsEl.hidden = on.length < 2; titleEl.hidden = on.length >= 2;
+    titleEl.textContent = !d ? "Shop" : TITLES[tab];
     Array.prototype.forEach.call(tabsEl.querySelectorAll("button"), function (b) {
+      b.hidden = on.indexOf(b.getAttribute("data-tab")) < 0;
       b.setAttribute("aria-pressed", String(b.getAttribute("data-tab") === tab));
     });
-    document.title = tab === "parts" ? "Parts" : "Shafts";
+    document.title = TITLES[tab];
+    renderMe(d);
+    renderPicker();
     if (S.error) add(listEl, h("div", { class: "notice" }, S.error));
     if (!d) { if (!S.error) add(listEl, h("p", { class: "muted" }, "Loading…")); return; }
-    if (tab === "parts") renderParts(d); else renderShafts(d);
+    if (tab === "parts") renderParts(d);
+    else if (tab === "plates") renderPlates(d);
+    else renderShafts(d);
   }
 
-  function section(title, items, draw) {
+  // all: {kind, ids} for an "All" link that assigns the whole group
+  function section(title, items, draw, all) {
     if (!items.length) return;
-    add(listEl, h("section", { class: "group" }, h("div", { class: "group-label" }, title), items.map(draw)));
+    var head = all ? h("div", { class: "group-head" }, h("span", { class: "group-label" }, title),
+      h("button", { class: "link-btn", type: "button", disabled: S.busy, onclick: function () {
+        openPicker("All " + title + " to", "", function (n) { assign(all.kind, items.map(function (x) { return x.id; }), n); });
+      } }, "All")) : h("div", { class: "group-label" }, title);
+    add(listEl, h("section", { class: "group" }, head, items.map(draw)));
+  }
+
+  // ---------------------------------------------------------------- who does what
+  function me() { return (S.data && S.data.me) || ""; }
+
+  function whoTag(current, label, onPick) {
+    return h("button", { class: "who" + (current ? "" : " none"), type: "button", disabled: S.busy,
+      "aria-label": label + ": " + (current || "nobody"), onclick: function () { openPicker(label, current, onPick); } },
+      current ? [icon("user"), current] : icon("plus"));
+  }
+
+  function openPicker(title, current, pick, whoAmI) {
+    S.picker = { title: title, current: current || "", pick: pick, whoAmI: !!whoAmI };
+    render();
+  }
+
+  function closePicker() { S.picker = null; render(); }
+
+  function renderMe(d) {
+    meEl.hidden = !d || !d.platesOn;           // names are on with the Plates tab (people.py)
+    meEl.textContent = "";
+    var name = me();
+    if (name) add(meEl, name.charAt(0).toUpperCase()); else add(meEl, icon("user"));
+    meEl.setAttribute("aria-label", name ? "This phone is " + name + ". Change" : "Who's using this phone?");
+    meEl.title = name || "Who are you?";
+  }
+  meEl.addEventListener("click", function () {
+    openPicker("Who are you?", me(), function (n) { if (n) setMe(n); }, true);
+  });
+
+  function renderPicker() {
+    var p = S.picker;
+    pickerEl.textContent = "";
+    pickerEl.hidden = !p;
+    if (!p) return;
+    var mine = me(), all = (S.data && S.data.people) || [];
+    var names = (mine ? [mine] : []).concat(all.filter(function (n) { return n !== mine; }));   // you first
+    function choose(n) { var pick = p.pick; S.picker = null; render(); pick(n); }
+    var input = h("input", { type: "text", placeholder: "New name", maxlength: "24", "aria-label": "New name", autocomplete: "off" });
+    function addName() { var n = input.value.trim().replace(/\s+/g, " "); if (n) choose(n); }
+    input.addEventListener("keydown", function (ev) { if (ev.key === "Enter") addName(); });
+    add(pickerEl, h("div", { class: "sheet-card", role: "dialog", "aria-modal": "true", "aria-label": p.title },
+      h("h3", null, p.title),
+      h("div", { class: "names" },
+        names.map(function (n) {
+          return h("button", { type: "button", "aria-pressed": String(p.current === n), onclick: function () { choose(n); } },
+            n === mine && !p.whoAmI ? "Me" : n);
+        }),
+        p.whoAmI ? null : h("button", { type: "button", "aria-pressed": String(!p.current), onclick: function () { choose(""); } }, "Nobody")),
+      h("div", { class: "add" }, input, h("button", { class: "btn btn-secondary btn-small", type: "button", onclick: addName }, "Add"))));
+  }
+  pickerEl.addEventListener("click", function (ev) { if (ev.target === pickerEl) closePicker(); });
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && S.picker) closePicker(); });
+
+  function assign(kind, ids, who) {
+    S.busy = true; render();
+    return api("POST", "/api/shop/assign", { device: DEVICE, kind: kind, ids: ids, who: who }).then(function () {
+      S.busy = false; return load();
+    }, function (e) { S.busy = false; toast(e.message); return load(); });
+  }
+
+  function setMe(name) {
+    S.busy = true; render();
+    return api("POST", "/api/shop/me", { device: DEVICE, name: name }).then(function () {
+      S.busy = false; return load();
+    }, function (e) { S.busy = false; toast(e.message); return load(); });
   }
 
   function openLink(url) {
@@ -146,10 +233,14 @@
     function byAsm(a, b) { return a.assembly.localeCompare(b.assembly) || a.length - b.length; }
     function byStock(a, b) { return d.order.indexOf(a.stock) - d.order.indexOf(b.stock) || byAsm(a, b); }
     function cards(ctx) { return function (s) { return card(s, ctx); }; }
-    section("Yours", all.filter(function (s) { return s.started && s.mine; }).sort(by), cards("yours"));
-    section("Rush", all.filter(function (s) { return s.rush && !s.started; }).sort(byStock), cards("rush"));
+    var name = d.me;
+    // yours: what this phone started, and what's assigned to this phone's name that nobody started yet
+    function yours(s) { return (s.started && s.mine) || (!s.started && name && s.who === name); }
+    section("Yours", all.filter(yours).sort(by), cards("yours"));
+    section("Rush", all.filter(function (s) { return s.rush && !s.started && !yours(s); }).sort(byStock), cards("rush"), { kind: "shaft" });
     d.order.forEach(function (stock) {
-      section(stock, all.filter(function (s) { return s.stock === stock && !s.started && !s.rush; }).sort(byAsm), cards("stock"));
+      section(stock, all.filter(function (s) { return s.stock === stock && !s.started && !s.rush && !yours(s); }).sort(byAsm),
+        cards("stock"), { kind: "shaft" });
     });
     section("In progress", all.filter(function (s) { return s.started && !s.mine; }).sort(by), cards("others"));
     if (!all.length) add(listEl, h("p", { class: "muted" }, "Nothing to make."));
@@ -165,9 +256,11 @@
       h("div", { class: "item-top" },
         h("div", { class: "item-name" },
           h("div", { class: "len" }, h("span", { class: "k" }, "Length"), h("span", { class: "v" }, len(s.length))),
-          h("span", { class: "from" }, ctx === "stock" ? s.assembly : s.stock + " · " + s.assembly)),
+          h("span", { class: "from" }, (ctx === "stock" ? s.assembly : s.stock + " · " + s.assembly)
+            + (s.started && !s.mine && s.startedBy ? " · " + s.startedBy + " started it" : ""))),
         s.changed ? h("span", { class: "chip bad" }, "Changed in CAD") : null,
         s.rush && ctx !== "rush" ? h("span", { class: "chip rush" }, "Rush") : null,
+        whoTag(s.who, "Assign to", function (n) { assign("shaft", [s.id], n); }),
         h("span", { class: "qty", "aria-label": "Quantity " + s.qty }, "×" + s.qty),
         openLink(s.url)),
       s.steps.length ? h("ul", { class: "todo" }, s.steps.map(function (x) { return h("li", null, x); })) : null,
@@ -182,7 +275,8 @@
 
   function doneRow(s) {
     return h("div", { class: "done-row" }, h("span", { class: "mark" }, icon("check")),
-      h("span", { class: "name" }, s.stock + ", " + len(s.length) + " ×" + s.qty, h("span", { class: "sub" }, s.assembly + " · " + s.when)),
+      h("span", { class: "name" }, s.stock + ", " + len(s.length) + " ×" + s.qty,
+        h("span", { class: "sub" }, s.assembly + " · " + s.when + (s.by ? " · " + s.by : ""))),
       s.undo ? h("button", { class: "btn btn-ghost btn-small", type: "button", disabled: S.busy, onclick: function () { post("undo", s); } },
         icon("undo"), "Undo") : null);
   }
@@ -192,10 +286,14 @@
   function renderParts(d) {
     function byName(a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true }); }
     var needed = d.parts.filter(function (p) { return p.left > 0; });
-    var asms = needed.map(function (p) { return p.assembly; }).filter(function (a, i, all) { return all.indexOf(a) === i; }).sort();
+    var name = d.me;
+    function yours(p) { return name && p.who === name; }
+    section("Yours", needed.filter(yours).sort(byName), function (p) { return partCard(p, "need"); });
+    var others = needed.filter(function (p) { return !yours(p); });
+    var asms = others.map(function (p) { return p.assembly; }).filter(function (a, i, all) { return all.indexOf(a) === i; }).sort();
     asms.forEach(function (a) {          // each subsystem's parts together: they go in its bin
-      section(a ? a + " bin" : "Bin", needed.filter(function (p) { return p.assembly === a; }).sort(byName),
-        function (p) { return partCard(p, "need"); });
+      section(a ? a + " bin" : "Bin", others.filter(function (p) { return p.assembly === a; }).sort(byName),
+        function (p) { return partCard(p, "need"); }, { kind: "part" });
     });
     if (!needed.length) add(listEl, h("p", { class: "muted" }, "Nothing needed."));
     section("On the order sheet", d.parts.filter(function (p) { return p.left <= 0 && p.onOrder > 0; })
@@ -221,6 +319,7 @@
           bits.length ? h("span", { class: "from" + (where === "ordered" && p.late ? " late" : "") }, bits.join(" · ")) : null),
         p.changed ? h("span", { class: "chip bad" }, "Changed in CAD")
           : p.cadNow ? h("span", { class: "chip bad" }, "CAD has " + p.cadNow) : null,
+        whoTag(p.who, "Assign to", function (n) { assign("part", [p.id], n); }),
         h("span", { class: "qty", "aria-label": "Quantity " + (where === "need" ? p.left : p.onOrder) }, "×" + (where === "need" ? p.left : p.onOrder)),
         openLink(p.url)),
       p.note ? h("p", { class: "note" }, p.note) : null,
@@ -289,6 +388,30 @@
         (p.assembly ? p.assembly + " · " : "") + "×" + p.n + (p.n < p.qty ? " of " + p.qty : "") + " · " + p.when)),
       p.undo ? h("button", { class: "btn btn-ghost btn-small", type: "button", disabled: S.busy, onclick: function () { post("part-undo", p); } },
         icon("undo"), "Undo") : null);
+  }
+
+  // ---------------------------------------------------------------- plates (the sheets at the machine)
+  function renderPlates(d) {
+    if (d.platesError) add(listEl, h("div", { class: "notice" }, d.platesError));
+    if (!d.sheets) { add(listEl, h("p", { class: "muted" }, "Loading…")); return; }
+    var name = d.me;
+    function yours(s) { return !!name && (s.who === name || s.plates.some(function (p) { return p.who === name; })); }
+    section("Yours", d.sheets.filter(yours), sheetCard);
+    section("Ready to cut", d.sheets.filter(function (s) { return !s.cut && !yours(s); }), sheetCard);
+    section("Cut today", d.sheets.filter(function (s) { return s.cut && !yours(s); }), sheetCard);
+    if (!d.sheets.length) add(listEl, h("p", { class: "muted" }, "Nothing ready to cut."));
+  }
+
+  function sheetCard(s) {
+    return h("article", { class: "item" + (s.cut ? " cut" : "") },
+      h("div", { class: "item-top" },
+        h("div", { class: "item-name part-name" }, s.title, s.sub ? h("span", { class: "from" }, s.sub) : null),
+        s.rush && !s.cut ? h("span", { class: "chip rush" }, "Rush") : null,
+        s.cut ? h("span", { class: "chip" }, "Cut") : whoTag(s.who, "Who cuts it", function (n) { assign("sheet", [s.id], n); })),
+      s.plates.length ? h("div", { class: "plates" }, s.plates.map(function (p) {
+        return h("div", { class: "plate" }, h("span", { class: "n" }, p.name), p.qty ? h("span", { class: "q" }, "×" + p.qty) : null,
+          whoTag(p.who, "Who finishes it", function (n) { assign("plate", [p.id], n); }));
+      })) : null);
   }
 
   // ---------------------------------------------------------------- staying current

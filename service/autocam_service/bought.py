@@ -196,7 +196,8 @@ class PartList(ShopList):
                 out.append({**item, "status": x["status"], "inBin": in_bin, "onOrder": on_order,
                             "left": qty - in_bin - on_order, "changed": bool(x.get("changed")),
                             "cadNow": x.get("cad_now"), "note": x.get("note") or "", "orderedDays": days,
-                            "late": days is not None and days >= LATE_DAYS, "sentAt": x.get("sent_at") or ""})
+                            "late": days is not None and days >= LATE_DAYS, "sentAt": x.get("sent_at") or "",
+                            "who": x.get("who") or ""})
             log = x.get("bin_log") or []
             for i, e in enumerate(log):
                 if self._today(e.get("at")):

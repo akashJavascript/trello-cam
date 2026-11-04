@@ -1,6 +1,7 @@
 /* The shop's shaft list on a phone (shop.js; the mockup the user approved 2026-11-02). BreadCompetition's light
    tokens, same as panel.css; light only on purpose. Spacing scale: 4, 8, 12, 16, 24. */
 :root {
+  --who: #e8e0f7; --on-who: #3f2a73; --scrim: rgba(28, 27, 26, 0.32);
   --surface: #fdf9f6; --surface-lowest: #ffffff; --surface-low: #f7f3f0; --surface-container: #f1edea;
   --on-surface: #1c1b1a; --on-surface-variant: #54433b; --outline: #877369; --outline-variant: #d9c2b6;
   --primary-container: #692c00; --on-primary: #ffffff; --secondary-container: #fadbb6; --on-secondary-container: #755f41;
@@ -104,3 +105,35 @@ button { font: inherit; color: inherit; }
   font-weight: 600; background: var(--on-surface); color: var(--surface); box-shadow: var(--shadow-warm-md); z-index: 3; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } .btn:active { transform: none; } }
+
+/* who does what (the assigning mockup the user approved, 2026-11-04): a name tag on each item, "All" on a group,
+   a picker sheet with the shop's names ("Me" first), and the phone's own name at the top right */
+.me { margin-left: auto; width: 34px; height: 34px; border-radius: 999px; border: 0; background: var(--who); color: var(--on-who);
+  font-weight: 700; cursor: pointer; flex: none; display: grid; place-items: center; }
+.me svg { width: 16px; height: 16px; }
+.group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.link-btn { border: 0; padding: 4px 0; background: none; color: var(--primary-container); font-weight: 600; font-size: 13px;
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.who { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 999px; border: 0;
+  font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; flex: none; background: var(--who); color: var(--on-who); }
+.who.none { width: 28px; padding: 0; justify-content: center; background: transparent; color: var(--on-surface-variant);
+  border: 1px dashed var(--outline-variant); }
+.who svg { width: 13px; height: 13px; }
+.by { font-weight: 600; }
+.plates { display: flex; flex-direction: column; border-top: 1px solid var(--hair); }
+.plate { display: flex; align-items: center; gap: 8px; min-height: 44px; border-bottom: 1px solid var(--hair); }
+.plate:last-child { border-bottom: 0; }
+.plate .n { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.plate .q { font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--primary-container); }
+.item.cut { background: var(--surface-low); }
+.sheet { position: fixed; inset: 0; z-index: 5; background: var(--scrim); display: flex; align-items: flex-end; justify-content: center; }
+.sheet-card { width: 100%; max-width: 560px; background: var(--surface-lowest); border-radius: 22px 22px 0 0; display: flex; flex-direction: column; gap: 12px;
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  box-shadow: var(--shadow-warm-md); max-height: 80vh; overflow-y: auto; }
+.sheet-card h3 { margin: 0; font-size: 17px; color: var(--primary-container); }
+.names { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.names button { min-height: 44px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--outline-variant); background: var(--surface);
+  font-weight: 600; cursor: pointer; overflow-wrap: anywhere; }
+.names button[aria-pressed="true"] { background: var(--who); border-color: var(--who); color: var(--on-who); }
+.add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.add input { height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--outline-variant); background: var(--surface); min-width: 0; font: inherit; }

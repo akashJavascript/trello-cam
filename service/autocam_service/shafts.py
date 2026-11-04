@@ -1,8 +1,9 @@
 """The shop's shaft list (2026-11-02, docs/shafts.md). Shafts are configured parts from the team's common parts library
 (Hex Shaft, 3/8 Hex shaft, 3/8 hex lite, Standoff), cut on the bandsaw, sometimes turned and grooved on the lathe,
 tapped at the drill. They're sent from the Onshape panel with an assembly's plates and made from a phone page
-(/shop): one item per shaft, Start, Done. No Trello (the Free plan's 10 members) and no names: "yours" is what this
-phone started.
+(/shop): one item per shaft, Start, Done. No Trello (the Free plan's 10 members). Since 2026-11-04 a shaft can have a
+name on it (people.py: assigned from the panel or the phone, soft), and "yours" is what this phone started or what's
+assigned to its name.
 
 What's here is pure, apart from ShaftList's one JSON file:
     recognize()   an assembly row (its BOM) is a library shaft: its stock and finished length, from the row's own
@@ -329,21 +330,26 @@ class ShaftList(ShopList):
             x.update(status=back, done_by="", done_at="", **({} if back == "started" else {"started_by": ""}))
         self._change(go)
 
-    def shop_view(self, device: str) -> Dict[str, Any]:
+    def shop_view(self, device: str, name_of: Callable[[str], str] = lambda device: "") -> Dict[str, Any]:
         """What the shop page shows: everything waiting or started, and what was done today. Nobody's device id
-        leaves the server: each shaft just says whether it's this phone's."""
+        leaves the server: each shaft says whether it's this phone's, and who it's assigned to, who started it and
+        who finished it by name (name_of: a phone's name, people.py; "" if it never said)."""
         out, done = [], []
         for x in self.all():
             ends, ops = x.get("ends") or ["", ""], [Op.from_dict(o) for o in x.get("ops") or []]
             item = {"id": x["id"], "stock": x["stock"], "length": x["length_in"], "qty": x["qty"],
                     "assembly": x.get("assembly", {}).get("name", ""), "url": x.get("assembly", {}).get("url", ""),
                     "rush": bool(x.get("rush")), "changed": bool(x.get("changed")), "note": x.get("note") or "",
-                    "steps": steps(x["length_in"], ends, ops, self.groove_depth_in, x["stock"])}
+                    "steps": steps(x["length_in"], ends, ops, self.groove_depth_in, x["stock"]),
+                    "who": x.get("who") or ""}
             if x["status"] in ACTIVE:
-                out.append({**item, "started": x["status"] == "started", "startedAt": x.get("started_at") or "",
-                            "mine": x["status"] == "started" and x.get("started_by") == device})
+                started = x["status"] == "started"
+                out.append({**item, "started": started, "startedAt": x.get("started_at") or "",
+                            "mine": started and x.get("started_by") == device,
+                            "startedBy": name_of(x.get("started_by") or "") if started else ""})
             elif self._today(x.get("done_at")):
-                done.append({**item, "when": self._clock(x["done_at"]), "undo": x.get("done_by") == device, "doneAt": x["done_at"]})
+                done.append({**item, "when": self._clock(x["done_at"]), "undo": x.get("done_by") == device, "doneAt": x["done_at"],
+                             "by": name_of(x.get("done_by") or "")})
         done.sort(key=lambda d: d["doneAt"], reverse=True)
         return {"shafts": out, "done": done, "order": ORDER}
 

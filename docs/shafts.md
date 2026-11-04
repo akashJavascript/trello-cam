@@ -43,10 +43,13 @@ page instead, at `https://autocam.team5940.org/shop` (its Shafts tab; bought par
   "Tap 10-32 both ends"). The icon at the top opens the assembly in Onshape.
 - **Start** marks it in progress, **Stop** puts it back, **Done** finishes it (Undo, the same day, from the phone
   that did it).
-- Order: **Yours** (started on this phone) at the top, then **Rush**, then each stock (1/2 hex, 3/8 hex, 3/8 hex
-  lite, 1/2 round, 3/8 round), then **In progress** (started on other phones), then **Done today**.
-- No names: each phone keeps a random id, and "Yours" is what that phone started. If two phones tap Start at once,
-  the second is told "Someone already started this".
+- Order: **Yours** (started on this phone, or assigned to its name and not started) at the top, then **Rush**, then
+  each stock (1/2 hex, 3/8 hex, 3/8 hex lite, 1/2 round, 3/8 round), then **In progress** (started on other phones,
+  with who started it), then **Done today**.
+- Each phone keeps a random id, and says whose it is once (the round button at the top right). A name tag on each
+  shaft (+ when nobody) and "All" on a group assign it; the panel's "Assign to" does too when it's sent. Soft: anyone
+  can still start anything (decisions, 2026-11-04). If two phones tap Start at once, the second is told "Someone
+  already started this".
 - It refreshes every 10 seconds, reading only the list on the laptop (no Onshape or Trello calls).
 - Done shafts drop off after 14 days (`[shafts] keep_done_days`).
 

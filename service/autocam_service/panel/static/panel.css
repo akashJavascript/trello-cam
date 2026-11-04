@@ -49,6 +49,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .chip.event, .chip.sheet, .chip.queued, .chip.drafts { background: var(--secondary-container); color: var(--on-secondary-container); }
 .chip.good, .chip.cut { background: var(--good-container); color: var(--on-good-container); }
 .chip.bad, .chip.back { background: var(--error-container); color: var(--on-error-container); }
+.chip.who { background: #e8e0f7; color: #3f2a73; }        /* someone's name (people.py): the shop page's name tags */
 
 .group { display: flex; flex-direction: column; gap: 4px; }
 .group-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--on-surface-variant); padding-bottom: 4px; }

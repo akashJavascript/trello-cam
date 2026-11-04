@@ -1838,6 +1838,8 @@ class Runner:
             before = (self.offcuts.get(sheet.offcut_id) or {}).get("used", []) if sheet.offcut_id else []
             extra["rest_in"] = round(self._free_after(add_used(before, sheet.used_y_in, self._size(js.material)[0],
                                                                sheet.offcut_turned), js.material), 2)
+        # how many of each part card: the phone's Plates tab (2026-11-04)
+        extra["counts"] = {js.parts[p.part_key]: p.count for p in vs.sheet.parts if p.part_key in js.parts}
         store.register_sheet(card_id, run_id, vs.cuttable,
                              [js.parts[p.part_key] for p in vs.sheet.parts if p.part_key in js.parts],
                              job=job_id, material=js.material, thickness_in=vs.sheet.thickness_in,

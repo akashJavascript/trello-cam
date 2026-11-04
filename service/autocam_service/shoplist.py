@@ -2,8 +2,9 @@
 
 Each is one JSON file in state/, every item sent from the Onshape panel, newest last, with a random id. Finished ones
 (a shaft done, a part in the bin) drop off after `keep_days`. Reading an assembly again marks its open items that
-aren't in it any more "Changed in CAD". Phones are a random id each (no names): what a phone did, only it can undo,
-the same day.
+aren't in it any more "Changed in CAD". Phones are a random id each: what a phone did, only it can undo, the same
+day. An open item can have a name on it ("who": assigned from the panel or the phone, 2026-11-04; soft: anyone can
+still start it), and a phone can say whose it is (people.py).
 """
 
 import json
@@ -86,6 +87,26 @@ class ShopList:
     def _clock(stamp: str) -> str:
         """"2026-11-03T16:10:00" -> "4:10 PM"."""
         return datetime.fromisoformat(stamp).strftime("%I:%M %p").lstrip("0")
+
+    # ---- who's making it (soft: anyone can still start it)
+    def assign(self, ids: Iterable[str], who: str) -> int:
+        """Put a name on these open items ("" takes it off). Items gone or finished meanwhile are skipped (an "All"
+        from a phone that hadn't refreshed). Returns how many changed."""
+        wanted = list(ids)
+        if not wanted or any(not isinstance(i, str) or not ID_RE.match(i) for i in wanted):
+            raise ListError("Bad request")
+
+        def go(items):
+            n = 0
+            for x in items:
+                if x.get("id") in wanted and x.get("status") in self.ACTIVE:
+                    if who:
+                        x["who"] = who
+                    else:
+                        x.pop("who", None)
+                    n += 1
+            return n
+        return self._change(go)
 
     # ---- from the panel
     def active(self, source: str) -> Optional[Dict[str, Any]]:

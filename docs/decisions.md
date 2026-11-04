@@ -1010,6 +1010,25 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - Not rectangles (a part's own notches, the triangle by an angled edge): a part's bounding box counts as used.
   (Since 2026-11-04 the rooms also come from the parts' real cuts: see that day.)
 
+## 2026-11-04: who does what: names on shafts, bought parts, sheets and plates (the mockup the user approved)
+
+- **From the Onshape panel:** "Assign to" in Options (Nobody, or one of the shop's names) when sending, from an
+  assembly or a Part Studio (own programs too). It goes on everything sent: plates (who finishes them), shafts and
+  bought parts; the button says "for Maya". The rows show the name as a small tag afterwards.
+- **From the phone page:** a name tag on every item (a dashed + when nobody); tapping it opens a picker of the shop's
+  names, this phone's own first as "Me", then Nobody and Add (a new name). "All" on a group (a stock, a bin) assigns
+  the whole group. The round button at the top right says whose phone it is (picked once, kept on the laptop).
+  "Yours" is what this phone started, or what's assigned to its name and not started.
+- **Soft:** a name never stops anyone else from starting something; the list says who started it.
+- **Plates tab (new):** the sheets in Ready to cut, in the board's order, each with who cuts it, and its plates with
+  how many and who finishes each; sheets cut today stay (the plates still need finishing). Trello is read only while
+  that tab is open, at most every 30 s however many phones are open (panel/plates.py). New sheets record how many of
+  each part card they have; older ones show the part card's quantity.
+- **Where the names live:** state/people.json on the laptop only (the repo is public and they're students' names):
+  the names (from the picker, and every sender's name from the panel), which phone is whose, and who cuts each
+  sheet and finishes each plate (dropped 60 days after it was set). Shafts and bought parts keep their own name.
+- Not done: a "finished" tick for a plate (who finishes it is a name only), and assigning from Trello.
+
 ## 2026-11-04: rooms from where the program really cuts, not the parts' boxes (core 0.22.0; the user's pick)
 
 - The rooms kept among a sheet's parts counted each part's bounding box as used, so the space inside an L, under a

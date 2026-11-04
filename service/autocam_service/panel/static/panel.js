@@ -267,12 +267,13 @@
     if (c) {
       return { qty: c.qty || 1, qtyBy: "you", asm: 0, tabs: c.tabs, nest: c.nest, face: c.face, scribe: c.scribe || "",
         fitKind: c.fit.kind, fitSize: c.fit.kind === "hole" ? String(c.fit.size) : "", rush: c.rush, drafts: false,
-        smoked: c.smoked, sheet: c.sheet || "", tool18: c.tool_eighth, material: "", notes: c.notes || "", error: "", kept: c.kept || [] };
+        smoked: c.smoked, sheet: c.sheet || "", tool18: c.tool_eighth, material: "", notes: c.notes || "", error: "", kept: c.kept || [],
+        assign: "" };
     }
     return fromAssembly({
       qty: card && card.qty ? card.qty : 1, qtyBy: card && card.qty ? "you" : "asm", asm: 0,
       tabs: S.studio ? S.studio.tabsDefault : true, nest: true, face: false, scribe: "", fitKind: "none", fitSize: "",
-      rush: false, drafts: false, smoked: false, sheet: "", tool18: false, material: "", notes: "", error: ""
+      rush: false, drafts: false, smoked: false, sheet: "", tool18: false, material: "", notes: "", error: "", assign: ""
     });
   }
   function fromAssembly(f) {
@@ -317,7 +318,7 @@
     checkBuild(a.build);
     S.asm = a;
     if (a.user) { S.user = a.user; stored("name", a.user); }
-    if (!S.asmOpts) S.asmOpts = { tabs: a.tabsDefault, nest: true, face: false, rush: false, drafts: false };
+    if (!S.asmOpts) S.asmOpts = { tabs: a.tabsDefault, nest: true, face: false, rush: false, drafts: false, assign: "" };
     var sel = {};
     a.items.forEach(function (i) {
       var old = S.asmSel[i.key];
@@ -481,6 +482,22 @@
       onchange: function () { onChange(input.checked); } });
     return h("label", { class: "line" }, h("span", { class: "name" }, label), h("span", { class: "switch" }, input, h("span")));
   }
+  // "Assign to" (people.py, 2026-11-04): whoever's name goes on what's sent (soft: anyone can still start it).
+  // The shop's names, and the sender's own. Hidden until there's a name to pick.
+  function people() {
+    var names = ((S.mode === "assembly" ? S.asm : S.studio) || {}).people || [];
+    return S.user && names.indexOf(S.user) < 0 ? [S.user].concat(names) : names;
+  }
+  function assignLine(value, onChange) {
+    var names = people();
+    if (!names.length) return null;
+    var sel = h("select", { class: "select", "aria-label": "Assign to", onchange: function () { onChange(sel.value); } },
+      h("option", { value: "" }, "Nobody"),
+      names.map(function (n) { return h("option", { value: n, selected: n === value ? "selected" : null }, n); }));
+    return h("label", { class: "line" }, h("span", { class: "name" }, "Assign to"), sel);
+  }
+  function whoChip(name) { return name ? chip(name, "who") : null; }
+
   function group(label) {
     var g = h("div", { class: "group" }, h("div", { class: "group-label" }, label));
     for (var i = 1; i < arguments.length; i++) add(g, arguments[i]);
@@ -604,7 +621,8 @@
         : h("span", { class: "hint" }, "×" + i.qty);
       var tag = i.chip.status !== "none" && i.chip.label ? chip(i.chip.label, i.chip.status) : i.why ? chip(i.why, "bad") : null;
       return h("label", { class: "arow" + (S.highlight === i.key ? " hl" : ""), "data-key": i.key }, box,
-        h("span", { class: "name locatable", title: "Show it in Onshape", onclick: function (ev) { locate(i.key, ev); } }, i.name), qty, tag);
+        h("span", { class: "name locatable", title: "Show it in Onshape", onclick: function (ev) { locate(i.key, ev); } }, i.name,
+          i.who ? h("span", { class: "sub" }, whoChip(i.who)) : null), qty, tag);
     }
     var more = other.length ? h("button", { class: "link-btn", type: "button", onclick: function () { S.showOther = !S.showOther; render(); } },
       S.showOther ? "Hide the parts AutoCAM doesn't cut" : other.length + " more AutoCAM doesn't cut") : null;
@@ -623,6 +641,7 @@
       a.face ? switchLine("Face their tops", o.face, function (v) { o.face = v; render(); }) : null,
       switchLine("Rush", o.rush, function (v) { o.rush = v; render(); }),
       switchLine("Send plates to Drafts", o.drafts, function (v) { o.drafts = v; render(); }),
+      assignLine(o.assign, function (v) { o.assign = v; render(); }),
       h("span", { class: "hint" }, "A fit is set on one part, from its Part Studio.")));
 
     var chosen = a.items.filter(function (i) { return i.sendable && S.asmSel[i.key].on; });
@@ -638,8 +657,9 @@
     var n = chosen.length, m = shafts.length, k = bought.length;
     function count(x, one) { return x + " " + one + (x === 1 ? "" : "s"); }
     var bits = [n ? count(n, "part") : "", m ? count(m, "shaft") : "", k ? count(k, "bought part") : ""].filter(Boolean);
-    var words = !m && !k ? "Send " + count(n, "part") + " to " + (o.drafts ? "Drafts" : "Ready for CAM")
-      : "Send " + (bits.length > 1 ? bits.slice(0, -1).join(", ") + " and " + bits[bits.length - 1] : bits[0]);
+    var words = (!m && !k ? "Send " + count(n, "part") + " to " + (o.drafts ? "Drafts" : "Ready for CAM")
+      : "Send " + (bits.length > 1 ? bits.slice(0, -1).join(", ") + " and " + bits[bits.length - 1] : bits[0]))
+      + (o.assign ? " for " + o.assign : "");
     if (stuck.length) add(actionEl, h("div", { class: "as" }, "Fix " + stuck.map(function (x) { return x.label; }).join(", ") + " first (the pencil)."));
     add(actionEl, h("button", { class: "btn btn-primary", type: "button", disabled: S.busy || !(n + m + k) || stuck.length > 0,
       onclick: function () { sendMany(chosen, shafts, bought, nameInput); } }, S.busy ? "Sending…" : words));
@@ -661,7 +681,7 @@
       items: chosen.map(function (i) { return { key: i.key, qty: S.asmSel[i.key].qty }; }),
       shafts: shafts.map(function (x) { var sel = S.shaftSel[x.key]; return { key: x.key, qty: sel.qty, ends: sel.ends, ops: sel.ops, note: sel.note || "" }; }),
       bought: bought.map(function (x) { var sel = S.boughtSel[x.key]; return { key: x.key, qty: sel.qty, note: sel.note || "" }; }),
-      tabs: o.tabs, nest: o.nest, face: o.face, rush: o.rush, drafts: o.drafts, name: S.user, u: ctx.u, server: ctx.server
+      tabs: o.tabs, nest: o.nest, face: o.face, rush: o.rush, drafts: o.drafts, assign: o.assign || "", name: S.user, u: ctx.u, server: ctx.server
     })).then(function (r) {
       S.busy = false; S.asmResult = r;
       loadAssembly(false);
@@ -711,7 +731,7 @@
         : h("span", { class: "chip-cell" }, chip(L.chip.label || "In progress", L.chip.status || "queued"));
       return h("div", { class: "arow shaft locate-row" + (S.highlight === s.key ? " hl" : ""), "data-key": s.key, title: "Show it in Onshape",
         onclick: function (ev) { rowLocate(s.key, ev); } }, h("span", { class: "mark ok" }, icon("check")),
-        h("span", { class: "name locatable" }, s.label), right);
+        h("span", { class: "name locatable" }, s.label, L.who ? h("span", { class: "sub" }, whoChip(L.who)) : null), right);
     }
     var sub = s.problem ? h("span", { class: "sub bad-text" }, s.problem) : L && L.status === "done" ? h("span", { class: "sub" }, "Done") : null;
     return h("div", { class: "arow shaft locate-row" + (S.highlight === s.key ? " hl" : ""), "data-key": s.key, title: "Show it in Onshape",
@@ -750,7 +770,8 @@
       var right = L.chip.label && L.status !== "bin" ? chip(L.chip.label, L.chip.status)
         : L.status === "bin" ? chip("In bin", "good") : h("span", { class: "hint" }, "×" + L.qty);
       return h("div", { class: cls, "data-key": b.key, title: "Show it in Onshape", onclick: locateRow },
-        h("span", { class: "mark ok" }, icon("check")), h("span", { class: "name locatable" }, b.name, cad), right, pencil);
+        h("span", { class: "mark ok" }, icon("check")), h("span", { class: "name locatable" }, b.name,
+          L.who ? h("span", { class: "sub" }, whoChip(L.who)) : null, cad), right, pencil);
     }
     var sub = L && L.status === "bin" ? h("span", { class: "sub" }, "In the bin")
       : sel.note ? h("span", { class: "sub" }, "Note: " + sel.note) : null;
@@ -1082,6 +1103,7 @@
     if (f.tool18 && !r.own) chips.push(chip("1/8 in endmill"));
     if (f.fitKind !== "none") chips.push(chip(f.fitKind === "outline" ? "Fit outline" : "Fit " + f.fitSize + " hole"));
     if (f.rush) chips.push(chip("Rush"));
+    if (f.assign && !S.editing) chips.push(whoChip(f.assign));
     add(bodyEl, partHead(d.part, chips));
     actionEl.hidden = false;
     add(actionEl, h("div", { class: "btn-row" }, linkBtn("Open card", r.card.url),
@@ -1189,6 +1211,7 @@
     if (f.kept && f.kept.length && !f.own) {
       opts.push(h("span", { class: "hint" }, "Also kept from the card: " + f.kept.join(" / ")));
     }
+    if (!S.editing) opts.push(assignLine(f.assign, function (v) { f.assign = v; render(); }));
     add(bodyEl, group("Options", opts));
 
     // action: who's sending, and Send
@@ -1286,7 +1309,8 @@
       p: S.partId, qty: f.qty, nest: f.nest || fitted, tabs: f.tabs || fitted, face: f.face, rush: f.rush, tool_eighth: !!f.tool18,
       scribe: d.part.bent ? (f.scribe || "") : "",
       drafts: f.drafts, smoked: f.smoked, sheet: f.sheet || "", material: f.material, fit: { kind: f.fitKind, size: f.fitSize },
-      notes: f.notes, u: ctx.u, name: S.user, server: ctx.server, card: S.editing && d.card ? d.card.card : ""
+      notes: f.notes, u: ctx.u, name: S.user, server: ctx.server, card: S.editing && d.card ? d.card.card : "",
+      assign: S.editing ? "" : f.assign || ""
     });
     f.error = ""; S.busy = true; render();
     api("POST", "/api/send", body).then(function (r) {
@@ -1310,6 +1334,7 @@
     f.error = ""; S.busy = true; render();
     api("POST", "/api/send-program", where({
       p: S.partId, qty: f.qty, thickness: f.thickness, cutter: f.cutter || "", material: f.material, notes: f.notes, place_myself: !!f.placeMyself,
+      assign: f.assign || "",
       program: { filename: f.program.filename, text: f.program.text }, u: ctx.u, name: S.user, server: ctx.server
     })).then(function (r) {
       S.busy = false; S.sent = r; d.card = r.card;

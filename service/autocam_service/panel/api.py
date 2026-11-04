@@ -65,6 +65,8 @@ from .onshape_reads import NoAccess, OutOfCalls, PanelOnshape, PanelOnshapeError
 from ..shafts import (ACTIVE as SHAFT_ACTIVE, DEVICE_RE, MAX_NOTE, STOCKS, Found, ShaftError, ShaftList, clean_ends,
                       clean_ops, problems, recognize, status_chip)
 from ..bought import ACTIVE as PART_ACTIVE, PartList, counts as part_counts, is_hardware, sheet_link, status_chip as part_chip
+from ..people import People
+from .plates import PlatesView
 from ..onshape.urls import configuration_of, normal_configuration
 
 log = logging.getLogger("autocam.panel")
@@ -192,9 +194,14 @@ class PanelApp:
                  clock: Callable[[], float] = time.monotonic,
                  today: Callable[[], str] = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                  inbox: Optional[ChangeInbox] = None, hook_secret: str = "", shafts: Optional[ShaftList] = None,
-                 parts: Optional[PartList] = None, order_sheet: str = "", assemblies: Any = None):
+                 parts: Optional[PartList] = None, order_sheet: str = "", assemblies: Any = None,
+                 people: Optional[People] = None):
         if not key:
             raise ValueError("the panel needs AUTOCAM_PANEL_KEY")
+        self.people = people                  # who does what (people.py; None: no names, no Plates tab)
+        self.plates = None if people is None else PlatesView(
+            board.t, cfg, board.store, people,
+            lambda k: material_label(cfg.materials[k]) if k in cfg.materials else k, clock=clock)
         self.shafts = shafts if cfg.shafts.enabled else None    # the shop's shaft list (None: off)
         self.parts = parts if cfg.parts.enabled else None       # the shop's bought-parts list (None: off)
         self.order_sheet = sheet_link(order_sheet) or cfg.parts.order_sheet_url   # Order opens it ("" no Order)
@@ -219,7 +226,8 @@ class PanelApp:
         try:
             if path == "/panel" and method == "GET":
                 return self._page(query)
-            if path == "/shop" and method == "GET" and (self.shafts is not None or self.parts is not None):
+            if path == "/shop" and method == "GET" and (self.shafts is not None or self.parts is not None
+                                                        or self.plates is not None):
                 return self._page(query, shop=True)
             if path.startswith("/static/") and method == "GET":
                 return self._static(path[len("/static/"):])
@@ -289,7 +297,7 @@ class PanelApp:
 
     # ---- the shop's lists: shafts and bought parts (their own key)
     def _shop(self, method: str, path: str, query: Dict[str, str], given: str, body: bytes) -> Response:
-        if self.shafts is None and self.parts is None:
+        if self.shafts is None and self.parts is None and self.plates is None:
             return _json(404, {"error": "Not found"})
         if not self._shop_key_ok(given):
             return _json(403, {"error": "This isn't AutoCAM's shop link (the key is wrong). Ask a mentor."})
@@ -298,11 +306,27 @@ class PanelApp:
         if path == "/api/shop" and method == "GET":
             device = query.get("device", "")
             device = device if DEVICE_RE.match(device) else ""
-            shafts = self.shafts.shop_view(device) if self.shafts is not None else {"shafts": [], "done": [], "order": []}
+            name_of = self.people.me if self.people is not None else (lambda device: "")
+            shafts = self.shafts.shop_view(device, name_of) if self.shafts is not None else {"shafts": [], "done": [], "order": []}
             parts = self.parts.shop_view(device) if self.parts is not None else {"parts": [], "bin": []}
-            return _json(200, {**shafts, **parts, "shaftsOn": self.shafts is not None, "partsOn": self.parts is not None,
-                               "orderSheet": self.order_sheet if self.parts is not None else ""})
+            out = {**shafts, **parts, "shaftsOn": self.shafts is not None, "partsOn": self.parts is not None,
+                   "platesOn": self.plates is not None, "orderSheet": self.order_sheet if self.parts is not None else "",
+                   "me": name_of(device) if device else "", "people": self.people.names() if self.people else []}
+            if self.plates is not None and query.get("plates") == "1":   # Trello: only while the Plates tab shows
+                try:
+                    out.update(self.plates.view())
+                except Exception as e:  # noqa: BLE001 - the other tabs still work
+                    log.warning("panel: the Plates tab: %s", e)
+                    out.update(sheets=[], platesError="Couldn't read the Trello board just now.")
+            return _json(200, out)
         action = path[len("/api/shop/"):]
+        if action in ("me", "assign") and method == "POST" and self.people is not None:
+            data = json.loads(body.decode("utf-8")) if body else {}
+            if not isinstance(data, dict) or not DEVICE_RE.match(str(data.get("device") or "")):
+                raise Refused(400, "Bad request")
+            if action == "me":
+                return _json(200, {"me": self.people.set_me(str(data["device"]), data.get("name"))})
+            return _json(200, {"who": self._assign(str(data.get("kind") or ""), data.get("ids"), data.get("who"))})
         lst, verb = (self.shafts, action) if action in SHOP_ACTIONS else (self.parts, PART_ACTIONS.get(action))
         if method != "POST" or lst is None or verb is None:
             return _json(404, {"error": "Not found"})
@@ -315,6 +339,19 @@ class PanelApp:
         else:
             getattr(lst, verb)(data.get("id"), device)
         return _json(200, {"ok": True})
+
+    def _assign(self, kind: str, ids: Any, who: Any) -> str:
+        """Someone's name on shafts, bought parts, sheets (who cuts) or plates (who finishes); "" takes it off."""
+        if not isinstance(ids, list) or not ids or len(ids) > 200:
+            raise Refused(400, "Bad request")
+        if kind in ("sheet", "plate"):
+            return self.people.assign(kind + "s", ids, who)
+        lst = {"shaft": self.shafts, "part": self.parts}.get(kind)
+        if lst is None:
+            raise Refused(400, "Bad request")
+        name = self.people.add(who) if who else ""
+        lst.assign(ids, name)
+        return name
 
     def _static(self, name: str) -> Response:
         path = STATIC / name
@@ -429,8 +466,23 @@ class PanelApp:
                 "materials": list(self._materials().values()), "fit": self.cfg.fit.enabled,
                 "face": self.cfg.face is not None, "scribe": self.cfg.scribe is not None,
                 "tabsDefault": self.cfg.tabs.default, "autoRefreshS": self.cfg.panel.auto_refresh_s,
-                "build": static_hash("panel.js"),
+                "build": static_hash("panel.js"), "people": self._people(),
                 "callsLeft": self.onshape.calls_left(), "maxQty": MAX_QTY}
+
+    def _people(self) -> List[str]:
+        return self.people.names() if self.people is not None else []
+
+    def _assignee(self, d: Dict[str, Any]) -> str:
+        """The panel's "Assign to" ("" nobody), put on the names list."""
+        return self.people.add(d.get("assign")) if self.people is not None and d.get("assign") else ""
+
+    def _sender_listed(self, sender: str) -> None:
+        """Whoever sends from the panel is on the names list too (the picker fills itself)."""
+        if self.people is not None:
+            try:
+                self.people.add(sender)
+            except ShaftError:
+                pass                                 # a sender's name the list can't take (digits first...)
 
     def _queue(self) -> Optional[Dict[str, Any]]:
         try:
@@ -457,6 +509,7 @@ class PanelApp:
             log.warning("panel: reading the board: %s", e)
             board_error = "Couldn't read the Trello board just now, so statuses are missing."
         items, shaft_rows, bought_rows = [], [], []
+        finishers = self.people.assigned("plates") if self.people is not None else {}
         owners = self._owners(did, rows, cached_only=cached)
         for r in rows:
             if r["standard"]:
@@ -478,6 +531,7 @@ class PanelApp:
             shown = self._shown(r)
             items.append({"key": _row_key(r), "name": shown, "qty": r["qty"], "notOurs": bool(not_ours),
                           "material": material, "chip": chip, "why": why, "here": r["did"] == did,
+                          "who": finishers.get(pc.card.id, "") if pc is not None and pc.status in ACTIVE else "",
                           "sendable": not why and cards is not None and (pc is None or pc.status not in ACTIVE)})
         # this document's parts first: parts from other documents are often bought ones (a vendor's library)
         items.sort(key=lambda i: (not i["here"], _natural(i["name"])))
@@ -493,7 +547,7 @@ class PanelApp:
         return {"name": name, "items": items, **shafts, **bought, "boardError": board_error, "queue": self._queue(), "face": self.cfg.face is not None,
                 "user": self.names.get(uid) if USER_RE.match(uid or "") else "", "tabsDefault": self.cfg.tabs.default,
                 "maxQty": MAX_QTY, "callsLeft": self.onshape.calls_left(), "autoRefreshS": self.cfg.panel.auto_refresh_s,
-                "build": static_hash("panel.js")}
+                "build": static_hash("panel.js"), "people": self._people()}
 
     def _shown(self, r: Dict[str, Any]) -> str:
         """A row's name in the panel, with its configuration if that was already read (no call)."""
@@ -546,7 +600,7 @@ class PanelApp:
             x = self.shafts.latest(f"{asm}|{_row_key(r)}")
             label, kind = status_chip(x)
             listed = None if x is None else {"id": x["id"], "status": x["status"], "qty": x["qty"], "ends": x["ends"],
-                                             "ops": x["ops"], "note": x.get("note") or "",
+                                             "ops": x["ops"], "note": x.get("note") or "", "who": x.get("who") or "",
                                              "chip": {"label": label, "status": kind}}
             st = STOCKS[found.stock]
             out.append({"key": _row_key(r), "label": found.label, "stock": found.stock, "length": found.length_in,
@@ -561,7 +615,8 @@ class PanelApp:
         return {"shafts": out, "shaftsGone": gone, "shaftTap": tap, "grooveDepth": self.cfg.shafts.groove_depth_in}
 
     def _send_shafts(self, d: Dict[str, Any], did: str, wvm: str, wvmid: str, eid: str,
-                     rows: Dict[str, Dict[str, Any]], sender: str, rush: bool, host: str) -> List[Dict[str, Any]]:
+                     rows: Dict[str, Dict[str, Any]], sender: str, rush: bool, host: str,
+                     who: str = "") -> List[Dict[str, Any]]:
         """The ticked shafts onto the shop's list. "Send plates to Drafts" doesn't touch them (the user)."""
         wanted = d.get("shafts") if isinstance(d.get("shafts"), list) else []
         if not wanted:
@@ -595,7 +650,7 @@ class PanelApp:
                                   "row": {"did": r["did"], "eid": r["eid"], "configuration": r["configuration"]},
                                   "stock": found.stock, "length_in": found.length_in, "qty": qty, "ends": ends,
                                   "ops": [o.to_dict() for o in ops], "rush": rush, "sender": sender,
-                                  "note": clean_text(item.get("note"), MAX_NOTE)}])
+                                  "note": clean_text(item.get("note"), MAX_NOTE), **({"who": who} if who else {})}])
                 results.append({"key": key, "name": label, "sent": True, "shaft": True})
             except (Refused, ShaftError) as e:
                 results.append({"key": key, "name": label, "sent": False, "why": str(e), "shaft": True})
@@ -615,7 +670,7 @@ class PanelApp:
             if x is not None:
                 qty, in_bin, on_order = part_counts(x)
                 listed = {"id": x["id"], "status": x["status"], "qty": qty, "inBin": in_bin, "onOrder": on_order,
-                          "cadNow": x.get("cad_now"), "note": x.get("note") or "",
+                          "cadNow": x.get("cad_now"), "note": x.get("note") or "", "who": x.get("who") or "",
                           "chip": {"label": label, "status": kind}}
             out.append({"key": _row_key(r), "name": self._shown(r), "qty": max(1, r["qty"]), "vendor": _vendor(r),
                         "listed": listed, "sendable": x is None or x["status"] not in PART_ACTIVE})
@@ -626,7 +681,8 @@ class PanelApp:
         return {"bought": out, "boughtGone": gone}
 
     def _send_bought(self, d: Dict[str, Any], did: str, wvm: str, wvmid: str, eid: str,
-                     rows: Dict[str, Dict[str, Any]], owners: Dict[str, str], sender: str, host: str) -> List[Dict[str, Any]]:
+                     rows: Dict[str, Dict[str, Any]], owners: Dict[str, str], sender: str, host: str,
+                     who: str = "") -> List[Dict[str, Any]]:
         """The ticked bought parts onto the shop's parts list (never the order sheet: people write that themselves)."""
         wanted = d.get("bought") if isinstance(d.get("bought"), list) else []
         if not wanted:
@@ -654,7 +710,8 @@ class PanelApp:
                                  "row": {"did": r["did"], "eid": r["eid"], "pid": r["pid"], "configuration": r["configuration"]},
                                  "name": label, "vendor": _vendor(r), "number": _part_number(r), "link": _link(r),
                                  "qty": self._qty(item), "sender": sender,
-                                 "cad_qty": max(1, r["qty"]), "note": clean_text(item.get("note"), MAX_NOTE)}])
+                                 "cad_qty": max(1, r["qty"]), "note": clean_text(item.get("note"), MAX_NOTE),
+                                 **({"who": who} if who else {})}])
                 results.append({"key": key, "name": label, "sent": True, "bought": True})
             except (Refused, ShaftError) as e:
                 results.append({"key": key, "name": label, "sent": False, "why": str(e), "bought": True})
@@ -704,6 +761,8 @@ class PanelApp:
         self._rate_limit()
         did, wvm, wvmid, eid = self._studio(d)
         sender = self._sender(d)
+        who = self._assignee(d)
+        self._sender_listed(sender)
         nest, tabs = bool(d.get("nest", True)), bool(d.get("tabs", self.cfg.tabs.default))
         drafts, rush = bool(d.get("drafts")), bool(d.get("rush"))
         face = bool(d.get("face")) and self.cfg.face is not None
@@ -743,6 +802,8 @@ class PanelApp:
                          host=host, qty=qty, nest=nest, tabs=tabs, face=face, rush=rush, drafts=drafts, sender=sender,
                          configuration=r["configuration"])
                 card = self.board.write(s)
+                if who:
+                    self.people.assign("plates", [card.id], who)
                 if self.assemblies is not None and r["wvm"] == "v":   # another document's saved version: followed
                     self.assemblies.remember(card.id, asm, r)
                 results.append({"key": key, "name": name, "sent": True, "url": card.url})
@@ -751,11 +812,11 @@ class PanelApp:
         sent = sum(1 for x in results if x["sent"])
         log.info("panel: %s sent %d of %d parts of an assembly to %s", sender, sent, len(results),
                  "Drafts" if drafts else "Ready for CAM")
-        shafts = self._send_shafts(d, did, wvm, wvmid, eid, rows, sender, rush, host)
+        shafts = self._send_shafts(d, did, wvm, wvmid, eid, rows, sender, rush, host, who)
         if shafts:
             log.info("panel: %s sent %d of %d shafts to the shaft list", sender, sum(1 for x in shafts if x["sent"]),
                      len(shafts))
-        bought = self._send_bought(d, did, wvm, wvmid, eid, rows, owners, sender, host)
+        bought = self._send_bought(d, did, wvm, wvmid, eid, rows, owners, sender, host, who)
         if bought:
             log.info("panel: %s sent %d of %d bought parts to the parts list", sender,
                      sum(1 for x in bought if x["sent"]), len(bought))
@@ -1055,6 +1116,8 @@ class PanelApp:
         pid = self._part_id(d)
         qty = self._qty(d)
         sender = self._sender(d)
+        who = self._assignee(d)
+        self._sender_listed(sender)
         nest, tabs = bool(d.get("nest", True)), bool(d.get("tabs", self.cfg.tabs.default))
         fit_line = self._fit_line(d.get("fit"), nest)
         if fit_line:
@@ -1116,6 +1179,8 @@ class PanelApp:
                  fit_line=fit_line, scribe=scribe, sender=sender, notes=clean_text(d.get("notes"), 300),
                  configuration=cfg)
         card = self.board.write(s, existing)
+        if who:
+            self.people.assign("plates", [card.id], who)
         where = "inbox" if s.drafts else "ready_for_cam"
         log.info("panel: %s sent %s x%d to %s: %s", sender, name, qty, LIST_NAMES[where], card.url)
         return {"card": self._detail(card, where), "list": LIST_NAMES[where],
@@ -1130,6 +1195,8 @@ class PanelApp:
         did, wvm, wvmid, eid = self._studio(d)
         pid = self._part_id(d)
         sender = self._sender(d)
+        who = self._assignee(d)
+        self._sender_listed(sender)
         configuration = self._cfg(d)
         part = self._find(did, wvm, wvmid, eid, pid, configuration)
         name = self._titled(did, wvm, wvmid, eid, part.get("name") or pid, configuration)
@@ -1195,6 +1262,8 @@ class PanelApp:
         card = t.create_card("inbox", name, "\n".join(lines))       # in Drafts until the program is on it
         t.attach_program(card.id, filename, data, report)
         t.move(card.id, "ready_for_cam")
+        if who:
+            self.people.assign("plates", [card.id], who)
         self.board.invalidate()
         log.info("panel: %s sent their own program for %s (%s): %s", sender, name, filename, card.url)
         return {"card": self._detail(t.get_card(card.id), "ready_for_cam"), "list": "Ready for CAM", "own": True,

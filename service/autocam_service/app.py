@@ -148,8 +148,10 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
     from .panel.assemblies import AssemblyWatch
     assemblies = AssemblyWatch(onshape, board, cfg, cfg.paths.state / "panel_assemblies.json", shafts=shafts,
                                parts=parts, hooks=hooks)
+    from .people import People
     app = PanelApp(cfg, creds.get("AUTOCAM_PANEL_KEY"), onshape, board, Names(cfg.paths.state / "panel_users.json"),
-                   inbox=inbox, hook_secret=secret, shafts=shafts, parts=parts, order_sheet=sheet, assemblies=assemblies)
+                   inbox=inbox, hook_secret=secret, shafts=shafts, parts=parts, order_sheet=sheet, assemblies=assemblies,
+                   people=People(cfg.paths.state / "people.json"))
     start_server(app, p.port)
     pictures = PictureWatch(onshape, services.store, tracker) if p.pictures else None
     usage = None
