@@ -86,7 +86,7 @@ def test_service_does_not_trust_the_workers_cut_plan(tmp_path):
         tap = folder / sheet["tap"]
         text = tap.read_bytes().decode()
         no_pause = "\r\n".join(l for l in text.split("\r\n")
-                               if l not in ("[PART 1 DONE - PAUSE]", "[REMOVE PART THEN RESUME]", "M0", "M12 C8",
+                               if l not in ("[PART 1 DONE - PAUSE]", "G4 [TAKE PART 1 OUT, THEN PRESS ENTER]", "M12 C8",
                                             "M11 C8", "M5", "G53 P10", "S18000", "M3", "G4 X4") or l == "")
         tap.write_bytes(no_pause.encode())
         import hashlib

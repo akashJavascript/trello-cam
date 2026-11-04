@@ -52,11 +52,11 @@ def test_pauses_are_kept_exactly():
     order = ["p01-1", "p02-1", "p02-2"]
     spec = PauseSpec(mist=True)
     sheet = insert(text("sheet_mist.tap"), order, spec)
-    assert verify(sheet, order, spec).ok and sheet.count("M0") == 2
+    assert verify(sheet, order, spec).ok and sheet.count("\r\nG4 [TAKE PART") == 2
     air = lift_program(sheet, 0.625)
     check = verify(air, order, spec, safe_z_in=2.0)
     assert check.ok, check.problems
-    assert air.count("M0") == sheet.count("M0") and air.count("M3") == sheet.count("M3")
+    assert air.count("\r\nG4 [TAKE PART") == sheet.count("\r\nG4 [TAKE PART") and air.count("M3") == sheet.count("M3")
 
 
 def test_comments_and_drill_cycles():
@@ -81,7 +81,7 @@ def test_taking_the_pauses_out_gives_back_the_posted_program():
         assert remove(paused, order, spec, after_last) == posted
     paused = insert(posted, order, spec)
     with pytest.raises(PauseError):
-        remove(paused.replace("G53 P10\r\n[REMOVE PART", "G53 P11\r\n[REMOVE PART", 1), order, spec)
+        remove(paused.replace("G53 P10\r\nG4 [TAKE", "G53 P11\r\nG4 [TAKE", 1), order, spec)
     with pytest.raises(PauseError):
         remove(posted, order, spec)                        # nothing to take out
 
@@ -138,7 +138,7 @@ def test_the_whole_air_test_on_the_sample_sheet():
     report = check_program(air.encode("ascii"), GuardSpec(stock_top_in=0.125, mist=True))
     assert report.passed, report.summary()
     assert report.min_z_in == pytest.approx(0.625)
-    assert verify(air, order, spec, safe_z_in=2.0).ok and air.count("M0") == 2
+    assert verify(air, order, spec, safe_z_in=2.0).ok and air.count("\r\nG4 [TAKE PART") == 2
     assert air.split("\r\n")[1] == ("[AIR TEST - RAISED 0.625 IN - CUTTER STAYS 0.5 IN ABOVE THE SHEET - OUTLINES "
                                     "ONLY, ONE LAP EACH, AT 200 IPM]")
     assert "G81" not in air and "[drill]" not in air

@@ -74,7 +74,7 @@ min_clear_above_stock_in = 2.0
 enabled = true
 after_last_part = false    # the program end already retracts, stops the spindle and parks
 mode = "tap_text"          # "tap_text" | "manual_nc" (only once the API is proven to create Manual NC)
-resume_key = ""            # open question 9: WinCNC key that resumes after M0
+resume_key = "ENTER"       # WinCNC: a bare G4 waits for ENTER (users guide 2.6 p. 93); confirm at the machine
 
 [plate]
 thickness_tol_in = 0.005
@@ -384,7 +384,7 @@ per_contour = "tabsPerContour"
 
 [tapguard]
 allowed_g = [0, 1, 2, 3, 4, 20, 53, 80, 81, 90]
-allowed_m = [0, 3, 5, 11, 12]
+allowed_m = [3, 5, 11, 12]     # WinCNC has no M0 (the stop is a bare G4)
 clamp_margin_in = 0.25
 
 [fusion_team]                   # where each job's Fusion document is saved (searched in every hub you can see)

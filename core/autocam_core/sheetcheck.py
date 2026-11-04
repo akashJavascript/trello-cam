@@ -183,8 +183,8 @@ def check_sheet_program(data: bytes, job: Job, thickness_in: float, tool_key: st
     spec = guard_spec(job, thickness_in, tool_key, by_hand)
     report = check_program(data, spec)
     if not job.pauses.enabled:
-        if report.m0_count:
-            report = _failed(report, f"pauses are off for this job but the program has {report.m0_count} M0")
+        if report.stop_count:
+            report = _failed(report, f"pauses are off for this job but the program has {report.stop_count} stops")
         return SheetCheck(report, None, problems)
     pauses = verify(text, outer_order, pause_spec(job), after_last_part=job.pauses.after_last_part,
                     safe_z_in=spec.clamp_clear_z_in)
@@ -227,8 +227,8 @@ def check_face_program(data: bytes, job: Job, thickness_in: float, part_counts: 
     if outlines:
         problems.append(f"the face program cuts outlines ({', '.join(outlines)})")
     report = check_program(data, face_guard_spec(job, thickness_in, by_hand))
-    if report.m0_count:
-        report = _failed(report, f"the face program has {report.m0_count} M0; it never stops")
+    if report.stop_count:
+        report = _failed(report, f"the face program has {report.stop_count} stops; it never stops")
     target = thickness_in - job.face.depth_in
     if report.min_z_in is None or report.min_z_in > target + FACE_REACH_TOL_IN:
         lowest = "no Z move" if report.min_z_in is None else f"lowest Z {report.min_z_in:.4f} in"
@@ -269,8 +269,8 @@ def check_scribe_program(data: bytes, job: Job, thickness_in: float, part_counts
     spec = replace(guard_spec(job, thickness_in, job.tooling.default, by_hand),
                    z_floor_in=max(0.0, deepest - FACE_FLOOR_TOL_IN), tool_radius_in=s.chamfer.diameter_in / 2)
     report = check_program(data, spec)
-    if report.m0_count:
-        report = _failed(report, f"the scribe program has {report.m0_count} M0; it never stops")
+    if report.stop_count:
+        report = _failed(report, f"the scribe program has {report.stop_count} stops; it never stops")
     return SheetCheck(report, None, tuple(problems))
 
 
@@ -295,8 +295,8 @@ def check_small_program(data: bytes, job: Job, thickness_in: float, tool_key: st
     if outlines:
         problems.append(f"the small-tool program cuts outlines ({', '.join(outlines)}); they stay in the sheet's")
     report = check_program(data, guard_spec(job, thickness_in, tool_key, by_hand))
-    if report.m0_count:
-        report = _failed(report, f"the small-tool program has {report.m0_count} M0; it never stops")
+    if report.stop_count:
+        report = _failed(report, f"the small-tool program has {report.stop_count} stops; it never stops")
     if report.min_z_in is None:
         problems.append("the small-tool program has no Z move")
     elif report.min_z_in > job.guard.z_floor_in + THROUGH_CUT_TOL_IN:
@@ -327,8 +327,8 @@ def check_fit_program(data: bytes, job: Job, thickness_in: float, tool_key: str,
     if outer_order:
         problems += outer_depth_problems(text, job.guard.z_floor_in)
     report = check_program(data, guard_spec(job, thickness_in, tool_key, by_hand))
-    if report.m0_count:
-        report = _failed(report, f"the fit lap has {report.m0_count} M0; laps never stop")
+    if report.stop_count:
+        report = _failed(report, f"the fit lap has {report.stop_count} stops; laps never stop")
     if report.min_z_in is None:
         problems.append("the fit lap has no Z move")
     elif report.min_z_in > job.guard.z_floor_in + THROUGH_CUT_TOL_IN:   # every fitted feature goes through

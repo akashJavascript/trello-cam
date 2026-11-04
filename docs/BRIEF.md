@@ -190,8 +190,8 @@ This is the shop's machine-proven post. **Do not edit it.** What it means for th
       contour is split into **one operation per part instance**, ordered to keep travel short. A part is finished
       the moment its outline finishes (its holes were cut earlier).
     - **After each part's outline**, a pause block: retract (`G53 Z`), spindle off (`M5`), mist off (`M12 C8`, only
-      if mist is on), move to the park spot, then **`M0` program stop: the machine waits for the operator to press
-      start.** On resume: mist back on if used (`M11 C8`), spindle on (`S18000 M3`), and the post's usual 4-second
+      if mist is on), move to the park spot, then **a program stop: the machine waits for the operator to press
+      start.** (2026-11-03: WinCNC has no `M0`, so the stop is a bare `G4`, which waits for ENTER; see decisions.) On resume: mist back on if used (`M11 C8`), spindle on (`S18000 M3`), and the post's usual 4-second
       spin-up dwell (`G4 X4`) before cutting continues.
     - **Not a timed dwell.** A dwell resumes on its own; if nobody hits pause in time, the machine starts moving
       with hands near the spindle. `M0` plus spindle off means nothing moves until someone presses start.
@@ -404,8 +404,9 @@ Nothing here blocks planning. Grouped by when it's actually needed:
    Onshape material names students use (for the material mapping table; the service can list them once).
 
 **Before the first real cut:**
-9. **Resume key after M0:** run `fusion/tests/pause_air_test.tap` (air moves only, 3" above work zero) and note
-   which key/button resumes after each stop, and that the spindle stops at each pause and restarts after.
+9. **Resume key after a stop:** WinCNC has no M0 (2026-11-03), so the stop is a bare G4, which waits for ENTER
+   by the WinCNC manual (p. 93). Run `fusion/tests/pause_air_test.tap` (air moves only, 3" above work zero) and
+   check that it stops, ENTER resumes, and the spindle stops at each pause and restarts after.
 10. **No-tab trial:** cut one taped sheet without tabs to confirm tape holds every part size (decision 6).
 11. **1/8" poly tool:** GUID, tool number, flute length and feeds once imported (only needed for poly parts
     with features smaller than 4 mm; until then those go to review).

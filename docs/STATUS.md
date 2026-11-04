@@ -1,6 +1,6 @@
 # Status
 
-_Last updated 2026-11-02 (branch `main`)._
+_Last updated 2026-11-03 (branch `main`)._
 
 ## Where things are
 
@@ -54,8 +54,8 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 2. **Tabs trial:** cut a sheet with tabbed parts (triangular, 0.157 in wide, 1 mm high) and check the parts
    and slugs stay put and the tabs break out cleanly (tape alone didn't hold parts in the team's trials).
 3. **Pause test** on a sheet with 2+ parts: tick "Add an air test program" under Options and run it
-   (`docs/manual-tests.md` → M1.6). Record the resume key: `pauses.resume_key` is empty, so cards say
-   "the continue key".
+   (`docs/manual-tests.md` → M1.6). WinCNC has no M0 (found 2026-11-03): the stop is a bare G4, which waits
+   for ENTER by the manual. Check that it stops, and that ENTER resumes.
 4. **Confirm the clamp values** and the other `[assumed]` entries in `config/autocam.toml` (`autocam
    config-check` lists them): clamp reach, clearance and height decide where parts may go.
 5. A **corner stop** on the bed (the user's idea): every sheet and offcut square, in reach and at one zero.
@@ -223,6 +223,7 @@ More stretch ideas (2026-10-04, saved for later; 1 and 2 were built the same day
 ## Not verified yet (don't rely on these until they are)
 
 - **Fusion:** what has run is in `docs/fusion-api-status.md`; everything else in `fx_*.py` is untested.
-- **The machine:** no program has been cut or air-tested yet.
+- **The machine:** nothing AutoCAM made has run on it yet. r068 S1 (2026-11-03) failed at its first stop: WinCNC
+  has no M0. The stop is a bare G4 now (decisions, 2026-11-03), not tried at the machine yet.
 - **Onshape and Trello** have worked for real (runs r001-r016, `.step` attachments included); version links,
   Smoked labels and 5052 haven't been through a real run.

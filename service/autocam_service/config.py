@@ -41,8 +41,8 @@ NEVER_AUTOMATED = "ready_to_cut"
 TRELLO_FREE_ATTACHMENT_MB = 10
 ENTERPRISE_CALLS_PER_YEAR = 10000   # Onshape: shared by the whole enterprise (runs and the panel are a share)
 # The guard only understands autocam_core.tapguard.SAFE_G / SAFE_M; allowlists must stay inside them.
-REQUIRED_G = frozenset({0, 1, 20, 53, 90})
-REQUIRED_M = frozenset({0, 3, 5})
+REQUIRED_G = frozenset({0, 1, 4, 20, 53, 90})    # G4: the stops (a bare G4) and the spin-up dwell
+REQUIRED_M = frozenset({3, 5})               # no M0: WinCNC has none (pauses.py)
 MIST_M = frozenset({11, 12})
 # Post properties whose value the automation depends on (see docs/PLAN.md, "Post behavior").
 FIXED_POST_PROPERTIES = {"safePositionMethod": "G53", "useToolCall": False, "useCoolant": False}

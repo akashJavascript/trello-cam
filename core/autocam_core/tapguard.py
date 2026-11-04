@@ -31,7 +31,7 @@ Rect = Tuple[float, float, float, float]  # x0, y0, x1, y1 (inches, work coordin
 # The only codes the guard knows how to reason about. Config allowlists are intersected with these, so
 # adding e.g. G55 (another work offset), G18 (another arc plane) or G91 to config can never make it pass.
 SAFE_G = frozenset({0, 1, 2, 3, 4, 20, 53, 73, 80, 81, 82, 83, 90})
-SAFE_M = frozenset({0, 3, 5, 11, 12})
+SAFE_M = frozenset({3, 5, 11, 12})      # WinCNC has no M0: the stop is a bare G4 (pauses.py)
 UNIT_CODES = frozenset({20, 21, 22})
 MOTION_G = frozenset({0, 1, 2, 3})
 CYCLE_G = frozenset({73, 81, 82, 83})
@@ -46,7 +46,7 @@ class GuardSpec:
     z_floor_in: float = 0.0
     unit_code: int = 20                          # G20 = inch programs
     allowed_g: FrozenSet[int] = frozenset({0, 1, 2, 3, 4, 20, 53, 80, 81, 90})
-    allowed_m: FrozenSet[int] = frozenset({0, 3, 5, 11, 12})
+    allowed_m: FrozenSet[int] = frozenset({3, 5, 11, 12})
     park: str = "G53 P10"
     clamp_zones_in: Tuple[Rect, ...] = ()        # in work coordinates (WCS = sheet front-left bottom)
     clamp_clear_z_in: float = math.inf           # every move over a clamp zone must stay at or above this
@@ -71,7 +71,7 @@ class GuardReport:
     offenders: Tuple[str, ...]          # lines that go below the floor
     clamp_violations: Tuple[str, ...]   # moves too low over a clamp zone
     problems: Tuple[str, ...]           # anything else that makes the program unsafe or unreadable
-    m0_count: int
+    stop_count: int                     # operator stops (bare G4: WinCNC waits for ENTER)
     line_count: int
     cut_box_in: Optional[Rect] = None   # what the cutter (grown by its radius) covers below the stock top
 
@@ -93,7 +93,7 @@ class GuardReport:
             "sha256": self.sha256, "passed": self.passed, "floor_in": self.floor_in,
             "min_z_in": self.min_z_in, "units": self.units, "offenders": list(self.offenders),
             "clamp_violations": list(self.clamp_violations), "problems": list(self.problems),
-            "m0_count": self.m0_count, "line_count": self.line_count,
+            "stop_count": self.stop_count, "line_count": self.line_count,
         }
 
 
@@ -253,7 +253,7 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
     absolute = False
     units_seen = 0
     spindle_on = False
-    m0_count = 0
+    stop_count = 0
     min_z: Optional[float] = None
     mist_on_before_motion = False
     moved = False
@@ -346,9 +346,13 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
             tail.append((n, words))
             continue
 
-        if 4 in gs:  # dwell: X is seconds here
+        if 4 in gs:  # dwell: X is seconds here; with no time WinCNC waits for ENTER (the operator stop)
             if set(letters) - {"G", "X", "P", "N"} or len(gs) != 1:
                 problems.append(f"{where(n, raw)} (dwell line with other words)")
+            elif "X" not in values and "P" not in values:
+                stop_count += 1
+                if spindle_on:
+                    problems.append(f"{where(n, raw)} (stop with the spindle running)")
             tail.append((n, words))
             continue
 
@@ -373,10 +377,6 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
                 spindle_on = True
             elif m == 5:
                 spindle_on = False
-            elif m == 0:
-                m0_count += 1
-                if spindle_on:
-                    problems.append(f"{where(n, raw)} (M0 stop with the spindle running)")
             elif m in (11, 12):
                 if values.get("C") != 8.0:
                     problems.append(f"{where(n, raw)} (M{m} without C8)")
@@ -535,7 +535,7 @@ def check_program(data: bytes, spec: GuardSpec) -> GuardReport:
     return GuardReport(
         sha256=sha, passed=passed, floor_in=spec.z_floor_in, min_z_in=min_z, units=unit_name,
         offenders=tuple(offenders), clamp_violations=tuple(clamp), problems=tuple(problems),
-        m0_count=m0_count, line_count=len(lines),
+        stop_count=stop_count, line_count=len(lines),
         cut_box_in=_grow(cut_box, spec.tool_radius_in) if cut_box is not None else None,
     )
 

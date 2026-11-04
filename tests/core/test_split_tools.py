@@ -129,5 +129,5 @@ def test_the_small_program_cuts_through_with_the_small_tool_only():
     outline = check_small_program(SMALL.replace("[drill holes]", "[outer p01-1]").encode(), job, t,
                                   "t12_eighth_alu", {key: 1})
     assert any("cuts outlines" in p for p in outline.problems())
-    stops = check_small_program(SMALL.replace("G80", "G80\nM0").encode(), job, t, "t12_eighth_alu", {key: 1})
+    stops = check_small_program(SMALL.replace("G80", "G80\nG4 [STOP]").encode(), job, t, "t12_eighth_alu", {key: 1})
     assert not stops.passed

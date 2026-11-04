@@ -1,8 +1,14 @@
 """Pause after every part so the operator can pull it (decision 19).
 
 After a part's outline: retract (G53 Z), spindle off (M5), mist off if used (M12 C8), park,
-then M0, which waits for the operator to press start. On resume: mist on if used (M11 C8),
-spindle on (S.. M3) and the post's 4-second spin-up dwell (G4 X4). Never a timed dwell.
+then a bare G4, which waits for the operator to press ENTER, with its comment shown as the prompt (WinCNC
+users guide 2.6, p. 93). On resume: mist on if used (M11 C8), spindle on (S.. M3) and the post's 4-second
+spin-up dwell (G4 X4). Never a timed dwell for the stop itself.
+
+WinCNC has no M0 (2026-11-03): its M codes are M11-M14, M17, M18, M28, M29, M37, M98, M99 (pp. 112-116), and
+M3/M5 are the machine's own CNC.MAC macros. An M0 stopped r068's program with "Syntax - Command or File Not
+Found" ("non-supported code or invalid file name", p. 119), so the stop is a bare G4 now. The post never writes
+a bare G4 (onDwell always has an X), so a bare G4 is always one of these stops.
 
 Two ways the block reaches the program, both checked by `verify` on the final text:
 - "tap_text" (default): `insert` adds the whole block to the posted text, right before the
@@ -32,6 +38,9 @@ class PauseError(Exception):
     pass
 
 
+STOP_WORDS = [("G", 4.0)]       # a bare G4: WinCNC waits for ENTER
+
+
 @dataclass(frozen=True)
 class PauseSpec:
     mist: bool
@@ -43,7 +52,7 @@ class PauseSpec:
 @dataclass(frozen=True)
 class PauseEntry:
     after: str      # instance id of the part that was just finished, e.g. p03-1
-    line: int       # 1-based line number of its M0
+    line: int       # 1-based line number of its stop (the bare G4)
 
 
 @dataclass(frozen=True)
@@ -63,7 +72,7 @@ def stop_lines(part_number: int, spec: PauseSpec) -> List[str]:
     lines = [f"[PART {part_number} DONE - PAUSE]", "G53 Z", "M5"]
     if spec.mist:
         lines.append("M12 C8")
-    lines += [spec.park, "[REMOVE PART THEN RESUME]", "M0"]
+    lines += [spec.park, f"G4 [TAKE PART {part_number} OUT, THEN PRESS ENTER]"]
     return lines
 
 
@@ -156,18 +165,18 @@ def verify(text: str, outer_order: Sequence[str], spec: PauseSpec, *,
     """Check every pause on the final program text, whichever way it got there.
 
     Between the end of one part's outline and the first move of the next, the code lines must be,
-    in order: G53 Z, M5, [M12 C8], park, M0, [M11 C8], S<rpm>, M3, G4 X<dwell>. After the restart,
+    in order: G53 Z, M5, [M12 C8], park, G4 (the stop), [M11 C8], S<rpm>, M3, G4 X<dwell>. After the restart,
     the first sideways move must happen at or above `safe_z_in` (the move comes down from the top).
     """
     lines, _ = _split(text)
     expected = max(len(outer_order) - 1, 0) + (1 if after_last_part and outer_order else 0)
     problems: List[str] = []
     entries: List[PauseEntry] = []
-    m0_lines = [i for i, line in enumerate(lines) if _has_word(line, ("M", 0.0))]
+    stops = [i for i, line in enumerate(lines) if _is_stop(line)]
     try:
         anchors = _find_outer_comments(lines, outer_order)
     except PauseError as e:
-        return PauseCheck(False, expected, len(m0_lines), (), (str(e),))
+        return PauseCheck(False, expected, len(stops), (), (str(e),))
 
     stop_words = [parse_code(l) for l in stop_lines(1, spec) if parse_code(l)]
     restart_words = [parse_code(l) for l in restart_lines(spec)]
@@ -188,8 +197,8 @@ def verify(text: str, outer_order: Sequence[str], spec: PauseSpec, *,
             problems.append(f"pause after {outer_order[k - 1]} (before line {anchors[k] + 1}) is not the "
                             f"expected stop/restart block: {[_show(w) for _, w in code]}")
             continue
-        m0_index = next(i for i, w in code if w == [("M", 0.0)])
-        entries.append(PauseEntry(after=outer_order[k - 1], line=m0_index + 1))
+        stop_index = next(i for i, w in code if w == STOP_WORDS)
+        entries.append(PauseEntry(after=outer_order[k - 1], line=stop_index + 1))
         if safe_z_in is not None:
             problem = _first_move_problem(lines, code[-1][0] + 1, safe_z_in)
             if problem:
@@ -202,14 +211,14 @@ def verify(text: str, outer_order: Sequence[str], spec: PauseSpec, *,
         if tail[:len(stop_words)] != stop_words:
             problems.append(f"no stop block after the last part ({outer_order[-1]})")
         else:
-            m0_line = next(i for i in range(last_motion + 1, len(lines)) if _has_word(lines[i], ("M", 0.0)))
-            entries.append(PauseEntry(after=outer_order[-1], line=m0_line + 1))
+            stop_line = next(i for i in range(last_motion + 1, len(lines)) if _is_stop(lines[i]))
+            entries.append(PauseEntry(after=outer_order[-1], line=stop_line + 1))
 
-    if len(m0_lines) != expected:
-        problems.append(f"expected {expected} M0 stops, found {len(m0_lines)}")
-    if anchors and any(i < anchors[0] for i in m0_lines):
-        problems.append("M0 before the first part outline")
-    return PauseCheck(ok=not problems, expected=expected, found=len(m0_lines),
+    if len(stops) != expected:
+        problems.append(f"expected {expected} stops, found {len(stops)}")
+    if anchors and any(i < anchors[0] for i in stops):
+        problems.append("a stop before the first part outline")
+    return PauseCheck(ok=not problems, expected=expected, found=len(stops),
                       entries=tuple(entries), problems=tuple(problems))
 
 
@@ -225,8 +234,8 @@ def _words(line: str) -> Optional[Words]:
         return None
 
 
-def _has_word(line: str, word) -> bool:
-    return word in (_words(line) or [])
+def _is_stop(line: str) -> bool:
+    return _words(line) == STOP_WORDS
 
 
 def _show(words: Words) -> str:

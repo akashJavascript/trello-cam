@@ -28,7 +28,7 @@ def test_whole_program_at_stock_top_flags_every_outline():
 
 def test_depth_reached_by_a_later_op_does_not_count():
     text = "\r\n".join(["G20", "[outer p01-1]", "G0 X1. Y1.", "G0 Z0.3", "G1 Z0.1 F20.", "G0 Z2.",
-                        "[PART 1 DONE - PAUSE]", "G53 Z", "M5", "M0",
+                        "[PART 1 DONE - PAUSE]", "G53 Z", "M5", "G4 [TAKE PART 1 OUT]",
                         "[outer p02-1]", "G0 X5. Y1.", "G0 Z0.3", "G1 Z0. F20.", "G0 Z2."])
     problems = outer_depth_problems(text, 0.0)
     assert len(problems) == 1 and "[outer p01-1]" in problems[0]

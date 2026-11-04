@@ -182,7 +182,8 @@ sheet clamped). Or use `fusion/tests/pause_air_test.tap`
 - [ ] The spindle actually stops at each pause and restarts after resume (4 s spin-up before moving).
 - [ ] Mist turns off at each pause and back on after resume (mist file only).
 - [ ] The first move after resume comes down from the top, not sideways at cutting depth.
-- [ ] Record the key/button that resumes (open question 9): ______  (never Esc: it aborts the job)
+- [ ] ENTER resumes (open question 9; the WinCNC manual says ENTER after a bare G4): ______  (never Esc: it
+  aborts the job)
 - [ ] (Air test file) The cutter never comes closer than 0.5 in to the sheet, and its highest moves stay inside
   the Z travel (no soft-limit error).
 

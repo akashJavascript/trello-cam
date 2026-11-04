@@ -999,6 +999,27 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   that reaches left at the back).
 - Not rectangles (a part's own notches, the triangle by an angled edge): a part's bounding box counts as used.
 
+## 2026-11-03: WinCNC has no M0, so the stop between parts is a bare G4 (core 0.21.0)
+
+- r068 S1 was the first AutoCAM program loaded on the ShopSabre. WinCNC's preview drew only part 1, and running the
+  program or its AIRTEST stopped with "Syntax: command or file not found". The shop cut it from a hand export.
+- The WinCNC users guide 2.6 (wincnc.com) lists every M code it has: M11-M14, M17, M18, M28, M29, M37, M98, M99
+  (pp. 112-116). There is no M0. M3 and M5 work because they are the machine's own CNC.MAC macros (p. 117).
+  "Syntax - Command or File Not Found" means "non-supported code or invalid file name entered" (p. 119).
+- A G4 with no time "stops the machine until the operator pushes ENTER", and a comment after it is the prompt
+  (p. 93). The stop is now `G4 [TAKE PART n OUT, THEN PRESS ENTER]`, after the same retract, spindle off, mist
+  off and park as before. The post never writes a bare G4 (its dwells always have an X), so the guard counts a
+  bare G4 as a stop and refuses one with the spindle on. M0 is never allowed now, even if config lists it.
+  `pauses.resume_key` = "ENTER", so cards say "press ENTER".
+- **The manual warns against stopping this way to change parts** ("Never use Dwell to stop the machine while
+  changing parts!", p. 93); it suggests one part per program, repeated with TAB at the program prompt. The stop
+  already retracts, stops the spindle and parks first, but a stray ENTER restarts the spindle and the program, so
+  hands out before ENTER. The other choice is the sheet card's "Cut without stopping" option and pulling the parts
+  at the end. The team's call.
+- Not seen at the machine yet: run an air test before the first real sheet. SMALL (drilling, no stops) may have
+  failed too; that isn't confirmed. If it did, it's a second cause: G81 and G80 are in the manual (p. 96).
+- Programs already on sheet cards still have M0 and won't run: re-run their parts before cutting them.
+
 ## 2026-11-03: the polycarbonate cutters are the team's WCP bits (the user)
 
 - The team runs WCP's single-flute DLC end mills: 4 mm WCP-1513 and 1/8 in WCP-1517, both 12 mm cut length. WCP

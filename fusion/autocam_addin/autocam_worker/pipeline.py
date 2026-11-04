@@ -237,7 +237,7 @@ def check_job(job: Job) -> None:
                         f"runs core {CORE_VERSION}; pull the repo on both sides and restart the add-in")
     if job.pauses.enabled and job.pauses.mode != "tap_text":
         raise JobFailed(f"{E.JOB_INVALID}: pause mode {job.pauses.mode!r} isn't supported; a Manual NC Stop posts "
-                        "a bare M0 with the spindle running (docs/fusion-api-status.md)")
+                        "a bare M0 with the spindle running, and WinCNC has no M0 (docs/fusion-api-status.md)")
     post = Path(job.post.path)
     if not post.is_file():
         raise JobFailed(f"{E.POST_FAILED}: the pinned post {post} is missing")

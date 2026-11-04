@@ -29,15 +29,16 @@ def test_mist_air_test_passes_the_guard_with_two_pauses():
     program = air_test_program(MIST).encode("ascii")
     report = check_program(program, GuardSpec(mist=True))
     assert report.passed, report.summary()
-    assert report.m0_count == 2
+    assert report.stop_count == 2
 
 
 def test_pause_block_contents():
     assert pause_block(1, MIST) == [
-        "[PART 1 DONE - PAUSE]", "G53 Z", "M5", "M12 C8", "G53 P10", "[REMOVE PART THEN RESUME]", "M0",
+        "[PART 1 DONE - PAUSE]", "G53 Z", "M5", "M12 C8", "G53 P10", "G4 [TAKE PART 1 OUT, THEN PRESS ENTER]",
         "M11 C8", "S18000", "M3", "G4 X4"]
     assert pause_block(2, DRY, restart=False) == [
-        "[PART 2 DONE - PAUSE]", "G53 Z", "M5", "G53 P10", "[REMOVE PART THEN RESUME]", "M0"]
+        "[PART 2 DONE - PAUSE]", "G53 Z", "M5", "G53 P10", "G4 [TAKE PART 2 OUT, THEN PRESS ENTER]"]
+    assert "M0" not in "\n".join(pause_block(1, MIST))           # WinCNC has no M0 (2026-11-03)
 
 
 def test_insert_puts_a_pause_between_each_pair_of_parts():
@@ -45,8 +46,8 @@ def test_insert_puts_a_pause_between_each_pair_of_parts():
     lines = out.split("\r\n")
     for instance in ("p02-1", "p02-2"):
         i = lines.index(f"[outer {instance}]")
-        assert lines[i - 11:i] == pause_block(ORDER.index(instance), MIST)
-    assert out.count("\nM0\r") == 2
+        assert lines[i - 10:i] == pause_block(ORDER.index(instance), MIST)
+    assert out.count("\nG4 [TAKE PART") == 2
     assert "\n" not in out.replace("\r\n", "")  # CRLF kept, no bare LF
     assert out.endswith("G53 P10\r\n")
 
@@ -59,7 +60,7 @@ def test_inserted_program_verifies_and_passes_the_guard():
     assert [e.after for e in check.entries] == ["p01-1", "p02-1"]
     report = check_program(out.encode("ascii"), GUARD)
     assert report.passed, report.summary()
-    assert report.m0_count == 2
+    assert report.stop_count == 2
 
 
 def test_single_part_sheet_has_no_pause():
@@ -83,7 +84,7 @@ def test_missing_pause_is_caught():
     out = insert(SAMPLE, ORDER[:2], MIST)  # forgot the last part
     check = verify(out, ORDER, MIST)
     assert not check.ok
-    assert "expected 2 M0 stops, found 1" in check.problems
+    assert "expected 2 stops, found 1" in check.problems
 
 
 def test_incomplete_block_is_caught():
@@ -105,9 +106,9 @@ def test_first_move_after_resume_must_come_down_from_the_top():
 
 
 def test_stop_before_the_first_outline_is_caught():
-    out = insert(SAMPLE, ORDER, MIST).replace("[inner]", "M5\r\nM0\r\nM3\r\n[inner]")
+    out = insert(SAMPLE, ORDER, MIST).replace("[inner]", "M5\r\nG4\r\nM3\r\n[inner]")
     check = verify(out, ORDER, MIST)
-    assert "M0 before the first part outline" in check.problems
+    assert "a stop before the first part outline" in check.problems
 
 
 def test_after_last_part_adds_a_final_stop():

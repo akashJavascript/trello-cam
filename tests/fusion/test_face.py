@@ -136,7 +136,7 @@ def test_the_face_check_wants_the_face_depth_reached(tmp_path):
 
 def test_the_face_check_refuses_stops_outlines_and_unfaced_parts(tmp_path):
     rig = Rig(tmp_path)
-    assert any("never stops" in p for p in check(rig, face_program("M0")).problems())
+    assert any("never stops" in p for p in check(rig, face_program("G4 [STOP]")).problems())
     assert any("cuts outlines" in p for p in check(rig, face_program("[outer p02-1]")).problems())
     assert any("don't ask for facing: p02" in p for p in check(rig, face_program(), {"p01": 2, "p02": 1}).problems())
 

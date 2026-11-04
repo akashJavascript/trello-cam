@@ -36,7 +36,7 @@ def test_real_config_loads():
 
 def test_placeholders_and_warnings_are_reported():
     cfg = load_config()
-    assert "pauses.resume_key" in cfg.placeholders
+    assert "pauses.resume_key" not in cfg.placeholders                     # ENTER (WinCNC manual)
     assert not any(p.startswith(("trello.", "fusion_team.")) for p in cfg.placeholders)   # the real board is set up
     assert not any(p.endswith(".color") for p in cfg.placeholders)
     assert not any("not exported yet" in w for w in cfg.warnings)      # all four templates are in (2026-10-31)

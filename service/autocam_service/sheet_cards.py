@@ -197,7 +197,7 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
             lines.append(f"It cuts one {name}: run it {s.repeat} times, zeroing at a fresh spot each time.")
         if n and stops:
             lines.append(f"It stops after each part but the last ({n} stops), spindle off. Take the part out, "
-                         f"then press {key}. Never press Esc at a stop: it ends the program.")
+                         f"hands clear, then press {key}. Never press Esc at a stop: it ends the program.")
         elif n:
             lines.append("It cuts the whole sheet without stopping: cut parts stay loose in the sheet until it's "
                          "done. Keep hands off until the spindle stops at the end.")

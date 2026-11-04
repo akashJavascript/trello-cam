@@ -49,12 +49,12 @@ def test_options_start_unticked(tmp_path):
 def test_cut_without_stopping_swaps_the_program_and_back(tmp_path):
     h, s1 = two_part_sheet(tmp_path)
     stopping = programs(h, s1.id)["6061_0p125_r001_S1.tap"]
-    assert stopping.count(b"M0") == 1 and "It stops after each part" in h.tracker.cards[s1.id].desc
+    assert stopping.count(b"\r\nG4 [TAKE PART") == 1 and "It stops after each part" in h.tracker.cards[s1.id].desc
 
     tick(h, s1.id, NO_STOP)
     h.runner.tick()
     [(name, plain)] = programs(h, s1.id).items()
-    assert name == "6061_0p125_r001_S1_NOSTOP.tap" and b"M0" not in plain
+    assert name == "6061_0p125_r001_S1_NOSTOP.tap" and b"G4 [TAKE PART" not in plain
     desc = h.tracker.cards[s1.id].desc
     assert "Program: 6061_0p125_r001_S1_NOSTOP.tap" in desc and "without stopping" in desc and "stops after" not in desc
     assert h.tracker.comments_on(s1.id)[-1] == "Now cuts the whole sheet without stopping: 6061_0p125_r001_S1_NOSTOP.tap."
@@ -78,7 +78,7 @@ def test_air_test_on_and_off(tmp_path):
     files = programs(h, s1.id)
     air = files["6061_0p125_r001_S1_AIRTEST.tap"]
     assert lowest_z(air) == 0.625 and lowest_z(files["6061_0p125_r001_S1.tap"]) == 0.0
-    assert air.count(b"M0") == 1 and b"[AIR TEST - RAISED 0.625 IN" in air
+    assert air.count(b"\r\nG4 [TAKE PART") == 1 and b"[AIR TEST - RAISED 0.625 IN" in air
     assert "Air test added: 6061_0p125_r001_S1_AIRTEST.tap. It traces each part's outline once, at 200 in/min" in \
         h.tracker.comments_on(s1.id)[-1]
     feeds = {w for line in air.decode("ascii").split("\r\n") for w in line.split() if w.startswith("F")}
@@ -98,7 +98,7 @@ def test_both_options_air_test_the_program_that_runs(tmp_path):
     h.runner.tick()
     files = programs(h, s1.id)
     assert sorted(files) == ["6061_0p125_r001_S1_NOSTOP.tap", "6061_0p125_r001_S1_NOSTOP_AIRTEST.tap"]
-    assert b"M0" not in files["6061_0p125_r001_S1_NOSTOP_AIRTEST.tap"]
+    assert b"G4 [TAKE PART" not in files["6061_0p125_r001_S1_NOSTOP_AIRTEST.tap"]
 
 
 def test_a_rebuilt_sheet_gets_its_options_again(tmp_path):

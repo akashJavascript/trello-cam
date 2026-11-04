@@ -1,4 +1,5 @@
 import hashlib
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -34,7 +35,7 @@ def test_sample_program_passes():
     report = check(SAMPLE)
     assert report.passed, report.summary()
     assert report.min_z_in == 0.0
-    assert report.m0_count == 0
+    assert report.stop_count == 0
     assert report.sha256 == hashlib.sha256(SAMPLE).hexdigest()
     assert report.summary() == "passed; lowest Z 0.0000 in"
 
@@ -43,7 +44,7 @@ def test_pause_air_test_passes():
     report = check(AIR_TEST, GuardSpec(mist=False))
     assert report.passed, report.summary()
     assert report.min_z_in == 3.0
-    assert report.m0_count == 2
+    assert report.stop_count == 2
 
 
 # ---- the Z floor
@@ -186,9 +187,17 @@ def test_y_beyond_reach_fails():
 
 # ---- spindle, mist and the program ending
 
-def test_m0_with_spindle_running_fails():
-    report = check(edit("G4 X4.\r\n", "G4 X4.\r\nM0\r\n"))
-    assert any("M0 stop with the spindle running" in p for p in report.problems)
+def test_stop_with_spindle_running_fails():
+    report = check(edit("G4 X4.\r\n", "G4 X4.\r\nG4 [TAKE PART 1 OUT]\r\n"))
+    assert any("stop with the spindle running" in p for p in report.problems) and report.stop_count == 1
+
+
+def test_m0_is_never_allowed():
+    """WinCNC has no M0 ("Syntax - Command or File Not Found" at the machine, r068, 2026-11-03)."""
+    report = check(edit("G53 P10", "G53 P10\r\nM0"))
+    assert any("M0 is not allowed" in p for p in report.problems)
+    assert check(edit("G53 P10", "G53 P10\r\nM0"), replace(SPEC, allowed_m=frozenset({0, 3, 5, 11, 12}))).problems == \
+        report.problems                                     # not even when config asks for it
 
 
 def test_cutting_with_spindle_stopped_fails():

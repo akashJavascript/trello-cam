@@ -43,7 +43,7 @@ def test_pause_inserted_into_real_output_verifies_and_passes_the_guard():
     assert check.found == check.expected == 1
     report = check_program(paused.encode("ascii"), SPEC)
     assert report.passed, report.summary()
-    assert report.m0_count == 1
+    assert report.stop_count == 1
 
 
 def test_manual_nc_stop_and_pass_through_are_not_safe_pauses():
@@ -52,7 +52,7 @@ def test_manual_nc_stop_and_pass_through_are_not_safe_pauses():
     report = check_program(data, SPEC)
     assert not report.passed
     assert "PT_MESSAGE" in report.summary()
-    # A Manual NC Stop is a bare M0: no retract, spindle stop, mist off or park before it.
-    assert "M0 stop with the spindle running" in report.summary()
+    # A Manual NC Stop is a bare M0, which WinCNC doesn't have (and no retract, spindle stop, mist off or park).
+    assert "M0 is not allowed" in report.summary()
     check = verify(data.decode("ascii"), ["p01-1", "p02-1"], PauseSpec(mist=True), safe_z_in=1.875)
     assert not check.ok and "not the expected stop/restart block" in check.problems[0]
