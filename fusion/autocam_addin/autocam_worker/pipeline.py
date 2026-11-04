@@ -89,7 +89,7 @@ from autocam_core.tooling import FeaturePlan, ToolNeed, part_tool, plan_features
 from autocam_core.toolpoints import cutting_points
 
 from .adapter import (BEARING, BORE, DRILL, FACE, INNER, OUTER, POCKET, POCKETFINISH, SCRIBE, TAGS, Adapter,
-                      AdapterError, OpFill, Rect)
+                      AdapterError, Arranged, OpFill, Rect)
 
 RESULT = "result.json"
 LOG = "worker.log"
@@ -391,14 +391,27 @@ def _hints(job: Job, sizes: Dict[str, Tuple[float, float]]) -> _Hints:
     return _Hints(levels)
 
 
+NO_ROOM = "ARRANGE_ERROR_NO_ROOM"
+
+
 def _arrange(adapter: Adapter, job: Job, copies: Sequence[str], envelope: Rect, up: Dict[str, int],
              hints: Optional[_Hints] = None, log: Optional[Callable[[str], None]] = None):
-    """adapter.arrange with the parts' priorities; what Fusion says it set goes in the log."""
+    """adapter.arrange with the parts' priorities; what Fusion says it set goes in the log. An area none of the
+    copies fits places nothing: Fusion's Arrange places what fits, but raises ARRANGE_ERROR_NO_ROOM when nothing
+    does (r084: a room beside the robot parts too small for any spare)."""
     def key(c: str) -> str:
         return c.rsplit(".", 1)[0]
     levels = {c: hints.levels[key(c)] for c in copies if hints and key(c) in hints.levels}
-    got = adapter.arrange(list(copies), envelope, job.nest.part_spacing_in, {c: up[c] for c in copies},
-                          priorities=levels)
+    try:
+        got = adapter.arrange(list(copies), envelope, job.nest.part_spacing_in, {c: up[c] for c in copies},
+                              priorities=levels)
+    except AdapterError as e:
+        if NO_ROOM not in str(e):
+            raise
+        if log is not None:
+            w, h = envelope[2] - envelope[0], envelope[3] - envelope[1]
+            log(f"Arrange: none of the {len(copies)} fits {w:.1f} x {h:.1f} in there")
+        return Arranged((), {})
     if log is not None:
         for note in getattr(got, "notes", ()):
             log(f"Arrange: {note}")
@@ -409,8 +422,8 @@ SPARE_ROOM_MIN_IN = 0.5     # a room beside the robot parts narrower than this i
 
 
 def _spares_beside(adapter: Adapter, job: Job, spares: Sequence[str], robot: Sequence[str], envelope: Rect,
-                   up: Dict[str, int], hints: Optional[_Hints], log: Callable[[str], None]
-                   ) -> Tuple[List[str], Dict[str, str]]:
+                   up: Dict[str, int], hints: Optional[_Hints], log: Callable[[str], None],
+                   sizes: Optional[Dict[str, Tuple[float, float]]] = None) -> Tuple[List[str], Dict[str, str]]:
     """Spares on the area that took the last robot parts: only in the room those left, so a spare never moves a
     robot part (2026-11-04, the user: robot parts come first). Two rooms of the area beyond the robot parts' box:
     the strip right of them (the whole length; Arrange packs against the left edge) and the one behind them, the
@@ -422,11 +435,23 @@ def _spares_beside(adapter: Adapter, job: Job, spares: Sequence[str], robot: Seq
     rooms = [(bx1 + s, ey0, ex1, ey1), (ex0, by1 + s, bx1, ey1)]
     rooms = [r for r in rooms if min(r[2] - r[0], r[3] - r[1]) >= SPARE_ROOM_MIN_IN]
     placed: List[str] = []
+
+    def fits(room: Rect) -> bool:
+        """Some spare's imported box fits the room either way round (no box known: let Arrange say)."""
+        w, h = room[2] - room[0], room[3] - room[1]
+        for c in left:
+            a, b = (sizes or {}).get(c.rsplit(".", 1)[0], (0.0, 0.0))
+            if not a or (a <= w + 1e-6 and b <= h + 1e-6) or (a <= h + 1e-6 and b <= w + 1e-6):
+                return True
+        return False
+
     refused: Dict[str, str] = {}
     left = list(spares)
     for room in sorted(rooms, key=lambda r: (r[2] - r[0]) * (r[3] - r[1]), reverse=True):
         if not left:
             break
+        if not fits(room):
+            continue
         got = _arrange(adapter, job, left, room, up, hints, log)
         took = set(got.placed)
         placed += [c for c in left if c in took]
@@ -733,7 +758,7 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
                     if robot and len(robot) < len(remaining) and set(robot) <= placed:
                         more, more_refused = _spares_beside(adapter, job,
                                                             [c for c in remaining if key_of(c) in spare_keys],
-                                                            robot, envelope, up, hints, log)
+                                                            robot, envelope, up, hints, log, sizes)
                         placed |= set(more)
                         refused.update(more_refused)
                         log(f"{thickness:g} in: {len(more)} spare(s) beside the robot parts at x={origin[0]:g}")

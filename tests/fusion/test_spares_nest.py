@@ -70,3 +70,36 @@ def test_the_sheet_card_marks_the_spares(tmp_path):
     desc = sheet_description(job, view, vs, resume_key="ENTER", part_cards={"p01": ("Plate", ""), "p02": ("Tab", "")})
     assert "Parts marked spare go in the spares box, not on the robot." in desc
     assert "Tab (1 of 2) - spare" in desc and "Plate (1 of 2)\n" in desc + "\n" and "Plate (1 of 2) - spare" not in desc
+
+
+def test_an_area_nothing_fits_places_nothing_like_fusion_says(tmp_path):
+    """Fusion's Arrange raises ARRANGE_ERROR_NO_ROOM when none of the copies fits (r084: a room beside the robot
+    part too small for every spare failed the whole job); that's an area that took nothing."""
+    import autocam_worker.pipeline as pipeline
+    rig = Rig(tmp_path)
+    job = rig.job([("big", 1, plate(name="big"), (20.0, 18.0))])
+    rig.run(job)                                                       # the copy exists now
+    rig.fake.no_room_raises = True
+    logs = []
+    got = pipeline._arrange(rig.fake, job, ["p01.1"], (0.0, 0.0, 5.0, 5.0), {"p01.1": 1}, None, logs.append)
+    assert got.placed == () and logs == ["Arrange: none of the 1 fits 5.0 x 5.0 in there"]
+    rig.fake.arrange_error = "arrangeFeatures.add: something else"
+    try:
+        pipeline._arrange(rig.fake, job, ["p01.1"], (0.0, 0.0, 5.0, 5.0), {"p01.1": 1})
+        assert False, "any other failure still fails"
+    except pipeline.AdapterError:
+        pass
+
+
+def test_r084_a_room_too_small_for_every_spare_is_skipped_and_the_job_carries_on(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.no_room_raises = True
+    # The robot plate takes 20 of the 21 in across: the strip right of it fits no spare (not even asked); the
+    # spares go behind it, and what doesn't fit there onto the next sheet.
+    job = rig.job([("plate", 1, plate(name="plate"), (20.0, 12.0)), ("wide", 1, plate(name="wide"), (20.0, 20.0)),
+                   ("tab", 6, plate(name="tab"), (2.0, 1.5))], spares={"wide", "tab"})
+    result = rig.run(job)
+    assert all(p.placed == p.qty and not p.errors for p in result.parts)
+    assert ("p01", 1) in sheets_of(result)[0]
+    first = rig.fake.arrange_envelopes[0]
+    assert not [e for e in rig.fake.arrange_envelopes if abs(e[0] - (first[0] + 20.25)) < 1e-6]   # the 0.75 in strip

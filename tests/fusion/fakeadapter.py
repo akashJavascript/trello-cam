@@ -48,6 +48,7 @@ class FakeAdapter(Adapter):
         self.fail_import: Set[str] = set()             # STEP paths that won't import
         self.refuse: Set[str] = set()                  # part keys Arrange won't lay flat
         self.arrange_error: Optional[str] = None       # every Arrange raises this
+        self.no_room_raises = False   # True: like Fusion, an Arrange that places nothing raises ARRANGE_ERROR_NO_ROOM
         self.bad_z: Set[str] = set()                   # copy ids Arrange leaves floating
         self.move_on_discard: Dict[str, Tuple[float, float]] = {}    # copy id -> shift when anything is discarded
         self.move_on_generate: Dict[str, Tuple[float, float]] = {}   # copy id -> shift during toolpath generation
@@ -135,6 +136,9 @@ class FakeAdapter(Adapter):
             self.boxes[cid] = Box(px, py, z0, px + w, py + h, z0 + geometry.thickness_in)
             placed.append(cid)
             x, y, row = px + w + spacing_in, py, max(prow, h)
+        if self.no_room_raises and not placed and copy_ids:
+            raise AdapterError("arrangeFeatures.add: RuntimeError: 3 : Arrange3 / Compute Failed // "
+                               "ARRANGE_ERROR_NO_ROOM - There is not enough room to arrange all selected items")
         return Arranged(tuple(placed), refused)
 
     def _arrange_columns(self, copy_ids, envelope, spacing_in):
