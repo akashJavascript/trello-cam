@@ -3,6 +3,7 @@
 import logging
 import logging.handlers
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,13 +26,26 @@ from .tracker.trello import TrelloHttp, TrelloTracker
 
 log = logging.getLogger("autocam")
 
+# Trello takes its key and token as URL parameters, and requests puts the URL in its errors: never in a log or on
+# a card (seen in service.log, 2026-11-03).
+_SECRET_PARAM = re.compile(r"(?i)\b(key|token)=[^&\s'\"]+")
+
+
+def hide_secrets(text: str) -> str:
+    return _SECRET_PARAM.sub(r"\1=<hidden>", text)
+
+
+class _HidingFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return hide_secrets(super().format(record))
+
 
 def setup_logging(cfg: Config, verbose: bool = False) -> None:
     cfg.paths.logs.mkdir(parents=True, exist_ok=True)
     root = logging.getLogger("autocam")
     root.setLevel(logging.DEBUG if verbose else logging.INFO)
     if not root.handlers:
-        fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        fmt = _HidingFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
         file_handler = logging.handlers.RotatingFileHandler(cfg.paths.logs / "service.log", maxBytes=1_000_000,
                                                             backupCount=5, encoding="utf-8")
         file_handler.setFormatter(fmt)
@@ -184,7 +198,7 @@ def run_forever(runner: Runner, interval_s: float, code: Optional[CodeWatch] = N
             raise
         except Exception as e:  # noqa: BLE001 - keep polling; the error is logged with its traceback
             log.exception("tick failed")
-            last_error = (clock(), f"{type(e).__name__}: {e}"[:300])
+            last_error = (clock(), hide_secrets(f"{type(e).__name__}: {e}")[:300])
         report = getattr(runner, "report_health", None)
         if report is not None:
             shown = None
