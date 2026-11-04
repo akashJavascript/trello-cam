@@ -1010,6 +1010,30 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - Not rectangles (a part's own notches, the triangle by an angled edge): a part's bounding box counts as used.
   (Since 2026-11-04 the rooms also come from the parts' real cuts: see that day.)
 
+## 2026-11-04: Sign in with Slack on the shop page (the user: "should still build auth"; everyone is on the team's Slack)
+
+- **Only the phone page.** The Onshape panel keeps its key: it runs in Onshape's frame, where a sign-in page can't.
+  Logins with passwords were never on the table (the user wants the page frictionless), and the key link alone
+  couldn't be taken back from one person or kept out of screenshots and group chats.
+- **Slack's OpenID Connect** (`panel/signin.py`): scope `openid profile` (the name, never the email), the
+  `team` parameter to go straight to the team's workspace, and the workspace checked on the way back
+  (`AUTOCAM_SLACK_TEAM_ID`). The code is swapped server to server with the app's secret; who it is comes from
+  `openid.connect.userInfo` over that same TLS connection, so no token signature checking or new library. The
+  token isn't kept. A one-time state, also in a short cookie only `/shop/signed-in` sees, stops someone else's
+  sign-in being finished in your browser.
+- **Sessions** are a random cookie (HttpOnly, Secure, SameSite=Lax); the laptop keeps its sha256, the Slack user
+  id and name. 60 days from last use, so people who use the page never see the sign-in again.
+  `autocam shop-sign-out` ends one name's or everyone's.
+- **Names** come from Slack: the first name, kept in `people.json`; a first name another Slack user already has gets
+  the family initial. A name typed before this (say "Maya") goes to the first Maya who signs in, with what was
+  assigned to it. A signed-in phone's "who are you" is its Slack name and can't be changed on the phone.
+- **The old key link** works for 7 days after the first Slack sign-in, with a "Sign in with Slack" bar (the user
+  agreed to keeping it a week so nobody is locked out mid-build), then shows the sign-in page. Until Slack is set up
+  it's still the only way in, so nothing changes on deploy. A signed-in phone drops the key from its address.
+- **Setup without me touching the secret:** the user makes the Slack app (a manifest is in `docs/panel.md`) and
+  puts its id and secret in the laptop's `.env`. The workspace id is shown by the first sign-in instead of being
+  looked up.
+
 ## 2026-11-04: pictures drawn from the programs (the user: the toolpath picture, and "a pic on the offcut card on what the sheet should look like")
 
 - **Read from the posted programs, not Fusion's idea of them** (core `toolpath.py`, service `drawings.py`,

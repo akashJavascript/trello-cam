@@ -18,6 +18,9 @@ GROUPS: Dict[str, tuple] = {
     "webhook": ("AUTOCAM_WEBHOOK_SECRET",),  # the address Onshape's webhook calls ends with it (panel/hooks.py)
     # not a secret, but kept out of the public repo: the order sheet has students' names (bought.py; optional)
     "order_sheet": ("AUTOCAM_ORDER_SHEET_URL",),
+    # Sign in with Slack on the shop's phone page (panel/signin.py; optional): the Slack app's id and secret, and the
+    # team's workspace id (T...; not a secret, but kept with the app's)
+    "slack": ("AUTOCAM_SLACK_CLIENT_ID", "AUTOCAM_SLACK_CLIENT_SECRET", "AUTOCAM_SLACK_TEAM_ID"),
 }
 ALL_KEYS = tuple(k for keys in GROUPS.values() for k in keys)
 

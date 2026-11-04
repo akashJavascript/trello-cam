@@ -475,6 +475,10 @@ check_every_s = 30              # the before-cut check's loop: Trello reads; Ons
 change_quiet_s = 120            # an Onshape-reported change is checked once nobody has edited that tab this long
 company_id = "652459d6412ce911b57afb73"   # Team 5940 BREAD's Onshape enterprise
 team_usage_hours = 168          # the whole team's Onshape API count on the System card: one call a week (0: off)
+shop_signin = "slack"           # the phone page (/shop): Sign in with Slack (panel/signin.py, docs/panel.md) once
+                                # AUTOCAM_SLACK_CLIENT_ID, _SECRET and _TEAM_ID are in .env; "" = only the key link
+shop_session_days = 60          # a signed-in phone stays signed in this long after it was last used
+shop_old_link_days = 7          # the old key link keeps working this long after the first Slack sign-in
 
 [shafts]                        # the shop's shaft list (service/autocam_service/shafts.py, docs/shafts.md; 2026-11-02):
                                 # library shafts in an assembly are sent from the Onshape panel with its plates and made

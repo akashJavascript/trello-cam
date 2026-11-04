@@ -149,9 +149,10 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
     assemblies = AssemblyWatch(onshape, board, cfg, cfg.paths.state / "panel_assemblies.json", shafts=shafts,
                                parts=parts, hooks=hooks)
     from .people import People
+    people = People(cfg.paths.state / "people.json")
     app = PanelApp(cfg, creds.get("AUTOCAM_PANEL_KEY"), onshape, board, Names(cfg.paths.state / "panel_users.json"),
                    inbox=inbox, hook_secret=secret, shafts=shafts, parts=parts, order_sheet=sheet, assemblies=assemblies,
-                   people=People(cfg.paths.state / "people.json"))
+                   people=people, signin=shop_signin(cfg, creds, people))
     start_server(app, p.port)
     pictures = PictureWatch(onshape, services.store, tracker) if p.pictures else None
     usage = None
@@ -164,6 +165,25 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
     if p.tunnel_dir:
         Tunnel(Path(p.tunnel_dir), cfg.paths.state, cfg.paths.logs).keep_running()
     return True
+
+
+def shop_signin(cfg: Config, creds, people):
+    """Sign in with Slack on the shop's phone page (panel/signin.py), or None: the key link only."""
+    if cfg.panel.shop_signin != "slack":
+        return None
+    from .panel.signin import CALLBACK, ShopSignIn
+    if not (creds.has("AUTOCAM_SLACK_CLIENT_ID") and creds.has("AUTOCAM_SLACK_CLIENT_SECRET") and cfg.panel.public_url):
+        log.info("panel: the shop page has no Slack sign-in yet (needs AUTOCAM_SLACK_CLIENT_ID and "
+                 "AUTOCAM_SLACK_CLIENT_SECRET in .env, and [panel] public_url); its key link works")
+        return None
+    team = creds.get("AUTOCAM_SLACK_TEAM_ID") if creds.has("AUTOCAM_SLACK_TEAM_ID") else ""
+    if not team:
+        log.warning("panel: AUTOCAM_SLACK_TEAM_ID isn't in .env: a Slack sign-in shows the workspace's id, and lets "
+                    "nobody in until it's there")
+    return ShopSignIn(cfg.paths.state / "shop_sessions.json", creds.get("AUTOCAM_SLACK_CLIENT_ID"),
+                      creds.get("AUTOCAM_SLACK_CLIENT_SECRET"), team, cfg.panel.public_url.rstrip("/") + CALLBACK,
+                      session_days=cfg.panel.shop_session_days, old_link_days=cfg.panel.shop_old_link_days,
+                      people=people)
 
 
 def disable_quick_edit() -> None:

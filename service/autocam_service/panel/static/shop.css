@@ -155,3 +155,14 @@ button { font: inherit; color: inherit; }
 .foot { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; background: var(--surface); border-top: 1px solid var(--hair);
   padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
 .foot .btn { width: 100%; max-width: 528px; margin: 0 auto; display: flex; }
+
+/* Signing in with Slack (panel/signin.py): the page a phone that isn't signed in gets, and the bar the old key link shows */
+a.btn { text-decoration: none; font-weight: 600; }
+.signin { max-width: 420px; margin: 0 auto; padding: 56px 16px 32px; display: flex; flex-direction: column; gap: 16px; text-align: center; }
+.signin h1 { margin: 0; font-size: 28px; color: var(--primary-container); }
+.signin .btn { margin-top: 8px; }
+.signin-msg { margin: 0; padding: 12px; border-radius: 12px; font-size: 14px; background: var(--error-container); color: var(--on-error-container); }
+.signin-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 10px 10px 14px; border-radius: 16px;
+  background: var(--secondary-container); color: var(--on-secondary-fixed-variant); font-size: 14px; font-weight: 500; }
+.signin-bar .btn { height: 40px; padding: 0 16px; flex: none; font-size: 14px; }
+.account { display: flex; flex-direction: column; gap: 4px; }

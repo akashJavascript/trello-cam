@@ -243,6 +243,60 @@ row. Both are in `docs/shafts.md`.
 Bought parts (no screws or nuts) are listed under **Bought parts** and go on the same phone page's Parts tab: In
 the bin, or Order. See `docs/bought-parts.md`.
 
+## Signing in to the shop page (2026-11-04)
+
+The shop's phone page (`/shop`) is opened by signing in with Slack, the team's Slack workspace only. The Onshape
+panel still uses its key: it runs inside Onshape's page, where a sign-in page can't. Code: `panel/signin.py`.
+
+- **Signing in:** "Sign in with Slack", once per phone. Slack asks only for the person's name, never their email.
+  The phone stays signed in for `[panel] shop_session_days` (60) after it was last used. The plain link
+  `https://autocam.team5940.org/shop` is safe to pin in Slack or print as a QR code: it opens nothing by itself.
+- **Names:** a signed-in phone is the person's Slack first name (a second Maya gets "Maya K."), kept in
+  `state/people.json` like the other names. "Who are you?" isn't asked any more; tapping the name signs out.
+- **The old key link** keeps working for `[panel] shop_old_link_days` (7) after the first Slack sign-in, with a
+  "Sign in with Slack" bar on top. After that it shows the sign-in page.
+- **Signing someone out:** `python -m autocam_service shop-sign-out <name>`, or `--all` for everyone. Someone taken
+  off the team's Slack can't sign in again.
+- **Kept on the laptop:** `state/shop_sessions.json` has each session's cookie as a hash (never the cookie), the
+  Slack user id and name. Slack's token is used once and never kept.
+
+**Setting it up (once, about 15 minutes):**
+
+1. Go to <https://api.slack.com/apps>, **Create New App**, **From an app manifest**, pick the team's workspace and
+   paste:
+
+   ```yaml
+   display_information:
+     name: AutoCAM shop
+   oauth_config:
+     redirect_urls:
+       - https://autocam.team5940.org/shop/signed-in
+     scopes:
+       user:
+         - openid
+         - profile
+   settings:
+     org_deploy_enabled: false
+     socket_mode_enabled: false
+     token_rotation_enabled: false
+   ```
+
+   Then **Create**. (By hand instead: **OAuth & Permissions**, add the redirect URL above and the user token scopes
+   `openid` and `profile`.)
+2. **Basic Information**, **App Credentials**: put the Client ID and Client Secret in the laptop's `.env` yourself
+   (over Tailscale or USB, never through GitHub, Slack or email):
+
+   ```
+   AUTOCAM_SLACK_CLIENT_ID=...
+   AUTOCAM_SLACK_CLIENT_SECRET=...
+   ```
+
+3. Save `.env`: the service restarts by itself within a minute or so (it watches `.env`). Open
+   `https://autocam.team5940.org/shop/sign-in` on your phone and sign in. The page says
+   `put AUTOCAM_SLACK_TEAM_ID=T... in the laptop's .env`: add that line too and save again. (Until it's there,
+   nobody gets in by Slack and the key link keeps working.)
+4. Sign in again: the shop page opens with your name at the top right. The old link's week starts now.
+
 ## Not confirmed yet
 
 - **Selecting in the CAD: seen 2026-11-01.** Onshape's `SELECTION` message (logged from a real Part Studio):

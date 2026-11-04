@@ -263,6 +263,10 @@ class Panel:
     change_quiet_s: int = 120            # a webhook-reported change is checked once nobody has touched it this long
     company_id: str = ""                 # the Onshape enterprise's id, for its API count (panel/usage.py)
     team_usage_hours: float = 24.0       # read the whole team's API count this often for the System card (0: never)
+    shop_signin: str = "slack"           # the phone page (/shop): "slack" = Sign in with Slack once AUTOCAM_SLACK_*
+                                         # is in .env (panel/signin.py); "" = only the key link
+    shop_session_days: int = 60          # a signed-in phone stays signed in this long after it was last used
+    shop_old_link_days: int = 7          # the key link keeps working this long after the first Slack sign-in
 
 
 @dataclass(frozen=True)
@@ -907,7 +911,10 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                       check_every_s=t.integer("check_every_s", minimum=10, default=30),
                       change_quiet_s=t.integer("change_quiet_s", minimum=30, default=120),
                       company_id=t.string("company_id", default=""),
-                      team_usage_hours=t.number("team_usage_hours", minimum=0, default=24.0))
+                      team_usage_hours=t.number("team_usage_hours", minimum=0, default=24.0),
+                      shop_signin=t.string("shop_signin", choices=("slack", ""), default="slack"),
+                      shop_session_days=t.integer("shop_session_days", minimum=1, default=60),
+                      shop_old_link_days=t.integer("shop_old_link_days", minimum=0, default=7))
         t.finish()
 
     costs = Costs()

@@ -8,8 +8,11 @@
 //   AutoCAM has nested, each plate's spares a card of their own (nested after the robot parts).
 // Who does what (people.py, the mockup approved 2026-11-04): a name tag on every item (+ when nobody), "All" on a
 // group, a picker with the shop's names ("Me" first), and this phone's name at the top right. Soft: anyone can still
-// start anything. "Yours" is what this phone started, or what's assigned to its name. Plain JavaScript, no build step;
-// everything from the server goes in as text, never as HTML.
+// start anything. "Yours" is what this phone started, or what's assigned to its name.
+// Signing in with Slack (panel/signin.py, 2026-11-04): a signed-in phone is its Slack name (no "Who are you?"), and
+// the name button signs out. The old key link shows a "Sign in with Slack" bar until it stops working, and a phone
+// that's signed in drops the key from its address. Plain JavaScript, no build step; everything from the server goes
+// in as text, never as HTML.
 (function () {
   "use strict";
 
@@ -56,6 +59,13 @@
     for (var i = 2; i < arguments.length; i++) add(el, arguments[i]);
     return el;
   }
+  // Back to /shop, which shows the sign-in page when this phone isn't signed in. The same address with only a #tab
+  // would just jump within the page, so that one is reloaded.
+  function toSignIn() {
+    if (location.pathname + location.search === "/shop") location.reload();
+    else location.replace("/shop" + location.hash);
+  }
+
   function remember(name, value) {
     try { if (value === undefined) return localStorage.getItem("autocam.shop." + name) || ""; localStorage.setItem("autocam.shop." + name, value); }
     catch (e) { /* private mode: this visit only */ }
@@ -79,6 +89,7 @@
     if (data) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(data); }
     return fetch(path, opts).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
+        if (r.status === 401 && j.kind === "signin") toSignIn();                                 // signed out
         if (!r.ok) { var e = new Error(j.error || "AutoCAM didn't answer."); e.data = j; e.status = r.status; throw e; }
         return j;
       });
@@ -90,6 +101,7 @@
   var S = { data: null, error: "", busy: false, tab: HASH_TAB || remember("tab") || "shafts",
             ask: null, copied: false,          // ask: a part's Order or In the bin question, {id, kind, n}
             picker: null,                      // the name picker: {title, current, pick(name), whoAmI}
+            account: false,                    // the signed-in name's sheet (Sign out)
             spares: null };                    // Send spares: {choices (null: loading), counts: {card id: n}, q, error}
   var toastTimer = 0;
   function toast(text) {
@@ -102,6 +114,10 @@
     if (S.busy || S.spares) return Promise.resolve();          // not while Send spares is open (it'd lose the counts)
     var plates = S.tab === "plates" ? "&plates=1" : "";        // Trello is read only while Plates shows
     return api("GET", "/api/shop?device=" + encodeURIComponent(DEVICE) + plates).then(function (d) {
+      if (d.signedIn && KEY) {                                 // signed in: the key leaves the address bar
+        KEY = "";
+        try { history.replaceState(null, "", "/shop" + location.hash); } catch (e) { /* fine */ }
+      }
       S.data = d; S.error = ""; render();
     }, function (e) { S.error = e.message; render(); });
   }
@@ -153,6 +169,7 @@
     renderPicker();
     if (S.error) add(listEl, h("div", { class: "notice" }, S.error));
     if (!d) { if (!S.error) add(listEl, h("p", { class: "muted" }, "Loading…")); return; }
+    if (d.signIn) add(listEl, signInBar(d.signIn));
     if (tab === "parts") renderParts(d);
     else if (tab === "plates") renderPlates(d);
     else renderShafts(d);
@@ -182,23 +199,55 @@
     render();
   }
 
-  function closePicker() { S.picker = null; render(); }
+  function closePicker() { S.picker = null; S.account = false; render(); }
 
   function renderMe(d) {
-    meEl.hidden = !d || !d.platesOn;           // names are on with the Plates tab (people.py)
+    var signedIn = !!(d && d.signedIn);
+    meEl.hidden = !d || !(d.platesOn || signedIn);   // names are on with the Plates tab (people.py), or signed in
     meEl.textContent = "";
     var name = me();
     if (name) add(meEl, name.charAt(0).toUpperCase()); else add(meEl, icon("user"));
-    meEl.setAttribute("aria-label", name ? "This phone is " + name + ". Change" : "Who's using this phone?");
+    meEl.setAttribute("aria-label", signedIn ? "Signed in as " + name : name ? "This phone is " + name + ". Change" : "Who's using this phone?");
     meEl.title = name || "Who are you?";
   }
   meEl.addEventListener("click", function () {
+    if (S.data && S.data.signedIn) { S.account = true; render(); return; }
     openPicker("Who are you?", me(), function (n) { if (n) setMe(n); }, true);
   });
+
+  // ---------------------------------------------------------------- signing in (panel/signin.py)
+  function signInHref() {
+    var tab = (location.hash || "").slice(1);
+    return "/shop/sign-in" + (/^(shafts|parts|plates)$/.test(tab) ? "?tab=" + tab : "");
+  }
+
+  function shortDay(iso) {
+    var d = new Date(iso + "T12:00:00");
+    return isNaN(d) ? iso : d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  }
+
+  function signInBar(info) {
+    return h("div", { class: "signin-bar" },
+      h("span", null, info.until ? "This link stops working " + shortDay(info.until) + "." : "Sign in so the shop knows it's you."),
+      h("a", { class: "btn btn-primary", href: signInHref() }, "Sign in with Slack"));
+  }
+
+  function renderAccount() {
+    pickerEl.hidden = false;
+    add(pickerEl, h("div", { class: "sheet-card", role: "dialog", "aria-modal": "true", "aria-label": "Signed in" },
+      h("div", { class: "account" }, h("h3", null, me()), h("p", { class: "muted" }, "Signed in with Slack")),
+      h("button", { class: "btn btn-secondary", type: "button", disabled: S.busy, onclick: signOut }, "Sign out")));
+  }
+
+  function signOut() {
+    S.busy = true; render();
+    return api("POST", "/api/shop/sign-out", {}).then(toSignIn, function (e) { S.busy = false; toast(e.message); render(); });
+  }
 
   function renderPicker() {
     var p = S.picker;
     pickerEl.textContent = "";
+    if (S.account && !p) return renderAccount();
     pickerEl.hidden = !p;
     if (!p) return;
     var mine = me(), all = (S.data && S.data.people) || [];
@@ -218,7 +267,7 @@
       h("div", { class: "add" }, input, h("button", { class: "btn btn-secondary btn-small", type: "button", onclick: addName }, "Add"))));
   }
   pickerEl.addEventListener("click", function (ev) { if (ev.target === pickerEl) closePicker(); });
-  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && S.picker) closePicker(); });
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && (S.picker || S.account)) closePicker(); });
 
   function assign(kind, ids, who) {
     S.busy = true; render();

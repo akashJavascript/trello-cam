@@ -36,6 +36,7 @@ Every /api request carries the key in an X-AutoCAM-Key header (the preview, an <
 
 import hashlib
 import hmac
+import html
 import json
 import logging
 import re
@@ -66,7 +67,9 @@ from ..shafts import (ACTIVE as SHAFT_ACTIVE, DEVICE_RE, MAX_NOTE, STOCKS, Found
                       clean_ops, problems, recognize, status_chip)
 from ..bought import ACTIVE as PART_ACTIVE, PartList, counts as part_counts, is_hardware, sheet_link, status_chip as part_chip
 from ..people import People
+from ..shoplist import ListError
 from .plates import PlatesView
+from .signin import CALLBACK, START, Session, ShopSignIn, SignInRefused
 from .spares import SpareError, SparesView
 from ..onshape.urls import configuration_of, normal_configuration
 
@@ -190,16 +193,24 @@ def versioned_page(name: str = "index.html") -> bytes:
     return re.sub(r'"/static/([A-Za-z0-9_.-]+)"', stamp, html).encode("utf-8")
 
 
+def signin_page(message: str = "") -> bytes:
+    """The shop page for a phone that isn't signed in (panel/signin.py): one button, and what went wrong if
+    something did."""
+    msg = f'<p class="signin-msg" role="alert">{html.escape(message)}</p>' if message else ""
+    return versioned_page("signin.html").decode("utf-8").replace("<!--message-->", msg).encode("utf-8")
+
+
 class PanelApp:
     def __init__(self, cfg: Config, key: str, onshape: PanelOnshape, board: PanelBoard, names: Names,
                  clock: Callable[[], float] = time.monotonic,
                  today: Callable[[], str] = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                  inbox: Optional[ChangeInbox] = None, hook_secret: str = "", shafts: Optional[ShaftList] = None,
                  parts: Optional[PartList] = None, order_sheet: str = "", assemblies: Any = None,
-                 people: Optional[People] = None):
+                 people: Optional[People] = None, signin: Optional[ShopSignIn] = None):
         if not key:
             raise ValueError("the panel needs AUTOCAM_PANEL_KEY")
         self.people = people                  # who does what (people.py; None: no names, no Plates tab)
+        self.signin = signin                  # Slack sign-in on the shop page (signin.py; None: the key link only)
         self.plates = None if people is None else PlatesView(
             board.t, cfg, board.store, people,
             lambda k: material_label(cfg.materials[k]) if k in cfg.materials else k, clock=clock)
@@ -230,9 +241,12 @@ class PanelApp:
         try:
             if path == "/panel" and method == "GET":
                 return self._page(query)
-            if path == "/shop" and method == "GET" and (self.shafts is not None or self.parts is not None
-                                                        or self.plates is not None):
-                return self._page(query, shop=True)
+            shop_on = self.shafts is not None or self.parts is not None or self.plates is not None
+            if path == "/shop" and method == "GET" and shop_on:
+                return self._page(query, shop=True, headers=headers)
+            if path in (START, CALLBACK) and method == "GET" and shop_on and self.signin is not None \
+                    and self.signin.ready:
+                return self._sign_in(path, query, headers)
             if path.startswith("/static/") and method == "GET":
                 return self._static(path[len("/static/"):])
             if not path.startswith("/api/"):
@@ -241,7 +255,7 @@ class PanelApp:
                 return self.hook(method, path, body)
             given = query.get("key", "") if path == "/api/preview" else headers.get("x-autocam-key", "")
             if path == "/api/shop" or path.startswith("/api/shop/"):
-                return self._shop(method, path, query, given, body)
+                return self._shop(method, path, query, given, body, headers)
             if not self._key_ok(given):
                 return _json(403, {"error": "This isn't AutoCAM's panel link (the key is wrong). Ask a mentor."})
             if len(body) > body_limit(path):
@@ -293,32 +307,80 @@ class PanelApp:
     def _shop_key_ok(self, given: str) -> bool:
         return bool(given) and hmac.compare_digest(given.encode("utf-8"), self._shop_key)
 
+    def _old_link_open(self) -> bool:
+        """The shop's key link still opens the page: always without Slack sign-in, else for a week after the
+        first sign-in (signin.py)."""
+        return self.signin is None or self.signin.old_link_open()
+
+    def _session(self, headers: Optional[Dict[str, str]]) -> Optional[Session]:
+        return self.signin.session((headers or {}).get("cookie", "")) if self.signin is not None else None
+
     # ---- the page
-    def _page(self, query: Dict[str, str], shop: bool = False) -> Response:
-        headers = {"Content-Security-Policy": CSP, "Referrer-Policy": "no-referrer", "Cache-Control": "no-store",
-                   "X-Content-Type-Options": "nosniff"}
-        if not (self._shop_key_ok if shop else self._key_ok)(query.get("key", "")):
-            return Response(403, b"This isn't AutoCAM's " + (b"shop" if shop else b"panel") +
-                            b" link (the key is wrong). Ask a mentor.", "text/plain; charset=utf-8", headers)
-        return Response(200, versioned_page("shop.html" if shop else "index.html"), "text/html; charset=utf-8", headers)
+    def _page(self, query: Dict[str, str], shop: bool = False, headers: Optional[Dict[str, str]] = None) -> Response:
+        out = {"Content-Security-Policy": CSP, "Referrer-Policy": "no-referrer", "Cache-Control": "no-store",
+               "X-Content-Type-Options": "nosniff"}
+        if shop and (self._session(headers) is not None
+                     or (self._shop_key_ok(query.get("key", "")) and self._old_link_open())):
+            return Response(200, versioned_page("shop.html"), "text/html; charset=utf-8", out)
+        if shop and self.signin is not None and self.signin.ready:
+            note = "That link doesn't open the shop any more. Sign in instead." if query.get("key") else ""
+            return Response(200, signin_page(note), "text/html; charset=utf-8", out)
+        if not shop and self._key_ok(query.get("key", "")):
+            return Response(200, versioned_page("index.html"), "text/html; charset=utf-8", out)
+        return Response(403, b"This isn't AutoCAM's " + (b"shop" if shop else b"panel") +
+                        b" link (the key is wrong). Ask a mentor.", "text/plain; charset=utf-8", out)
+
+    def _sign_in(self, path: str, query: Dict[str, str], headers: Dict[str, str]) -> Response:
+        """/shop/sign-in: off to Slack. /shop/signed-in: back from Slack, signed in (or why not)."""
+        out = {"Content-Security-Policy": CSP, "Referrer-Policy": "no-referrer", "Cache-Control": "no-store",
+               "X-Content-Type-Options": "nosniff"}
+        try:
+            if path == START:
+                url, state_cookie = self.signin.start(query.get("tab", ""))
+                return Response(302, b"", "text/plain; charset=utf-8", {**out, "Location": url, "Set-Cookie": state_cookie})
+            value, _, tab = self.signin.finish(query, headers.get("cookie", ""))
+        except SignInRefused as e:
+            return Response(200, signin_page(str(e)), "text/html; charset=utf-8", out)
+        return Response(302, b"", "text/plain; charset=utf-8",
+                        {**out, "Location": "/shop" + (f"#{tab}" if tab else ""), "Set-Cookie": self.signin.cookie(value)})
 
     # ---- the shop's lists: shafts and bought parts (their own key)
-    def _shop(self, method: str, path: str, query: Dict[str, str], given: str, body: bytes) -> Response:
+    def _shop(self, method: str, path: str, query: Dict[str, str], given: str, body: bytes,
+              headers: Optional[Dict[str, str]] = None) -> Response:
         if self.shafts is None and self.parts is None and self.plates is None:
             return _json(404, {"error": "Not found"})
-        if not self._shop_key_ok(given):
+        session = self._session(headers)
+        if session is None and not (self._shop_key_ok(given) and self._old_link_open()):
+            if self.signin is not None and self.signin.ready:
+                return _json(401, {"error": "Sign in with Slack first.", "kind": "signin"})
             return _json(403, {"error": "This isn't AutoCAM's shop link (the key is wrong). Ask a mentor."})
         if len(body) > MAX_BODY:
             return _json(413, {"error": "That's too much text."})
+        if path == "/api/shop/sign-out" and method == "POST":
+            if self.signin is not None:
+                self.signin.sign_out((headers or {}).get("cookie", ""))
+            r = _json(200, {"signedOut": True})
+            r.headers["Set-Cookie"] = ShopSignIn.clear_cookie()
+            return r
         if path == "/api/shop" and method == "GET":
             device = query.get("device", "")
             device = device if DEVICE_RE.match(device) else ""
+            if session is not None and device and self.people is not None and self.people.me(device) != session.name:
+                try:
+                    self.people.set_me(device, session.name)       # a signed-in phone is its Slack name
+                except ListError as e:
+                    log.warning("panel: %s", e)
             name_of = self.people.me if self.people is not None else (lambda device: "")
             shafts = self.shafts.shop_view(device, name_of) if self.shafts is not None else {"shafts": [], "done": [], "order": []}
             parts = self.parts.shop_view(device) if self.parts is not None else {"parts": [], "bin": []}
             out = {**shafts, **parts, "shaftsOn": self.shafts is not None, "partsOn": self.parts is not None,
                    "platesOn": self.plates is not None, "orderSheet": self.order_sheet if self.parts is not None else "",
-                   "me": name_of(device) if device else "", "people": self.people.names() if self.people else []}
+                   "me": session.name if session is not None else (name_of(device) if device else ""),
+                   "people": self.people.names() if self.people else [],
+                   "signedIn": session.name if session is not None else ""}
+            if session is None and self.signin is not None and self.signin.on:     # the key link: ask them to sign in
+                until = self.signin.old_link_until()
+                out["signIn"] = {"until": until.strftime("%Y-%m-%d") if until else ""}
             if self.plates is not None and query.get("plates") == "1":   # Trello: only while the Plates tab shows
                 try:
                     out.update(self.plates.view())
@@ -339,7 +401,7 @@ class PanelApp:
             if not isinstance(data, dict) or not DEVICE_RE.match(str(data.get("device") or "")):
                 raise Refused(400, "Bad request")
             self._rate_limit()
-            sender = self.people.me(str(data["device"])) or "someone at the shop"
+            sender = session.name if session is not None else (self.people.me(str(data["device"])) or "someone at the shop")
             r = self.spares.send(data.get("items"), sender)
             log.info("panel: %s sent %d spare(s) from the shop page", sender, r["sent"])
             return _json(200, r)
@@ -348,6 +410,8 @@ class PanelApp:
             if not isinstance(data, dict) or not DEVICE_RE.match(str(data.get("device") or "")):
                 raise Refused(400, "Bad request")
             if action == "me":
+                if session is not None:                    # a signed-in phone's name is its Slack name
+                    return _json(200, {"me": session.name})
                 return _json(200, {"me": self.people.set_me(str(data["device"]), data.get("name"))})
             return _json(200, {"who": self._assign(str(data.get("kind") or ""), data.get("ids"), data.get("who"))})
         lst, verb = (self.shafts, action) if action in SHOP_ACTIONS else (self.parts, PART_ACTIONS.get(action))

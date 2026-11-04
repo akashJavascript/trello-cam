@@ -12,6 +12,7 @@
     onshape-check     one logged Onshape call: do the keys and onshape.base_url work, and whose are they
     preview-labels    draw the part labels on a finished job's sheet previews, to look at what the card gets
     shop-qr           a page to print for the saw and the lathe: the shop's shaft list as a QR code (needs segno)
+    shop-sign-out     end the shop page's Slack sign-ins: one person's (by name) or everyone's (--all)
 """
 
 import argparse
@@ -63,6 +64,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     pl.add_argument("--out", type=Path, help="where to write it (one .png only; default: <sheet>.labelled.png beside it)")
     sq = sub.add_parser("shop-qr", help="a page to print: the shop's shaft list as a QR code (pip install segno)")
     sq.add_argument("--out", type=Path, help="default: state/shop-qr.html")
+    so = sub.add_parser("shop-sign-out", help="end the shop page's Slack sign-ins: one name's, or everyone's (--all)")
+    so.add_argument("name", nargs="?", default="", help="the name the shop knows them by")
+    so.add_argument("--all", action="store_true", help="everyone")
     argv = list(sys.argv[1:] if argv is None else argv)
     args = parser.parse_args(argv)
 
@@ -104,10 +108,23 @@ def main(argv: Optional[List[str]] = None) -> int:
             return trello_setup(cfg, env_file, args.board, args.create, args.workspace)
         if args.command == "shop-qr":
             return shop_qr(cfg, env_file, args.out)
+        if args.command == "shop-sign-out":
+            return shop_sign_out(cfg, args.name, args.all)
     except CredentialsError as e:
         print(f"Credentials: {e}")
         return 1
     return 2
+
+
+def shop_sign_out(cfg, name: str, everyone: bool) -> int:
+    """End Slack sign-ins on the shop page (panel/signin.py). Prints how many, never names."""
+    if bool(name) == everyone:
+        print("Give one name, or --all for everyone.")
+        return 1
+    from .panel.signin import end_sessions
+    n = end_sessions(cfg.paths.state / "shop_sessions.json", "" if everyone else name)
+    print(f"Signed out {n} phone(s). They can sign in with Slack again (someone no longer on the team's Slack can't).")
+    return 0
 
 
 SHOP_QR_PAGE = """<!doctype html>
@@ -140,7 +157,9 @@ def shop_qr(cfg, env_file: Path, out: Optional[Path]) -> int:
         return 1
     from autocam_core.hotfolder import write_atomic
     from .panel.api import shop_key
-    link = f"{cfg.panel.public_url.rstrip('/')}/shop?key={shop_key(creds.get('AUTOCAM_PANEL_KEY'))}"
+    link = f"{cfg.panel.public_url.rstrip('/')}/shop"
+    if cfg.panel.shop_signin != "slack" or creds.missing("slack"):     # no Slack sign-in: the link needs the key
+        link += f"?key={shop_key(creds.get('AUTOCAM_PANEL_KEY'))}"
     page = SHOP_QR_PAGE.replace("{svg}", segno.make(link, error="m").svg_inline(scale=8, border=2))
     out = out or cfg.paths.state / "shop-qr.html"
     out.parent.mkdir(parents=True, exist_ok=True)

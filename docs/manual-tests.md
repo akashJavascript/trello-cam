@@ -504,6 +504,18 @@ robot parts leave.
 | 3 | Each offcut card's cover shows the piece: hold the picture next to the piece on the rack (end A toward you): the cut-outs match | |
 | 4 | Cut a sheet on an offcut: its card's picture is redrawn with the new cuts, the old picture gone | |
 
+### 21. Signing in to the shop page with Slack (2026-11-04)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | After the Slack app's id and secret are in `.env`: `/shop/sign-in` on a phone goes to Slack, and back says to add `AUTOCAM_SLACK_TEAM_ID=T...`; nobody is let in yet | |
+| 2 | With the team id added: Sign in with Slack opens the shop page, the name at the top right is your first name | |
+| 3 | A phone with the Slack app installed: the sign-in still finishes in the browser (Slack may email a code once) | |
+| 4 | iPhone, page added to the home screen: signing in comes back to the page (if it ends up in Safari, note it) | |
+| 5 | The old key link shows the "Sign in with Slack" bar with the date it stops; after signing in, the key is gone from the address | |
+| 6 | Tap your name, Sign out: the sign-in page. `shop-sign-out --all` on the laptop: every phone gets the sign-in page on its next refresh | |
+| 7 | A Slack account from another workspace is turned away | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)
