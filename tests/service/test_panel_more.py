@@ -262,7 +262,7 @@ def test_an_own_program_goes_on_a_card_linked_to_the_part(tmp_path):
     status, r = send_program(p, program(), cutter="")
     assert status == 200 and r["own"] and r["list"] == "Ready for CAM"
     [card] = card_in(p, "ready_for_cam")
-    assert card.desc.split("\n")[:5] == [STUDIO_W, "Part ID: JHD", "Material: 6061", "Thickness: 3/16",
+    assert card.desc.split("\n")[:6] == [STUDIO_W, "Part ID: JHD", "Qty: 1", "Material: 6061", "Thickness: 3/16",
                                          "Own program: the attached program, CAM'd by hand (AutoCAM places it and "
                                          "checks the placed copy)"]
     assert [name for cid, name, _ in p.t.files.values() if cid == card.id] == ["P-2014.tap"]
@@ -270,6 +270,17 @@ def test_an_own_program_goes_on_a_card_linked_to_the_part(tmp_path):
     assert p.h.runner._own_program_card(seen)                                     # placed, not nested
     assert seen.id not in [c.id for c in p.h.runner.ready_cards()]
     assert p.call("GET", "/api/part", {**Q, "p": "JHD"})[1]["card"]["status"] == "queued"
+
+
+def test_an_own_programs_quantity_goes_on_its_card(tmp_path):
+    """part_509.tap was sent with qty 2 and the card said nothing, so one was placed (2026-11-03)."""
+    p = Panel(tmp_path)
+    status, r = send_program(p, program(), qty=2)
+    assert status == 200
+    [card] = card_in(p, "ready_for_cam")
+    assert "Qty: 2" in card.desc.split("\n")
+    status, r = send_program(p, program(), qty=0)
+    assert status == 400 and "whole number" in r["error"]
 
 
 def test_an_own_program_the_guard_stops_never_reaches_trello(tmp_path):

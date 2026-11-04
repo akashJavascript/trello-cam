@@ -1074,7 +1074,7 @@
     if (r.material && r.material.line && r.material.missed) {
       add(bodyEl, notice("info", null, "Onshape didn't take the material (" + (r.material.why || "no reason given") + "), so the card says Material: " + r.material.line + "."));
     }
-    var chips = r.own ? [chip("Own program", "event")] : [chip("Qty " + f.qty, "event")];
+    var chips = r.own ? [chip("Own program", "event")].concat(f.qty > 1 ? [chip("Qty " + f.qty)] : []) : [chip("Qty " + f.qty, "event")];
     if (f.tabs && !r.own) chips.push(chip("Tabs"));
     if (!f.nest) chips.push(chip("Placed by hand"));
     if (f.face) chips.push(chip("Face"));
@@ -1130,12 +1130,10 @@
     } else {
       from = h("div", { class: "from" }, q.note ? q.note : "no assembly here uses it");
     }
-    if (f.own) {
-      add(bodyEl, ownProgramGroup(f, m));
-    } else {
-      add(bodyEl, group("Quantity", h("div", { class: "line" }, stepper(f.qty, function (n) { f.qty = n; f.qtyBy = "you"; render(); }), from),
-        q && q.assemblies.length && q.note && f.qtyBy !== "you" ? h("span", { class: "hint" }, q.note) : null));
-    }
+    // own programs too: AutoCAM cuts the program once per copy (2026-11-03)
+    add(bodyEl, group("Quantity", h("div", { class: "line" }, stepper(f.qty, function (n) { f.qty = n; f.qtyBy = "you"; render(); }), from),
+      q && q.assemblies.length && q.note && f.qtyBy !== "you" ? h("span", { class: "hint" }, q.note) : null));
+    if (f.own) add(bodyEl, ownProgramGroup(f, m));
 
     // options, all in one list
     var fitted = f.fitKind !== "none";
@@ -1311,7 +1309,7 @@
     if (!f.thickness) { f.error = "Pick the plate's thickness."; render(); return; }
     f.error = ""; S.busy = true; render();
     api("POST", "/api/send-program", where({
-      p: S.partId, thickness: f.thickness, cutter: f.cutter || "", material: f.material, notes: f.notes, place_myself: !!f.placeMyself,
+      p: S.partId, qty: f.qty, thickness: f.thickness, cutter: f.cutter || "", material: f.material, notes: f.notes, place_myself: !!f.placeMyself,
       program: { filename: f.program.filename, text: f.program.text }, u: ctx.u, name: S.user, server: ctx.server
     })).then(function (r) {
       S.busy = false; S.sent = r; d.card = r.card;

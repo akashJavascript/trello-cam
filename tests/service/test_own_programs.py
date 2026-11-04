@@ -2,7 +2,8 @@
 instead of a part gets a spot, a moved copy of the program checked there, a card in Sheet review, and its cut
 recorded when that card goes to Cut."""
 
-from autocam_service.own_programs import find_spot, placed_name, shift_program
+from autocam_core.tapguard import GuardSpec, check_program
+from autocam_service.own_programs import find_spot, own_qty, pack_copies, placed_name, repeat_program, shift_program
 from autocam_service.tracker.base import Attachment, Card
 from test_handprograms import program
 from test_offcut_finding import pieces
@@ -227,3 +228,91 @@ def test_place_it_myself_is_still_checked(tmp_path):
     h.runner.tick()
     assert sheet_cards(h) == [] and h.tracker.get_card("o1").list_key == "needs_fixing"
     assert "failed AutoCAM's checks" in h.tracker.comments_on("o1")[-1] or "Z0" in h.tracker.comments_on("o1")[-1]
+
+
+# ---------------------------------------------------------------- quantity (2026-11-03: part_509.tap, qty 2, one placed)
+
+def test_how_many_comes_from_a_qty_line_or_the_title():
+    assert own_qty("P-3001", "Material: 6061\nQty: 2") == (2, None)
+    assert own_qty("P-3001 x3", "Material: 6061") == (3, None)
+    assert own_qty("P-3001", "Material: 6061") == (1, None)                    # cards from before: one
+    assert own_qty("P-3001 x3", "Qty: 2")[1].startswith("Two different quantities")
+    assert "whole number" in own_qty("P-3001", "Qty: 0")[1]
+
+
+def test_a_program_cut_more_than_once_repeats_only_its_moves():
+    src = program().decode("ascii")
+    out = repeat_program(src, [(1.0, 2.0), (6.0, 2.0)], "NOTE")
+    lines = out.split("\r\n")
+    assert lines[:7] == ["G90", "[NOTE]", "G20", "G53 Z", "S18000", "M3", "G4 X4."]          # the start once
+    assert lines.count("G0 X1. Y2.") == 1 and lines.count("G0 X6. Y2.") == 1
+    i = lines.index("[COPY 2 OF 2]")
+    assert lines[i:i + 3] == ["[COPY 2 OF 2]", "G53 Z", "G0 X6. Y2."]                   # up to the top first
+    assert out.endswith("G0 Z2.125\r\nG53 Z\r\nM5\r\nG53 P10\r\n") and out.count("M5") == 1   # the end once
+    assert "\n" not in out.replace("\r\n", "")
+    report = check_program(out.encode("ascii"), GuardSpec(stock_top_in=0.125, tool_radius_in=0.125))
+    assert report.passed, report.summary()
+    assert report.cut_box_in == (0.875, 1.875, 9.125, 4.125)                               # both copies
+
+
+def test_a_program_leaning_on_an_earlier_mode_is_never_repeated():
+    src = program().decode("ascii")
+    assert repeat_program(src.replace("G0 X0. Y0.", "X0. Y0."), [(0, 0), (5, 0)]) is None       # no G0 of its own
+    assert repeat_program(src.replace("G1 Z0. F20.", "G1 Z0."), [(0, 0), (5, 0)]) is None       # first feed: no F
+    assert repeat_program(src, [(0, 0), (5, 0)]) is not None
+
+
+def test_copies_pack_into_the_least_length():
+    group = pack_copies(BOX, 4, {}, REGION, 24, 48, 0.5, 0.5)
+    assert group.spot.offcut_id is None and len(group.offsets) == 4
+    assert group.offsets == ((1.375, 1.125), (5.125, 1.125), (8.875, 1.125), (12.625, 1.125))   # one row across
+    assert group.cuts_loaded[-1] == (12.5, 1.0, 15.75, 3.25)
+    wide = (-0.125, -0.125, 15.125, 2.125)                                                 # only one across
+    group = pack_copies(wide, 2, {}, REGION, 24, 48, 0.5, 0.5)
+    assert group.offsets == ((1.375, 1.125), (1.375, 3.875))                               # one behind the other
+    assert len(pack_copies(BOX, 4, {}, REGION, 24, 48, 0.5, 0.5, repeat=False).offsets) == 1
+
+
+def test_two_copies_go_side_by_side_on_one_card(tmp_path):
+    h = harness(tmp_path)
+    own_card(h, desc="Material: 6061\nThickness: 1/8\nQty: 2")
+    h.runner.tick()
+    [s] = sheet_cards(h)
+    assert s.name == "6061 1/8in - own program P-3001.tap x2 - P-3001 - H1"
+    [(name, data)] = placed_files(h, s.id).items()
+    text = data.decode("ascii")
+    assert text.split("\r\n")[1] == "[AUTOCAM H1 - P-3001.tap CUT 2 TIMES - ZERO X/Y AT THE PIECE FRONT-LEFT CORNER]"
+    assert "[COPY 2 OF 2]" in text and "G0 X1.425 Y0.875" in text and "G0 X5.175 Y0.875" in text
+    assert "It cuts P-3001.tap 2 times side by side" in s.desc
+    assert "move to X 1.4250 Y 0.8750, then X 5.1750 Y 0.8750" in s.desc
+    assert "Placed all 2: 2 on a new 6061 1/8in sheet" in h.tracker.comments_on("o1")[-1]
+    h.tracker.tick_all(s.id, "Review")
+    cut(h, s.id)
+    [off] = offcut_cards(h)
+    assert pieces(h)[off.id]["last"]["stretch"] == [0.75, 3.0]                  # both copies taken out
+    assert h.tracker.cards["o1"].list_key == "cut"
+
+
+def test_copies_that_cant_share_a_program_get_a_card_each(tmp_path):
+    h = harness(tmp_path)
+    own_card(h, desc="Material: 6061\nThickness: 1/8\nQty: 2", data=program().replace(b"G1 Z0. F20.", b"G1 Z0."))
+    h.runner.tick()
+    names = sorted(c.name for c in sheet_cards(h))
+    assert names == ["6061 1/8in - own program P-3001.tap - P-3001 - H1",
+                     "6061 1/8in - own program P-3001.tap - P-3001 - H2"]
+    assert all("It's 1 of the 2." in c.desc for c in sheet_cards(h))
+    said = h.tracker.comments_on("o1")[-1]
+    assert said.startswith("Placed all 2: one on a new 6061 1/8in sheet") and "(H2)" in said
+    for c in sheet_cards(h):                                      # the part card follows once both are cut
+        assert h.tracker.cards["o1"].list_key == "nested"
+        h.tracker.tick_all(c.id, "Review")
+        cut(h, c.id)
+    assert h.tracker.cards["o1"].list_key == "cut"
+
+
+def test_place_it_myself_says_how_many_times(tmp_path):
+    h = harness(tmp_path)
+    own_card(h, desc="Material: 6061\nThickness: 1/8\nPlace it myself\nQty: 3")
+    h.runner.tick()
+    [s] = sheet_cards(h)
+    assert " x3 - P-3001" in s.name and "Cut 3: run it 3 times" in s.desc

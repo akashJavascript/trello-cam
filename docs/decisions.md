@@ -825,8 +825,18 @@ starts no Fusion run (`own_programs.py`, runner `own_programs`; `[hand_cuts] pla
   get another spot if the offcut isn't on the rack). No Options or Stock checklist on these cards.
 - **At Cut** the cut is taken out of the offcut like a hand cut (the room either side kept; not listed as "Cut by
   hand"), or the rest of a new sheet becomes an offcut if its box is ticked; the part card follows to Cut.
-- Not done: no preview picture or machining time on the card, one program per card, not counted in the season's
-  stock tally, and AutoCAM's nested parts don't share the piece with it in the same run.
+- **Quantity (2026-11-03):** part_509.tap was sent from the panel with qty 2 and only one was placed: the panel
+  hid the quantity for own programs and wrote no Qty line. Now the panel shows it and writes `Qty: N` (no line
+  means 1). As many copies as fit go side by side on one piece, in a grid part_spacing (0.5 in) apart, the grid
+  using the least length, as one program on one card: the start of the program once, its moves once per copy
+  (each moved to its spot, with `[COPY n OF k]` and a `G53 Z` retract before every copy but the first), the end once.
+  The most copies that fit an offcut go there first, then more offcuts, then new sheets, a card each (H1, H2...).
+  A program whose moves lean on a mode set before them (its first move without its own G0/G1, its first feed move
+  without an F, a drilling cycle still on at the end) is never repeated: one copy per card. Every copy is placed and
+  checked before any card is made, so it's all or nothing. At Cut each copy is taken out of the offcut. "Place it
+  myself" with a quantity says to run it N times.
+- Not done: no preview picture or machining time on the card, not counted in the season's stock tally, and
+  AutoCAM's nested parts don't share the piece with it in the same run.
 
 ## 2026-11-01: one branch, `main` (the user's choice)
 

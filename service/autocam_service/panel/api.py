@@ -1155,6 +1155,7 @@ class PanelApp:
         stock = next((s for s in m.thicknesses_in if abs(s - thickness) < 0.0005), None)
         if stock is None:
             raise Refused(400, f"{thickness:g} in isn't a stock thickness of {material_label(m)}.")
+        qty = self._qty(d) if d.get("qty") is not None else 1      # a panel from before 2026-11-03 sends none
         cutter_said = clean_text(d.get("cutter"), 20)
         cutter_in, why = parse_cutter(f"Cutter: {cutter_said}") if cutter_said else (None, [])
         if why:
@@ -1177,7 +1178,7 @@ class PanelApp:
         from .checks import inches                       # 3/16 in for the Thickness: line
         from ..onshape.urls import configuration_query
         lines = [f"https://{self._host(d.get('server'))}/documents/{did}/{wvm}/{wvmid}/e/{eid}"
-                 f"{configuration_query(configuration)}", f"Part ID: {pid}",
+                 f"{configuration_query(configuration)}", f"Part ID: {pid}", f"Qty: {qty}",
                  f"Material: {material_line(m)}", f"Thickness: {inches(stock).replace(' in', '')}"]
         if cutter_in:
             lines.append(f"Cutter: {cutter_said}")

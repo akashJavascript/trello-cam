@@ -55,8 +55,8 @@ from .cards import (MATERIAL_RE, README_CARD, STEP_SUFFIXES, TITLE_QTY_RE, CardP
 from .offcuts import _number as _scrap_number
 from .config import Config
 from .handprograms import ProgramCut, footprint, is_program, parse_cutter, program_cuts
-from .own_programs import (OWN_PROGRAM_RE, PLACE_MYSELF_RE, find_spot, parse_thickness, placed_name,
-                           program_attachments, shift_program)
+from .own_programs import (OWN_PROGRAM_RE, PLACE_MYSELF_RE, own_qty, pack_copies, parse_thickness, placed_name,
+                           program_attachments, repeat_program, shift_program)
 from .fits import FitStore, key as fit_key, parse_fit, stocks as fit_stocks
 from .jobs import JobBuildError, build_job, face_spec, fit_spec, sheet_fixture
 from .materials import resolve_material
@@ -937,6 +937,9 @@ class Runner:
                 problems.append(why)
         cutter, why = parse_cutter(card.desc or "")
         problems += why
+        qty, why_qty = own_qty(card.name, card.desc or "")
+        if why_qty:
+            problems.append(why_qty)
         if problems:
             self._refuse_own(card, problems)
             return
@@ -958,7 +961,7 @@ class Runner:
             return
         self._retire_own(card.id, "its part card came back to Ready for CAM")
         if PLACE_MYSELF_RE.search(card.desc or ""):
-            self._own_by_hand(card, att, data, key, thickness, cutter, box)
+            self._own_by_hand(card, att, data, key, thickness, cutter, box, qty)
             return
         fx = sheet_fixture(cfg, key)
         length, width = self._size(key)
@@ -970,66 +973,101 @@ class Runner:
         mx = cfg.hand_cuts.place_spare_across_in       # less across, where the region already clears the clamps
         r = fx.nest_region_in
         region = (r[0] + mx, r[1] + m, r[2] - mx, r[3] - m)
-        spot = find_spot(box, pieces, region, width, length, cfg.nest.offcut_gap_in)
-        if spot is None:
-            r = region
-            self._refuse_own(card, [f"{att.name} cuts {box[2] - box[0]:.1f} x {box[3] - box[1]:.1f} in (across x "
-                                    f"along): more than a sheet's cutting area ({r[2] - r[0]:.1f} x {r[3] - r[1]:.1f})."])
-            return
-        label = self._own_label()
-        name = placed_name(att.name, label)
-        moved = shift_program(data.decode("ascii", errors="replace"), spot.dx, spot.dy,
-                              note=f"AUTOCAM {label} - {att.name} MOVED X+{spot.dx:g} Y+{spot.dy:g} - ZERO X/Y AT "
-                                   "THE PIECE FRONT-LEFT CORNER").encode("ascii", errors="replace")
-        piece_length = (pieces[spot.offcut_id].get("length_in") if spot.offcut_id and
-                        pieces[spot.offcut_id].get("scrap") else None) or length
-        spec = GuardSpec(z_floor_in=cfg.machine.z_floor_in, allowed_g=frozenset(cfg.tapguard.allowed_g),
-                         allowed_m=frozenset(cfg.tapguard.allowed_m), park=cfg.machine.park,
-                         clamp_zones_in=fx.clamp_zones_in,
-                         clamp_clear_z_in=clamp_clear_z(thickness, cfg.clamps.height_in, cfg.tapguard.clamp_margin_in),
-                         tool_radius_in=cutter / 2, reach_y_in=cfg.machine.reach_y_in, stock_top_in=thickness,
-                         sheet_in=(width, piece_length))
-        report = check_program(moved, spec)
-        if not report.passed:
-            self._refuse_own(card, [f"{att.name}, moved to its spot, failed AutoCAM's checks: {report.summary()}"])
-            return
-        stock = self._stock_label(key, thickness)
-        number = (pieces[spot.offcut_id].get("number") if spot.offcut_id else None)
-        title = (f"{stock}" + (f" offcut #{number}" if number else " offcut" if spot.offcut_id else "")
-                 + f" - own program {att.name} - {' '.join(card.name.split())} - {label}")
-        stock_line = (self._stock_text(spot.offcut_id, key, thickness, spot.turned) if spot.offcut_id else
-                      f"Stock: a new {stock} sheet, {width:g} x {length:g}.")
-        desc = text.own_program_description(
-            program=att.name, placed=name, part=" ".join(card.name.split()), part_url=card.url, stock=stock_line,
-            cutter_in=cutter, clamps=text.clamp_edges(fx.clamp_zones_in, width), spot=spot, lowest_z=report.min_z_in)
-        new = self.t.create_card(self.targets["sheet_created"], title, desc)
-        # On record at once (not cuttable yet), so a pass that stops half way replaces this card next time.
-        self.s.store.register_sheet(new.id, label, False, [card.id])
-        reg = self.s.store.sheet_cards()
-        spacing = cfg.nest.part_spacing_in
-        reg[new.id].update(
-            label=label, url=new.url, material=key, thickness_in=thickness, offcut_id=spot.offcut_id,
-            turned=spot.turned, bands=[[spot.cut_loaded[1] - spacing, spot.cut_loaded[3] + spacing]],
-            own={"program": att.name, "placed": name, "cut_own": list(spot.cut_own),
-                 "cut_loaded": list(spot.cut_loaded), "dx": spot.dx, "dy": spot.dy})
-        self.s.store._write_sheets(reg)
-        if spot.offcut_id:
-            self.offcuts.reserve(spot.offcut_id, new.id)
-        self.t.attach_program(new.id, name, moved, report)
-        self.t.add_checklist(new.id, cfg.trello.checklist_name, cfg.trello.checklist)
-        self.t.add_checklist(new.id, cfg.trello.machine_checklist_name, cfg.trello.machine_checklist)
-        if spot.offcut_id is None:
-            self.t.add_checklist(new.id, cfg.trello.offcut_checklist, [cfg.trello.offcut_item], checked=True)
-        reg = self.s.store.sheet_cards()
-        reg[new.id]["cuttable"] = True
-        self.s.store._write_sheets(reg)
-        self.t.move(card.id, self.targets["part_nested"])
-        where = f"offcut #{number}" if number else "an offcut" if spot.offcut_id else f"a new {stock} sheet"
-        self.t.comment(card.id, f"Placed on {where}: {new.url} ({label}). Its card has {att.name} moved there, "
-                                "checked; review it like any sheet.")
-        log.info("own program %s on card %s placed as %s on %s", att.name, card.id, label, spot.offcut_id or "a new sheet")
+        source = data.decode("ascii", errors="replace")
+        repeat = qty > 1 and repeat_program(source, [(0.0, 0.0), (0.0, 0.0)]) is not None
+        groups, pool, left = [], dict(pieces), qty
+        while left:
+            group = pack_copies(box, left, pool, region, width, length, cfg.nest.offcut_gap_in,
+                                cfg.nest.part_spacing_in, repeat)
+            if group is None:
+                self._refuse_own(card, [f"{att.name} cuts {box[2] - box[0]:.1f} x {box[3] - box[1]:.1f} in (across "
+                                        f"x along): more than a sheet's cutting area ({region[2] - region[0]:.1f} x "
+                                        f"{region[3] - region[1]:.1f})."])
+                return
+            groups.append(group)
+            left -= len(group.offsets)
+            pool.pop(group.spot.offcut_id, None)
 
-    def _own_by_hand(self, card: Card, att, data: bytes, key: str, thickness: float, cutter: float, box) -> None:
+        def program_for(group, label):
+            spot = group.spot
+            many = len(group.offsets) > 1
+            note = (f"AUTOCAM {label} - {att.name}" + (f" CUT {len(group.offsets)} TIMES" if many else
+                                                       f" MOVED X+{spot.dx:g} Y+{spot.dy:g}")
+                    + " - ZERO X/Y AT THE PIECE FRONT-LEFT CORNER")
+            text_out = (repeat_program(source, group.offsets, note) if many else
+                        shift_program(source, spot.dx, spot.dy, note=note))
+            moved = text_out.encode("ascii", errors="replace")
+            piece_length = (pieces[spot.offcut_id].get("length_in") if spot.offcut_id and
+                            pieces[spot.offcut_id].get("scrap") else None) or length
+            spec = GuardSpec(z_floor_in=cfg.machine.z_floor_in, allowed_g=frozenset(cfg.tapguard.allowed_g),
+                             allowed_m=frozenset(cfg.tapguard.allowed_m), park=cfg.machine.park,
+                             clamp_zones_in=fx.clamp_zones_in,
+                             clamp_clear_z_in=clamp_clear_z(thickness, cfg.clamps.height_in,
+                                                            cfg.tapguard.clamp_margin_in),
+                             tool_radius_in=cutter / 2, reach_y_in=cfg.machine.reach_y_in, stock_top_in=thickness,
+                             sheet_in=(width, piece_length))
+            return moved, check_program(moved, spec)
+
+        for group in groups:                           # every copy checked before any card is made
+            _, report = program_for(group, "H0")
+            if not report.passed:
+                self._refuse_own(card, [f"{att.name}, moved to its spot, failed AutoCAM's checks: {report.summary()}"])
+                return
+        stock = self._stock_label(key, thickness)
+        part = " ".join(card.name.split())
+        placed: List[str] = []
+        for group in groups:
+            spot, copies = group.spot, len(group.offsets)
+            label = self._own_label()
+            name = placed_name(att.name, label)
+            moved, report = program_for(group, label)
+            number = (pieces[spot.offcut_id].get("number") if spot.offcut_id else None)
+            title = (f"{stock}" + (f" offcut #{number}" if number else " offcut" if spot.offcut_id else "")
+                     + f" - own program {att.name}" + (f" x{copies}" if copies > 1 else "") + f" - {part} - {label}")
+            stock_line = (self._stock_text(spot.offcut_id, key, thickness, spot.turned) if spot.offcut_id else
+                          f"Stock: a new {stock} sheet, {width:g} x {length:g}.")
+            desc = text.own_program_description(
+                program=att.name, placed=name, part=part, part_url=card.url, stock=stock_line, cutter_in=cutter,
+                clamps=text.clamp_edges(fx.clamp_zones_in, width), spot=spot, lowest_z=report.min_z_in,
+                offsets=group.offsets, of_qty=qty)
+            new = self.t.create_card(self.targets["sheet_created"], title, desc)
+            # On record at once (not cuttable yet), so a pass that stops half way replaces this card next time.
+            self.s.store.register_sheet(new.id, label, False, [card.id])
+            reg = self.s.store.sheet_cards()
+            spacing = cfg.nest.part_spacing_in
+            reg[new.id].update(
+                label=label, url=new.url, material=key, thickness_in=thickness, offcut_id=spot.offcut_id,
+                turned=spot.turned, bands=[[spot.cut_loaded[1] - spacing, spot.cut_loaded[3] + spacing]],
+                own={"program": att.name, "placed": name, "cut_own": list(spot.cut_own),
+                     "cut_loaded": list(spot.cut_loaded), "dx": spot.dx, "dy": spot.dy, "copies": copies,
+                     "cuts_own": [list(c) for c in group.cuts_own]})
+            self.s.store._write_sheets(reg)
+            if spot.offcut_id:
+                self.offcuts.reserve(spot.offcut_id, new.id)
+            self.t.attach_program(new.id, name, moved, report)
+            self.t.add_checklist(new.id, cfg.trello.checklist_name, cfg.trello.checklist)
+            self.t.add_checklist(new.id, cfg.trello.machine_checklist_name, cfg.trello.machine_checklist)
+            if spot.offcut_id is None:
+                self.t.add_checklist(new.id, cfg.trello.offcut_checklist, [cfg.trello.offcut_item], checked=True)
+            reg = self.s.store.sheet_cards()
+            reg[new.id]["cuttable"] = True
+            self.s.store._write_sheets(reg)
+            where = f"offcut #{number}" if number else "an offcut" if spot.offcut_id else f"a new {stock} sheet"
+            placed.append(f"{copies if copies > 1 else 'one'} on {where}: {new.url} ({label})" if qty > 1 else
+                          f"{where}: {new.url} ({label})")
+            log.info("own program %s on card %s placed as %s on %s (%d of %d)", att.name, card.id, label,
+                     spot.offcut_id or "a new sheet", copies, qty)
+        self.t.move(card.id, self.targets["part_nested"])
+        if qty > 1:
+            self.t.comment(card.id, f"Placed all {qty}: " + "; ".join(placed) + f". Each card has {att.name} moved "
+                                    "there (cut once per copy where there's more than one), checked; review them like "
+                                    "any sheet.")
+        else:
+            self.t.comment(card.id, f"Placed on {placed[0]}. Its card has {att.name} moved there, checked; review it "
+                                    "like any sheet.")
+
+    def _own_by_hand(self, card: Card, att, data: bytes, key: str, thickness: float, cutter: float, box,
+                     qty: int = 1) -> None:
         """An own program with "Place it myself": its card in Sheet review with the program as it is, zeroed on
         whatever piece the operator picks (own_programs.py)."""
         cfg = self.cfg
@@ -1043,10 +1081,11 @@ class Runner:
         label = self._own_label()
         stock = self._stock_label(key, thickness)
         part = " ".join(card.name.split())
-        title = f"{stock} - placed by hand - own program {att.name} - {part} - {label}"
+        title = (f"{stock} - placed by hand - own program {att.name}" + (f" x{qty}" if qty > 1 else "")
+                 + f" - {part} - {label}")
         desc = text.own_by_hand_description(program=att.name, part=part, part_url=card.url, stock=stock,
                                             cutter_in=cutter, box=box, margin_in=cfg.nest.part_spacing_in,
-                                            lowest_z=report.min_z_in)
+                                            lowest_z=report.min_z_in, qty=qty)
         new = self.t.create_card(self.targets["sheet_created"], title, desc)
         self.s.store.register_sheet(new.id, label, False, [card.id])
         reg = self.s.store.sheet_cards()
@@ -1094,16 +1133,16 @@ class Runner:
             return                                   # placed by hand: AutoCAM doesn't know which piece it was cut from
         cfg, own = self.cfg, info["own"]
         label = info.get("label") or info.get("run")
-        cut = tuple(own["cut_own"])
+        cuts = [tuple(c) for c in own.get("cuts_own") or [own["cut_own"]]]   # each copy (older cards: one)
         turned = bool(info.get("turned"))
-        last = {"label": label, "stretch": [cut[1], cut[3]], "turned": turned}
+        last = {"label": label, "stretch": [min(c[1] for c in cuts), max(c[3] for c in cuts)], "turned": turned}
         offcut_id = info.get("offcut_id")
         if offcut_id:
             piece = self.offcuts.get(offcut_id)
             if piece is None:
                 return                                # its card was archived: the piece is gone
             piece["reserved_by"] = None
-            self._apply_hand_cuts(piece, [cut], record=False)
+            self._apply_hand_cuts(piece, cuts, record=False)
             piece["last"] = last
             free = self._free_after([tuple(s) for s in piece["used"]], piece["material"])
             rooms = compact(piece["beside"])
@@ -1123,7 +1162,7 @@ class Runner:
                 return
             piece = {"material": info["material"], "thickness_in": info["thickness_in"], "used": [], "beside": [],
                      "last": last, "reserved_by": None}
-            self._apply_hand_cuts(piece, [cut], record=False)
+            self._apply_hand_cuts(piece, cuts, record=False)
             free = self._free_after([tuple(s) for s in piece["used"]], piece["material"])
             if free < cfg.nest.offcut_min_in and not piece["beside"]:
                 return

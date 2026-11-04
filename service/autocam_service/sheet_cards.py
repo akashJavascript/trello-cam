@@ -264,21 +264,36 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
 
 
 def own_program_description(*, program: str, placed: str, part: str, part_url: str, stock: str, cutter_in: float,
-                            clamps: str, spot, lowest_z: Optional[float]) -> str:
-    """The card for someone's own program that AutoCAM placed (own_programs.py)."""
+                            clamps: str, spot, lowest_z: Optional[float], offsets=(), of_qty: int = 1) -> str:
+    """The card for someone's own program that AutoCAM placed (own_programs.py). offsets: each copy's (dx, dy)
+    when the card cuts it more than once; of_qty: how many the part card asked for in all."""
     x0, y0, x1, y1 = spot.cut_loaded
+    k = max(len(offsets), 1)
+    if k > 1:
+        run = [f"Program: {placed}. It cuts {program} {k} times side by side" + (f" ({k} of the {of_qty})" if of_qty > k
+                                                                                    else "")
+               + ", with its zero at the piece's front-left corner: zero X/Y there, as for AutoCAM's sheets, and Z "
+               "from the fixed tool setter (Z0 = spoilboard).",
+               f"It cuts {x0:.1f} to {x1:.1f} in across and {y0:.1f} to {y1:.1f} in along the piece as loaded (from "
+               "its left edge and the front).",
+               f"Or run {program} itself {k} times: zero X/Y at the piece's front-left corner, move to "
+               + ", then ".join(f"X {dx:.4f} Y {dy:.4f}" for dx, dy in offsets)
+               + ", zeroing X/Y again at each before running it."]
+    else:
+        run = [f"Program: {placed}. It's {program} moved so its zero is the piece's front-left corner: zero X/Y there, "
+               "as for AutoCAM's sheets, and Z from the fixed tool setter (Z0 = spoilboard)."
+               + (f" It's 1 of the {of_qty}." if of_qty > 1 else ""),
+               f"It cuts {x0:.1f} to {x1:.1f} in across and {y0:.1f} to {y1:.1f} in along the piece as loaded (from "
+               "its left edge and the front).",
+               f"Or run {program} itself: zero X/Y at the piece's front-left corner, move to X {spot.dx:.4f} Y "
+               f"{spot.dy:.4f}, and zero X/Y again there."]
     return "\n".join([
         "LOAD",
         stock,
         f"Cutter: the one {program} was made for (it's checked as up to {cutter_in:g} in across). Clamps: {clamps}.",
         "",
         "RUN",
-        f"Program: {placed}. It's {program} moved so its zero is the piece's front-left corner: zero X/Y there, as for "
-        "AutoCAM's sheets, and Z from the fixed tool setter (Z0 = spoilboard).",
-        f"It cuts {x0:.1f} to {x1:.1f} in across and {y0:.1f} to {y1:.1f} in along the piece as loaded (from its "
-        "left edge and the front).",
-        f"Or run {program} itself: zero X/Y at the piece's front-left corner, move to X {spot.dx:.4f} Y "
-        f"{spot.dy:.4f}, and zero X/Y again there.",
+        *run,
         "",
         f"{part} ({part_url}) was CAM'd by hand: AutoCAM only placed it and checked the moved program"
         + (f" (lowest Z {lowest_z:.4f}, clear of the clamps)" if lowest_z is not None else "")
@@ -288,7 +303,7 @@ def own_program_description(*, program: str, placed: str, part: str, part_url: s
 
 
 def own_by_hand_description(*, program: str, part: str, part_url: str, stock: str, cutter_in: float, box,
-                             margin_in: float, lowest_z: Optional[float]) -> str:
+                             margin_in: float, lowest_z: Optional[float], qty: int = 1) -> str:
     """The card for someone's own program that they place by hand ("Place it myself"): the program as it is."""
     x0, y0, x1, y1 = box
     w, h = x1 - x0, y1 - y0
@@ -301,6 +316,8 @@ def own_by_hand_description(*, program: str, part: str, part_url: str, stock: st
         "RUN",
         f"Program: {program}, as it was made. Zero X/Y on the piece where its zero goes: it cuts X {x0:+.2f} to "
         f"{x1:+.2f} in and Y {y0:+.2f} to {y1:+.2f} in from there. Z from the fixed tool setter (Z0 = spoilboard).",
+        *([f"Cut {qty}: run it {qty} times, zeroing X/Y at a fresh spot (or piece) each time, at least "
+           f"{margin_in:g} in from the last cut."] if qty > 1 else []),
         "",
         f"{part} ({part_url}) was CAM'd by hand and is placed by hand: AutoCAM only checked the program"
         + (f" (lowest Z {lowest_z:.4f})" if lowest_z is not None else "")
