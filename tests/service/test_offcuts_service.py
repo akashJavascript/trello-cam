@@ -216,3 +216,24 @@ def test_an_offcut_with_only_room_beside_its_cuts_is_kept(tmp_path):
     h.runner.tick()
     job = read_job(next(h.queue.incoming.glob("r003*.json")))
     assert [o.id for o in job.offcuts] == [off.id]
+
+
+def test_the_gap_after_earlier_cuts_is_said_to_be_on_purpose(tmp_path):
+    """P-0509 started about 1 in past r068's cuts on offcut #3 and it looked like a mistake (2026-11-04): the slack
+    went from 0.5 to 0.25 in, and the cards say the gap is meant."""
+    h = harness(tmp_path, step_card("c1", "plate", qty=2), nest__offcut_gap_in=0.25)
+    run(h)
+    s1 = sheet(h)
+    h.runner.tick()
+    cut(h, s1.id)
+    [off] = offcut_cards(h)
+    assert "Parts put on it later start about 0.75 in past the earlier cuts, on purpose" in off.desc
+    piece = h.runner.offcuts.get(off.id)
+    assert h.runner._stock_text(off.id, piece["material"], piece["thickness_in"], False).endswith(
+        "The parts start about 0.75 in past the earlier cuts on purpose (part spacing, plus a little in case it sits "
+        "slightly differently).")
+
+
+def test_the_shop_keeps_a_quarter_inch_of_slack():
+    from autocam_service.config import load_config
+    assert load_config().nest.offcut_gap_in == 0.25

@@ -168,9 +168,11 @@ class OffcutStore:
 def card_text(stock: str, free_in: float, used: Sequence[Stretch], last_label: str,
               beside: Sequence[Sequence[float]] = (), min_free_in: float = 0.0, number: Optional[int] = None,
               length_in: Optional[float] = None, hand_cuts: Sequence[Sequence[float]] = (),
-              width: float = 24.0, programs: bool = True) -> Tuple[str, str]:
+              width: float = 24.0, programs: bool = True, gap_in: float = 0.0) -> Tuple[str, str]:
     """stock: e.g. "6061 3/16in". The offcut card's title and description. length_in: a scrap's length (the
-    rest of the sheet's length is missing, not cut). hand_cuts: parts cut out of it by hand, as recorded."""
+    rest of the sheet's length is missing, not cut). hand_cuts: parts cut out of it by hand, as recorded.
+    gap_in: how far past the earlier cuts later parts start (part spacing + offcut slack), said so it doesn't
+    look like a mistake (the user, 2026-11-04)."""
     title = (f"#{number} - " if number else "") + f"{stock} offcut - " + \
         (f"{free_in:.0f} in free" if free_in >= min_free_in else "small parts only")
     if beside and free_in >= min_free_in:
@@ -188,6 +190,9 @@ def card_text(stock: str, free_in: float, used: Sequence[Stretch], last_label: s
             f"A partly used {stock} sheet. Runs put {stock} parts on it before starting a new sheet.",
             f"Last cut: {last_label}. Used along its length: {used_text}.",
         ]
+    if gap_in:
+        lines.append(f"Parts put on it later start about {gap_in:g} in past the earlier cuts, on purpose: the usual "
+                     "space between parts, plus a little in case it goes back on slightly differently.")
     if number:
         lines.append(f"Write #{number} on the piece, so whoever cuts next can find it.")
     if beside:
@@ -203,7 +208,7 @@ def card_text(stock: str, free_in: float, used: Sequence[Stretch], last_label: s
 
 def load_line(stock: str, url: str, last_label: str, last_stretch: Stretch, turned: bool, sheet_length: float,
               last_turned: bool = False, number: Optional[int] = None, scrap_length: Optional[float] = None,
-              hand_cut: bool = False) -> str:
+              hand_cut: bool = False, gap_in: float = 0.0) -> str:
     """The sheet card's Stock line for a nest on an offcut: the same way round as its last cut, or spun round.
     scrap_length: a piece shorter than a sheet (always at the front, never turned). hand_cut: it has parts cut
     out by hand (a scrap AutoCAM hasn't cut yet then goes in the end they were measured from first)."""
@@ -222,7 +227,9 @@ def load_line(stock: str, url: str, last_label: str, last_stretch: Stretch, turn
     else:
         how = (f"Spin it round from how it was for {last_label} (flat, same side up, don't flip it over): the end "
                f"where its parts were cut goes {end}.")
-    return f"{head} {how} Clamps and zero as usual."
+    gap = (f" The parts start about {gap_in:g} in past the earlier cuts on purpose (part spacing, plus a little "
+           "in case it sits slightly differently)." if gap_in else "")
+    return f"{head} {how} Clamps and zero as usual.{gap}"
 
 
 def _number(text: str) -> Optional[float]:

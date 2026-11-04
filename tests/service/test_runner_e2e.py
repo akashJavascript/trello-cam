@@ -68,6 +68,7 @@ class Harness:
             data["templates"][key]["file"] = str(f)
         data["paths"] = {k: str(tmp_path / k) for k in ("queue", "cache", "state", "logs")}
         data["trello"]["cards"] = {"system": SYS}   # the fake board, not the real one
+        data["nest"]["offcut_gap_in"] = 0.5         # the offcut tests' layouts assume it (the shop's: 0.25 since 11-04)
         for dotted, value in cfg.items():
             node = data
             *path, last = dotted.split("__")

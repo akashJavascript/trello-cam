@@ -1009,6 +1009,16 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   that reaches left at the back).
 - Not rectangles (a part's own notches, the triangle by an angled edge): a part's bounding box counts as used.
 
+## 2026-11-04: offcut slack 0.25 in, and the cards say the gap is meant (the user)
+
+- P-0509 (H1, part_509.tap) on offcut #3 started about 1 in past r068's cuts, and that looked like a mistake. It was
+  the design: the earlier cuts keep their part spacing (0.5 in) round them, and a new nest on an offcut stays
+  `[nest] offcut_gap_in` past that, in case the piece goes back on a little differently. That slack is 0.25 in now
+  (was 0.5): the operator zeros off the sheet edge, and 0.25 in still covers the piece sitting half a degree crooked
+  (0.2 in over 24 in). So about 0.75 in now. It also sets the clearance beside earlier cuts for rooms.
+- Offcut cards and the Stock line of sheets on an offcut say the gap is on purpose.
+- The layout tests keep 0.5 (their numbers assume it); one test checks the shop's 0.25.
+
 ## 2026-11-03: WinCNC has no M0, so the stop between parts is a bare G4 (core 0.21.0)
 
 - r068 S1 was the first AutoCAM program loaded on the ShopSabre. WinCNC's preview drew only part 1, and running the

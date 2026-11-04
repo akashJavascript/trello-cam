@@ -461,7 +461,8 @@ class Runner:
         line = load_line(self._stock_label(piece["material"], thickness), piece.get("url", ""),
                          last.get("label", "its last sheet"), tuple(last.get("stretch", (0.0, 0.0))), turned,
                          self._size(piece["material"])[0], bool(last.get("turned", False)), piece.get("number"),
-                         piece.get("length_in") if piece.get("scrap") else None, bool(piece.get("hand_cuts")))
+                         piece.get("length_in") if piece.get("scrap") else None, bool(piece.get("hand_cuts")),
+                         gap_in=self._gap_after_cuts())
         return line + (f" ({missing[0].upper() + missing[1:]} wasn't on the rack; this one fits the same program.)"
                        if changed else "")
 
@@ -541,7 +542,13 @@ class Runner:
                          (piece.get("last") or {}).get("label", ""), compact(piece.get("beside", [])),
                          self.cfg.nest.offcut_min_in, piece.get("number"),
                          piece.get("length_in") if piece.get("scrap") else None, piece.get("hand_cuts", []),
-                         self._size(piece["material"])[1], self.cfg.hand_cuts.programs)
+                         self._size(piece["material"])[1], self.cfg.hand_cuts.programs,
+                         gap_in=self._gap_after_cuts() if piece.get("used") else 0.0)
+
+    def _gap_after_cuts(self) -> float:
+        """How far past an offcut's earlier cuts the next parts start: the part spacing kept round the earlier
+        cuts plus the offcut slack (1 in until 2026-11-04, when the slack went from 0.5 to 0.25)."""
+        return round(self.cfg.nest.part_spacing_in + self.cfg.nest.offcut_gap_in, 3)
 
     def scan_offcuts(self) -> None:
         """The Offcuts list each pass: offcuts without a number get one (their card says it), a missing offcut
