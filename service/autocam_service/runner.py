@@ -967,8 +967,9 @@ class Runner:
                   if oid in on_board and not p.get("reserved_by") and not p.get("missing")
                   and p["material"] == key and abs(p["thickness_in"] - thickness) < 1e-6}
         m = cfg.nest.part_spacing_in / 2               # the footprint has the cutter in it: a little to spare
+        mx = cfg.hand_cuts.place_spare_across_in       # less across, where the region already clears the clamps
         r = fx.nest_region_in
-        region = (r[0] + m, r[1] + m, r[2] - m, r[3] - m)
+        region = (r[0] + mx, r[1] + m, r[2] - mx, r[3] - m)
         spot = find_spot(box, pieces, region, width, length, cfg.nest.offcut_gap_in)
         if spot is None:
             r = region

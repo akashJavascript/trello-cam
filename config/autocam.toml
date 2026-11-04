@@ -412,6 +412,9 @@ programs = true                 # read .tap files attached to offcut cards, with
 cutter_in = 0.25                # the cutter's diameter when the card has no "Cutter:" line (covers 4 mm, 1/8, 6 mm)
 place_programs = true           # a card in Ready for CAM with someone's own .tap (no part): AutoCAM picks the spot,
                                 # moves the program there and puts it on a card in Sheet review (option 3, 2026-11-01)
+place_spare_across_in = 0.05    # ...its footprint this far inside the nest region across; the region already clears
+                                # the clamps by clamps.clearance_in. Was half the part spacing (0.25 in) like along:
+                                # the user's 21.3 in wide part_509.tap didn't fit 21.0 (2026-11-03); now 21.4 across
 
 [tabs]                          # tabs on the outlines of parts whose "Hold it in with tabs" box is ticked
 default = true                  # the box starts ticked on new part cards (the user's choice, 2026-10-03)

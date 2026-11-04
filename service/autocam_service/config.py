@@ -224,6 +224,7 @@ class HandCuts:
     programs: bool = True        # read attached programs at all
     cutter_in: float = 0.25      # the cutter's diameter when the card has no Cutter: line
     place_programs: bool = True  # a part card with its own .tap: AutoCAM picks the spot (own_programs.py)
+    place_spare_across_in: float = 0.05  # its footprint's spare inside the nest region across (off the clamp strip)
 
 
 @dataclass(frozen=True)
@@ -876,7 +877,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
     if "hand_cuts" in top.data:
         t = top.table("hand_cuts")
         hand_cuts = HandCuts(programs=t.boolean("programs"), cutter_in=t.number("cutter_in", positive=True),
-                             place_programs=t.boolean("place_programs"))
+                             place_programs=t.boolean("place_programs"),
+                             place_spare_across_in=t.number("place_spare_across_in", minimum=0.0, default=0.05))
         t.finish()
 
     panel = Panel()

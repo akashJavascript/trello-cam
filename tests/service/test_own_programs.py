@@ -86,8 +86,8 @@ def test_an_own_program_goes_on_a_new_sheet_moved_to_its_spot(tmp_path):
     [(name, data)] = placed_files(h, s.id).items()
     assert name == "P-3001_H1_PLACED.tap"
     lines = data.decode("ascii").split("\r\n")
-    assert lines[1].startswith("[AUTOCAM H1 - P-3001.tap MOVED X+1.625 Y+0.875") and "G0 X1.625 Y0.875" in lines
-    assert "zero X/Y there, as for AutoCAM's sheets" in s.desc and "move to X 1.6250 Y 0.8750" in s.desc
+    assert lines[1].startswith("[AUTOCAM H1 - P-3001.tap MOVED X+1.425 Y+0.875") and "G0 X1.425 Y0.875" in lines
+    assert "zero X/Y there, as for AutoCAM's sheets" in s.desc and "move to X 1.4250 Y 0.8750" in s.desc
     assert "Stock: a new 6061 1/8in sheet, 24 x 48." in s.desc
     assert [c for c, _ in h.tracker.checklists if c == s.id]                       # Review, At the machine, Offcut
     assert h.tracker.cards["o1"].list_key == "nested"
@@ -185,6 +185,22 @@ def test_placing_programs_can_be_switched_off(tmp_path):
 
 
 # ---------------------------------------------------------------- "Place it myself" (2026-11-01)
+
+def test_across_it_fits_up_to_the_clamps_clearance(tmp_path):
+    h = harness(tmp_path)
+    own_card(h, data=program(x1=21.05))          # with the 1/4 in cutter: 21.3 in across, like part_509.tap
+    h.runner.tick()
+    [s] = sheet_cards(h)
+    assert h.tracker.cards["o1"].list_key == "nested"
+    [data] = placed_files(h, s.id).values()
+    assert "G0 X1.425 Y0.875" in data.decode("ascii").split("\r\n")     # 0.05 in inside the clamps' clearance
+
+    (tmp_path / "2").mkdir()
+    h = harness(tmp_path / "2")
+    own_card(h, data=program(x1=21.2))           # 21.45 in across
+    h.runner.tick()
+    assert "more than a sheet's cutting area (21.4 x 38.5)" in refused(h)
+
 
 def test_place_it_myself_puts_the_program_as_it_is_in_the_operators_list(tmp_path):
     h = harness(tmp_path)

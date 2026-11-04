@@ -813,6 +813,8 @@ starts no Fusion run (`own_programs.py`, runner `own_programs`; `[hand_cuts] pla
   it is: the smallest room beside earlier cuts or free stretch on an offcut of that stock that it fits, the way round
   the offcut was last cut if it can (a scrap never turns), else a new sheet's front-left corner. It keeps half the part
   spacing (0.25 in) inside the nest region: a footprint right at the region's edge touches the clamp strip.
+  Across it's `[hand_cuts] place_spare_across_in` (0.05 in) since 2026-11-03: a 21.3 in wide program didn't fit
+  the 21.0 in that 0.25 left, and across the region's edge is already the clamps' clearance.
 - **The program on the card is a copy moved there:** every X/Y shifted so its zero is the piece's front-left corner,
   like AutoCAM's own sheets (not G53 lines, not a G4 dwell's X; arc centers are relative). The copy gets the sheet
   checks at its real spot: Z floor (so Z0 must be the spoilboard; a program zeroed on top of the stock is sent back
