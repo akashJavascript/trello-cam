@@ -62,7 +62,20 @@ def face_by_id(occ, face_id: int):
 
 
 def box_in(occ):
-    bb = body(occ).boundingBox
+    """The copy's box along the design's X, Y and Z, tight: MeasureManager's oriented box with X and Y as its
+    directions. BRepBody.boundingBox is loose once Arrange turns a part by an angle that isn't a right angle: a
+    10 x 2 in bar drawn at 30 deg and straightened by Arrange measured about 11.7 x 10.7 in (r080, 2026-11-04), so it
+    seemed to cross its area's edge and took more room than it does. That box is the fallback."""
+    b = body(occ)
+    try:
+        mm = adsk.core.Application.get().measureManager
+        obb = mm.getOrientedBoundingBox(b, adsk.core.Vector3D.create(1, 0, 0), adsk.core.Vector3D.create(0, 1, 0))
+        c, hx, hy, hz = obb.centerPoint, obb.length / 2, obb.width / 2, obb.height / 2
+        if hx > 0 and hy > 0 and hz > 0:
+            return tuple(to_in(v) for v in (c.x - hx, c.y - hy, c.z - hz, c.x + hx, c.y + hy, c.z + hz))
+    except Exception:  # noqa: BLE001 - the loose box below is still a safe (bigger) box
+        pass
+    bb = b.boundingBox
     return tuple(to_in(v) for v in (bb.minPoint.x, bb.minPoint.y, bb.minPoint.z,
                                     bb.maxPoint.x, bb.maxPoint.y, bb.maxPoint.z))
 
