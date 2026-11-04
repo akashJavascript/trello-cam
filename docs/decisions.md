@@ -1010,6 +1010,28 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - Not rectangles (a part's own notches, the triangle by an angled edge): a part's bounding box counts as used.
   (Since 2026-11-04 the rooms also come from the parts' real cuts: see that day.)
 
+## 2026-11-04: pictures drawn from the programs (the user: the toolpath picture, and "a pic on the offcut card on what the sheet should look like")
+
+- **Read from the posted programs, not Fusion's idea of them** (core `toolpath.py`, service `drawings.py`,
+  `card_pictures.py`; Pillow, as for the labels): every move below the stock top with its operation (the post's
+  comment lines: `[bore holes]`, `[outer p01-1]`) and its depth, drawn at the cutter's width so holes and slots show
+  at their real size. Through cuts dark, what stops above the spoilboard orange (ramps and lead-outs under the
+  through cuts, flat ones like tabs over them), the small-tool and scribe programs teal, drilled holes as dots.
+- **Sheet cards** get `<sheet>_toolpath.png` beside the preview (the preview stays the cover): the stock as
+  loaded, front at the bottom, clamp strips, the machine's reach, each outline numbered in cut order (the card's CUT
+  ORDER, from the `[outer ...]` operations; the number goes where it covers the least), and on an offcut what was
+  cut from it before in grey. Drawn by the options pass for any cuttable sheet card without one (a new program
+  clears it; at most 4 a pass), so sheets published before this get one too.
+- **Offcut cards** get a cover showing what the piece should look like, in its own coordinates (end A at the
+  bottom): every program cut on it (AutoCAM's sheets from their job folders; own programs AutoCAM placed from the
+  placed copy on their sheet card, downloaded once into `state/pictures/`), parts cut by hand, the uncut stretch and
+  the room beside the cuts with their sizes, and any used stretch no program on record explains, hatched. Redrawn
+  when its record changes (a signature of it), the old picture deleted. New offcuts record the sheet they came from
+  (`made_from`); for older ones it's the sheet of that material that went to Cut within 5 minutes of the offcut's
+  card being made (r068 S1 for #3, H2 for #4).
+- **Never in the way:** a picture that can't be drawn is skipped (logged; an offcut's isn't tried again until its
+  record changes), and the card is as before.
+
 ## 2026-11-04: spares (core 0.24.0; the mockup the user approved: "count per send", "robot parts should come first", a spares line in the Part Studio)
 
 - **Chosen by people, never automatic:** a count per plate, each time spares are sent (no standing "keep 2" per

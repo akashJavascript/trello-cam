@@ -111,6 +111,7 @@ class RunStore:
             sheets[card_id].update(job=job, material=material, thickness_in=thickness_in, index=index, url=url)
             sheets[card_id].pop("options", None)          # a new program: the options are applied to it again
             sheets[card_id].pop("air", None)
+            sheets[card_id].pop("toolpath", None)         # ...and its picture drawn again (card_pictures.py)
             sheets[card_id].update(extra or {})
         self._write_sheets(sheets)
 

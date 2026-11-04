@@ -174,6 +174,10 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   and in a browser with fakes. **Works in Fusion** (r085: the robot plate and 6 spares on S1, squeezed 14.5 -> 9.6 in;
   the big spare that didn't fit beside it on S2; r084 found Fusion's no-room error, fixed in 0.24.1); none cut yet
   (`docs/manual-tests.md` → M3 section 19).
+- **Pictures drawn from the programs** (2026-11-04, decisions): a toolpath picture on each sheet card (what the
+  program cuts, numbered in cut order, cuts at the cutter's width, tabs orange) and a cover on each offcut card
+  showing what the piece should look like (every program cut on it, the room left). Tested offline; drawn from real
+  data for offcuts #3 and #4 before going live.
 - **The air test ticked on risky sheets** (2026-11-04): on an offcut, a piece added by hand, or with a part placed
   by hand; the comment says why. Tested offline.
 - **Offcuts**, with **room beside** earlier cuts: work in Fusion (r013 to r016, a test job); none cut yet

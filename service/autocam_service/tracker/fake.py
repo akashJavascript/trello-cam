@@ -50,7 +50,9 @@ class FakeTracker(Tracker):
         return ChecklistState(done=sum(1 for _, done in items if done), total=len(items))
 
     def download(self, attachment: Attachment) -> bytes:
-        return self.downloads[attachment.id]
+        if attachment.id in self.downloads:
+            return self.downloads[attachment.id]
+        return self.files[attachment.id][2]           # a file something attached
 
     def last_comment(self, card_id: str) -> Optional[str]:
         said = self.comments_on(card_id)

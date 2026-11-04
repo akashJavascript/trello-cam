@@ -58,6 +58,7 @@ from .handprograms import ProgramCut, footprint, is_program, parse_cutter, progr
 from .own_programs import (OWN_PROGRAM_RE, PLACE_MYSELF_RE, own_qty, pack_copies, parse_thickness, placed_name,
                            program_attachments, repeat_program, shift_program)
 from .fits import FitStore, key as fit_key, parse_fit, stocks as fit_stocks
+from .card_pictures import CardPictures
 from .jobs import JobBuildError, build_job, face_spec, fit_spec, sheet_fixture
 from .materials import resolve_material
 from .panel.usage import TEAM_USAGE_FILE, card_line as team_usage_line
@@ -104,6 +105,7 @@ def _version(v: str) -> Tuple[int, ...]:
 
 
 
+PICTURES_PER_PASS = 4                # sheet cards given their toolpath picture in one pass (a burst after a deploy)
 LEGACY_AIR_CHECKLIST = "Air test"   # the first version's own box (on r005's card), now an item in Options
 WRITE_ATTEMPTS = 3   # a Trello write that fails on this many ticks is given up (logged), so no run is stuck forever
 
@@ -139,6 +141,10 @@ class Runner:
         self.watch = ReadyWatch(s.store.watch_file, delay)
         self.offcuts = OffcutStore(s.store.offcuts_file)
         self.fits = FitStore(s.store.offcuts_file.with_name("fits.json"))
+        # pictures drawn from the programs: the sheet card's toolpath, the offcut card's cover (card_pictures.py)
+        self._pictures_left = PICTURES_PER_PASS
+        self.pictures = CardPictures(self.t, s.store, s.queue.done, self.offcuts, self._stock_label, self._size,
+                                     lambda m: sheet_fixture(self.cfg, m).clamp_zones_in, self.cfg.machine.reach_y_in)
         self.waiting_count = 0                                   # cards waiting for a run (for the status)
         self.rush_count = 0                                      # ...of which have the Rush label
         self._status_sent: Optional[Tuple[str, datetime]] = None  # (status without its time, when it was sent)
@@ -526,7 +532,7 @@ class Runner:
             return
         piece = {"material": info["material"], "thickness_in": info["thickness_in"], "used": [list(s) for s in used],
                  "beside": left, "last": {"label": label, "stretch": list(cut), "turned": False},
-                 "reserved_by": None, "number": self.offcuts.next_number()}
+                 "reserved_by": None, "number": self.offcuts.next_number(), "made_from": card.id}
         new = self.t.create_card("offcuts", *self._offcut_card_text(piece))
         piece["url"] = new.url
         self.offcuts.put(new.id, piece)
@@ -578,6 +584,8 @@ class Runner:
                     self.t.comment(card.id, f"This is offcut #{piece['number']}: write #{piece['number']} on it.")
                 else:
                     self._hand_cuts(card, piece)
+                if self.offcuts.get(card.id) is not None:
+                    self.pictures.refresh_offcut(card.id)         # its cover: what it should look like
             except Exception as e:  # noqa: BLE001 - one card mustn't stop the tick
                 log.warning("offcut card %s: %s", card.id, e)
 
@@ -1170,7 +1178,7 @@ class Runner:
             if not any(keep):
                 return
             piece = {"material": info["material"], "thickness_in": info["thickness_in"], "used": [], "beside": [],
-                     "last": last, "reserved_by": None}
+                     "last": last, "reserved_by": None, "made_from": card.id}
             self._apply_hand_cuts(piece, cuts, record=False)
             free = self._free_after([tuple(s) for s in piece["used"]], piece["material"])
             if free < cfg.nest.offcut_min_in and not piece["beside"]:
@@ -1197,6 +1205,7 @@ class Runner:
         Unticking undoes it. Only cuttable sheets this service made, in Sheet review or Ready to cut. A rebuilt
         sheet gets the ticked options applied to its new program."""
         reg = self.s.store.sheet_cards()
+        self._pictures_left = PICTURES_PER_PASS
         for list_key in (self.targets["sheet_created"], "ready_to_cut"):
             for card in self.t.list_cards(list_key):
                 info = reg.get(card.id)
@@ -1205,6 +1214,7 @@ class Runner:
                 try:
                     if self._stock(card, info):
                         continue                      # the card changed (or is gone): the rest next pass
+                    self._toolpath(card, info)
                     self._options(card, info)
                 except Exception as e:  # noqa: BLE001 - one card mustn't stop the tick
                     log.warning("options on sheet card %s: %s", card.id, e)
@@ -1896,6 +1906,23 @@ class Runner:
             once(store, state, f"{key}:f3d", lambda: self.t.attach_file(
                 card_id, f3d.name, f3d.read_bytes(), "application/octet-stream"), WRITE_ATTEMPTS)
         return card_id, url
+
+    def _toolpath(self, card: Card, info: Dict) -> None:
+        """The sheet card's <sheet>_toolpath.png (card_pictures.py): drawn once per program, for any cuttable
+        sheet card without one (a new program clears the record: run_state.register_sheet)."""
+        if "toolpath" in info or self._pictures_left <= 0:
+            return
+        self._pictures_left -= 1
+        try:
+            made = self.pictures.sheet_png(info)
+        except Exception as e:  # noqa: BLE001 - the card is fine without it; not tried again for this program
+            log.warning("sheet card %s: couldn't draw the toolpath picture: %s", card.id, e)
+            made = None
+        att = self.t.attach_file(card.id, made[0], made[1], "image/png") if made else ""
+        reg = self.s.store.sheet_cards()
+        if card.id in reg:
+            reg[card.id]["toolpath"] = att
+            self.s.store._write_sheets(reg)
 
     @staticmethod
     def _labelled_preview(ing: IngestedJob, png: Path) -> bytes:

@@ -495,6 +495,15 @@ robot parts leave.
 | 4 | The phone: Plates tab, Spares section shows them; Send spares lists the plate under its stock; sending 1 more adds to the waiting card | |
 | 5 | The sheet's air test: an offcut sheet's Options has the air test ticked, and its comment says why | |
 
+### 20. Pictures from the programs (2026-11-04)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | A new sheet card gets `<sheet>_toolpath.png` within a pass: the cuts where the preview has the parts, the numbers in the CUT ORDER's order, tabs orange | |
+| 2 | At the machine: the cut sheet looks like its toolpath picture (no hole missing, nothing cut twice) | |
+| 3 | Each offcut card's cover shows the piece: hold the picture next to the piece on the rack (end A toward you): the cut-outs match | |
+| 4 | Cut a sheet on an offcut: its card's picture is redrawn with the new cuts, the old picture gone | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)
