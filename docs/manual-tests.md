@@ -482,6 +482,19 @@ with `Scribe: chamfer mill`.
 | 5 | At the machine: run one of each on scrap. The line is down the middle of the bend zone; bend on it in the brake and check the flange length | |
 | 6 | A U or D beside each line, readable, clear of holes and edges; bending the way it says gives the part in the CAD | r050 (endmill): a U 0.59 x 0.78 in centered beside the line (Part 13 lay bottom-up, Bend D is down); r051 (chamfer mill): a 0.18 x 0.25 in U, within 0.0001 in, 15 s. Cut and bent: |
 
+### 19. Spares (2026-11-04, core 0.24.0)
+
+A test part sent with Quantity 2 and Spares 2 (Rush + Smoked, a cached STEP), then a spare bigger than the space the
+robot parts leave.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Two cards in Ready for CAM: the part's own (Qty 2) and its spares (Qty 2, the Spare label, sky blue) | |
+| 2 | One sheet: the spares beside or behind the robot parts, a part spacing clear; CUT ORDER says "spare" on them | |
+| 3 | A spare that doesn't fit beside them goes on the next sheet; no robot part moves to a later sheet | |
+| 4 | The phone: Plates tab, Spares section shows them; Send spares lists the plate under its stock; sending 1 more adds to the waiting card | |
+| 5 | The sheet's air test: an offcut sheet's Options has the air test ticked, and its comment says why | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

@@ -47,7 +47,8 @@ class PlatesView:
         self.today = today
         self._lock = threading.RLock()
         self._read: Optional[Tuple[float, List[str], Dict[str, str]]] = None
-        self._parts: Dict[str, Tuple[str, int]] = {}  # part card id -> (name, qty): kept, for sheets cut since
+        self._parts: Dict[str, Tuple[str, int, bool]] = {}  # part card id -> (name, qty, spare): kept, for sheets
+                                                             # cut since
 
     def _board(self) -> Tuple[List[str], Dict[str, str]]:
         """(the Ready to cut card ids in order, their names), read at most every CACHE_S."""
@@ -56,28 +57,28 @@ class PlatesView:
                 return self._read[1], self._read[2]
             ready = self.t.list_cards("ready_to_cut")
             for card in self.t.list_cards(self.cfg.trello.targets["part_nested"]):
-                self._parts[card.id] = self._part(card.name, card.desc)
+                self._parts[card.id] = self._part(card.name, card.desc, card.labels)
             self._read = (self.clock(), [c.id for c in ready], {c.id: c.name for c in ready})
             return self._read[1], self._read[2]
 
-    @staticmethod
-    def _part(title: str, desc: str) -> Tuple[str, int]:
+    def _part(self, title: str, desc: str, labels=()) -> Tuple[str, int, bool]:
         title = " ".join((title or "").split())
         m = TITLE_QTY_RE.match(title)
         name = m["name"] if m and m["name"] else title
         found = [v.strip() for rx in QTY_LINE_RES for v in rx.findall(_plain(desc or ""))]
         found += [m["qty"]] if m and m["name"] else []
-        return name, int(found[0]) if found and found[0].isdigit() else 0
+        spare = " ".join(self.cfg.labels.spare.split()).casefold() in {" ".join(l.split()).casefold() for l in labels}
+        return name, int(found[0]) if found and found[0].isdigit() else 0, spare
 
-    def _name(self, part_id: str) -> Tuple[str, int]:
+    def _name(self, part_id: str) -> Tuple[str, int, bool]:
         hit = self._parts.get(part_id)
         if hit is None:                               # moved to Cut before this page saw it: one read, kept
             try:
                 card = self.t.get_card(part_id)
-                hit = self._part(card.name, card.desc)
+                hit = self._part(card.name, card.desc, card.labels)
             except Exception as e:  # noqa: BLE001 - the sheet still shows
                 log.info("panel: reading part card %s: %s", part_id, e)
-                hit = ("A part", 0)
+                hit = ("A part", 0, False)
             with self._lock:
                 self._parts[part_id] = hit
         return hit
@@ -95,9 +96,9 @@ class PlatesView:
         counts = info.get("counts") or {}
         plates = []
         for part_id in info.get("parts") or []:
-            name, qty = self._name(part_id)
+            name, qty, spare = self._name(part_id)
             plates.append({"id": part_id, "name": name, "qty": int(counts.get(part_id) or qty or 0),
-                           "who": finishers.get(part_id, "")})
+                           "who": finishers.get(part_id, ""), **({"spare": True} if spare else {})})
         return {"id": sheet_id, "title": stock or (title or "A sheet"), "sub": " · ".join(x for x in sub if x),
                 "rush": (title or "").upper().startswith("RUSH"), "cut": cut, "who": cutters.get(sheet_id, ""),
                 "plates": plates}

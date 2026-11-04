@@ -163,11 +163,13 @@ class TrelloTracker(Tracker):
     def _attach_link(self, card_id: str, url: str, name: str) -> str:
         return self.http.call("POST", f"/cards/{card_id}/attachments", {"url": url, "name": name})["id"]
 
-    def _add_checklist(self, card_id: str, name: str, items: List[str], checked: bool) -> str:
+    def _add_checklist(self, card_id: str, name: str, items: List[str], checked) -> str:
+        """checked: one for every item, or a list (one each)."""
         cl = self.http.call("POST", f"/cards/{card_id}/checklists", {"name": name})
-        for item in items:
+        for n, item in enumerate(items):
+            on = checked[n] if isinstance(checked, list) else checked
             self.http.call("POST", f"/checklists/{cl['id']}/checkItems",
-                           {"name": item, "checked": "true" if checked else "false"})
+                           {"name": item, "checked": "true" if on else "false"})
         return cl["id"]
 
     def _remove_checklists(self, card_id: str, name: str) -> None:
@@ -193,7 +195,7 @@ class TrelloTracker(Tracker):
         board = self.http.call("GET", f"/cards/{card_id}", {"fields": "idBoard,idLabels"})
         found = [l for l in self.http.call("GET", f"/boards/{board['idBoard']}/labels", {"fields": "name"})
                  if norm(l.get("name") or "") == norm(name)]
-        color = "purple" if norm(name) == "cad changed" else "red"     # AutoCAM's own marks: CAD changed is purple
+        color = {"cad changed": "purple", "spare": "sky"}.get(norm(name), "red")   # AutoCAM's own: CAD changed, Spare
         label = found[0]["id"] if found else self.http.call(
             "POST", "/labels", {"name": name, "color": color, "idBoard": board["idBoard"]})["id"]
         if label not in (board.get("idLabels") or []):

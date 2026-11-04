@@ -192,3 +192,54 @@ def test_sheet_use_line():
     assert sheet_use(types.SimpleNamespace(parts_area_in2=500.0, usable_area_in2=808.5, free_length_in=0.3)) == \
         "Sheet use: 62% of the cutting area is parts."
     assert sheet_use(types.SimpleNamespace(parts_area_in2=None, usable_area_in2=None, free_length_in=None)) is None
+
+
+# ---------------------------------------------------------------- the automatic air test (2026-11-04, the user's pick)
+
+def risky_sheet(tmp_path, **info):
+    """A two-part sheet whose record says what it's on, before its Options box appears."""
+    h = harness(tmp_path, step_card("c1", "plate", qty=2))
+    run(h)
+    s1 = sheet(h)
+    reg = h.store.sheet_cards()
+    reg[s1.id].update(info)
+    h.store._write_sheets(reg)
+    return h, s1
+
+
+def test_a_sheet_on_an_offcut_gets_its_air_test_ticked_and_says_why(tmp_path):
+    h, s1 = risky_sheet(tmp_path, offcut_id="off1")
+    h.runner.offcuts.put("off1", {"number": 3})
+    h.runner.tick()                                                    # the Options box, the air test ticked
+    assert h.tracker.checklists[(s1.id, "Options")] == [[NO_STOP, False], [AIR, True]]
+    h.runner.tick()                                                    # ...and made
+    assert "6061_0p125_r001_S1_AIRTEST.tap" in programs(h, s1.id)
+    said = h.tracker.comments_on(s1.id)[-1]
+    assert said.startswith("Air test added: 6061_0p125_r001_S1_AIRTEST.tap.")
+    assert said.endswith("AutoCAM ticked it because it's on offcut #3: untick it under Options if you don't need it.")
+    tick(h, s1.id, AIR, False)                                         # unticked: gone, and not ticked again
+    h.runner.tick()
+    h.runner.tick()
+    assert list(programs(h, s1.id)) == ["6061_0p125_r001_S1.tap"]
+    assert h.tracker.checklists[(s1.id, "Options")][1] == [AIR, False]
+
+
+def test_a_piece_added_by_hand_and_a_part_placed_by_hand_are_risky_too(tmp_path):
+    h, s1 = risky_sheet(tmp_path, offcut_id="scrap1")
+    h.runner.offcuts.put("scrap1", {"number": 5, "scrap": True})
+    assert h.runner._risky(h.store.sheet_cards()[s1.id]) == "it's on the piece #5 added by hand"
+    assert h.runner._risky({"by_hand": True}) == "a part on it is placed by hand"
+    assert h.runner._risky({"offcut_id": None}) == ""
+
+
+def test_a_new_sheet_starts_unticked_and_the_switch_turns_it_off(tmp_path):
+    h, s1 = risky_sheet(tmp_path)
+    h.runner.tick()
+    assert h.tracker.checklists[(s1.id, "Options")] == [[NO_STOP, False], [AIR, False]]
+    import dataclasses
+    (tmp_path / "off").mkdir()
+    h2, s2 = risky_sheet(tmp_path / "off", by_hand=True)
+    h2.runner.cfg = dataclasses.replace(h2.runner.cfg, machine=dataclasses.replace(h2.runner.cfg.machine,
+                                                                                    air_test_auto=False))
+    h2.runner.tick()
+    assert h2.tracker.checklists[(s2.id, "Options")] == [[NO_STOP, False], [AIR, False]]

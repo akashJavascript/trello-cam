@@ -291,10 +291,12 @@ class Runner:
                                 for c in self.t.list_cards(key) if not c.is_template and c.name.strip() != README_CARD]
 
         def identity(card: Card):
-            parsed = parse_card(card, cfg.labels.smoked, cfg.labels.tool_eighth, cfg.labels.face)
+            parsed = parse_card(card, cfg.labels.smoked, cfg.labels.tool_eighth, cfg.labels.face, cfg.labels.spare)
             if isinstance(parsed, CardProblem):           # still the same part: matched by its title alone
                 m = TITLE_QTY_RE.match(card.name.strip())
                 return " ".join((m["name"] if m else card.name).split()).casefold(), None
+            if parsed.spare:
+                return None                               # spares are sent on top on purpose, as often as wanted
             link = parsed.link                            # another configuration is another part
             return " ".join(parsed.name.split()).casefold(), (link.did, link.eid, link.configuration) if link else None
 
@@ -1216,7 +1218,14 @@ class Runner:
             self.t.remove_checklists(card.id, LEGACY_AIR_CHECKLIST)
         items = {c.item: c.done for c in card.checks if c.checklist == t.options_checklist}
         if not items:
-            self.t.add_checklist(card.id, t.options_checklist, [t.no_stop_item, t.air_test_item])
+            why = self._risky(info) if self.cfg.machine.air_test_auto else ""
+            if why:                                   # said when the air test is added
+                reg = self.s.store.sheet_cards()
+                if card.id in reg:
+                    reg[card.id]["auto_air"] = why
+                    self.s.store._write_sheets(reg)
+            self.t.add_checklist(card.id, t.options_checklist, [t.no_stop_item, t.air_test_item],
+                                 ticked=(t.air_test_item,) if why else ())
             return
         air_kind = f"one-lap@{self.cfg.machine.air_test_feed_ipm:g}"   # a new kind of air test remakes old ones
         want = {"job": info["job"], "index": info.get("index"), "nostop": items.get(t.no_stop_item, False),
@@ -1260,8 +1269,22 @@ class Runner:
             self.t.comment(card.id, text.no_stop_comment(main, want["nostop"]))
         if want["air"] and not (had.get("air") and same):
             name = next(n for n in programs if n.endswith(f"{AIR_SUFFIX}.tap"))
+            why = info.get("auto_air") if not had.get("air") else ""
             self.t.comment(card.id, text.air_test_comment(name, lift, self.cfg.machine.air_test_gap_in,
-                                                          self.cfg.machine.air_test_feed_ipm))
+                                                          self.cfg.machine.air_test_feed_ipm, why or ""))
+
+    def _risky(self, info: Dict) -> str:
+        """Why this sheet's air test comes ticked ("" it doesn't; the user, 2026-11-04): its program goes on a
+        used piece (an offcut, or a piece someone added by hand) or holds a part placed by hand, where a wrong
+        zero or a wrong guess about the piece shows up in the air first."""
+        if info.get("by_hand"):
+            return "a part on it is placed by hand"
+        offcut_id = info.get("offcut_id")
+        if not offcut_id:
+            return ""
+        piece = self.offcuts.get(offcut_id) or {}
+        number = f" #{piece['number']}" if piece.get("number") else ""
+        return f"it's on the piece{number} added by hand" if piece.get("scrap") else f"it's on offcut{number}"
 
     def _programs(self, info: Dict, nostop: bool, air: bool):
         """({file name: (bytes, guard report)} with the card's program first, the sheet's program stem, the
@@ -1334,7 +1357,7 @@ class Runner:
 
         requests: List[PartRequest] = []
         for card in cards:
-            parsed = parse_card(card, cfg.labels.smoked, cfg.labels.tool_eighth, cfg.labels.face)
+            parsed = parse_card(card, cfg.labels.smoked, cfg.labels.tool_eighth, cfg.labels.face, cfg.labels.spare)
             if not isinstance(parsed, CardProblem):
                 parsed = replace(parsed, tabs=box(card, cfg.trello.tabs_checklist, cfg.trello.tabs_item,
                                                   cfg.tabs.default),

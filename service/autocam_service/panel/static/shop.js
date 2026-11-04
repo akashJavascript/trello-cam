@@ -4,6 +4,8 @@
 //   team's order sheet in a new tab and copies the part's name; people write the row themselves (AutoCAM never
 //   writes to the sheet), then say "It's on the sheet".
 //   Plates (panel/plates.py): the sheets in Ready to cut (and cut today), who cuts each, and who finishes each plate.
+//   Its Spares section (panel/spares.py, 2026-11-04): spares on the way, and Send spares: a count for any plate
+//   AutoCAM has nested, each plate's spares a card of their own (nested after the robot parts).
 // Who does what (people.py, the mockup approved 2026-11-04): a name tag on every item (+ when nobody), "All" on a
 // group, a picker with the shop's names ("Me" first), and this phone's name at the top right. Soft: anyone can still
 // start anything. "Yours" is what this phone started, or what's assigned to its name. Plain JavaScript, no build step;
@@ -18,6 +20,9 @@
   var titleEl = document.getElementById("title");
   var meEl = document.getElementById("me");
   var pickerEl = document.getElementById("picker");
+  var backEl = document.getElementById("back");
+  var logoEl = document.getElementById("logo");
+  var footEl = document.getElementById("foot");
   var SHEET_RE = /^https:\/\/docs\.google\.com\/spreadsheets\//;
   var ICONS = {
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
@@ -84,7 +89,8 @@
   var HASH_TAB = { "#parts": "parts", "#shafts": "shafts", "#plates": "plates" }[location.hash];
   var S = { data: null, error: "", busy: false, tab: HASH_TAB || remember("tab") || "shafts",
             ask: null, copied: false,          // ask: a part's Order or In the bin question, {id, kind, n}
-            picker: null };                    // the name picker: {title, current, pick(name), whoAmI}
+            picker: null,                      // the name picker: {title, current, pick(name), whoAmI}
+            spares: null };                    // Send spares: {choices (null: loading), counts: {card id: n}, q, error}
   var toastTimer = 0;
   function toast(text) {
     toastEl.textContent = text; toastEl.hidden = false;
@@ -93,7 +99,7 @@
   }
 
   function load() {
-    if (S.busy) return Promise.resolve();
+    if (S.busy || S.spares) return Promise.resolve();          // not while Send spares is open (it'd lose the counts)
     var plates = S.tab === "plates" ? "&plates=1" : "";        // Trello is read only while Plates shows
     return api("GET", "/api/shop?device=" + encodeURIComponent(DEVICE) + plates).then(function (d) {
       S.data = d; S.error = ""; render();
@@ -125,6 +131,14 @@
   var TITLES = { shafts: "Shafts", parts: "Parts", plates: "Plates" };
   function render() {
     listEl.textContent = "";
+    footEl.textContent = ""; footEl.hidden = true;
+    backEl.hidden = !S.spares; logoEl.hidden = !!S.spares;
+    if (S.spares) {
+      tabsEl.hidden = true; meEl.hidden = true; titleEl.hidden = false; titleEl.textContent = "Send spares";
+      document.title = "Send spares";
+      renderPicker();
+      return renderSendSpares();
+    }
     var d = S.data;
     var on = !d ? [] : ["shafts", "parts", "plates"].filter(function (t) { return d[t + "On"]; });
     var tab = on.indexOf(S.tab) >= 0 ? S.tab : on[0] || "shafts";
@@ -396,6 +410,7 @@
     if (!d.sheets) { add(listEl, h("p", { class: "muted" }, "Loading…")); return; }
     var name = d.me;
     function yours(s) { return !!name && (s.who === name || s.plates.some(function (p) { return p.who === name; })); }
+    renderSpares(d);
     section("Yours", d.sheets.filter(yours), sheetCard);
     section("Ready to cut", d.sheets.filter(function (s) { return !s.cut && !yours(s); }), sheetCard);
     section("Cut today", d.sheets.filter(function (s) { return s.cut && !yours(s); }), sheetCard);
@@ -409,9 +424,87 @@
         s.rush && !s.cut ? h("span", { class: "chip rush" }, "Rush") : null,
         s.cut ? h("span", { class: "chip" }, "Cut") : whoTag(s.who, "Who cuts it", function (n) { assign("sheet", [s.id], n); })),
       s.plates.length ? h("div", { class: "plates" }, s.plates.map(function (p) {
-        return h("div", { class: "plate" }, h("span", { class: "n" }, p.name), p.qty ? h("span", { class: "q" }, "×" + p.qty) : null,
+        return h("div", { class: "plate" }, h("span", { class: "n" }, p.name), p.spare ? h("span", { class: "chip spare" }, "Spare") : null,
+          p.qty ? h("span", { class: "q" }, "×" + p.qty) : null,
           whoTag(p.who, "Who finishes it", function (n) { assign("plate", [p.id], n); }));
       })) : null);
+  }
+
+  // ---------------------------------------------------------------- spares (panel/spares.py)
+  function renderSpares(d) {
+    var rows = (d.spares || []).map(function (s) {
+      return h("div", { class: "done-row" }, h("span", { class: "name wrap" }, s.name, h("span", { class: "sub" }, s.where)),
+        h("span", { class: "qty" }, "×" + s.qty));
+    });
+    add(listEl, h("section", { class: "group" },
+      h("div", { class: "group-head" }, h("span", { class: "group-label" }, "Spares"),
+        h("button", { class: "btn btn-secondary btn-small", type: "button", onclick: openSpares }, icon("plus"), "Send spares")),
+      rows.length ? h("div", { class: "item spare-list" }, rows) : null));
+  }
+
+  function openSpares() {
+    S.spares = { choices: null, counts: {}, q: "", error: "" };
+    render(); window.scrollTo(0, 0);
+    api("GET", "/api/shop?device=" + encodeURIComponent(DEVICE) + "&choices=1").then(function (d) {
+      if (!S.spares) return;
+      S.spares.choices = d.choices || []; S.spares.error = d.platesError || ""; render();
+    }, function (e) { if (S.spares) { S.spares.choices = []; S.spares.error = e.message; render(); } });
+  }
+  function closeSpares() { S.spares = null; render(); load(); }
+  backEl.addEventListener("click", closeSpares);
+
+  function renderSendSpares() {
+    var sp = S.spares;
+    if (sp.error) add(listEl, h("div", { class: "notice" }, sp.error));
+    if (!sp.choices) { add(listEl, h("p", { class: "muted" }, "Loading…")); return; }
+    if (!sp.choices.length) { add(listEl, h("p", { class: "muted" }, "No plates yet: AutoCAM offers the ones it has nested.")); return; }
+    var search = h("input", { class: "search", type: "search", placeholder: "Find a plate", "aria-label": "Find a plate", value: sp.q,
+      oninput: function () { sp.q = search.value; draw(); } });
+    var rowsEl = h("div", { class: "group-list" });
+    add(listEl, h("label", { class: "search-box" }, search));
+    add(listEl, rowsEl);
+    function draw() {
+      rowsEl.textContent = "";
+      var q = sp.q.trim().toLowerCase();
+      var shown = 0;
+      sp.choices.forEach(function (g) {
+        var rows = g.rows.filter(function (r) { return !q || r.name.toLowerCase().indexOf(q) >= 0; });
+        if (!rows.length) return;
+        shown += rows.length;
+        add(rowsEl, h("section", { class: "group" }, h("span", { class: "group-label" }, g.title),
+          h("div", { class: "item spare-list" }, rows.map(spareRow))));
+      });
+      if (!shown) add(rowsEl, h("p", { class: "muted" }, "No plate called that."));
+    }
+    draw();
+    var ids = Object.keys(sp.counts).filter(function (k) { return sp.counts[k] > 0; });
+    var total = ids.reduce(function (t, k) { return t + sp.counts[k]; }, 0);
+    function count(x, one) { return x + " " + one + (x === 1 ? "" : "s"); }
+    footEl.hidden = false;
+    add(footEl, h("button", { class: "btn btn-primary", type: "button", disabled: S.busy || !total, onclick: function () { sendSpares(ids); } },
+      S.busy ? "Sending…" : total ? "Send " + count(total, "spare") + " of " + count(ids.length, "plate") : "Pick how many spares"));
+  }
+
+  function spareRow(r) {
+    var sp = S.spares, n = sp.counts[r.id] || 0;
+    function set(v) { sp.counts[r.id] = Math.max(0, Math.min(100, v)); render(); }
+    return h("div", { class: "done-row spare-row" },
+      h("span", { class: "name wrap" }, r.name, r.sub ? h("span", { class: "sub" }, r.sub) : null),
+      h("div", { class: "stepper", role: "group", "aria-label": r.name + " spares" },
+        h("button", { type: "button", "aria-label": "One fewer", onclick: function () { set(n - 1); } }, icon("minus")),
+        h("span", { class: n ? "on" : "" }, String(n)),
+        h("button", { type: "button", "aria-label": "One more", onclick: function () { set(n + 1); } }, icon("plus"))));
+  }
+
+  function sendSpares(ids) {
+    var sp = S.spares;
+    S.busy = true; render();
+    api("POST", "/api/shop/spares", { device: DEVICE, items: ids.map(function (k) { return { id: k, n: sp.counts[k] }; }) }).then(function (r) {
+      S.busy = false;
+      var missed = (r.results || []).filter(function (x) { return !x.sent; }).length;
+      toast("Sent " + r.sent + " spare" + (r.sent === 1 ? "" : "s") + (missed ? " (" + missed + " plate" + (missed === 1 ? "" : "s") + " no longer on the board)" : ""));
+      closeSpares();
+    }, function (e) { S.busy = false; toast(e.message); render(); });
   }
 
   // ---------------------------------------------------------------- staying current

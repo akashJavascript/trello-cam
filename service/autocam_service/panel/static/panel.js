@@ -259,6 +259,10 @@
     notice: "",
     changing: null,        // {qty} while changing a card's quantity
     showOther: false,      // the list's parts in materials AutoCAM doesn't cut
+    asmMode: "robot",      // the assembly's Robot | Spares switch (2026-11-04)
+    spareSel: {},          // part key -> how many spares (a count per send: back to 0 after sending)
+    spareN: 0,             // the Part Studio status view's spares count
+    spareError: "",
     busy: false
   };
 
@@ -268,12 +272,13 @@
       return { qty: c.qty || 1, qtyBy: "you", asm: 0, tabs: c.tabs, nest: c.nest, face: c.face, scribe: c.scribe || "",
         fitKind: c.fit.kind, fitSize: c.fit.kind === "hole" ? String(c.fit.size) : "", rush: c.rush, drafts: false,
         smoked: c.smoked, sheet: c.sheet || "", tool18: c.tool_eighth, material: "", notes: c.notes || "", error: "", kept: c.kept || [],
-        assign: "" };
+        assign: "", spares: 0 };
     }
     return fromAssembly({
       qty: card && card.qty ? card.qty : 1, qtyBy: card && card.qty ? "you" : "asm", asm: 0,
       tabs: S.studio ? S.studio.tabsDefault : true, nest: true, face: false, scribe: "", fitKind: "none", fitSize: "",
-      rush: false, drafts: false, smoked: false, sheet: "", tool18: false, material: "", notes: "", error: "", assign: ""
+      rush: false, drafts: false, smoked: false, sheet: "", tool18: false, material: "", notes: "", error: "", assign: "",
+      spares: 0
     });
   }
   function fromAssembly(f) {
@@ -401,7 +406,7 @@
     S.mode = "part"; S.partId = id; S.detail = null; S.qty = null; S.check = null; S.changed = undefined; S.sent = null;
     S.hint = "";
     S.editing = false;
-    S.changing = null; S.form = null;
+    S.changing = null; S.form = null; S.spareN = 0; S.spareError = "";
     if (!keepNotice) S.notice = "";
     var listed = (S.studio && S.studio.parts.filter(function (p) { return p.id === id; })[0]) || null;
     if (listed) S.detail = { part: { id: listed.id, name: listed.name, material: listed.material }, card: undefined };
@@ -503,15 +508,16 @@
     for (var i = 1; i < arguments.length; i++) add(g, arguments[i]);
     return g;
   }
-  function stepper(value, onChange, label) {
-    var max = (S.studio && S.studio.maxQty) || 100;
-    var input = h("input", { type: "number", min: "1", max: String(max), value: String(value), "aria-label": label || "Quantity",
+  function stepper(value, onChange, label, min) {
+    var lo = min === undefined ? 1 : min;        // spares start at 0
+    var max = (S.studio && S.studio.maxQty) || (S.asm && S.asm.maxQty) || 100;
+    var input = h("input", { type: "number", min: String(lo), max: String(max), value: String(value), "aria-label": label || "Quantity",
       onchange: function () {
-        var n = Math.max(1, Math.min(max, parseInt(input.value, 10) || 1));
+        var n = Math.max(lo, Math.min(max, parseInt(input.value, 10) || lo));
         onChange(n);
       } });
     return h("div", { class: "stepper", role: "group", "aria-label": label || "Quantity" },
-      h("button", { type: "button", "aria-label": "One fewer", onclick: function () { onChange(Math.max(1, value - 1)); } }, icon("minus")),
+      h("button", { type: "button", "aria-label": "One fewer", onclick: function () { onChange(Math.max(lo, value - 1)); } }, icon("minus")),
       input,
       h("button", { type: "button", "aria-label": "One more", onclick: function () { onChange(Math.min(max, value + 1)); } }, icon("plus")));
   }
@@ -626,13 +632,26 @@
     }
     var more = other.length ? h("button", { class: "link-btn", type: "button", onclick: function () { S.showOther = !S.showOther; render(); } },
       S.showOther ? "Hide the parts AutoCAM doesn't cut" : other.length + " more AutoCAM doesn't cut") : null;
-    add(bodyEl, group(a.name ? "Parts in " + a.name : "Parts in this assembly",
-      ours.length ? h("div", { class: "parts" }, ours.map(row), S.showOther ? other.map(row) : null) : h("p", { class: "muted" }, "No parts AutoCAM cuts."),
-      more));
-    if ((a.shafts && a.shafts.length) || (a.shaftsGone && a.shaftsGone.length)) {
+    // Robot | Spares (2026-11-04): spares are a count per plate, each plate's spares a card of their own
+    var spareable = ours.filter(function (i) { return i.spareable; });
+    var spareMode = S.asmMode === "spares" && spareable.length > 0;
+    function spareRow(i) {
+      return h("div", { class: "arow spare" + (S.highlight === i.key ? " hl" : ""), "data-key": i.key },
+        h("span", { class: "name locatable", title: "Show it in Onshape", onclick: function (ev) { locate(i.key, ev); } }, i.name,
+          h("span", { class: "sub" }, i.spares || "No spares yet")),
+        stepper(S.spareSel[i.key] || 0, function (n) { S.spareSel[i.key] = n; render(); }, i.name + " spares", 0));
+    }
+    var head = h("div", { class: "group-head" }, h("div", { class: "group-label" }, a.name ? "Parts in " + a.name : "Parts in this assembly"),
+      spareable.length ? seg([["robot", "Robot"], ["spares", "Spares"]], spareMode ? "spares" : "robot",
+        function (v) { S.asmMode = v; }, "Send robot parts or spares") : null);
+    add(bodyEl, h("div", { class: "group" }, head,
+      spareMode ? h("div", { class: "parts" }, spareable.map(spareRow))
+        : ours.length ? h("div", { class: "parts" }, ours.map(row), S.showOther ? other.map(row) : null) : h("p", { class: "muted" }, "No parts AutoCAM cuts."),
+      spareMode ? null : more));
+    if (!spareMode && ((a.shafts && a.shafts.length) || (a.shaftsGone && a.shaftsGone.length))) {
       add(bodyEl, group("Shafts", h("div", { class: "parts" }, a.shafts.map(shaftRow), a.shaftsGone.map(goneRow))));
     }
-    if ((a.bought && a.bought.length) || (a.boughtGone && a.boughtGone.length)) {
+    if (!spareMode && ((a.bought && a.bought.length) || (a.boughtGone && a.boughtGone.length))) {
       add(bodyEl, group("Bought parts", h("div", { class: "parts" }, a.bought.map(boughtRow), a.boughtGone.map(boughtGoneRow))));
     }
     add(bodyEl, group("Options",
@@ -651,11 +670,24 @@
       nameInput = h("input", { class: "input wide", type: "text", placeholder: "Your name (it goes on the cards)", maxlength: "40", "aria-label": "Your name" });
       add(actionEl, nameInput);
     }
+    function count(x, one) { return x + " " + one + (x === 1 ? "" : "s"); }
+    if (spareMode) {
+      var picks = spareable.filter(function (i) { return (S.spareSel[i.key] || 0) > 0; });
+      var total = picks.reduce(function (t, i) { return t + S.spareSel[i.key]; }, 0);
+      add(actionEl, h("button", { class: "btn btn-primary", type: "button", disabled: S.busy || !total,
+        onclick: function () { sendMany([], [], [], nameInput, picks); } },
+        S.busy ? "Sending…" : total ? "Send " + count(total, "spare") + " of " + count(picks.length, "plate") + (o.assign ? " for " + o.assign : "")
+          : "Pick how many spares"));
+      if (S.user) {
+        add(actionEl, h("div", { class: "as" }, "Sending as " + S.user + " · ",
+          h("button", { class: "link-btn", type: "button", onclick: function () { S.user = ""; stored("name", ""); render(); } }, "change")));
+      }
+      return;
+    }
     var shafts = (a.shafts || []).filter(function (x) { return x.sendable && S.shaftSel[x.key] && S.shaftSel[x.key].on; });
     var stuck = shafts.filter(function (x) { var sel = S.shaftSel[x.key]; return shaftProblems(x, sel.ops, sel.ends, sel.other).length; });
     var bought = (a.bought || []).filter(function (x) { return x.sendable && S.boughtSel[x.key] && S.boughtSel[x.key].on; });
     var n = chosen.length, m = shafts.length, k = bought.length;
-    function count(x, one) { return x + " " + one + (x === 1 ? "" : "s"); }
     var bits = [n ? count(n, "part") : "", m ? count(m, "shaft") : "", k ? count(k, "bought part") : ""].filter(Boolean);
     var words = (!m && !k ? "Send " + count(n, "part") + " to " + (o.drafts ? "Drafts" : "Ready for CAM")
       : "Send " + (bits.length > 1 ? bits.slice(0, -1).join(", ") + " and " + bits[bits.length - 1] : bits[0]))
@@ -669,7 +701,7 @@
     }
   }
 
-  function sendMany(chosen, shafts, bought, nameInput) {
+  function sendMany(chosen, shafts, bought, nameInput, spares) {
     if (nameInput) {
       var typed = nameInput.value.trim();
       if (!typed) { S.asmResult = { results: [{ name: "", sent: false, why: "Type your name first (it goes on the cards)" }], list: "" }; render(); return; }
@@ -681,9 +713,11 @@
       items: chosen.map(function (i) { return { key: i.key, qty: S.asmSel[i.key].qty }; }),
       shafts: shafts.map(function (x) { var sel = S.shaftSel[x.key]; return { key: x.key, qty: sel.qty, ends: sel.ends, ops: sel.ops, note: sel.note || "" }; }),
       bought: bought.map(function (x) { var sel = S.boughtSel[x.key]; return { key: x.key, qty: sel.qty, note: sel.note || "" }; }),
+      spares: (spares || []).map(function (i) { return { key: i.key, n: S.spareSel[i.key] }; }),
       tabs: o.tabs, nest: o.nest, face: o.face, rush: o.rush, drafts: o.drafts, assign: o.assign || "", name: S.user, u: ctx.u, server: ctx.server
     })).then(function (r) {
       S.busy = false; S.asmResult = r;
+      if (spares && spares.length) S.spareSel = {};     // a count per send
       loadAssembly(false);
     }, function (err) {
       S.busy = false; S.asmResult = { results: [{ name: "", sent: false, why: err.message }], list: "" }; render();
@@ -992,6 +1026,7 @@
       return h("div", { class: "step " + s.state }, h("span", { class: "b" }, s.state === "done" ? icon("check") : null),
         h("span", { class: "t" }, s.t, s.w ? h("span", { class: "w" }, s.w) : null));
     }))));
+    if (card.status !== "back") add(bodyEl, spareGroup());
     var sheets = card.sheets || [];
     var sheet = sheets[sheets.length - 1];
     if (sheet && sheet.id) {
@@ -1018,6 +1053,35 @@
       add(actionEl, h("div", { class: "btn-row" }, open,
         h("button", { class: "btn btn-ghost", type: "button", onclick: function () { S.changing = { qty: card.qty }; render(); } }, "Change qty")));
     }
+  }
+
+  // spares for a part whose card is going: copied from its card (POST /api/spares)
+  function spareGroup() {
+    var d = S.detail, n = S.spareN || 0;
+    var nameInput = !S.user && n ? h("input", { class: "input wide", type: "text", placeholder: "Your name (it goes on the card)",
+      maxlength: "40", "aria-label": "Your name" }) : null;
+    var go = h("button", { class: "btn btn-secondary btn-small", type: "button", disabled: S.busy || !n,
+      onclick: function () { sendSpares(nameInput); } }, S.busy && n ? "Sending…" : n ? "Send " + n : "Send");
+    return group("Spares", h("div", { class: "line" }, stepper(n, function (v) { S.spareN = v; S.spareError = ""; render(); }, "Spares", 0),
+      h("span", { class: "from" }, d.spares || "for the spares box"), go), nameInput,
+      S.spareError ? h("span", { class: "hint bad-text" }, S.spareError) : null);
+  }
+  function sendSpares(nameInput) {
+    if (nameInput) {
+      var typed = nameInput.value.trim();
+      if (!typed) { S.spareError = "Type your name first (it goes on the card)."; render(); return; }
+      S.user = typed; stored("name", typed);
+    }
+    var id = S.partId;
+    S.busy = true; render();
+    api("POST", "/api/spares", where({ p: id, n: S.spareN, name: S.user, u: ctx.u })).then(function (r) {
+      S.busy = false;
+      if (S.partId !== id) return;
+      S.detail.spares = r.spares; S.spareN = 0; S.spareError = "";
+      render();
+    }, function (err) {
+      S.busy = false; S.spareError = err.message; render();
+    });
   }
 
   function renest() {
@@ -1089,13 +1153,16 @@
   function renderSent() {
     var r = S.sent, f = S.form, d = S.detail;
     var drafts = r.list === "Drafts";
-    add(bodyEl, notice("good", "Sent to " + r.list, r.own ? (f.placeMyself ? "It goes in Sheet review as it is, for the operator to place."
+    var spareWord = f.spares ? f.spares + " spare" + (f.spares === 1 ? "" : "s") : "";
+    add(bodyEl, notice("good", (r.card ? "Sent" : spareWord.charAt(0).toUpperCase() + spareWord.slice(1) + " sent") + " to " + r.list, r.own ? (f.placeMyself ? "It goes in Sheet review as it is, for the operator to place."
       : "AutoCAM picks your program a spot and puts it in Sheet review, checked.")
       : drafts ? "Move it to Ready for CAM when it's ready." : "It's nested about 2 minutes after the last card arrives."));
     if (r.material && r.material.line && r.material.missed) {
       add(bodyEl, notice("info", null, "Onshape didn't take the material (" + (r.material.why || "no reason given") + "), so the card says Material: " + r.material.line + "."));
     }
-    var chips = r.own ? [chip("Own program", "event")].concat(f.qty > 1 ? [chip("Qty " + f.qty)] : []) : [chip("Qty " + f.qty, "event")];
+    var chips = r.own ? [chip("Own program", "event")].concat(f.qty > 1 ? [chip("Qty " + f.qty)] : [])
+      : r.card ? [chip("Qty " + f.qty, "event")] : [];
+    if (spareWord && !r.own) chips.push(chip(r.card ? "+ " + spareWord : spareWord, "event"));
     if (f.tabs && !r.own) chips.push(chip("Tabs"));
     if (!f.nest) chips.push(chip("Placed by hand"));
     if (f.face) chips.push(chip("Face"));
@@ -1106,8 +1173,8 @@
     if (f.assign && !S.editing) chips.push(whoChip(f.assign));
     add(bodyEl, partHead(d.part, chips));
     actionEl.hidden = false;
-    add(actionEl, h("div", { class: "btn-row" }, linkBtn("Open card", r.card.url),
-      h("button", { class: "btn btn-ghost", type: "button", onclick: backToList }, "Send another")));
+    var another = h("button", { class: "btn btn-ghost", type: "button", onclick: backToList }, "Send another");
+    add(actionEl, r.card ? h("div", { class: "btn-row" }, linkBtn("Open card", r.card.url), another) : another);
   }
 
   function renderForm() {
@@ -1153,9 +1220,16 @@
       from = h("div", { class: "from" }, q.note ? q.note : "no assembly here uses it");
     }
     // own programs too: AutoCAM cuts the program once per copy (2026-11-03)
-    add(bodyEl, group("Quantity", h("div", { class: "line" }, stepper(f.qty, function (n) { f.qty = n; f.qtyBy = "you"; render(); }), from),
+    add(bodyEl, group("Quantity", h("div", { class: "line" }, stepper(f.qty, function (n) { f.qty = n; f.qtyBy = "you"; render(); },
+      "Quantity", f.spares ? 0 : 1), from),
       q && q.assemblies.length && q.note && f.qtyBy !== "you" ? h("span", { class: "hint" }, q.note) : null));
     if (f.own) add(bodyEl, ownProgramGroup(f, m));
+    // spares (2026-11-04): a card of their own, nested after the robot parts; Quantity 0 sends only spares
+    if (!f.own) {
+      add(bodyEl, group("Spares", h("div", { class: "line" },
+        stepper(f.spares || 0, function (n) { f.spares = n; if (!n && !f.qty) f.qty = 1; render(); }, "Spares", 0),
+        h("span", { class: "from" }, d.spares || "for the spares box"))));
+    }
 
     // options, all in one list
     var fitted = f.fitKind !== "none";
@@ -1223,6 +1297,9 @@
       add(actionEl, nameInput);
     }
     var label = f.own ? "Send my program" : S.editing ? (f.drafts ? "Save in Drafts" : "Send again") : (f.drafts ? "Send to Drafts" : "Send to Ready for CAM");
+    var spares = f.own ? 0 : f.spares || 0;
+    if (spares && !f.qty) label = "Send " + spares + " spare" + (spares === 1 ? "" : "s") + (f.drafts ? " to Drafts" : "");
+    else if (spares) label += " + " + spares + " spare" + (spares === 1 ? "" : "s");
     add(actionEl, h("button", { class: "btn btn-primary", type: "button", disabled: S.busy || (pickMaterial && !f.material) || (f.own && !f.program),
       onclick: function () { send(nameInput); } }, S.busy ? "Sending…" : label));
     if (S.user) {
@@ -1310,11 +1387,13 @@
       scribe: d.part.bent ? (f.scribe || "") : "",
       drafts: f.drafts, smoked: f.smoked, sheet: f.sheet || "", material: f.material, fit: { kind: f.fitKind, size: f.fitSize },
       notes: f.notes, u: ctx.u, name: S.user, server: ctx.server, card: S.editing && d.card ? d.card.card : "",
-      assign: S.editing ? "" : f.assign || ""
+      assign: S.editing ? "" : f.assign || "", spares: f.spares || 0
     });
     f.error = ""; S.busy = true; render();
     api("POST", "/api/send", body).then(function (r) {
-      S.busy = false; S.sent = r; S.editing = false; d.card = r.card;
+      S.busy = false; S.sent = r; S.editing = false;
+      if (r.card) d.card = r.card;
+      if (r.spares) d.spares = r.spares;
       quietRefresh();
       render();
     }, function (err) {

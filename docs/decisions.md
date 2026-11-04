@@ -1010,6 +1010,39 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - Not rectangles (a part's own notches, the triangle by an angled edge): a part's bounding box counts as used.
   (Since 2026-11-04 the rooms also come from the parts' real cuts: see that day.)
 
+## 2026-11-04: spares (core 0.24.0; the mockup the user approved: "count per send", "robot parts should come first", a spares line in the Part Studio)
+
+- **Chosen by people, never automatic:** a count per plate, each time spares are sent (no standing "keep 2" per
+  part; that would need someone to tap when one is used). The team makes different numbers of spares for some
+  plates and none for others. AutoCAM's own "filler parts" idea stays out (the user said no to it earlier).
+- **Where:** the Onshape panel (a Part Studio's form has a Spares line; Quantity 0 then sends only spares; a part
+  whose card is going has a Spares line on its status view; an assembly has a Robot | Spares switch with a count
+  per plate) and the phone page (the Plates tab's Spares section and Send spares: every plate AutoCAM has nested,
+  grouped by stock, with a search). The phone can't see inside Onshape, so it only offers plates it has nested.
+- **A card of their own:** title as the part's card, `Qty: n`, the `Spare` label (sky blue on Trello). Never the
+  part's own card: the part's status, "already has a card" and the duplicate warning all ignore spares cards. More
+  spares for a part whose spares card waits in the same list are added to it. The phone copies the part's own card
+  (its link, Part ID, Material, Fit and Scribe lines, its Smoked, Tool 1/8 and Face labels and its boxes; never
+  Rush). One Onshape call per Part Studio at most when it's cut (the workspace pin; the STEP comes from the cache
+  when the part hasn't changed).
+- **Robot parts first (the pipeline):** in every area Arrange gets the robot parts alone. Only on the area where
+  the last of them went do spares join, and only in the room they left: the strip right of their box (the whole
+  length) and the one behind it, the bigger first, a part spacing clear. The rest go to later sheets, or wait for
+  the next run if the sheets run out. Spares never move a robot part (before 0.24.0 a big spare with very high
+  priority went first and pushed robot parts to the next sheet: the test that shows it). The squeeze then packs
+  each sheet as before; it only keeps a layout that holds all of a sheet's parts. Priorities by size are worked
+  out for the robot parts and the spares apart.
+- **On the cut:** the sheet card's CUT ORDER marks them "spare" ("Parts marked spare go in the spares box, not on
+  the robot."), and the phone's Plates tab tags them Spare.
+
+## 2026-11-04: the air test comes ticked on risky sheets (the user: "add the automatic air test too")
+
+- A new sheet card's Options checklist has "Add an air test program" ticked from the start when its program goes
+  on a used piece (an offcut, or a piece someone added by hand) or holds a part placed by hand: a wrong zero or a
+  wrong guess about the piece shows in the air first. Its comment says why ("AutoCAM ticked it because it's on
+  offcut #3"); unticking it takes the air test off like before, and it's never ticked again. Full sheets start
+  unticked. `[machine] air_test_auto = false` turns this off.
+
 ## 2026-11-04: what Fusion's Arrange actually does, and nesting changes from it (core 0.23.0; the user: "Do 1 and 2", then 4)
 
 Seen in Fusion on test runs r076-r081 (Rush, smoked: r068's two plates, six 2 x 1.5 in spacers, a 10 x 2 in bar drawn

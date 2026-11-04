@@ -99,6 +99,14 @@ preview), cut, or sent back with the reason.
   form from what it says (quantity, labels, Fit, the boxes, notes), and lines someone typed that the panel doesn't
   write are kept below the panel's.
 
+## Spares (2026-11-04)
+
+A count per plate each time (decisions, 2026-11-04). In a Part Studio the form has a **Spares** line under Quantity
+(Quantity 0 sends only spares); a part whose card is going has a Spares line on its status view, copied from its
+card (`POST /api/spares`). An assembly has a **Robot | Spares** switch over its plates: in Spares, each plate gets a
+count (0 = none) and its spares line ("2 spares waiting to nest"), and Send sends a spares card per plate
+(`/api/send-many`'s `spares` list). Spares cards carry the Spare label and are never the part's own card.
+
 ## Configured parts (2026-11-01, from the old panel)
 
 A configured Part Studio's configuration rides in the card's link, the way Onshape's own address bar has it:

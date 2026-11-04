@@ -405,6 +405,36 @@ def _arrange(adapter: Adapter, job: Job, copies: Sequence[str], envelope: Rect, 
     return got
 
 
+SPARE_ROOM_MIN_IN = 0.5     # a room beside the robot parts narrower than this isn't offered to the spares
+
+
+def _spares_beside(adapter: Adapter, job: Job, spares: Sequence[str], robot: Sequence[str], envelope: Rect,
+                   up: Dict[str, int], hints: Optional[_Hints], log: Callable[[str], None]
+                   ) -> Tuple[List[str], Dict[str, str]]:
+    """Spares on the area that took the last robot parts: only in the room those left, so a spare never moves a
+    robot part (2026-11-04, the user: robot parts come first). Two rooms of the area beyond the robot parts' box:
+    the strip right of them (the whole length; Arrange packs against the left edge) and the one behind them, the
+    bigger first, each a part spacing clear of the robot parts. Returns (the spares placed, refused ones)."""
+    s = job.nest.part_spacing_in
+    boxes = [adapter.box(c) for c in robot]
+    bx1, by1 = max(b.x1 for b in boxes), max(b.y1 for b in boxes)
+    ex0, ey0, ex1, ey1 = envelope
+    rooms = [(bx1 + s, ey0, ex1, ey1), (ex0, by1 + s, bx1, ey1)]
+    rooms = [r for r in rooms if min(r[2] - r[0], r[3] - r[1]) >= SPARE_ROOM_MIN_IN]
+    placed: List[str] = []
+    refused: Dict[str, str] = {}
+    left = list(spares)
+    for room in sorted(rooms, key=lambda r: (r[2] - r[0]) * (r[3] - r[1]), reverse=True):
+        if not left:
+            break
+        got = _arrange(adapter, job, left, room, up, hints, log)
+        took = set(got.placed)
+        placed += [c for c in left if c in took]
+        refused.update(got.refused)
+        left = [c for c in left if c not in took and c not in got.refused]
+    return placed, refused
+
+
 @dataclass
 class _Try:
     order: str
@@ -636,7 +666,10 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
     # The orders to try, each on its own copies, made now while every copy still sits where it was imported,
     # and the squeeze's copies too: Fusion refuses copies made after an Arrange (see _reserve).
     sizes = {p.key: _plate_size(adapter, p) for p in parts}
-    hints = _hints(job, sizes)
+    spare_keys = {p.key for p in parts if p.spec.spare}
+    hints = _hints(job, {k: v for k, v in sizes.items() if k not in spare_keys})
+    if spare_keys:                                   # spares are ranked among themselves (they're arranged apart)
+        hints = _Hints({**hints.levels, **_hints(job, {k: v for k, v in sizes.items() if k in spare_keys}).levels})
     if hints.levels:
         log(f"{thickness:g} in: Arrange priorities: " + ", ".join(
             f"{k} {'very high' if v == 2 else 'high'}" for k, v in sorted(hints.levels.items())))
@@ -690,8 +723,20 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
             for which, envelope in areas:
                 if not remaining:
                     break
+                # Robot parts first (the user, 2026-11-04): spares are arranged with them only once every robot
+                # part has a place, and then only in the room the robot parts left (_spares_beside).
+                robot = [c for c in remaining if key_of(c) not in spare_keys]
                 try:
-                    got = _arrange(adapter, job, remaining, envelope, up, hints, log)
+                    got = _arrange(adapter, job, robot or remaining, envelope, up, hints, log)
+                    refused = dict(got.refused)
+                    placed = set(got.placed)
+                    if robot and len(robot) < len(remaining) and set(robot) <= placed:
+                        more, more_refused = _spares_beside(adapter, job,
+                                                            [c for c in remaining if key_of(c) in spare_keys],
+                                                            robot, envelope, up, hints, log)
+                        placed |= set(more)
+                        refused.update(more_refused)
+                        log(f"{thickness:g} in: {len(more)} spare(s) beside the robot parts at x={origin[0]:g}")
                 except AdapterError as e:
                     t.failed = f"Arrange failed: {e}"
                     if i == 0:
@@ -699,9 +744,8 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
                     log(f"Arrange failed for a {thickness:g} in sheet ('{t.name}'): {e}")
                     break
                 if i == 0:
-                    for cid, why in got.refused.items():
+                    for cid, why in refused.items():
                         reject([key_of(cid)], f"Arrange can't lay it flat: {why}")
-                placed = set(got.placed)
                 if placed:
                     t.envelopes.append((origin, envelope))
                     t.placed.append(tuple(c for c in remaining if c in placed))

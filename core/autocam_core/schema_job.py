@@ -181,6 +181,8 @@ class PartSpec:
     bends: Tuple[BendSpec, ...] = ()                   # a sheet metal part: its STEP is the flat pattern (0.17.0)
     scribe: str = ""                                   # its bend lines scribed on top: "endmill" (in the sheet's
                                                        # program) or "chamfer" (its SCRIBE program); "" not (0.18.0)
+    spare: bool = False                                # a spare (the Spare label): it only gets the room the
+                                                       # other parts leave (core 0.24.0)
 
 
 @dataclass(frozen=True)

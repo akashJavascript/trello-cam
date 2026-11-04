@@ -75,6 +75,7 @@ class Machine:
     z_touchoff: str
     air_test_gap_in: float
     air_test_feed_ipm: float
+    air_test_auto: bool = True        # "Add an air test program" ticked from the start on risky sheets (2026-11-04)
 
 
 @dataclass(frozen=True)
@@ -206,6 +207,7 @@ class Labels:
     rush: str = "Rush"
     face: str = "Face"
     cad_changed: str = "CAD changed"    # a part changed in Onshape after it was CAM'd (panel/board.py)
+    spare: str = "Spare"                # spares for the spares box: nested after the robot parts (2026-11-04)
 
 
 @dataclass(frozen=True)
@@ -631,6 +633,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         z_touchoff=t.string("z_touchoff", choices=("spoilboard",)),
         air_test_gap_in=t.number("air_test_gap_in", positive=True),
         air_test_feed_ipm=t.number("air_test_feed_ipm", positive=True),
+        air_test_auto=t.boolean("air_test_auto", default=True),
     )
     t.finish()
 
@@ -750,7 +753,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
     t = top.table("labels")
     labels = Labels(smoked=t.string("smoked", required=True), tool_eighth=t.string("tool_eighth", required=True),
                     rush=t.string("rush", default="Rush"), face=t.string("face", default="Face"),
-                    cad_changed=t.string("cad_changed", default="CAD changed"))
+                    cad_changed=t.string("cad_changed", default="CAD changed"), spare=t.string("spare", default="Spare"))
     t.finish()
 
     t = top.table("onshape")
@@ -1222,9 +1225,10 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
         if not tpl.file.is_file():
             warnings.append(f"{where}.file: {_rel(tpl.file, cfg.root)} not exported yet")
 
-    names = [_norm_label(n) for n in (cfg.labels.smoked, cfg.labels.tool_eighth, cfg.labels.rush, cfg.labels.face)]
+    names = [_norm_label(n) for n in (cfg.labels.smoked, cfg.labels.tool_eighth, cfg.labels.rush, cfg.labels.face,
+                                      cfg.labels.spare)]
     if len(set(names)) != len(names):
-        e("labels: smoked, tool_eighth, rush and face must all differ")
+        e("labels: smoked, tool_eighth, rush, face and spare must all differ")
 
     for name, key in cfg.onshape.material_map.items():
         if key not in cfg.materials:

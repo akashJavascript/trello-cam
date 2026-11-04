@@ -15,13 +15,15 @@ import re
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from autocam_core.hotfolder import write_atomic
 
 from ..autostart import box
-from ..cards import MATERIAL_RE, PART_ID_RE, QTY_LINE_RES, README_CARD, SCRIBE_RE, TITLE_QTY_RE, _plain, scribe_value
+from ..cards import (MATERIAL_RE, MAX_QTY, PART_ID_RE, QTY_LINE_RES, README_CARD, SCRIBE_RE, TITLE_QTY_RE, _plain,
+                     scribe_value)
 from ..config import Config
 from ..materials import _by_hint
 from ..fits import _FIT, parse_fit
@@ -63,9 +65,10 @@ class PartCard:
     qty: int
     order: int = 0                 # board order, for cards whose ids carry no time (tests)
     configuration: str = ""        # its link's configuration ("" the default): another configuration is another part
+    spare: bool = False            # the Spare label: spares for the spares box, apart from the part's own card
 
 
-def read_part_card(card: Card, status: str, order: int = 0) -> Optional[PartCard]:
+def read_part_card(card: Card, status: str, order: int = 0, spare_label: str = "Spare") -> Optional[PartCard]:
     url = first_onshape_url(card.desc or "")
     if not url:
         return None
@@ -81,7 +84,7 @@ def read_part_card(card: Card, status: str, order: int = 0) -> Optional[PartCard
     qty = int(found[0]) if found and found[0].isdigit() else 0
     ids = PART_ID_RE.findall(plain)
     return PartCard(card, status, link.did, link.eid, norm(name), ids[0] if ids else None, qty, order,
-                    link.configuration)
+                    link.configuration, norm(spare_label) in {norm(l) for l in card.labels})
 
 
 def is_this_part(pc: PartCard, did: str, eid: str, pid: str, name: str, configuration: str = "") -> bool:
@@ -116,9 +119,11 @@ class Send:
     sender: str = ""
     notes: str = ""                # one line
     configuration: str = ""        # a configured Part Studio's configuration, in the link ("" the default)
+    spare: bool = False            # spares (the Spare label): a card of their own, nested after the robot parts
 
 
 SENT_BY_RE = re.compile(r"^\s*Sent from the Onshape panel by ", re.IGNORECASE)
+SPARES_BY_RE = re.compile(r"^\s*Spares sent from ", re.IGNORECASE)      # a spares card copied from a part's card
 NOTE_RE = re.compile(r"^\s*Note\s*:\s*(.*)$", re.IGNORECASE)
 
 
@@ -127,6 +132,7 @@ def _panel_line(line: str) -> bool:
     plain = _plain(line)
     return bool(first_onshape_url(line) or any(rx.match(plain) for rx in QTY_LINE_RES) or PART_ID_RE.match(plain)
                 or MATERIAL_RE.match(plain) or _FIT.match(plain) or SENT_BY_RE.match(plain) or NOTE_RE.match(plain)
+                or SPARES_BY_RE.match(plain)
                 or OWN_PROGRAM_RE.match(plain) or SCRIBE_RE.match(plain))
 
 
@@ -187,7 +193,7 @@ class PanelBoard:
                 for card in self.t.list_cards(list_key):
                     if card.is_template or card.name.strip() == README_CARD:
                         continue
-                    pc = read_part_card(card, status, len(found))
+                    pc = read_part_card(card, status, len(found), self.cfg.labels.spare)
                     if pc is not None:
                         found.append(pc)
             self._cards = (self.clock(), found)
@@ -198,11 +204,12 @@ class PanelBoard:
             self._cards = None
 
     def for_part(self, did: str, eid: str, pid: str, name: str, cards: Optional[List[PartCard]] = None,
-                 card_id: str = "", cfg: str = "") -> Optional[PartCard]:
+                 card_id: str = "", cfg: str = "", spare: bool = False) -> Optional[PartCard]:
         """The part's card: the newest one still going (Drafts to On a sheet), else the newest cut one.
-        card_id: that card, if it's still one of this part's. cfg: the configuration (each is its own part)."""
+        card_id: that card, if it's still one of this part's. cfg: the configuration (each is its own part).
+        spare: its spares' card instead (the Spare label); the part's own card never counts its spares."""
         mine = [pc for pc in (cards if cards is not None else self.part_cards())
-                if is_this_part(pc, did, eid, pid, name, cfg)]
+                if is_this_part(pc, did, eid, pid, name, cfg) and pc.spare == spare]
         if card_id:
             return next((pc for pc in mine if pc.card.id == card_id), None)
         newest = sorted(mine, key=lambda pc: (created(pc.card.id), pc.order), reverse=True)
@@ -540,25 +547,25 @@ class PanelBoard:
         t.add_checklist(card.id, tc.nest_checklist, [tc.nest_item], checked=s.nest)
         t.add_checklist(card.id, tc.tabs_checklist, [tc.tabs_item], checked=s.tabs)
         have = {norm(l) for l in card.labels}
-        for name, on in ((labels.face, s.face), (labels.rush, s.rush), (labels.smoked, s.smoked),
-                         (labels.tool_eighth, s.tool_eighth)):
+        for name, on in ((labels.spare, s.spare), (labels.face, s.face), (labels.rush, s.rush),
+                         (labels.smoked, s.smoked), (labels.tool_eighth, s.tool_eighth)):
             if on and norm(name) not in have:
                 t.add_label(card.id, name)
             elif not on and norm(name) in have:
                 t.remove_label(card.id, name)
         if existing is None:
-            self._one_box_each(card.id, s)
+            self._one_box_each(card.id, s.nest, s.tabs)
         elif existing.card.list_key != target:
             t.move(card.id, target)
         self.invalidate()
         return t.get_card(card.id)
 
-    def _one_box_each(self, card_id: str, s: Send) -> None:
+    def _one_box_each(self, card_id: str, nest: bool, tabs: bool) -> None:
         """A service tick can give a brand-new card its own Nest and Tabs boxes between our create and our boxes
         (it adds them to cards that have none): keep exactly one of each, as the form said."""
         tc = self.cfg.trello
         checks = self.t.get_card(card_id).checks
-        for name, item, on in ((tc.nest_checklist, tc.nest_item, s.nest), (tc.tabs_checklist, tc.tabs_item, s.tabs)):
+        for name, item, on in ((tc.nest_checklist, tc.nest_item, nest), (tc.tabs_checklist, tc.tabs_item, tabs)):
             if sum(1 for c in checks if c.checklist == name) > 1:
                 self.t.remove_checklists(card_id, name)
                 self.t.add_checklist(card_id, name, [item], checked=on)
@@ -575,6 +582,73 @@ class PanelBoard:
             self.t.move(pc.card.id, "ready_for_cam")
         self.invalidate()
         return self.t.get_card(pc.card.id)
+
+    # ---- spares (2026-11-04, the user's pick: a count per send, robot parts first): a card of their own with the
+    # Spare label, never the part's own card, so a part can have both going at once
+    def spare_line(self, pc: Optional[PartCard]) -> str:
+        """What a part's newest spares card says in a few words ("" if it has none): "2 spares waiting to nest"."""
+        if pc is None:
+            return ""
+        n = f"{pc.qty} spare{'' if pc.qty == 1 else 's'}"
+        if pc.status == "back":
+            return "Spares sent back"
+        if pc.status in ("drafts", "queued"):
+            return f"{n} {'in Drafts' if pc.status == 'drafts' else 'waiting to nest'}"
+        sheets = self.sheets_of(pc.card.id)
+        if pc.status == "sheet":
+            label = str(sheets[-1][1].get("label") or "") if sheets else ""
+            return f"{n} on {label}" if label else f"{n} on a sheet"
+        when = max((str(e.get("cut_utc") or "") for _, e in sheets), default="")
+        return f"{n} cut {short_day(when)}" if short_day(when) else f"{n} cut"
+
+    def add_spares(self, s: Send) -> Card:
+        """s.qty spares of a part (s.spare): added to its spares card if one waits in the list this send goes to
+        (Drafts or Ready for CAM), else a new card."""
+        pc = self.for_part(s.did, s.eid, s.pid, s.name, self.part_cards(fresh=True), cfg=s.configuration, spare=True)
+        if pc is not None and pc.status == ("drafts" if s.drafts else "queued"):
+            return self.change_qty(pc, min(MAX_QTY, pc.qty + s.qty))
+        return self.write(s)
+
+    def spares_from(self, src: PartCard, n: int, sender: str, where: str = "the shop page") -> Card:
+        """n spares copied from a part's own card (the phone's Send spares, and the panel for a part that has a
+        card going): its link and its Part ID, Material, Fit and Scribe lines, its Smoked, Tool 1/8 and Face
+        labels and its Nest and Tabs boxes, with Qty: n and the Spare label, in Ready for CAM. Added to its spares
+        card instead if one is waiting there."""
+        t, tc, lb = self.t, self.cfg.trello, self.cfg.labels
+        pc = self.for_part(src.did, src.eid, src.part_id or "", src.name_key, self.part_cards(fresh=True),
+                           cfg=src.configuration, spare=True)
+        if pc is not None and pc.status == "queued":
+            return self.change_qty(pc, min(MAX_QTY, pc.qty + n))
+        title = " ".join(src.card.name.split())
+        m = TITLE_QTY_RE.match(title)
+        if m and m["name"]:
+            title = m["name"]
+        keep = [ln.strip() for ln in (src.card.desc or "").split("\n")
+                if first_onshape_url(ln) or any(rx.match(_plain(ln)) for rx in (PART_ID_RE, MATERIAL_RE, _FIT, SCRIBE_RE))]
+        at = next((i + 1 for i, ln in enumerate(keep) if first_onshape_url(ln)), 0)
+        desc = "\n".join(keep[:at] + [f"Qty: {n}"] + keep[at:] + [f"Spares sent from {where} by {sender or 'someone'}"])
+        card = t.create_card("ready_for_cam", title, desc)
+        t.add_label(card.id, lb.spare)
+        nest = box(src.card, tc.nest_checklist, tc.nest_item, True)
+        tabs = box(src.card, tc.tabs_checklist, tc.tabs_item, self.cfg.tabs.default)
+        t.add_checklist(card.id, tc.nest_checklist, [tc.nest_item], checked=nest)
+        t.add_checklist(card.id, tc.tabs_checklist, [tc.tabs_item], checked=tabs)
+        have = {norm(l) for l in src.card.labels}
+        for name in (lb.smoked, lb.tool_eighth, lb.face):
+            if norm(name) in have:
+                t.add_label(card.id, name)
+        self._one_box_each(card.id, nest, tabs)
+        self.invalidate()
+        return t.get_card(card.id)
+
+
+def short_day(utc: str) -> str:
+    """"2026-11-03T22:10:00Z" -> "Nov 3" (the laptop's local day); "" if it isn't a time."""
+    try:
+        d = datetime.fromisoformat(utc.replace("Z", "+00:00")).astimezone()
+    except ValueError:
+        return ""
+    return f"{d:%b} {d.day}"
 
 
 def _run_number(stem: str) -> int:

@@ -13,7 +13,8 @@
 </head>
 <body>
 <header class="head">
-  <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7 15c2-6 4 2 6-4s3 3 4 1"/></svg></span>
+  <button class="back" type="button" id="back" aria-label="Back to Plates" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+  <span class="logo" id="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7 15c2-6 4 2 6-4s3 3 4 1"/></svg></span>
   <span class="title" id="title">Shop</span>
   <div class="tabs" id="tabs" role="group" aria-label="List" hidden>
     <button type="button" data-tab="shafts" aria-pressed="true">Shafts</button>
@@ -23,6 +24,7 @@
   <button class="me" type="button" id="me" hidden></button>
 </header>
 <main class="body" id="list" aria-live="polite"></main>
+<div class="foot" id="foot" hidden></div>
 <div class="sheet" id="picker" hidden></div>
 <div class="toast" id="toast" role="status" hidden></div>
 <script src="/static/shop.js"></script>

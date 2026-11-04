@@ -42,7 +42,7 @@ import re
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
@@ -67,6 +67,7 @@ from ..shafts import (ACTIVE as SHAFT_ACTIVE, DEVICE_RE, MAX_NOTE, STOCKS, Found
 from ..bought import ACTIVE as PART_ACTIVE, PartList, counts as part_counts, is_hardware, sheet_link, status_chip as part_chip
 from ..people import People
 from .plates import PlatesView
+from .spares import SpareError, SparesView
 from ..onshape.urls import configuration_of, normal_configuration
 
 log = logging.getLogger("autocam.panel")
@@ -202,6 +203,9 @@ class PanelApp:
         self.plates = None if people is None else PlatesView(
             board.t, cfg, board.store, people,
             lambda k: material_label(cfg.materials[k]) if k in cfg.materials else k, clock=clock)
+        self.spares = None if self.plates is None else SparesView(   # spares from the phone (the Plates tab)
+            board, board.store, lambda k: material_label(cfg.materials[k]) if k in cfg.materials else k,
+            clock=clock)
         self.shafts = shafts if cfg.shafts.enabled else None    # the shop's shaft list (None: off)
         self.parts = parts if cfg.parts.enabled else None       # the shop's bought-parts list (None: off)
         self.order_sheet = sheet_link(order_sheet) or cfg.parts.order_sheet_url   # Order opens it ("" no Order)
@@ -257,6 +261,7 @@ class PanelApp:
                      ("GET", "/api/occurrences"): self.occurrences,
                      ("POST", "/api/shaft"): self.edit_shaft, ("POST", "/api/shaft-remove"): self.remove_shaft,
                      ("POST", "/api/part-remove"): self.remove_part, ("POST", "/api/part"): self.edit_part,
+                     ("POST", "/api/spares"): self.send_spares,
                      }.get((method, path))
             if path == "/api/preview" and method == "GET":
                 return self.preview(query)
@@ -267,6 +272,8 @@ class PanelApp:
             return _json(e.status, {"error": str(e), **e.extra})
         except ShaftError as e:
             return _json(e.status, {"error": str(e), **({"kind": e.kind} if e.kind else {})})
+        except SpareError as e:
+            return _json(e.status, {"error": str(e)})
         except NoAccess:
             return _json(403, {"error": "AutoCAM's Onshape account can't open this document. Share it with the "
                                         "team in Onshape, then reopen this panel.", "kind": "noaccess"})
@@ -315,11 +322,27 @@ class PanelApp:
             if self.plates is not None and query.get("plates") == "1":   # Trello: only while the Plates tab shows
                 try:
                     out.update(self.plates.view())
+                    out["spares"] = self.spares.on_the_way()
                 except Exception as e:  # noqa: BLE001 - the other tabs still work
                     log.warning("panel: the Plates tab: %s", e)
-                    out.update(sheets=[], platesError="Couldn't read the Trello board just now.")
+                    out.update(sheets=[], spares=[], platesError="Couldn't read the Trello board just now.")
+            if self.spares is not None and query.get("choices") == "1":   # Send spares: the plates it offers
+                try:
+                    out.update(self.spares.choices())
+                except Exception as e:  # noqa: BLE001
+                    log.warning("panel: Send spares: %s", e)
+                    out.update(choices=[], platesError="Couldn't read the Trello board just now.")
             return _json(200, out)
         action = path[len("/api/shop/"):]
+        if action == "spares" and method == "POST" and self.spares is not None:
+            data = json.loads(body.decode("utf-8")) if body else {}
+            if not isinstance(data, dict) or not DEVICE_RE.match(str(data.get("device") or "")):
+                raise Refused(400, "Bad request")
+            self._rate_limit()
+            sender = self.people.me(str(data["device"])) or "someone at the shop"
+            r = self.spares.send(data.get("items"), sender)
+            log.info("panel: %s sent %d spare(s) from the shop page", sender, r["sent"])
+            return _json(200, r)
         if action in ("me", "assign") and method == "POST" and self.people is not None:
             data = json.loads(body.decode("utf-8")) if body else {}
             if not isinstance(data, dict) or not DEVICE_RE.match(str(data.get("device") or "")):
@@ -528,11 +551,14 @@ class PanelApp:
             pc = None if cards is None else self.board.for_part(r["did"], r["eid"], r["pid"], r["name"], cards,
                                                                 cfg=r["configuration"])
             chip = {"status": "unknown", "label": ""} if cards is None else self.board.chip(pc)
+            spares = None if cards is None else self.board.for_part(r["did"], r["eid"], r["pid"], r["name"], cards,
+                                                                    cfg=r["configuration"], spare=True)
             shown = self._shown(r)
             items.append({"key": _row_key(r), "name": shown, "qty": r["qty"], "notOurs": bool(not_ours),
                           "material": material, "chip": chip, "why": why, "here": r["did"] == did,
                           "who": finishers.get(pc.card.id, "") if pc is not None and pc.status in ACTIVE else "",
-                          "sendable": not why and cards is not None and (pc is None or pc.status not in ACTIVE)})
+                          "sendable": not why and cards is not None and (pc is None or pc.status not in ACTIVE),
+                          "spareable": not why and cards is not None, "spares": self.board.spare_line(spares)})
         # this document's parts first: parts from other documents are often bought ones (a vendor's library)
         items.sort(key=lambda i: (not i["here"], _natural(i["name"])))
         name = ""
@@ -774,6 +800,21 @@ class PanelApp:
         asm = {"did": did, "wvm": wvm, "wvmid": wvmid, "eid": eid,
                "name": self._asm_ref(did, wvm, wvmid, eid, host)["name"]}
         results, seen = [], set()
+
+        def plate(r: Optional[Dict[str, Any]]) -> None:
+            """Refused unless the row is a plate AutoCAM cuts."""
+            if r is None:
+                raise Refused(409, "isn't in this assembly any more")
+            if self.shafts is not None and recognize(r, self.cfg.shafts) is not None:
+                raise Refused(400, "is a shaft: it goes on the shaft list")
+            not_ours = self._not_ours(did, r, owners)
+            if not_ours:
+                raise Refused(400, "is a bought part" if not_ours == BOUGHT else
+                              "is in the common parts library (printed or bought)")
+            material = self._material_of(r["material"])
+            if material is None or not material["key"]:
+                raise Refused(400, "has no material AutoCAM cuts: open its Part Studio's panel")
+
         for item in wanted[:MAX_ASSEMBLY_SEND]:
             key = str((item or {}).get("key") or "")
             if key in seen:
@@ -782,18 +823,8 @@ class PanelApp:
             r = rows.get(key)
             name = r["name"] if r else key
             try:
-                if r is None:
-                    raise Refused(409, "isn't in this assembly any more")
-                if self.shafts is not None and recognize(r, self.cfg.shafts) is not None:
-                    raise Refused(400, "is a shaft: it goes on the shaft list")
-                not_ours = self._not_ours(did, r, owners)
-                if not_ours:
-                    raise Refused(400, "is a bought part" if not_ours == BOUGHT else
-                                  "is in the common parts library (printed or bought)")
+                plate(r)
                 qty = self._qty(item)
-                material = self._material_of(r["material"])
-                if material is None or not material["key"]:
-                    raise Refused(400, "has no material AutoCAM cuts: open its Part Studio's panel")
                 going = self.board.for_part(r["did"], r["eid"], r["pid"], r["name"], cards, cfg=r["configuration"])
                 if going is not None and going.status in ACTIVE:
                     raise Refused(409, "already has a card")
@@ -812,6 +843,34 @@ class PanelApp:
         sent = sum(1 for x in results if x["sent"])
         log.info("panel: %s sent %d of %d parts of an assembly to %s", sender, sent, len(results),
                  "Drafts" if drafts else "Ready for CAM")
+        # the Spares switch (2026-11-04): a count per plate, each a spares card of its own (robot parts first)
+        spare_items = d.get("spares") if isinstance(d.get("spares"), list) else []
+        spared, seen = 0, set()
+        for item in spare_items[:MAX_ASSEMBLY_SEND]:
+            key = str((item or {}).get("key") or "") if isinstance(item, dict) else ""
+            if key in seen:
+                continue
+            seen.add(key)
+            r = rows.get(key)
+            name = (r["name"] if r else key) + " spares"
+            try:
+                plate(r)
+                n = self._spares(item, need=True)
+                title = self._titled(r["did"], r["wvm"], r["wvmid"], r["eid"], r["name"], r["configuration"])
+                card = self.board.add_spares(Send(
+                    did=r["did"], wvm=r["wvm"], wvmid=r["wvmid"], eid=r["eid"], pid=r["pid"], name=title, host=host,
+                    qty=n, nest=nest, tabs=tabs, face=face, rush=rush, drafts=drafts, sender=sender,
+                    configuration=r["configuration"], spare=True))
+                if who:
+                    self.people.assign("plates", [card.id], who)
+                if self.assemblies is not None and r["wvm"] == "v":
+                    self.assemblies.remember(card.id, asm, r)
+                results.append({"key": key, "name": name, "sent": True, "url": card.url})
+                spared += n
+            except Refused as e:
+                results.append({"key": key, "name": name, "sent": False, "why": str(e)})
+        if spare_items:
+            log.info("panel: %s sent %d spare(s) of an assembly's plates", sender, spared)
         shafts = self._send_shafts(d, did, wvm, wvmid, eid, rows, sender, rush, host, who)
         if shafts:
             log.info("panel: %s sent %d of %d shafts to the shaft list", sender, sum(1 for x in shafts if x["sent"]),
@@ -850,9 +909,11 @@ class PanelApp:
         else:
             part = self._find(did, wvm, wvmid, eid, pid, cfg)
         pc = self.board.for_part(did, eid, pid, part.get("name") or "", self.board.part_cards(), cfg=cfg)
+        spares = self.board.for_part(did, eid, pid, part.get("name") or "", self.board.part_cards(), cfg=cfg,
+                                     spare=True)
         return {"part": {"id": pid, "name": part.get("name") or "", "material": self._part_material(part),
                          "bent": self._flat(did, wvm, wvmid, eid, pid, cfg) is not None},
-                "card": self.board.detail(pc) if pc is not None else None}
+                "card": self.board.detail(pc) if pc is not None else None, "spares": self.board.spare_line(spares)}
 
     def qty(self, q: Dict[str, str]) -> Dict[str, Any]:
         did, wvm, wvmid, eid = self._studio(q)
@@ -1078,6 +1139,15 @@ class PanelApp:
             self.names.set(uid, name)
         return name
 
+    def _spares(self, d: Dict[str, Any], need: bool = False) -> int:
+        """How many spares (0 for none, unless need)."""
+        n = d.get("spares" if "spares" in d else "n", 0)
+        n = 0 if n is None else n
+        least = 1 if need else 0
+        if isinstance(n, bool) or not isinstance(n, int) or not least <= n <= MAX_QTY:
+            raise Refused(400, f"Spares must be a whole number from {least} to {MAX_QTY}.")
+        return n
+
     def _qty(self, d: Dict[str, Any]) -> int:
         qty = d.get("qty")
         if isinstance(qty, bool) or not isinstance(qty, int) or not 1 <= qty <= MAX_QTY:
@@ -1111,10 +1181,13 @@ class PanelApp:
         return f"{got[1]:.4f}".rstrip("0").rstrip(".") + " hole"
 
     def send(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        """The Part Studio's form: its card, and its spares' card when Spares is more than 0 (Quantity 0 then
+        sends only the spares)."""
         self._rate_limit()
         did, wvm, wvmid, eid = self._studio(d)
         pid = self._part_id(d)
-        qty = self._qty(d)
+        spares = self._spares(d)
+        qty = 0 if spares and d.get("qty") == 0 else self._qty(d)
         sender = self._sender(d)
         who = self._assignee(d)
         self._sender_listed(sender)
@@ -1131,7 +1204,9 @@ class PanelApp:
 
         cards = self.board.part_cards(fresh=True)
         existing = None
-        if d.get("card"):
+        if not qty:
+            pass                                         # only spares: they never clash with the part's own card
+        elif d.get("card"):
             existing = self.board.for_part(did, eid, pid, name, cards, card_id=str(d["card"]), cfg=cfg)
             if existing is None or existing.status not in ("back", "drafts"):
                 raise Refused(409, "That card has moved on since this panel looked. Press Refresh.")
@@ -1178,13 +1253,45 @@ class PanelApp:
                  tool_eighth=bool(d.get("tool_eighth")), drafts=bool(d.get("drafts")), material_line=line,
                  fit_line=fit_line, scribe=scribe, sender=sender, notes=clean_text(d.get("notes"), 300),
                  configuration=cfg)
-        card = self.board.write(s, existing)
+        where = "inbox" if s.drafts else "ready_for_cam"
+        card = self.board.write(s, existing) if qty else None
+        if card is not None:
+            if who:
+                self.people.assign("plates", [card.id], who)
+            log.info("panel: %s sent %s x%d to %s: %s", sender, name, qty, LIST_NAMES[where], card.url)
+        spare_line = ""
+        if spares:
+            sc = self.board.add_spares(replace(s, qty=spares, spare=True, notes=""))
+            if who:
+                self.people.assign("plates", [sc.id], who)
+            log.info("panel: %s sent %d spare(s) of %s to %s: %s", sender, spares, name, LIST_NAMES[where], sc.url)
+            spare_line = self.board.spare_line(read_part_card(sc, "drafts" if s.drafts else "queued", 0,
+                                                              self.cfg.labels.spare))
+        return {"card": self._detail(card, where) if card is not None else None, "list": LIST_NAMES[where],
+                "spares": spare_line,
+                "material": {"setInOnshape": set_in_onshape, "why": why, "line": line, "missed": missed}}
+
+    def send_spares(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        """Spares for a part whose card is going (the Part Studio's status view): copied from its card, so they're
+        cut the same way."""
+        self._rate_limit()
+        did, wvm, wvmid, eid = self._studio(d)
+        pid = self._part_id(d)
+        cfg = self._cfg(d)
+        n = self._spares(d, need=True)
+        sender = self._sender(d)
+        who = self._assignee(d)
+        self._sender_listed(sender)
+        part = self._find(did, wvm, wvmid, eid, pid, cfg)
+        pc = self.board.for_part(did, eid, pid, part.get("name") or "", self.board.part_cards(fresh=True), cfg=cfg)
+        if pc is None:
+            raise Refused(409, "This part has no card yet: send it with Spares set instead.")
+        card = self.board.spares_from(pc, n, sender, "the Onshape panel")
         if who:
             self.people.assign("plates", [card.id], who)
-        where = "inbox" if s.drafts else "ready_for_cam"
-        log.info("panel: %s sent %s x%d to %s: %s", sender, name, qty, LIST_NAMES[where], card.url)
-        return {"card": self._detail(card, where), "list": LIST_NAMES[where],
-                "material": {"setInOnshape": set_in_onshape, "why": why, "line": line, "missed": missed}}
+        log.info("panel: %s sent %d spare(s) of %s: %s", sender, n, pc.card.name, card.url)
+        spares = self.board.for_part(did, eid, pid, part.get("name") or "", self.board.part_cards(), cfg=cfg, spare=True)
+        return {"spares": self.board.spare_line(spares)}
 
     def send_program(self, d: Dict[str, Any]) -> Dict[str, Any]:
         """Someone CAM'd the part themselves: their .tap goes on a card linked to the part (Material, Thickness and

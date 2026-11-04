@@ -186,3 +186,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn svg { width: 16px; height: 16px; flex: none; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } .btn:active { transform: none; } }
+
+/* spares (2026-11-04): the assembly's Robot | Spares switch, a count per plate, and the Part Studio's Spares line */
+.group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 4px; }
+.group-head .group-label { padding-bottom: 0; }
+.arow.spare { grid-template-columns: minmax(0, 1fr) auto; cursor: default; padding-block: 4px; }
+.hint.bad-text { color: var(--on-error-container); }

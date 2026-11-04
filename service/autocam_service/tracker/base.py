@@ -121,8 +121,13 @@ class Tracker(abc.ABC):
     def attach_link(self, card_id: str, url: str, name: str) -> str:
         return self._attach_link(card_id, url, name)
 
-    def add_checklist(self, card_id: str, name: str, items: Sequence[str], checked: bool = False) -> str:
-        return self._add_checklist(card_id, name, list(items), checked)
+    def add_checklist(self, card_id: str, name: str, items: Sequence[str], checked: bool = False,
+                      ticked: Sequence[str] = ()) -> str:
+        """ticked: items ticked from the start whatever `checked` says (the automatic air test, 2026-11-04)."""
+        items = list(items)
+        if ticked and not checked:
+            return self._add_checklist(card_id, name, items, [item in ticked for item in items])
+        return self._add_checklist(card_id, name, items, checked)
 
     def remove_checklists(self, card_id: str, name: str) -> None:
         """Delete every checklist with this name (a rebuilt sheet gets fresh, unticked ones)."""

@@ -218,6 +218,9 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         lines.append("Parts marked tabs, and the slugs in their cutouts, are held by small tabs: leave them in at "
                      "the stops, and break them out once the program is done.")
     bent_keys = {p.part_key for p in job.parts if p.bends}
+    spare_keys = {p.part_key for p in job.parts if p.spare} & on_sheet
+    if spare_keys:
+        lines.append("Parts marked spare go in the spares box, not on the robot.")
     lines += ["", "CUT ORDER"]
     counts = {}
     totals = {p.part_key: p.count for p in s.parts}
@@ -228,7 +231,7 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         of = f" ({counts[part_key]} of {totals[part_key]})" if totals.get(part_key, 1) > 1 else ""
         marks = [m for m, on in (("faced", part_key in faced), ("fit", part_key in fitted),
                                  ("tabs", part_key in tabbed), ("bent", part_key in bent_keys),
-                                 ("scribed", part_key in scribed)) if on]
+                                 ("scribed", part_key in scribed), ("spare", part_key in spare_keys)) if on]
         lines.append(f"{i}. {name}{of}" + "".join(f" - {m}" for m in marks))
 
     bent = [p for p in job.parts if p.bends and p.part_key in on_sheet]
@@ -403,9 +406,11 @@ def joined_sheet_failed(problems: Sequence[str]) -> str:
             "A mentor should look at it")
 
 
-def air_test_comment(name: str, lift_in: float, gap_in: float, feed_ipm: float) -> str:
+def air_test_comment(name: str, lift_in: float, gap_in: float, feed_ipm: float, why: str = "") -> str:
+    """why: the sheet is a risky one and AutoCAM ticked the box itself (runner._risky)."""
     return (f"Air test added: {name}. It traces each part's outline once, at {feed_ipm:g} in/min, raised {lift_in:g} in "
-            f"so the cutter stays {gap_in:g} in above the sheet and cuts nothing. Run it before the real program.")
+            f"so the cutter stays {gap_in:g} in above the sheet and cuts nothing. Run it before the real program."
+            + (f" AutoCAM ticked it because {why}: untick it under Options if you don't need it." if why else ""))
 
 
 def air_test_failed_comment(why: str) -> str:

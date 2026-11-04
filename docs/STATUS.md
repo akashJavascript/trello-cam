@@ -168,6 +168,12 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 - **Better nests** (core 0.23.0, 2026-11-04): one Arrange per thickness with big parts given priority, then every
   sheet that ends in a free stretch squeezed toward its front (6 tries, to 0.25 in); parts drawn at an angle are
   measured with tight boxes. Work in Fusion (r076 to r081; earlier r006, r014).
+- **Spares** (core 0.24.0, 2026-11-04, decisions): a count per plate per send, from the Onshape panel (a Spares
+  line in a Part Studio, a Robot | Spares switch in an assembly) or the phone's Send spares; a card of their own with
+  the Spare label, nested only in the room the robot parts leave, marked "spare" on the sheet card. Tested offline
+  and in a browser with fakes; Fusion: (`docs/manual-tests.md` → M3 section 19).
+- **The air test ticked on risky sheets** (2026-11-04): on an offcut, a piece added by hand, or with a part placed
+  by hand; the comment says why. Tested offline.
 - **Offcuts**, with **room beside** earlier cuts: work in Fusion (r013 to r016, a test job); none cut yet
   (manual tests M3 5c).
 - **Rush**, freed offcuts, smallest offcut first, the season's stock tally: tested offline (M3 section 8).
@@ -208,14 +214,15 @@ More stretch ideas (2026-10-04, saved for later; 1 and 2 were built the same day
   one, and the service resets that count, unticks the box and comments how long the old one ran. Optional: a
   warning point per cutter in config ("check or change it"), inches of cut from the programs, and a way to add
   time for hand-CAM'd jobs.
-- **Automatic air test on risky loads** (small): tick "Add an air test program" on the first sheet from an
-  offcut, a scrap or a part placed by hand.
+- **Automatic air test on risky loads**: built 2026-11-04 (every sheet on an offcut or a piece added by hand, or
+  with a part placed by hand).
 - **Feedback after a cut** (small): an "After the cut" checklist (a part came loose, tabs too hard to break,
   didn't cut through), tallied on the System card, to tune the tabs.
 - **Part names on the preview:** built 2026-10-04, drawn on the picture by the service instead (decisions).
 - **Sheets on the shelf** (small-medium): a Stock card with the full sheets of each material; each new sheet
   cut counts one off; the System card warns below a threshold.
-- **Spares list** (medium): spare part cards with quantities; one tick sends every spare of a material to
+- **Spares list**: built 2026-11-04 as spares sent with a count each time (decisions); this was the first idea:
+  spare part cards with quantities; one tick sends every spare of a material to
   Ready for CAM together, nested from cache (no Onshape calls).
 - **Team chat ping** (small, needs a webhook URL): Discord or Slack messages when a sheet is ready for review, a
   run fails or Fusion goes down.

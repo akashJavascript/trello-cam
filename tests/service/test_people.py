@@ -183,10 +183,11 @@ def test_the_plates_tab_reads_trello_at_most_every_30_s(tmp_path):
     p.t.list_cards = lambda key: reads.append(key) or real(key)
     shop(p, plates=True)
     shop(p, plates=True)
-    assert len(reads) == 2                                               # Ready to cut and On a sheet, once
+    # Ready to cut and On a sheet, and the part cards for the Spares section (the panel's lists), once each
+    assert sorted(reads) == sorted(["ready_to_cut", "nested", "inbox", "ready_for_cam", "needs_fixing", "nested", "cut"])
     p.clock.t += 31
     shop(p, plates=True)
-    assert len(reads) == 4
+    assert len(reads) == 14
 
 
 def test_a_sheet_cut_today_stays_for_whoever_finishes_its_plates(tmp_path):

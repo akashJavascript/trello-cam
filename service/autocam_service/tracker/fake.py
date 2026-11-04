@@ -85,7 +85,8 @@ class FakeTracker(Tracker):
         return aid
 
     def _add_checklist(self, card_id: str, name: str, items: List[str], checked: bool) -> str:
-        self.checklists[(card_id, name)] = [[item, checked] for item in items]
+        self.checklists[(card_id, name)] = [[item, checked[n] if isinstance(checked, list) else checked]
+                                            for n, item in enumerate(items)]
         self.log.append(("checklist", card_id, name))
         return self._id("cl")
 

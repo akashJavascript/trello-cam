@@ -5,7 +5,8 @@
 - Description: a link to the Part Studio (its workspace or a version) and the quantity: `Qty: 4`, `Qty 4`,
   `Quantity: 4`, `x4` or `4x` on a line of its own. The quantity is required.
 - Labels: `Smoked` (smoked polycarbonate), `Tool 1/8` (force the 1/8 in endmill), `Face` (skim its top clean
-  first, in a program of its own).
+  first, in a program of its own), `Spare` (spares for the spares box: they only get the room the robot parts
+  leave; the Onshape panel and the phone's Send spares make these cards).
 - Fallback: a .step attachment instead of a link, plus a `Material: ...` line.
 - Optional: `Part ID: JHD`, Onshape's id for the part (the Onshape panel writes it), so a part renamed after the
   card was made is still found; a `Material:` line for a part with no material in Onshape.
@@ -58,6 +59,9 @@ slug out before the laps) or Fit: outline. It's cut a little tight, and the shee
 to run one at a time until it fits; tick the one that did, and the next time starts there.
 Labels, if needed: {smoked} for smoked polycarbonate, {tool} to force the 1/8 in endmill, {face} for a clean
 top (it's skimmed {face_depth} in off the top, in a program run before the sheet's).
+Spares for the spares box? Set Spares in the Onshape panel, or use Send spares on the shop page's Plates tab. They
+get a card of their own with the {spare} label, only take the room the robot parts leave, and the sheet card marks
+them.
 SRPP? Set the part to Polycarbonate in Onshape and add a line Material: SRPP Twill (or SRPP MAXComposite, or SRPP
 SWYFT): it's cut like polycarbonate, from that kind of SRPP sheet.
 Bent (sheet metal) part? It's cut flat and the sheet card lists its bends. Add a line Scribe: endmill to have each
@@ -117,6 +121,7 @@ class PartRequest:
     fit: Optional[Tuple[str, float]] = None   # its Fit: line, ("hole", diameter) or ("outline", 0) (set by the runner)
     part_id: Optional[str] = None        # a Part ID: line: Onshape's id for the part, found by it before its name
     scribe: str = ""                     # a Scribe: line: a bent part's bend lines scribed, "endmill" or "chamfer"
+    spare: bool = False                  # the Spare label: spares, nested after the robot parts (2026-11-04)
 
 
 @dataclass(frozen=True)
@@ -135,7 +140,7 @@ def problem_comment(headline: str, problems) -> str:
 
 
 def parse_card(card: Card, smoked_label: str = "Smoked", tool_label: str = "Tool 1/8",
-               face_label: str = "Face") -> Union[PartRequest, CardProblem]:
+               face_label: str = "Face", spare_label: str = "Spare") -> Union[PartRequest, CardProblem]:
     problems = []
     name = " ".join(card.name.split())
     title_qty = None
@@ -198,4 +203,5 @@ def parse_card(card: Card, smoked_label: str = "Smoked", tool_label: str = "Tool
     return PartRequest(card=card, name=name, qty=qty, link=link, step_attachment=step, material_hint=hint,
                        smoked=smoked_label.lower() in labels, force_small_tool=tool_label.lower() in labels,
                        face=face_label.strip().lower() in labels, part_id=ids[0] if ids and link else None,
-                       scribe=next(iter(scribes)) if scribes else "")
+                       scribe=next(iter(scribes)) if scribes else "",
+                       spare=" ".join(spare_label.split()).lower() in {" ".join(l.split()) for l in labels})

@@ -141,7 +141,7 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
             face=req.face, fit=fit_spec(cfg, fits, batch.material_key, req.fit, req.name),
             bends=tuple(BendSpec(b["name"], float(b["angle_deg"]), b["direction"], float(b["radius_in"]),
                                  int(b["order"])) for b in ready.bends),
-            scribe=scribe_way(scribe, req.scribe, ready.bends)))
+            scribe=scribe_way(scribe, req.scribe, ready.bends), spare=req.spare))
     for n, spec in enumerate(carried, len(parts) + 1):
         parts.append(replace(spec, part_key=f"p{n:02d}"))
 
