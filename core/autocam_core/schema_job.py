@@ -63,6 +63,9 @@ class NestSpec:
     offcut_gap_in: float = 0.5        # how far a new nest stays from the stretches of an offcut already cut
     offcut_min_in: float = 6.0        # a free stretch shorter than this isn't worth loading the offcut for
     offcut_beside_min_in: float = 3.0   # room beside earlier cuts is kept and used when both its sides are this long
+    priority_by_size: bool = True     # Arrange's priority: the biggest parts very high, mid-size high (2026-11-04)
+    fillers: bool = False             # Arrange's isFiller on small parts (Autodesk: "doesn't have the expected result")
+    filler_max_in: float = 4.0        # a filler's longest side, when fillers are on
 
 
 @dataclass(frozen=True)

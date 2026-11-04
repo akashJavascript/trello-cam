@@ -10,12 +10,14 @@
    part spacing: an outline's tool path (tool radius + lead-in) then stays out of the clamp strips.
    Offcuts of that thickness (partly used sheets, offcuts.py) are filled first, smallest room first, loaded the
    same way round as their last cut, then new sheets. On an offcut, the room beside earlier cuts is filled
-   first (one Arrange per rectangle), then its free stretch: one sheet, several Arranges. It's tried with the
-   parts in a few orders (NEST_ORDERS), each on its own copies and sheets, plus once with offcuts spun round
-   where that gives more room. The best nest is kept: most copies placed, then fewest new sheets, then fewest
-   offcuts spun round, then fewest sheets, then the shortest last sheet (the most room left for parts that join
-   it later). The other tries' copies are hidden like any other leftover; nothing that an Arrange moved is ever
-   arranged again or deleted.
+   first (one Arrange per rectangle), then its free stretch: one sheet, several Arranges. Every Arrange gets
+   Fusion's priority by the parts' size (the biggest very high, mid-size high; core 0.23.0), and small parts can be
+   made Arrange's fillers ([nest] fillers, off). It's tried once more with offcuts spun round where that gives
+   more room, and the better nest is kept: most copies placed, then fewest new sheets, then fewest offcuts spun
+   round, then fewest sheets, then the shortest last sheet. (Until 0.23.0 it was also tried biggest first and
+   longest first: on every real job the orders tied, so Fusion's Arrange ignores the order it's given.) Then each
+   sheet with a free stretch is squeezed toward its front (_squeeze). Copies not kept are hidden like any other
+   leftover; nothing that an Arrange moved is ever arranged again or deleted.
 4. Per sheet: one tool, each part's feature plan with that tool, the cut order of the outlines.
 5. CAM per sheet: stock + setup, template (every op's tool GUID checked), selections, one outline op per
    part copy in cut order. Parts that ask for tabs (PartSpec.tabs) get tabs on their outline and their
@@ -360,9 +362,48 @@ def _offcut_slots(offcuts, spin: bool) -> List[Tuple[str, _Way]]:
 
 # ------------------------------------------------------------------ 3. nesting
 
-NEST_ORDERS = ("as listed", "biggest first", "longest first")
-SQUEEZE_TRIES = 4           # halvings of the last sheet's length when looking for the shortest strip
-SQUEEZE_MIN_GAIN_IN = 2.0   # only worth trying if the last sheet could get at least this much shorter
+NEST_ORDERS = ("as listed",)   # biggest first and longest first went in 0.23.0: they always tied on real jobs
+SQUEEZE_TRIES = 6           # halvings of a sheet's length when looking for the shortest strip (4 until 0.23.0)
+SQUEEZE_STEP_IN = 0.25      # stop halving when the next try would gain less than this (0.5 until 0.23.0)
+SQUEEZE_MIN_GAIN_IN = 2.0   # only worth trying if the sheet could get at least this much shorter
+PRIORITY_VERY_HIGH = 0.5    # Arrange's very high priority: parts at least half the biggest part's box area
+PRIORITY_HIGH = 0.15        # high: at least this share of it; smaller parts as Fusion has them
+
+
+@dataclass(frozen=True)
+class _Hints:
+    """What each Arrange is told about the parts beyond where they go (core 0.23.0, the user's pick)."""
+    levels: Dict[str, int]          # part key -> 2 (very high priority) or 1 (high); missing: as Fusion has it
+    fillers: frozenset              # part keys made Arrange fillers ([nest] fillers)
+
+
+def _hints(job: Job, sizes: Dict[str, Tuple[float, float]]) -> _Hints:
+    areas = {k: a * b for k, (a, b) in sizes.items()}
+    levels: Dict[str, int] = {}
+    if job.nest.priority_by_size and areas and len({round(v, 2) for v in areas.values()}) > 1:
+        top = max(areas.values())
+        for k, v in areas.items():
+            if v >= PRIORITY_VERY_HIGH * top:
+                levels[k] = 2
+            elif v >= PRIORITY_HIGH * top:
+                levels[k] = 1
+    fillers: frozenset = frozenset()
+    if job.nest.fillers and sizes:
+        longest = max(a for a, _ in sizes.values())
+        if longest > 2 * job.nest.filler_max_in:
+            fillers = frozenset(k for k, (a, _) in sizes.items() if a <= job.nest.filler_max_in)
+    return _Hints(levels, fillers)
+
+
+def _arrange(adapter: Adapter, job: Job, copies: Sequence[str], envelope: Rect, up: Dict[str, int],
+             hints: Optional[_Hints] = None):
+    """adapter.arrange with the parts' priorities and fillers."""
+    def key(c: str) -> str:
+        return c.rsplit(".", 1)[0]
+    levels = {c: hints.levels[key(c)] for c in copies if hints and key(c) in hints.levels}
+    fillers = [c for c in copies if hints and key(c) in hints.fillers]
+    return adapter.arrange(list(copies), envelope, job.nest.part_spacing_in, {c: up[c] for c in copies},
+                           priorities=levels, fillers=fillers)
 
 
 @dataclass
@@ -455,46 +496,68 @@ def _reserve(adapter: Adapter, parts: Sequence[_Part], up: Dict[str, int],
     return sets
 
 
-def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], sizes: Dict[str, Tuple[float, float]],
-             up: Dict[str, int], x_start: float, slot: int, pitch: float, thickness: float,
-             sets: Sequence[Dict[str, List[str]]], log: Callable[[str], None]) -> int:
-    """Fusion's Arrange packs against the left edge, so a few parts can run down the whole length of the last
-    sheet (r009). Fit the last sheet's parts into full-width areas that get shorter, halving between the longest
-    "shorter side" of its parts and what they take now, and keep the shortest that holds them all: a strip
-    across the front, with the back of the sheet left free for parts that join it later or as an offcut.
-    Each try is a whole new copy of the sheet at a new spot: its parts beside earlier cuts are arranged again in
-    the same rooms, then the rest in the shorter area. Try k uses the copies in sets[k] (see _reserve); the
-    caller hides the ones not kept. Returns the next free sheet slot."""
-    if not best.envelopes or best.failed or best.areas[-1] is not None:
-        return slot                                  # nothing nested, or no free stretch on the last sheet
-    origin, env = best.envelopes[-1]
-    idx = [i for i, (o, _) in enumerate(best.envelopes) if o == origin]    # the last sheet's areas, in order
-    last = list(best.placed[-1])
+def _squeeze_all(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part],
+                 sizes: Dict[str, Tuple[float, float]], face: Dict[str, float], up: Dict[str, int], x_start: float,
+                 slot: int, pitch: float, thickness: float, sets: Sequence[Dict[str, List[str]]], hints: _Hints,
+                 log: Callable[[str], None]) -> int:
+    """Squeeze every sheet whose last area is a free stretch (until 0.23.0 only the last sheet): a full sheet
+    pulled toward its front can leave a strip at the back worth keeping as an offcut. Squeeze try k of every sheet
+    draws from set k (each set has a copy of every copy of every part, and the sheets hold different copies, so
+    one set is enough for one try of each). Returns the next free sheet slot."""
+    if not best.envelopes or best.failed:
+        return slot
+    pools = [{key: list(cs) for key, cs in s.items()} for s in sets]
+    for origin in list(dict.fromkeys(o for o, _ in best.envelopes)):
+        idx = [i for i, (o, _) in enumerate(best.envelopes) if o == origin]   # this sheet's areas, in order
+        if best.areas[idx[-1]] is None:                                       # it ends in a free stretch
+            slot = _squeeze(adapter, job, best, idx, parts, sizes, face, up, x_start, slot, pitch, thickness,
+                            pools, hints, log)
+    return slot
+
+
+def _squeeze(adapter: Adapter, job: Job, best: "_Try", idx: List[int], parts: Sequence[_Part],
+             sizes: Dict[str, Tuple[float, float]], face: Dict[str, float], up: Dict[str, int], x_start: float,
+             slot: int, pitch: float, thickness: float, pools: List[Dict[str, List[str]]], hints: _Hints,
+             log: Callable[[str], None]) -> int:
+    """Fusion's Arrange packs against the left edge, so a few parts can run down the whole length of a sheet
+    (r009). Fit the sheet's parts into full-width areas that get shorter, halving between what they must take
+    (the longest "shorter side" of its parts, and their area spread over the width) and what they take now, and
+    keep the shortest that holds them all: a strip across the front, with the back left free for parts that join
+    it later or as an offcut. Each try is a whole new copy of the sheet at a new spot: its parts beside earlier
+    cuts are arranged again in the same rooms, then the rest in the shorter area. Try k takes its copies from
+    pools[k] (see _reserve); the caller hides the ones not kept. Returns the next free sheet slot."""
+    origin, env = best.envelopes[idx[-1]]
+    last = list(best.placed[idx[-1]])
+    where = "the last sheet" if idx[-1] == len(best.envelopes) - 1 else f"the sheet at x={origin[0]:g}"
     try:
         reach = max(adapter.box(c).y1 for c in last) - env[1]
     except AdapterError:
         return slot
-    lo = max(min(sizes[c.rsplit(".", 1)[0]]) for c in last)       # each part needs its shorter side, at least
+    width = env[2] - env[0]
+    lo = max(max(min(sizes[c.rsplit(".", 1)[0]]) for c in last),     # each part needs its shorter side, at least
+             sum(face.get(c.rsplit(".", 1)[0], 0.0) for c in last) / width if width > 0 else 0.0)
     if reach - lo < SQUEEZE_MIN_GAIN_IN:
-        log(f"{thickness:g} in: not squeezed: the last sheet's parts take {reach:.1f} in, at least {lo:.1f} in")
+        log(f"{thickness:g} in: not squeezed: {where}'s parts take {reach:.1f} in, at least {lo:.1f} in")
         return slot
     hi, kept = reach, None                           # kept: (origin, envelope per area, copies per area, reach)
-    for k in range(len(sets)):
+    for k in range(len(pools)):
         target = round((lo + hi) / 2, 3)
-        if hi - target < 0.5:
+        if hi - target < SQUEEZE_STEP_IN:
             break
+        need = Counter(c.rsplit(".", 1)[0] for i in idx for c in best.placed[i])
+        if any(len(pools[k].get(key, [])) < n for key, n in need.items()):
+            break                                    # this set's copies went to other sheets' tries
         o = (x_start + slot * pitch, 0.0)
         slot += 1
         dx, dy = o[0] - origin[0], o[1] - origin[1]
         moved = [(e[0] + dx, e[1] + dy, e[2] + dx, e[3] + dy) for e in (best.envelopes[i][1] for i in idx)]
         probe = (moved[-1][0], moved[-1][1], moved[-1][2], moved[-1][1] + target)
         areas = moved[:-1] + [probe]
-        spare = {key: list(cs) for key, cs in sets[k].items()}
-        copies = [[spare[c.rsplit(".", 1)[0]].pop(0) for c in best.placed[i]] for i in idx]
+        copies = [[pools[k][c.rsplit(".", 1)[0]].pop(0) for c in best.placed[i]] for i in idx]
         done, refused = 0, None
         try:
             for area, cs in zip(areas, copies):
-                got = adapter.arrange(cs, area, job.nest.part_spacing_in, {c: up[c] for c in cs})
+                got = _arrange(adapter, job, cs, area, up, hints)
                 refused = refused or next(iter(got.refused.values()), None)
                 if set(got.placed) != set(cs):
                     break
@@ -507,7 +570,7 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], s
                    "not all placed")
                 + (f"; refused: {refused}" if refused else ""))
         except AdapterError as e:
-            log(f"squeezing the last {thickness:g} in sheet stopped: {e}")
+            log(f"squeezing {where} ({thickness:g} in) stopped: {e}")
             break
         if fits:
             kept = (o, moved, copies, r)
@@ -516,8 +579,8 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], s
             break                                    # not about the shorter area: shorter still won't help
         else:
             lo = target
-    if kept is None or kept[3] > reach - 0.5:
-        log(f"{thickness:g} in: the last sheet stays {reach:.1f} in long (nothing shorter held all its parts)")
+    if kept is None or kept[3] > reach - SQUEEZE_STEP_IN:
+        log(f"{thickness:g} in: {where} stays {reach:.1f} in long (nothing shorter held all its parts)")
         return slot
     o, envs, copies, r = kept
     old = [c for i in idx for c in best.placed[i]]
@@ -528,17 +591,13 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part], s
     for n, i in enumerate(idx):
         best.envelopes[i] = (o, envs[n])
         best.placed[i] = tuple(copies[n])
-    log(f"{thickness:g} in: last sheet squeezed toward the front: {reach:.1f} -> {r:.1f} in along its length")
+    log(f"{thickness:g} in: {where} squeezed toward the front: {reach:.1f} -> {r:.1f} in along its length")
     return slot
 
 
 def _part_order(parts: Sequence[_Part], order: str, sizes: Dict[str, Tuple[float, float]]) -> List[str]:
-    keys = [p.key for p in parts]
-    if order == "biggest first":
-        return sorted(keys, key=lambda k: -(sizes[k][0] * sizes[k][1]))
-    if order == "longest first":
-        return sorted(keys, key=lambda k: -sizes[k][0])
-    return keys
+    """The parts as listed (the only order since 0.23.0; Arrange's priority does what "biggest first" tried)."""
+    return [p.key for p in parts]
 
 
 def _score(adapter: Adapter, t: _Try, last_turned: Dict[str, bool]) -> Tuple[int, int, int, int, float]:
@@ -578,6 +637,19 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
     # The orders to try, each on its own copies, made now while every copy still sits where it was imported,
     # and the squeeze's copies too: Fusion refuses copies made after an Arrange (see _reserve).
     sizes = {p.key: _plate_size(adapter, p) for p in parts}
+    hints = _hints(job, sizes)
+    if hints.levels:
+        log(f"{thickness:g} in: Arrange priorities: " + ", ".join(
+            f"{k} {'very high' if v == 2 else 'high'}" for k, v in sorted(hints.levels.items())))
+    if hints.fillers:
+        log(f"{thickness:g} in: Arrange fillers: {', '.join(sorted(hints.fillers))}")
+    face = {}
+    for p in parts:                                  # each part's top area: the squeeze's lower bound
+        try:
+            a = p.analysis
+            face[p.key] = sum(a.geometry.face(f).area_in2 for f in (a.top_face_ids or (a.up_face_id,)))
+        except Exception:  # noqa: BLE001 - only a bound for the squeeze
+            face[p.key] = 0.0
     offcuts = _offcut_places(job, thickness)
     last_turned = {o.id: o.last_turned for o in job.offcuts}
     tries = [_Try(NEST_ORDERS[0], {p.key: list(p.copies) for p in parts})]
@@ -622,8 +694,7 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
                 if not remaining:
                     break
                 try:
-                    got = adapter.arrange(remaining, envelope, job.nest.part_spacing_in,
-                                          {c: up[c] for c in remaining})
+                    got = _arrange(adapter, job, remaining, envelope, up, hints)
                 except AdapterError as e:
                     t.failed = f"Arrange failed: {e}"
                     if i == 0:
@@ -668,7 +739,7 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
                          f"({said(best)} instead of {said(tries[0])})")
     for p in parts:
         p.copies = list(best.copies[p.key])
-    slot = _squeeze(adapter, job, best, parts, sizes, up, x_start, slot, pitch, thickness, reserve, log)
+    slot = _squeeze_all(adapter, job, best, parts, sizes, face, up, x_start, slot, pitch, thickness, reserve, hints, log)
     kept = {c for p in parts for c in p.copies}
     _discard(adapter, [c for cs in reserve for k in cs.values() for c in k if c not in kept], log)
     up = {c: up[c] for p in parts for c in p.copies}

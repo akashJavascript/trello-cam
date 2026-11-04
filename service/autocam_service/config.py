@@ -116,6 +116,9 @@ class Nest:
     offcut_gap_in: float
     offcut_min_in: float
     offcut_beside_min_in: float
+    priority_by_size: bool = True
+    fillers: bool = False
+    filler_max_in: float = 4.0
 
 
 @dataclass(frozen=True)
@@ -650,6 +653,9 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         offcut_gap_in=t.number("offcut_gap_in", minimum=0),
         offcut_min_in=t.number("offcut_min_in", positive=True),
         offcut_beside_min_in=t.number("offcut_beside_min_in", positive=True),
+        priority_by_size=t.boolean("priority_by_size"),
+        fillers=t.boolean("fillers"),
+        filler_max_in=t.number("filler_max_in", positive=True),
     )
     t.finish()
 

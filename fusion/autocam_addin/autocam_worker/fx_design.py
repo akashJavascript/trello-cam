@@ -76,8 +76,15 @@ def orientation(up, want):
     return dot < 0
 
 
-def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, part_in_part: bool) -> Arranged:
-    """occs: [(copy id, occurrence)]; up_faces: copy id -> face id that must face +Z."""
+PRIORITY_NAMES = {2: "VeryHighArrangePriority", 1: "HighArrangePriority"}
+
+
+def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, part_in_part: bool,
+            priorities=None, fillers=()) -> Arranged:
+    """occs: [(copy id, occurrence)]; up_faces: copy id -> face id that must face +Z. priorities: copy id -> 2 or 1
+    (ArrangePriorities VeryHigh, High; the rest as Fusion has them); fillers: copy ids made ArrangeComponent fillers."""
+    priorities = priorities or {}
+    levels = getattr(adsk.fusion, "ArrangePriorities", None)
     root = design.rootComponent
     for _, occ in occs:
         for attr in ("isGroundToParent", "isGrounded"):
@@ -103,6 +110,11 @@ def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, 
             continue
         if flip:
             comp.isDirectionFlipped = True
+        level = priorities.get(cid)
+        if level and levels is not None and hasattr(levels, PRIORITY_NAMES.get(level, "")):
+            call(f"priority {cid}", setattr, comp, "priority", getattr(levels, PRIORITY_NAMES[level]))
+        if cid in fillers:
+            call(f"isFiller {cid}", setattr, comp, "isFiller", True)
         names[occ.name] = cid
     if not names:
         return Arranged((), refused)

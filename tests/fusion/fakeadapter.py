@@ -59,6 +59,7 @@ class FakeAdapter(Adapter):
         self.team_error: Optional[str] = None
         self.saved_to_team: List[Tuple[str, str, str]] = []
         self.arrange_envelopes: List[Tuple[float, float, float, float]] = []
+        self.arrange_hints: List[Tuple[dict, tuple]] = []      # (priorities, fillers) per Arrange
         self.finished: Optional[bool] = None
         self.fail_tab_points = False                   # set_tab_points refuses (like Fusion without the choice)
         self.round_loops = False                       # inner loops are 0.5 in circles (no straight edge for a tab)
@@ -103,8 +104,11 @@ class FakeAdapter(Adapter):
         if self.arranged:
             self.late.add(copy_id)
 
-    def arrange(self, copy_ids, envelope, spacing_in, up_faces):
+    def arrange(self, copy_ids, envelope, spacing_in, up_faces, priorities=None, fillers=()):
         self.arrange_envelopes.append(envelope)
+        self.arrange_hints.append((dict(priorities or {}), tuple(fillers)))
+        # like Fusion is taken to: higher priority first, the rest in the order given
+        copy_ids = sorted(copy_ids, key=lambda c: -(priorities or {}).get(c, 0))
         if self.arrange_error:
             raise AdapterError(self.arrange_error)
         self.arranged = True
