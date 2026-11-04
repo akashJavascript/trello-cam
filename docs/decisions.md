@@ -1032,6 +1032,11 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   priority went first and pushed robot parts to the next sheet: the test that shows it). The squeeze then packs
   each sheet as before; it only keeps a layout that holds all of a sheet's parts. Priorities by size are worked
   out for the robot parts and the spares apart.
+- **An area nothing fits (0.24.1):** Fusion's Arrange places what fits, but raises `ARRANGE_ERROR_NO_ROOM` when
+  nothing does, even with partial arranging allowed. r084 failed that way (a 3rd Arrange into the room beside the
+  robot part, too small for any spare), so an Arrange that says so now just places nothing there (any other
+  failure still fails the job), and a room no spare's box fits either way round isn't offered at all. Before this,
+  the same could have failed a job whose offcut room fit none of its parts.
 - **On the cut:** the sheet card's CUT ORDER marks them "spare" ("Parts marked spare go in the spares box, not on
   the robot."), and the phone's Plates tab tags them Spare.
 
