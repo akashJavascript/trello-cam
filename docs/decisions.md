@@ -1008,6 +1008,25 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   (12.35, 0.5, 22.75, 7.75). The room behind the front part isn't: the long part's box covers it (it has an arm
   that reaches left at the back).
 - Not rectangles (a part's own notches, the triangle by an angled edge): a part's bounding box counts as used.
+  (Since 2026-11-04 the rooms also come from the parts' real cuts: see that day.)
+
+## 2026-11-04: rooms from where the program really cuts, not the parts' boxes (core 0.22.0; the user's pick)
+
+- The rooms kept among a sheet's parts counted each part's bounding box as used, so the space inside an L, under a
+  long part's arm or beside a slanted edge was thrown away. Now `cutmap.py` reads the posted program: every move
+  below the stock top (arcs as short chords, drilled holes as points) is marked on a grid of 1/8 in squares with
+  the clearance round it, and so is everything a toolpath encloses (the part inside its outline: whatever can't be
+  reached from the sheet's edge). A square is empty only if every point in it is clear. The biggest empty
+  rectangles are found as before (biggest first, never overlapping, at least `offcut_beside_min_in` both ways, at
+  most 6). The clearance from a part's edge is the same as for boxes (part spacing + offcut slack).
+- **Rooms are still rectangles**, so nothing changes in Fusion: each is one Arrange envelope, as before.
+- For each area the pipeline keeps whichever finds more room, the boxes or the cuts: for square parts the boxes
+  are exact and the grid loses up to a square. A program it can't read (G91, an arc given by R) means boxes.
+- On the real programs so far (parts' share of the strip of sheet they used, then parts plus rooms kept):
+  r068 52%, 66% with boxes and 78% with cuts (three rooms, not one); r070 (one of r068's plates) 43%, 43% and 80%;
+  r039 (one big 5052 plate) 22%, 93% and 92%. About 0.5 s for the biggest program (r039, 103 KB).
+- Not done: truly irregular rooms (the triangle by an angled edge stays mostly unused: only rectangles fit in it).
+  That needs Fusion's Arrange to nest round what's already cut, which hasn't been tried.
 
 ## 2026-11-04: offcut slack 0.25 in, and the cards say the gap is meant (the user)
 

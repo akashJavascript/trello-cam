@@ -62,6 +62,7 @@ from autocam_core.errors import Issue
 from autocam_core.holes import ToolProfile
 from autocam_core.hotfolder import write_atomic
 from autocam_core.layout import Placed, plan_layout
+from autocam_core.cutmap import CutMapError, cut_map
 from autocam_core.offcuts import Placement, beside_as_loaded, free_rooms, placement_for
 from autocam_core.names import (face_program_name, fit_program_name, instance_id, outer_op_name, program_name,
                                 scribe_op_name, scribe_program_name, small_program_name)
@@ -752,10 +753,12 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
 
 # ------------------------------------------------------------------ 4. tool and features per sheet
 
-def _sheet_use(job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> Dict[str, Any]:
+def _sheet_use(job: Job, sheet: _Sheet, parts: Dict[str, _Part], tap_text: Optional[str] = None) -> Dict[str, Any]:
     """How full the sheet is (the parts' material area, the usable area, the empty strip at the back), which
     offcut it's on, the stretch along its length (Y) its free-stretch parts use (with the outlines' tool paths),
-    which room beside earlier cuts it filled, and the room beside its own parts it leaves, in sheet coordinates."""
+    which room beside earlier cuts it filled, and the room beside its own parts it leaves, in sheet coordinates.
+    The rooms come from where the posted program really cuts (cutmap.py: the space under an arm or inside an L
+    counts) when that keeps more than the parts' boxes do (and from the boxes if the program can't be read)."""
     if not sheet.areas or not sheet.instances:
         return {}
     ox, oy = sheet.origin
@@ -777,9 +780,24 @@ def _sheet_use(job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> Dict[str, An
     left: List[Rect] = []
     beside = dict(sheet.offcut.beside) if sheet.offcut else {}
     clear = margin + gap                           # the cutter's path, and slack for loading the sheet back
+    cuts = None
+    if tap_text:
+        try:
+            cuts = cut_map(tap_text, (0.0, 0.0, job.sheet.width_in, job.sheet.length_in), sheet.thickness_in,
+                           job.tooling.tools[sheet.tool_key].diameter_in / 2, clear)
+        except (CutMapError, KeyError):
+            cuts = None                            # rooms from the parts' boxes, as before
+
+    def rooms(bs: List[Rect], area: Rect) -> List[Rect]:
+        """Both are clear of every cut; the boxes' are exact for square parts (the cut map is on 1/8 in squares),
+        the cut map's find the room an L or an arm leaves. Whichever keeps more."""
+        by_box = free_rooms(bs, area, clear, least)
+        by_cut = cuts.rooms(area, least) if cuts is not None else []
+        size = lambda rs: sum((r[2] - r[0]) * (r[3] - r[1]) for r in rs)
+        return by_cut if size(by_cut) > size(by_box) + 1e-6 else by_box
     for which, bs in boxes.items():
         if which is not None and bs:               # what's left of room beside cuts: every empty corner of it
-            left += free_rooms(bs, tuple(beside[which]), clear, least)
+            left += rooms(bs, tuple(beside[which]))
     stretch = next((e for w, e in sheet.areas if w is None), None)
     bs = boxes.get(None, [])
     if stretch is not None and bs:
@@ -787,10 +805,20 @@ def _sheet_use(job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> Dict[str, An
         out["used_y_in"] = used
         out["free_length_in"] = round(max(0.0, stretch[3] - oy - max(b[3] for b in bs)), 2)
         region = job.fixture.nest_region_in        # every empty rectangle among the parts, not just to their right
-        left += free_rooms(bs, (region[0], used[0], region[2], used[1]), clear, least)
+        left += rooms(bs, (region[0], used[0], region[2], used[1]))
     out["beside_used"] = tuple(sorted(w for w, bs in boxes.items() if w is not None and bs))
     out["beside_left_in"] = tuple(left)
     return out
+
+
+def _tap_text(out_dir: Path, tap: Optional[str]) -> Optional[str]:
+    """The sheet's posted program (None if it has none or it can't be read)."""
+    if not tap:
+        return None
+    try:
+        return (out_dir / tap).read_text(encoding="ascii", errors="replace")
+    except OSError:
+        return None
 
 
 def _missing_ops(plan: FeaturePlan, capabilities: frozenset) -> List[str]:
@@ -2118,7 +2146,7 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             + ((sheet.small_result,) if sheet.small_result else ())
             + tuple(r for f in sheet.fits for r in f.results),
             scribed=tuple(SheetPart(k, n) for k, n in sorted(sheet.scribed.items())) if sheet.result else (),
-            **({} if sheet.by_hand else _sheet_use(job, sheet, parts))))
+            **({} if sheet.by_hand else _sheet_use(job, sheet, parts, _tap_text(out_dir, base.tap)))))
 
     f3d_name: Optional[str] = None
     f3d_bytes: Optional[int] = None
