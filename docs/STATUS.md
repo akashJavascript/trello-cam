@@ -171,7 +171,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 - **Spares** (core 0.24.0, 2026-11-04, decisions): a count per plate per send, from the Onshape panel (a Spares
   line in a Part Studio, a Robot | Spares switch in an assembly) or the phone's Send spares; a card of their own with
   the Spare label, nested only in the room the robot parts leave, marked "spare" on the sheet card. Tested offline
-  and in a browser with fakes; Fusion: (`docs/manual-tests.md` → M3 section 19).
+  and in a browser with fakes. **Works in Fusion** (r085: the robot plate and 6 spares on S1, squeezed 14.5 -> 9.6 in;
+  the big spare that didn't fit beside it on S2; r084 found Fusion's no-room error, fixed in 0.24.1); none cut yet
+  (`docs/manual-tests.md` → M3 section 19).
 - **The air test ticked on risky sheets** (2026-11-04): on an offcut, a piece added by hand, or with a part placed
   by hand; the comment says why. Tested offline.
 - **Offcuts**, with **room beside** earlier cuts: work in Fusion (r013 to r016, a test job); none cut yet

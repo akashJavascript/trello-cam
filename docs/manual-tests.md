@@ -489,9 +489,9 @@ robot parts leave.
 
 | # | Check | Result |
 |---|---|---|
-| 1 | Two cards in Ready for CAM: the part's own (Qty 2) and its spares (Qty 2, the Spare label, sky blue) | |
-| 2 | One sheet: the spares beside or behind the robot parts, a part spacing clear; CUT ORDER says "spare" on them | |
-| 3 | A spare that doesn't fit beside them goes on the next sheet; no robot part moves to a later sheet | |
+| 1 | Two cards in Ready for CAM: the part's own (Qty 2) and its spares (Qty 2, the Spare label, sky blue) | Offline and in a browser with fakes |
+| 2 | One sheet: the spares beside or behind the robot parts, a part spacing clear; CUT ORDER says "spare" on them | r085: robot plate + 6 spacer spares on S1, "Parts marked spare go in the spares box", each spare marked |
+| 3 | A spare that doesn't fit beside them goes on the next sheet; no robot part moves to a later sheet | r085: the big spare alone on S2 (r084 failed here on Fusion's no-room error; 0.24.1) |
 | 4 | The phone: Plates tab, Spares section shows them; Send spares lists the plate under its stock; sending 1 more adds to the waiting card | |
 | 5 | The sheet's air test: an offcut sheet's Options has the air test ticked, and its comment says why | |
 
