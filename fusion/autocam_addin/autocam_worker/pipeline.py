@@ -787,12 +787,17 @@ def _sheet_use(job: Job, sheet: _Sheet, parts: Dict[str, _Part], tap_text: Optio
                            job.tooling.tools[sheet.tool_key].diameter_in / 2, clear)
         except (CutMapError, KeyError):
             cuts = None                            # rooms from the parts' boxes, as before
+        except Exception:  # noqa: BLE001 - never lose a sheet's result over the rooms: boxes, as before
+            cuts = None
 
     def rooms(bs: List[Rect], area: Rect) -> List[Rect]:
         """Both are clear of every cut; the boxes' are exact for square parts (the cut map is on 1/8 in squares),
         the cut map's find the room an L or an arm leaves. Whichever keeps more."""
         by_box = free_rooms(bs, area, clear, least)
-        by_cut = cuts.rooms(area, least) if cuts is not None else []
+        try:
+            by_cut = cuts.rooms(area, least) if cuts is not None else []
+        except Exception:  # noqa: BLE001 - as above
+            by_cut = []
         size = lambda rs: sum((r[2] - r[0]) * (r[3] - r[1]) for r in rs)
         return by_cut if size(by_cut) > size(by_box) + 1e-6 else by_box
     for which, bs in boxes.items():
