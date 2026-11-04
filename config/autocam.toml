@@ -63,8 +63,6 @@ offcut_gap_in = 0.25       # a new nest on an offcut stays this far past the ear
 offcut_min_in = 6.0        # an offcut needs a free stretch this long (full width) to be kept or used
 offcut_beside_min_in = 3.0 # room beside the parts cut is kept and filled when it's this big both ways
 priority_by_size = true    # Fusion's Arrange priority: biggest parts very high, mid-size high (2026-11-04)
-fillers = false            # Arrange's "filler" on small parts: off (Autodesk lists it as not working as expected)
-filler_max_in = 4.0        # with fillers on: parts no longer than this, when the job has parts over twice as long
 
 [clamps]
 edges = ["left", "right"]  # any of "left", "right" (the long edges), "front" (the end by you); the back overhangs

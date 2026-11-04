@@ -1010,6 +1010,32 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - Not rectangles (a part's own notches, the triangle by an angled edge): a part's bounding box counts as used.
   (Since 2026-11-04 the rooms also come from the parts' real cuts: see that day.)
 
+## 2026-11-04: what Fusion's Arrange actually does, and nesting changes from it (core 0.23.0; the user: "Do 1 and 2", then 4)
+
+Seen in Fusion on test runs r076-r081 (Rush, smoked: r068's two plates, six 2 x 1.5 in spacers, a 10 x 2 in bar drawn
+at 30 deg; all archived after):
+- **Arrange ignores the order it's given.** The worker logs of every real job showed the three orders (as listed,
+  biggest first, longest first) tie. Those tries are gone (NEST_ORDERS is just "as listed"); the spun-offcut try
+  stays.
+- **Priority is set by size** (ArrangeComponent.priority: very high for parts at least half the biggest box's area,
+  high down to 15%). Fusion holds it (read back as 4 and 3, logged "Arrange: priorities read back"), but with
+  everything fitting, the layout was the same with it off (r079 vs r078). It may still decide what goes first when
+  not everything fits; it costs nothing, so it stays on (`[nest] priority_by_size`).
+- **Fillers can't be used:** "Cannot set isFiller for move mode arrange" (r077). A filler is Arrange copying a part to
+  fill the leftover space, which needs isCreateCopies; AutoCAM arranges the copies it made itself. Removed.
+- **Arrange turns parts to any angle**, not just right angles: it straightened the bar drawn at 30 deg (r081: its cut
+  10.16 x 2.2 in, the bar plus the cutter). So nothing needs straightening first (the user's option 4).
+- **What was wrong instead: the part's box.** BRepBody.boundingBox is loose once Arrange turns a part by an angle that
+  isn't a right angle: the straightened bar measured about 11.7 x 10.7 in, so the sheet looked fuller, the squeeze
+  over-reserved, and r080's squeezed copy was refused as crossing its area's edge. fx_design.box_in now uses
+  MeasureManager.getOrientedBoundingBox along X and Y (the old box is the fallback). Parts drawn square are
+  unchanged (r068's plates squeezed to the same 25.1 in).
+- **The squeeze** (what actually shortens sheets: r076 36.8 -> 30.8 in, r068 28.7 -> 25.1 in) now runs on every sheet
+  that ends in a free stretch, not just the last, with 6 halvings down to 0.25 in (4 and 0.5 before: 0.4 in more on
+  r076), and the parts' top area spread over the width as a second lower bound.
+- Not done: the squeeze's lower bound still uses the imported part's box, which is too big for a part drawn at an
+  angle (it only limits how short the squeeze tries).
+
 ## 2026-11-04: who does what: names on shafts, bought parts, sheets and plates (the mockup the user approved)
 
 - **From the Onshape panel:** "Assign to" in Options (Nobody, or one of the shop's names) when sending, from an

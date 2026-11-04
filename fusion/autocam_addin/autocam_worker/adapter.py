@@ -52,7 +52,7 @@ class Box:
 class Arranged:
     placed: Tuple[str, ...]          # copies Arrange put in the envelope
     refused: Dict[str, str]          # copies left out on purpose, and why (e.g. it would lie on its side)
-    notes: Tuple[str, ...] = ()      # what was set beyond placing (priorities, fillers), as Fusion reads it back
+    notes: Tuple[str, ...] = ()      # what was set beyond placing (priorities), as Fusion reads it back
 
 
 @dataclass(frozen=True)
@@ -117,13 +117,12 @@ class Adapter:
         raise NotImplementedError
 
     def arrange(self, copy_ids: Sequence[str], envelope: Rect, spacing_in: float,
-                up_faces: Mapping[str, int], priorities: Optional[Mapping[str, int]] = None,
-                fillers: Sequence[str] = ()) -> Arranged:
+                up_faces: Mapping[str, int], priorities: Optional[Mapping[str, int]] = None) -> Arranged:
         """Nest what fits into one envelope. The rest stay where they were.
 
         up_faces: for each copy, the face that must end up facing +Z (a pocket's open side). A copy that
         can't be laid that way is refused, not arranged. priorities: copy -> 2 (very high) or 1 (high), the rest
-        as Fusion has them. fillers: copies arranged as Arrange's fillers."""
+        as Fusion has them."""
         raise NotImplementedError
 
     def box(self, copy_id: str) -> Box:

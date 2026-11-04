@@ -59,7 +59,7 @@ def test_job_round_trips():
         sheet={"length_in": 48.0, "width_in": 24.0, "reach_in": 40.0},
         fixture={**d["fixture"], "clamp_zones_in": [[0.0, 0.0, 48.0, 1.25]]},
         nest={**d["nest"], "offcut_gap_in": 0.5, "offcut_min_in": 6.0, "offcut_beside_min_in": 3.0,
-              "priority_by_size": True, "fillers": False, "filler_max_in": 4.0},
+              "priority_by_size": True},
         parts=[{**p, "tabs": False, "by_hand": False, "face": False, "fit": None, "bends": [], "scribe": ""} for p in d["parts"]],
         offcuts=[], tabs={"distance_in": 2.5, "min_per_contour": 2, "max_per_contour": 6,
                                  "at_points": True, "width_in": 0.0, "height_in": 0.0, "wide_max_tier": 4,

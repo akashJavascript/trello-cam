@@ -93,9 +93,10 @@ PRIORITY_NAMES = {2: "VeryHighArrangePriority", 1: "HighArrangePriority"}
 
 
 def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, part_in_part: bool,
-            priorities=None, fillers=()) -> Arranged:
+            priorities=None) -> Arranged:
     """occs: [(copy id, occurrence)]; up_faces: copy id -> face id that must face +Z. priorities: copy id -> 2 or 1
-    (ArrangePriorities VeryHigh, High; the rest as Fusion has them); fillers: copy ids made ArrangeComponent fillers."""
+    (ArrangePriorities VeryHigh, High; the rest as Fusion has them). Never isFiller: Fusion refuses it here
+    ("Cannot set isFiller for move mode arrange", r077): a filler is a part copied to fill the leftover space."""
     priorities = priorities or {}
     levels = getattr(adsk.fusion, "ArrangePriorities", None)
     notes = []
@@ -133,10 +134,6 @@ def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, 
         if level and levels is not None and hasattr(levels, PRIORITY_NAMES.get(level, "")):
             call(f"priority {cid}", setattr, comp, "priority", getattr(levels, PRIORITY_NAMES[level]))
             set_to[cid] = int(comp.priority)                 # read back: what Fusion has now
-        if cid in fillers:
-            call(f"isFiller {cid}", setattr, comp, "isFiller", True)
-            if not comp.isFiller:
-                notes.append(f"{cid}: isFiller didn't stay set")
         names[occ.name] = cid
     if not names:
         return Arranged((), refused, tuple(notes))
@@ -155,8 +152,6 @@ def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, 
                 placed.append(cid)
     if set_to:
         notes.append("priorities read back: " + ", ".join(f"{c}={v}" for c, v in sorted(set_to.items())))
-    if fillers:
-        notes.append(f"fillers set: {len(fillers)}")
     return Arranged(tuple(placed), refused, tuple(notes))
 
 

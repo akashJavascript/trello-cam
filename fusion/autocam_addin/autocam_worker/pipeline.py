@@ -11,8 +11,9 @@
    Offcuts of that thickness (partly used sheets, offcuts.py) are filled first, smallest room first, loaded the
    same way round as their last cut, then new sheets. On an offcut, the room beside earlier cuts is filled
    first (one Arrange per rectangle), then its free stretch: one sheet, several Arranges. Every Arrange gets
-   Fusion's priority by the parts' size (the biggest very high, mid-size high; core 0.23.0), and small parts can be
-   made Arrange's fillers ([nest] fillers, off). It's tried once more with offcuts spun round where that gives
+   Fusion's priority by the parts' size (the biggest very high, mid-size high; core 0.23.0). Arrange turns parts to
+   any angle (it straightened a bar drawn at 30 deg, r081), so parts drawn at an angle need nothing more; their
+   boxes are measured tightly (fx_design.box_in). It's tried once more with offcuts spun round where that gives
    more room, and the better nest is kept: most copies placed, then fewest new sheets, then fewest offcuts spun
    round, then fewest sheets, then the shortest last sheet. (Until 0.23.0 it was also tried biggest first and
    longest first: on every real job the orders tied, so Fusion's Arrange ignores the order it's given.) Then each
@@ -372,9 +373,9 @@ PRIORITY_HIGH = 0.15        # high: at least this share of it; smaller parts as 
 
 @dataclass(frozen=True)
 class _Hints:
-    """What each Arrange is told about the parts beyond where they go (core 0.23.0, the user's pick)."""
+    """What each Arrange is told about the parts beyond where they go (core 0.23.0, the user's pick). Not Arrange's
+    fillers: Fusion refuses them when it moves the parts given ("Cannot set isFiller for move mode arrange", r077)."""
     levels: Dict[str, int]          # part key -> 2 (very high priority) or 1 (high); missing: as Fusion has it
-    fillers: frozenset              # part keys made Arrange fillers ([nest] fillers)
 
 
 def _hints(job: Job, sizes: Dict[str, Tuple[float, float]]) -> _Hints:
@@ -387,23 +388,17 @@ def _hints(job: Job, sizes: Dict[str, Tuple[float, float]]) -> _Hints:
                 levels[k] = 2
             elif v >= PRIORITY_HIGH * top:
                 levels[k] = 1
-    fillers: frozenset = frozenset()
-    if job.nest.fillers and sizes:
-        longest = max(a for a, _ in sizes.values())
-        if longest > 2 * job.nest.filler_max_in:
-            fillers = frozenset(k for k, (a, _) in sizes.items() if a <= job.nest.filler_max_in)
-    return _Hints(levels, fillers)
+    return _Hints(levels)
 
 
 def _arrange(adapter: Adapter, job: Job, copies: Sequence[str], envelope: Rect, up: Dict[str, int],
              hints: Optional[_Hints] = None, log: Optional[Callable[[str], None]] = None):
-    """adapter.arrange with the parts' priorities and fillers; what Fusion says it set goes in the log."""
+    """adapter.arrange with the parts' priorities; what Fusion says it set goes in the log."""
     def key(c: str) -> str:
         return c.rsplit(".", 1)[0]
     levels = {c: hints.levels[key(c)] for c in copies if hints and key(c) in hints.levels}
-    fillers = [c for c in copies if hints and key(c) in hints.fillers]
     got = adapter.arrange(list(copies), envelope, job.nest.part_spacing_in, {c: up[c] for c in copies},
-                          priorities=levels, fillers=fillers)
+                          priorities=levels)
     if log is not None:
         for note in getattr(got, "notes", ()):
             log(f"Arrange: {note}")
@@ -645,8 +640,6 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
     if hints.levels:
         log(f"{thickness:g} in: Arrange priorities: " + ", ".join(
             f"{k} {'very high' if v == 2 else 'high'}" for k, v in sorted(hints.levels.items())))
-    if hints.fillers:
-        log(f"{thickness:g} in: Arrange fillers: {', '.join(sorted(hints.fillers))}")
     face = {}
     for p in parts:                                  # each part's top area: the squeeze's lower bound
         try:

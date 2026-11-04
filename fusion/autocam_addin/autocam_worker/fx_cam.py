@@ -26,7 +26,6 @@ UNCONFIRMED = {
     "arrange_flip": "ArrangeComponent.isDirectionFlipped chosen from upDirection",
     "arrange_refuse": "ArrangeComponent.deleteMe for a part that would lie on its side",
     "arrange_priority": "ArrangeComponent.priority = ArrangePriorities VeryHigh/High by the part's size",
-    "arrange_filler": "ArrangeComponent.isFiller = True on small parts",
     "discard_hide": "Occurrence.isLightBulbOn = False for copies taken out of the job",
     "generate_retry": "CAM.generateToolpath again for ops left with no toolpath and no error",
     "chain_side_type": "ChainSelection.sideType = AlwaysInside for single loops",
