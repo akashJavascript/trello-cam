@@ -85,6 +85,12 @@ def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, 
     (ArrangePriorities VeryHigh, High; the rest as Fusion has them); fillers: copy ids made ArrangeComponent fillers."""
     priorities = priorities or {}
     levels = getattr(adsk.fusion, "ArrangePriorities", None)
+    notes = []
+    if priorities and (levels is None or not all(hasattr(levels, n) for n in PRIORITY_NAMES.values())):
+        notes.append("this Fusion has no ArrangePriorities " + "/".join(PRIORITY_NAMES.values())
+                     + (f" (it has {', '.join(n for n in dir(levels) if n.endswith('Priority'))})" if levels else "")
+                     + ": priorities not set")
+    set_to = {}                                      # copy id -> its priority, read back
     root = design.rootComponent
     for _, occ in occs:
         for attr in ("isGroundToParent", "isGrounded"):
@@ -113,11 +119,14 @@ def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, 
         level = priorities.get(cid)
         if level and levels is not None and hasattr(levels, PRIORITY_NAMES.get(level, "")):
             call(f"priority {cid}", setattr, comp, "priority", getattr(levels, PRIORITY_NAMES[level]))
+            set_to[cid] = int(comp.priority)                 # read back: what Fusion has now
         if cid in fillers:
             call(f"isFiller {cid}", setattr, comp, "isFiller", True)
+            if not comp.isFiller:
+                notes.append(f"{cid}: isFiller didn't stay set")
         names[occ.name] = cid
     if not names:
-        return Arranged((), refused)
+        return Arranged((), refused, tuple(notes))
     x0, y0, x1, y1 = envelope
     env = call("setPlaneEnvelope", arr_in.setPlaneEnvelope, root.xYConstructionPlane, vi(x1 - x0), vi(y1 - y0))
     env.originXOffset = vi(x0)
@@ -131,7 +140,11 @@ def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, 
             cid = names.get(r.occurrence.name)
             if cid is not None:
                 placed.append(cid)
-    return Arranged(tuple(placed), refused)
+    if set_to:
+        notes.append("priorities read back: " + ", ".join(f"{c}={v}" for c, v in sorted(set_to.items())))
+    if fillers:
+        notes.append(f"fillers set: {len(fillers)}")
+    return Arranged(tuple(placed), refused, tuple(notes))
 
 
 def faces_up(occ, face_id: int) -> bool:

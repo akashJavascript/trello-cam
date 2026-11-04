@@ -52,6 +52,7 @@ class Box:
 class Arranged:
     placed: Tuple[str, ...]          # copies Arrange put in the envelope
     refused: Dict[str, str]          # copies left out on purpose, and why (e.g. it would lie on its side)
+    notes: Tuple[str, ...] = ()      # what was set beyond placing (priorities, fillers), as Fusion reads it back
 
 
 @dataclass(frozen=True)

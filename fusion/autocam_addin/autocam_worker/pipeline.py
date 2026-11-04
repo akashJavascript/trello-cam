@@ -396,14 +396,18 @@ def _hints(job: Job, sizes: Dict[str, Tuple[float, float]]) -> _Hints:
 
 
 def _arrange(adapter: Adapter, job: Job, copies: Sequence[str], envelope: Rect, up: Dict[str, int],
-             hints: Optional[_Hints] = None):
-    """adapter.arrange with the parts' priorities and fillers."""
+             hints: Optional[_Hints] = None, log: Optional[Callable[[str], None]] = None):
+    """adapter.arrange with the parts' priorities and fillers; what Fusion says it set goes in the log."""
     def key(c: str) -> str:
         return c.rsplit(".", 1)[0]
     levels = {c: hints.levels[key(c)] for c in copies if hints and key(c) in hints.levels}
     fillers = [c for c in copies if hints and key(c) in hints.fillers]
-    return adapter.arrange(list(copies), envelope, job.nest.part_spacing_in, {c: up[c] for c in copies},
-                           priorities=levels, fillers=fillers)
+    got = adapter.arrange(list(copies), envelope, job.nest.part_spacing_in, {c: up[c] for c in copies},
+                          priorities=levels, fillers=fillers)
+    if log is not None:
+        for note in getattr(got, "notes", ()):
+            log(f"Arrange: {note}")
+    return got
 
 
 @dataclass
@@ -557,7 +561,7 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", idx: List[int], parts: Se
         done, refused = 0, None
         try:
             for area, cs in zip(areas, copies):
-                got = _arrange(adapter, job, cs, area, up, hints)
+                got = _arrange(adapter, job, cs, area, up, hints, log)
                 refused = refused or next(iter(got.refused.values()), None)
                 if set(got.placed) != set(cs):
                     break
@@ -694,7 +698,7 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
                 if not remaining:
                     break
                 try:
-                    got = _arrange(adapter, job, remaining, envelope, up, hints)
+                    got = _arrange(adapter, job, remaining, envelope, up, hints, log)
                 except AdapterError as e:
                     t.failed = f"Arrange failed: {e}"
                     if i == 0:
