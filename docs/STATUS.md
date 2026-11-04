@@ -165,8 +165,9 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 - **Fewer Onshape calls** (2026-10-04): a run starts all its STEP exports before it waits on any, status
   checks are timed from each export's start (15, 60, 120, 180 s since 2026-11-01; was 5, 20, 65, 125), and an export left from an earlier run gets one
   check. Two parts that each take 30 s: 4 checks instead of 8. Tested with recorded responses only.
-- **Better nests:** several Arrange tries per thickness, the best kept, then the last sheet squeezed into a
-  strip across the front. Work in Fusion (r006, r014).
+- **Better nests** (core 0.23.0, 2026-11-04): one Arrange per thickness with big parts given priority, then every
+  sheet that ends in a free stretch squeezed toward its front (6 tries, to 0.25 in); parts drawn at an angle are
+  measured with tight boxes. Work in Fusion (r076 to r081; earlier r006, r014).
 - **Offcuts**, with **room beside** earlier cuts: work in Fusion (r013 to r016, a test job); none cut yet
   (manual tests M3 5c).
 - **Rush**, freed offcuts, smallest offcut first, the season's stock tally: tested offline (M3 section 8).
