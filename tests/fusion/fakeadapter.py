@@ -11,6 +11,7 @@
 """
 
 import json
+import math
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -39,8 +40,9 @@ class FakeAdapter(Adapter):
         self.copies: Dict[str, str] = {}               # copy id -> STEP path
         self.boxes: Dict[str, Box] = {}
         self.columns = False          # True: pack like Fusion did in r009 (down the left edge first)
-        self.tilted: Dict[str, Tuple[float, float]] = {}   # part key -> its box laid on a slant, which Arrange
-                                                             # picks whenever the area has room for it (p0201, r09x)
+        self.tilted: Dict[str, float] = {}   # part key -> the angle (deg) it's drawn at in CAD, which Arrange keeps
+                                              # whenever the area has room for it (p0201: 11 deg, r093/r094)
+        self.slant: Dict[str, float] = {}    # copy id -> the angle it lies at now (its outline: a turned rectangle)
         self.arranged = False                          # an Arrange has run
         self.late: Set[str] = set()                    # copies made after an Arrange: refused, like r012/r013
         self.sheets: Dict[str, dict] = {}
@@ -96,8 +98,19 @@ class FakeAdapter(Adapter):
         if path in {str(Path(f)) for f in self.fail_import} or path not in self.parts:
             raise AdapterError(f"importToTarget failed for {path}")
         self.copies[copy_id] = path
-        geometry, (w, h) = self.parts[path]
+        geometry, size = self.parts[path]
+        w, h = self._slanted(copy_id, size)
         self.boxes[copy_id] = Box(0.0, 0.0, 0.0, w, h, geometry.thickness_in)
+
+    def _slanted(self, cid, size):
+        """The copy's box at its CAD angle (and it lies at that angle now), or its size if it's drawn square."""
+        deg = self.tilted.get(cid.rsplit(".", 1)[0])
+        if deg is None:
+            self.slant.pop(cid, None)
+            return size
+        self.slant[cid] = deg
+        c, s_ = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+        return size[0] * c + size[1] * s_, size[0] * s_ + size[1] * c
 
     def extract(self, copy_id):
         return self.parts[self.copies[copy_id]][0]
@@ -105,6 +118,8 @@ class FakeAdapter(Adapter):
     def add_copy(self, source_id, copy_id):
         self.copies[copy_id] = self.copies[source_id]
         self.boxes[copy_id] = self.boxes[source_id]
+        if source_id in self.slant:
+            self.slant[copy_id] = self.slant[source_id]
         if self.arranged:
             self.late.add(copy_id)
 
@@ -130,7 +145,8 @@ class FakeAdapter(Adapter):
                 refused[cid] = "upDirection (0, 1, 0) is across the top face"
                 continue
             geometry, size = self.parts[self.copies[cid]]
-            for w, h in ([self.tilted[cid.rsplit(".", 1)[0]]] if cid.rsplit(".", 1)[0] in self.tilted else []) + [size]:
+            slanted = cid.rsplit(".", 1)[0] in self.tilted
+            for w, h in ([self._slanted(cid, size)] if slanted else []) + [size]:
                 px, py, prow = x, y, row
                 if px + w > x1 + 1e-9:
                     px, py, prow = x0, y + row + spacing_in, 0.0
@@ -138,6 +154,8 @@ class FakeAdapter(Adapter):
                     break
             else:
                 continue                      # doesn't fit; the next one might
+            if (w, h) == tuple(size):
+                self.slant.pop(cid, None)     # laid square
             z0 = 0.5 if cid in self.bad_z else 0.0
             self.boxes[cid] = Box(px, py, z0, px + w, py + h, z0 + geometry.thickness_in)
             placed.append(cid)
@@ -245,12 +263,17 @@ class FakeAdapter(Adapter):
     def loop_segments(self, copy_id, face_id, loop_index):
         """The copy's box as its outline; inner loop k: a 0.5 in square inside it, k in from the corner."""
         b = self.boxes[copy_id]
-        if loop_index is None:
+        if loop_index is None and copy_id in self.slant:      # a turned rectangle, centered in its box
+            w, h = self.parts[self.copies[copy_id]][1]
+            c, s_ = math.cos(math.radians(self.slant[copy_id])), math.sin(math.radians(self.slant[copy_id]))
+            mx, my = (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2
+            pts = [(mx + u * c - v * s_, my + u * s_ + v * c) for u, v in
+                   ((-w / 2, -h / 2), (w / 2, -h / 2), (w / 2, h / 2), (-w / 2, h / 2))]
+        elif loop_index is None:
             pts = [(b.x0, b.y0), (b.x1, b.y0), (b.x1, b.y1), (b.x0, b.y1)]
         else:
             x, y = b.x0 + 0.5 + 0.6 * loop_index, b.y0 + 0.5
             if self.round_loops:
-                import math
                 c, r = (x + 0.25, y + 0.25), 0.25
                 return [Seg("curve", tuple((c[0] + r * math.cos(2 * math.pi * k / 48), c[1] + r * math.sin(2 * math.pi * k / 48))
                                            for k in range(49)))]

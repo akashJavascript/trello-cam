@@ -3,7 +3,8 @@
 Fusion's Arrange turns parts to any angle, and it stacked three long bars on a slant (p0201: 7.7 in of the sheet's
 length, no room beside them). The pipeline also lays a sheet's parts in straight rows, each row placed by Arrange in
 an area only as deep as its deepest part, and keeps whichever leaves the better offcut. The fake Arrange here lays a
-part on a slant (rig.fake.tilted: a bigger box) whenever the area has room for it, like Fusion did.
+part drawn at an angle (rig.fake.tilted) at that angle whenever the area has room for it, like Fusion did with p0201
+(r093, r094): its outline is a turned rectangle, its box much bigger.
 """
 
 import autocam_worker.pipeline as pipeline
@@ -11,8 +12,8 @@ from autocam_core.schema_job import OffcutSpec
 from rig import Rig, plate
 from test_offcut_nesting import BESIDE, job_with
 
-BAR = (15.0, 2.0)                 # a 15 x 2 in bar, long side across the sheet
-SLANT = (16.0, 5.0)               # its box on a slant
+BAR = (15.0, 2.0)                 # a 15 x 2 in bar
+SLANT = 11.0                      # drawn at 11 deg in CAD, like p0201: its box 15.1 x 4.8 in
 
 
 def log(rig):
@@ -21,7 +22,8 @@ def log(rig):
 
 def strips(rig, depth):
     """The Arranges given a straight row's area for parts `depth` deep."""
-    return [e for e in rig.fake.arrange_envelopes if abs(e[3] - e[1] - (depth + pipeline.STRAIGHT_SLACK_IN)) < 1e-6]
+    return [e for e in rig.fake.arrange_envelopes
+            if any(abs(e[3] - e[1] - (depth + slack)) < 1e-6 for slack in pipeline.STRAIGHT_SLACKS_IN)]
 
 
 def test_bars_on_a_slant_are_laid_straight(tmp_path):
@@ -73,7 +75,7 @@ def test_a_part_longer_than_the_sheet_is_wide_is_not_tried(tmp_path):
 
 
 def test_a_row_fusion_wont_fill_keeps_fusions_layout(tmp_path, monkeypatch):
-    monkeypatch.setattr(pipeline, "STRAIGHT_SLACK_IN", -0.5)              # each row's area too shallow for its part
+    monkeypatch.setattr(pipeline, "STRAIGHT_SLACKS_IN", (-0.5, -0.2))     # each row's area too shallow for its part
     rig = Rig(tmp_path)
     rig.fake.no_room_raises = True                                       # like Fusion: an Arrange placing nothing
     rig.fake.tilted = {"p01": SLANT}
@@ -98,3 +100,21 @@ def test_rows_on_an_offcut_keep_the_parts_beside_earlier_cuts(tmp_path):
     # The bars in two straight rows behind the old cut: from 4.75 in, 2 + 0.25 + 2 in deep.
     assert sheet.used_y_in == (4.5, 4.75 + 4.25 + 0.25)
     assert "laid in 2 straight row(s)" in log(rig) and not rig.fake.late
+
+
+def test_the_rows_use_the_parts_real_width_not_their_box_in_cad(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.tilted = {"p01": SLANT}                      # drawn at 11 deg: its box in CAD is 15.1 x 4.8 in
+    rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))
+    assert "smallest rectangles: p01 15.00 x 2.00 in" in log(rig) and "laid in 3 straight row(s)" in log(rig)
+
+
+def test_a_row_fusion_places_none_of_gets_a_little_more_room(tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline, "STRAIGHT_SLACKS_IN", (-0.5, 0.1))      # the first area too shallow
+    rig = Rig(tmp_path)
+    rig.fake.no_room_raises = True                        # like Fusion: an Arrange placing nothing raises, moves nothing
+    rig.fake.tilted = {"p01": SLANT}
+    result = rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))
+    [sheet] = result.sheets
+    assert "laid in 3 straight row(s)" in log(rig) and sheet.free_length_in == 38.5 - 6.5
+    assert len(strips(rig, 2.0)) == 6                     # each row: the shallow area, then the one that fit

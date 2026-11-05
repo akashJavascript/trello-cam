@@ -1027,7 +1027,7 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   - Otherwise their copies are hidden and Fusion's layout stays.
   - The worker log says which layout was kept and why.
 - **Each row is still placed by Arrange,** in an area only 0.1 in deeper than its deepest part, so it can't tilt
-  them.
+  them. Not tried when `[nest] rotation` is "none" (Arrange couldn't turn them).
   - The try is a whole new copy of the sheet at a new spot, like the squeeze. Its copies come from one set made
     before any Arrange: Fusion refuses copies made after one.
   - Parts beside earlier cuts are arranged again in the same rooms.
@@ -1035,8 +1035,12 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   - a part longer than the sheet is wide (it can't go across);
   - a sheet with more than `straight_max` parts in its stretch;
   - a sheet that only fills room beside earlier cuts.
-- The plan uses the imported part's box, like the squeeze's lower bound. A part drawn at an angle looks bigger than
-  it is, so its rows are rarely tried.
+- **Each part's sides come from its real outline:** the smallest rectangle around it at any angle (`rows.min_rect`),
+  read after Fusion's Arrange has laid it flat. Not its box in CAD: p0201 is drawn at 11 deg in Onshape, so its box
+  is 4.7 in deep for a 1.6 in bar. Fusion kept that angle (the slant in the user's picture), and r094 planned its
+  rows from the box (15.2 in) and didn't try them.
+- **If Arrange places none of a row** (it raises NO_ROOM and moves nothing; its rotation steps may not hit the part's
+  angle exactly), the row gets one more try in an area 0.3 in deeper than its deepest part.
 
 ## 2026-11-05: the machine screen (the mockup the user approved, v4)
 

@@ -72,7 +72,7 @@ from autocam_core.names import (face_program_name, fit_program_name, instance_id
                                 small_program_name)
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
-from autocam_core.rows import row_boxes, rows_depth, straight_rows, used_up
+from autocam_core.rows import min_rect, row_boxes, rows_depth, straight_rows, used_up
 from autocam_core.plate import PlateAnalysis, analyze
 from autocam_core.preview import (BADGE_MIN_PX, flatten, inside_polygon, label_spot, pixels_per_unit, preview_size,
                                   to_pixels)
@@ -372,7 +372,9 @@ NEST_ORDERS = ("as listed",)   # biggest first and longest first went in 0.23.0:
 SQUEEZE_TRIES = 6           # halvings of a sheet's length when looking for the shortest strip (4 until 0.23.0)
 SQUEEZE_STEP_IN = 0.25      # stop halving when the next try would gain less than this (0.5 until 0.23.0)
 SQUEEZE_MIN_GAIN_IN = 2.0   # only worth trying if the sheet could get at least this much shorter
-STRAIGHT_SLACK_IN = 0.1     # a straight row's area is this much deeper than its deepest part: no room to tilt them
+STRAIGHT_SLACKS_IN = (0.1, 0.3)   # a straight row's area is this much deeper than its deepest part, so Arrange can't
+                                  # tilt them; the next only if Arrange placed none of the row (it raised NO_ROOM, so
+                                  # nothing moved: its rotation steps may not hit the part's angle exactly)
 STRAIGHT_MIN_GAIN_IN = 0.25 # straight rows are kept when they save at least this much of the sheet's length (counting
                             # the room beside the parts they leave as length saved)
 PRIORITY_VERY_HIGH = 0.5    # Arrange's very high priority: parts at least half the biggest part's box area
@@ -702,11 +704,11 @@ def _straighten(adapter: Adapter, job: Job, best: "_Try", idx: List[int], parts:
                 slot: int, pitch: float, thickness: float, pool: Dict[str, List[str]], hints: _Hints,
                 log: Callable[[str], None]) -> int:
     """Fusion's Arrange turns parts to any angle, and a few long parts can end up stacked on a slant across the
-    sheet (the user's p0201, 2026-11-05). Lay the sheet's free-stretch parts in straight rows instead (rows.py: long
-    side across, deepest first, robot parts before spares) and keep whichever leaves the better offcut: the shorter
+    sheet (the user's p0201, 2026-11-05). Lay the sheet's free-stretch parts in straight rows instead (rows.py: each
+    part's smallest rectangle at any angle, long side across, deepest first, robot parts before spares) and keep whichever leaves the better offcut: the shorter
     stretch used, counting the room beside the parts big enough to keep (rows.used_up). The rows are only tried in
     Fusion when the plan beats Fusion's layout. Each row is still placed by Arrange, in an area as deep as its
-    deepest part (plus STRAIGHT_SLACK_IN), so it can't tilt them; like the squeeze, the try is a whole new copy of
+    deepest part (plus STRAIGHT_SLACKS_IN), so it can't tilt them; like the squeeze, the try is a whole new copy of
     the sheet at a new spot, its parts beside earlier cuts arranged again in the same rooms. Returns the next free
     sheet slot."""
     origin, env = best.envelopes[idx[-1]]
@@ -716,11 +718,19 @@ def _straighten(adapter: Adapter, job: Job, best: "_Try", idx: List[int], parts:
     if len(last) > job.nest.straight_max:
         log(f"{say}: not tried in straight rows ({len(last)} parts, more than {job.nest.straight_max})")
         return slot
+    if job.nest.rotation != "all":
+        return slot                                  # Arrange may not turn the parts: it couldn't straighten them
 
     def key(c: str) -> str:
         return c.rsplit(".", 1)[0]
     spacing = job.nest.part_spacing_in
-    items = [(c, sizes[key(c)][0], sizes[key(c)][1]) for c in last]
+    by_key = {p.key: p for p in parts}
+    flat: Dict[str, Tuple[float, float]] = {}
+    for c in last:                                   # each part's smallest rectangle, from its outline as it lies
+        if key(c) not in flat:
+            flat[key(c)] = _flat_size(adapter, by_key[key(c)], c) or sizes[key(c)]
+    log(f"{say}: parts' smallest rectangles: " + ", ".join(f"{k} {a:.2f} x {b:.2f} in" for k, (a, b) in flat.items()))
+    items = [(c, flat[key(c)][0], flat[key(c)][1]) for c in last]
     rows = straight_rows(items, env[2] - env[0], spacing, {c: 1 for c in last if key(c) in spares})
     if rows is None:
         log(f"{say}: not tried in straight rows (a part is longer than the sheet is wide, or its size is unknown)")
@@ -763,8 +773,11 @@ def _straighten(adapter: Adapter, job: Job, best: "_Try", idx: List[int], parts:
         y = moved[-1][1]
         for n, row in enumerate(rows if not why else (), 1):
             cs = [swap_last[c] for c, _, _ in row.items]
-            strip = (moved[-1][0], y, moved[-1][2], min(moved[-1][3], y + row.depth + STRAIGHT_SLACK_IN))
-            got = _arrange(adapter, job, cs, strip, up, hints, log)
+            for slack in STRAIGHT_SLACKS_IN:
+                strip = (moved[-1][0], y, moved[-1][2], min(moved[-1][3], y + row.depth + slack))
+                got = _arrange(adapter, job, cs, strip, up, hints, log)
+                if got.placed:
+                    break                            # some or all placed: those are in this Arrange now
             if set(got.placed) != set(cs):
                 why = f"Fusion placed {len(got.placed)} of row {n}'s {len(cs)}"
                 break
@@ -788,6 +801,23 @@ def _straighten(adapter: Adapter, job: Job, best: "_Try", idx: List[int], parts:
         best.placed[i] = tuple(copies[n])
     log(f"{say} laid in {len(rows)} straight row(s): {said(was)} -> {said(now)}")
     return slot
+
+
+def _flat_size(adapter: Adapter, part: _Part, cid: str) -> Optional[Tuple[float, float]]:
+    """(long, short) sides of the smallest rectangle around a copy's outline as it lies now (after an Arrange: flat,
+    top up), from its top face's outer loop (every top face's, for a top split along bends); None if Fusion can't
+    give it. Not the copy's box: a part drawn at an angle has a much bigger one."""
+    a = part.analysis
+    if a is None:
+        return None
+    pts: List[Tuple[float, float]] = []
+    try:
+        for f in (a.top_face_ids or (a.up_face_id,)):
+            for seg in adapter.loop_segments(cid, f, None):
+                pts.extend(seg.points)
+    except AdapterError:
+        return None
+    return min_rect(pts)
 
 
 def _part_order(parts: Sequence[_Part], order: str, sizes: Dict[str, Tuple[float, float]]) -> List[str]:

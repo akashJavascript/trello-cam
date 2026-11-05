@@ -6,11 +6,13 @@ straight, the same three take 7 in and leave a 5 x 7 in room beside them that th
 
 So after Fusion nests a sheet, the pipeline also lays its parts in straight rows and keeps whichever leaves the
 better offcut. The rows are planned here: each part with its long side across the sheet, deepest parts first, each
-row filled left to right before the next one starts (first fit). Fusion's Arrange still places each row, in an
+row filled left to right before the next one starts (first fit). A part's sides are its smallest rectangle at any
+angle (`min_rect`, from its outline as it lies after Fusion's Arrange), not its box in CAD. Fusion's Arrange still places each row, in an
 area only as deep as the row's deepest part, so it can't tilt them; the pipeline compares the two by `used_up`:
 the sheet's length the parts take, times its width, less the room beside them big enough to keep.
 """
 
+import math
 from dataclasses import dataclass
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -27,6 +29,51 @@ class Row:
     @property
     def across(self) -> float:        # the long sides only (no spacing)
         return sum(i[1] for i in self.items)
+
+
+def min_rect(points: Sequence[Tuple[float, float]]) -> Optional[Tuple[float, float]]:
+    """(long side, short side) of the smallest rectangle around the points, at any angle: one of its sides lies
+    along an edge of their convex hull (rotating calipers). None for fewer than 3 points or none with any area. A part
+    drawn at an angle in CAD has a box much bigger than this (p0201 at 11 deg: 4.7 in deep for a 1.6 in bar)."""
+    hull = _hull(points)
+    if len(hull) < 3:
+        return None
+    best: Optional[Tuple[float, float, float]] = None          # (area, long, short)
+    for (ax, ay), (bx, by) in zip(hull, hull[1:] + hull[:1]):
+        dx, dy = bx - ax, by - ay
+        n = math.hypot(dx, dy)
+        if n < 1e-12:
+            continue
+        ux, uy = dx / n, dy / n
+        us = [x * ux + y * uy for x, y in hull]
+        vs = [-x * uy + y * ux for x, y in hull]
+        w, h = max(us) - min(us), max(vs) - min(vs)
+        if best is None or w * h < best[0] - 1e-12:
+            best = (w * h, max(w, h), min(w, h))
+    if best is None or best[2] <= 1e-9:
+        return None
+    return round(best[1], 4), round(best[2], 4)
+
+
+def _hull(points: Sequence[Tuple[float, float]]) -> List[Tuple[float, float]]:
+    """Convex hull, counterclockwise (Andrew's monotone chain)."""
+    pts = sorted(set((round(x, 6), round(y, 6)) for x, y in points))
+    if len(pts) < 3:
+        return pts
+
+    def cross(o, a, b) -> float:
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lower: List[Tuple[float, float]] = []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    upper: List[Tuple[float, float]] = []
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
 
 
 def straight_rows(items: Sequence[Item], width: float, spacing: float,
