@@ -28,6 +28,15 @@ FACE = "face"            # the face template's one op (its own setup, never in a
 SCRIBE = "scribe"        # bend lines (core 0.18.0): a copy of the template's [outer] op, never in a template itself
 
 Edge = Tuple[str, Tuple[float, float], Tuple[float, float], bool]   # autocam_core.scribe.Edge
+Box6 = Tuple[float, float, float, float, float, float]               # x0, y0, z0, x1, y1, z1
+
+
+def boxes_off(want: Sequence[Box6], got: Sequence[Box6], tol_in: float = 0.005) -> List[str]:
+    """What's wrong with blocks Fusion made (their boxes) against the boxes asked for, in order; empty when right."""
+    if len(got) != len(want):
+        return [f"{len(got)} blocks instead of {len(want)}"]
+    return [f"block {i} at ({', '.join(f'{v:.3f}' for v in g)}) instead of ({', '.join(f'{v:.3f}' for v in w)})"
+            for i, (w, g) in enumerate(zip(want, got), 1) if max(abs(a - b) for a, b in zip(w, g)) > tol_in]
 
 
 class AdapterError(Exception):

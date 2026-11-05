@@ -17,7 +17,7 @@ from autocam_core.schema_job import Job
 
 from . import fx_cam, fx_design, fx_geometry
 from .adapter import (BEARING, BORE, DRILL, FACE, INNER, OUTER, POCKET, POCKETFINISH, SCRIBE, Adapter, AdapterError,
-                      Box)
+                      Box, boxes_off)
 from .fx_cam import UNCONFIRMED
 from .fx_util import call, to_cm
 
@@ -153,6 +153,15 @@ class FusionAdapter(Adapter):
             raise AdapterError(f"no stock for {sheet}")
         origin, thickness_in, _ = self.sheet_info[sheet]
         occ, bodies = fx_design.make_clamps(self.design, sheet, origin, zones, thickness_in, height_in)
+        want = [(origin[0] + x0, origin[1] + y0, thickness_in, origin[0] + x1, origin[1] + y1, thickness_in + height_in)
+                for x0, y0, x1, y1 in zones]
+        got = [fx_design.body_box_in(b) for b in bodies]
+        self.trace.append(f"{_stamp()}   clamp blocks: " + "; ".join(
+            "(" + ", ".join(f"{v:.3f}" for v in g) + ")" for g in got))
+        off = boxes_off(want, got)
+        if off:                                  # misplaced clamps would mislead the simulation: none at all
+            occ.isLightBulbOn = False
+            raise AdapterError(f"clamp blocks not where they belong: {'; '.join(off)}")
         self.clamp_occs.append(occ)
         fx_cam.set_fixtures(self._setup(sheet), bodies)
         self.clamps[sheet] = bodies

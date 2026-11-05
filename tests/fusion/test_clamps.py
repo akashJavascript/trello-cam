@@ -65,3 +65,12 @@ def test_fusion_refusing_the_clamps_only_warns(tmp_path):
     assert "clamps aren't shown in Fusion's simulation" in warning.msg and "InternalValidationError" in warning.msg
     view = rig.service_view(job, result)
     assert [vs.cuttable for vs in view.sheets] == [True]
+
+
+def test_blocks_fusion_put_somewhere_else_are_caught():
+    from autocam_worker.adapter import boxes_off
+    want = [(0.0, 0.0, 0.125, 1.25, 48.0, 1.625), (22.75, 0.0, 0.125, 24.0, 48.0, 1.625)]
+    assert boxes_off(want, [(0.001, 0.0, 0.125, 1.25, 48.0, 1.625), want[1]]) == []       # within 0.005 in
+    [off] = boxes_off(want, [want[0], (22.75, 0.0, 0.0, 24.0, 48.0, 1.5)])                 # sketched on the wrong plane
+    assert off.startswith("block 2 at (22.750, 0.000, 0.000,")
+    assert boxes_off(want, want[:1]) == ["1 blocks instead of 2"]

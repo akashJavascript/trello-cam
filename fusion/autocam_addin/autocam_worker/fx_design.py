@@ -184,6 +184,13 @@ def make_stock(design, name: str, origin, size_x_in: float, size_y_in: float, th
     return ext.bodies.item(0).createForAssemblyContext(occ)
 
 
+def body_box_in(b):
+    """An axis-aligned body's box in inches (BRepBody.boundingBox is exact for one)."""
+    bb = b.boundingBox
+    return tuple(to_in(v) for v in (bb.minPoint.x, bb.minPoint.y, bb.minPoint.z,
+                                    bb.maxPoint.x, bb.maxPoint.y, bb.maxPoint.z))
+
+
 def make_clamps(design, name: str, origin, zones, z0_in: float, height_in: float):
     """The clamp strips as blocks: each zone (sheet coordinates, the sheet's corner at origin) from z0_in (the stock
     top) up height_in, in a component of their own. Returns (occurrence, bodies in assembly context)."""
