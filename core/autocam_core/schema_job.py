@@ -50,6 +50,7 @@ class FixtureSpec:
     clamp_zones_in: Tuple[Rect, ...]
     clamp_height_in: float
     min_clear_above_stock_in: float
+    clamps_in_fusion: bool = False          # the clamp strips as fixtures in each sheet's setup, for its simulation
 
 
 @dataclass(frozen=True)

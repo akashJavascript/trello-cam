@@ -51,6 +51,8 @@ class FusionAdapter(Adapter):
         self.scribe_sketch: Dict[str, object] = {}   # sheet -> the sketch holding its bend lines
         self.sheet_info: Dict[str, tuple] = {}  # sheet -> (origin, thickness, copy ids)
         self.stocks: Dict[str, object] = {}     # sheet -> its stock solid
+        self.clamps: Dict[str, list] = {}       # sheet -> its clamp blocks (the setup's fixtures)
+        self.clamp_occs: List[object] = []      # their components, hidden for the previews
         self.used: List[str] = []
         self.run_notes: List[str] = []
         self.trace: List[str] = _Trace()        # every adapter call, timed (the job folder's fusion_calls.log)
@@ -138,6 +140,22 @@ class FusionAdapter(Adapter):
         self.setups[name] = fx_cam.make_setup(self.cam, name, models, self.stocks[sheet], self.job.fusion_params["setup"])
         self.sheet_info[name] = self.sheet_info[sheet]          # the gouge check: every copy on the sheet
         self.stocks[name] = self.stocks[sheet]
+        if sheet in self.clamps:                                 # the same clamps in its simulation
+            try:
+                fx_cam.set_fixtures(self.setups[name], self.clamps[sheet])
+                self.clamps[name] = self.clamps[sheet]
+            except Exception as e:  # noqa: BLE001 - only the simulation's view; the guard checks the clamps
+                self.run_notes.append(f"{name}: the clamps aren't in its simulation ({type(e).__name__}: {e})")
+
+    def add_clamps(self, sheet, zones, height_in):
+        self._used("clamp_fixtures")
+        if sheet not in self.stocks:
+            raise AdapterError(f"no stock for {sheet}")
+        origin, thickness_in, _ = self.sheet_info[sheet]
+        occ, bodies = fx_design.make_clamps(self.design, sheet, origin, zones, thickness_in, height_in)
+        self.clamp_occs.append(occ)
+        fx_cam.set_fixtures(self._setup(sheet), bodies)
+        self.clamps[sheet] = bodies
 
     def op_names(self, sheet):
         return [o.name for o in fx_cam.ops(self._setup(sheet))]
@@ -338,7 +356,14 @@ class FusionAdapter(Adapter):
     # -- outputs
     def preview(self, sheet, rect, path):
         self._used("preview_camera")
-        call("preview", fx_design.preview, self.app, rect, str(path))
+        shown = [o for o in self.clamp_occs if o.isLightBulbOn]
+        for o in shown:                          # the picture shows the parts on the sheet, as before the clamps
+            o.isLightBulbOn = False
+        try:
+            call("preview", fx_design.preview, self.app, rect, str(path))
+        finally:
+            for o in shown:
+                o.isLightBulbOn = True
 
     def export_f3d(self, path):
         fx_design.export_f3d(self.design, str(path))
@@ -380,7 +405,7 @@ def _as_adapter_error(name, method):
 
 
 for _name in ("begin", "import_step", "extract", "add_copy", "arrange", "box", "faces_up", "discard", "make_sheet",
-              "make_extra_setup", "set_radial_stock", "op_names", "apply_template", "fill",
+              "make_extra_setup", "add_clamps", "set_radial_stock", "op_names", "apply_template", "fill",
               "copy_op", "set_tabs", "set_tab_size", "set_tab_points", "loop_segments", "make_outer_ops", "delete_op",
               "suppress_op", "top_edges", "set_tool", "generate", "post", "cuts_into_parts",
               "machining_time", "preview", "export_f3d", "save_to_team", "finish"):

@@ -150,6 +150,12 @@ class Adapter:
         checks against every copy on the sheet."""
         raise NotImplementedError
 
+    def add_clamps(self, sheet: str, zones: Sequence[Rect], height_in: float) -> None:
+        """The clamp strips as blocks on the sheet: each zone (sheet coordinates) from the stock top up height_in,
+        set as fixtures of the sheet's setup and of every extra setup made from it afterwards, so Fusion's
+        simulation shows them. Nothing is cut from them: the guard keeps the program clear of the zones."""
+        raise NotImplementedError
+
     def set_radial_stock(self, sheet: str, op_name: str, stock_in: float) -> None:
         """The op leaves this much radial stock (+: a hole smaller, an outline bigger), and none on the floor."""
         raise NotImplementedError

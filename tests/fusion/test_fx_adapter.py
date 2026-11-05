@@ -91,3 +91,40 @@ def test_pocket_walls_are_cut_from_the_pocket_side(fx):
         fx_cam._inside(walls, loop(True, opposed), lambda key: None)
         assert cutout.isReverted is (not opposed)   # an inner loop: against the loop's way (seen in Fusion)
         assert walls.isReverted is opposed          # a floor's outer loop: the loop's way, the floor's side
+
+
+def test_fixtures_that_dont_read_back_are_an_error(fx, monkeypatch):
+    from autocam_worker import fx_cam
+    monkeypatch.setattr(fx_cam, "collection", fakebrep.Collection)
+
+    class Setup:
+        name, fixtureEnabled, fixtures = "S1", False, None
+    setup = Setup()
+    fx_cam.set_fixtures(setup, ["left", "right"])
+    assert setup.fixtureEnabled and list(setup.fixtures) == ["left", "right"]
+
+    class Ignores(Setup):                          # Fusion takes the call but keeps nothing
+        @property
+        def fixtures(self):
+            return fakebrep.Collection()
+
+        @fixtures.setter
+        def fixtures(self, value):
+            pass
+    with pytest.raises(AdapterError, match="fixtures read back 0 of 2"):
+        fx_cam.set_fixtures(Ignores(), ["left", "right"])
+
+
+def test_the_preview_hides_the_clamps_and_shows_them_again(fx, monkeypatch):
+    seen = []
+
+    def shot(app, rect, path):
+        seen.append([o.isLightBulbOn for o in occs])
+        raise RuntimeError("saveAsImageFile returned False")
+    monkeypatch.setattr(fx.design, "preview", shot)
+    occs = [types.SimpleNamespace(isLightBulbOn=True), types.SimpleNamespace(isLightBulbOn=True)]
+    adapter = fx.adapter.FusionAdapter(types.SimpleNamespace(version="x"), job=None)
+    adapter.clamp_occs = occs
+    with pytest.raises(AdapterError, match="saveAsImageFile"):
+        adapter.preview("S1", (0, 0, 24, 48), "x.png")
+    assert seen == [[False, False]] and [o.isLightBulbOn for o in occs] == [True, True]

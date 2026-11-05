@@ -184,6 +184,30 @@ def make_stock(design, name: str, origin, size_x_in: float, size_y_in: float, th
     return ext.bodies.item(0).createForAssemblyContext(occ)
 
 
+def make_clamps(design, name: str, origin, zones, z0_in: float, height_in: float):
+    """The clamp strips as blocks: each zone (sheet coordinates, the sheet's corner at origin) from z0_in (the stock
+    top) up height_in, in a component of their own. Returns (occurrence, bodies in assembly context)."""
+    root = design.rootComponent
+    occ = call("addNewComponent (clamps)", root.occurrences.addNewComponent, adsk.core.Matrix3D.create())
+    comp = occ.component
+    comp.name = f"CLAMPS {name}"
+    planes = comp.constructionPlanes
+    plane_in = planes.createInput()
+    plane_in.setByOffset(comp.xYConstructionPlane, vi(z0_in))
+    plane = call("clamp plane", planes.add, plane_in)
+    x, y = origin
+    bodies = []
+    for zx0, zy0, zx1, zy1 in zones:
+        sketch = comp.sketches.add(plane)
+        a = sketch.modelToSketchSpace(adsk.core.Point3D.create(to_cm(x + zx0), to_cm(y + zy0), to_cm(z0_in)))
+        b = sketch.modelToSketchSpace(adsk.core.Point3D.create(to_cm(x + zx1), to_cm(y + zy1), to_cm(z0_in)))
+        sketch.sketchCurves.sketchLines.addTwoPointRectangle(a, b)
+        ext = call("extrude clamp", comp.features.extrudeFeatures.addSimple, sketch.profiles.item(0), vi(height_in),
+                   adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+        bodies.append(ext.bodies.item(0).createForAssemblyContext(occ))
+    return occ, bodies
+
+
 def preview(app, rect, path: str) -> None:
     """Top view framed on one sheet, as seen from the front of the machine (X across, Y away from you). An
     upright sheet gets an upright picture. viewExtents is what shows across the picture's shorter side (r014:

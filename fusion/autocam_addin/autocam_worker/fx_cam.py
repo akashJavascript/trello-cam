@@ -53,6 +53,8 @@ UNCONFIRMED = {
                    "speeds, coolant left disabled",
     "scribe_letters": "a U or D beside each bend line: each stroke a sketch line and chain of its own, 0.002 in "
                       "short of the next (one chain of connected lines failed, r048), in the same [scribe] op",
+    "clamp_fixtures": "the clamp strips as blocks set as setup fixtures (Setup.fixtureEnabled, Setup.fixtures), "
+                      "for the simulation",
 }
 
 
@@ -74,6 +76,15 @@ def make_setup(cam, name: str, models, stock_body, setup_params) -> object:
     set_expr(setup, "wcs_origin_mode", setup_params["wcs_origin_mode"])
     set_expr(setup, "wcs_origin_boxPoint", setup_params["wcs_origin_boxPoint"])
     return setup
+
+
+def set_fixtures(setup, bodies) -> None:
+    """The setup's fixtures (the clamp blocks): its simulation shows them. Read back, so a call Fusion ignores fails."""
+    call("Setup.fixtureEnabled", setattr, setup, "fixtureEnabled", True)
+    call("Setup.fixtures", setattr, setup, "fixtures", collection(bodies))
+    got = setup.fixtures
+    if not setup.fixtureEnabled or got is None or got.count != len(bodies):
+        raise AdapterError(f"{setup.name}: fixtures read back {0 if got is None else got.count} of {len(bodies)}")
 
 
 def ops(setup):

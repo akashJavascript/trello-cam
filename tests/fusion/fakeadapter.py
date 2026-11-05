@@ -53,6 +53,7 @@ class FakeAdapter(Adapter):
         self.move_on_discard: Dict[str, Tuple[float, float]] = {}    # copy id -> shift when anything is discarded
         self.move_on_generate: Dict[str, Tuple[float, float]] = {}   # copy id -> shift during toolpath generation
         self.fail_make_sheet: Set[str] = set()         # sheet names
+        self.fail_clamps = False                       # add_clamps raises (Fusion won't take the fixtures)
         self.op_states: Dict[str, Tuple[bool, Optional[str], Optional[str]]] = {}  # op name -> state
         self.fail_post: Set[str] = set()               # sheet names
         self.gouges: Dict[str, List[Tuple[int, float, float]]] = {}   # sheet -> points reported inside a part
@@ -188,6 +189,13 @@ class FakeAdapter(Adapter):
         s = self.sheets[sheet]
         self.make_sheet(name, s["origin"], s["size"][0], s["size"][1], s["t"], copy_ids)
         self.sheets[name]["face_of"] = sheet
+        if "clamps" in s:                              # like FusionAdapter: the sheet's clamps in its simulation too
+            self.sheets[name]["clamps"] = s["clamps"]
+
+    def add_clamps(self, sheet, zones, height_in):
+        if self.fail_clamps:
+            raise AdapterError("Setup.fixtures: RuntimeError: 2 : InternalValidationError")
+        self.sheets[sheet]["clamps"] = (tuple(tuple(z) for z in zones), height_in)
 
     def set_radial_stock(self, sheet, op_name, stock_in):
         assert op_name in self.sheets[sheet]["ops"], op_name

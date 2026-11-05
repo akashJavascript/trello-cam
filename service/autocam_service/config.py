@@ -127,6 +127,7 @@ class Clamps:
     clearance_in: float
     height_in: float
     min_clear_above_stock_in: float
+    in_fusion: bool = True             # the strips as fixtures in each sheet's Fusion setup, so its simulation shows them
 
 
 @dataclass(frozen=True)
@@ -669,6 +670,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         clearance_in=t.number("clearance_in", minimum=0),
         height_in=t.number("height_in", minimum=0),
         min_clear_above_stock_in=t.number("min_clear_above_stock_in", positive=True),
+        in_fusion=t.boolean("in_fusion", default=True),
     )
     t.finish()
 

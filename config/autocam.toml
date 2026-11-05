@@ -72,6 +72,8 @@ reach_in = 1.0
 clearance_in = 0.25
 height_in = 1.5
 min_clear_above_stock_in = 2.0
+in_fusion = true           # the strips as blocks (clamp height, on the plate) set as fixtures in each sheet's Fusion
+                           # setup, so its simulation shows them (2026-11-04). The program check covers them either way
 
 [pauses]
 enabled = true

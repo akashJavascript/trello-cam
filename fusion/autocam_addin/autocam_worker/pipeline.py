@@ -1246,6 +1246,24 @@ def _tabs_for(job: Job, part: _Part, length_in: float, tool_d: float) -> int:
                      job.tabs.width_in)
 
 
+def _add_clamps(adapter: Adapter, job: Job, sheet: _Sheet, size_x: float, size_y: float) -> None:
+    """The clamp strips as fixtures in the sheet's setup (2026-11-04), so its simulation shows them. Not on a part
+    placed by hand (no fixed clamps). Only a view: if Fusion won't take them the sheet goes on, with a warning,
+    and the guard still keeps the program clear of the strips."""
+    if sheet.by_hand or not job.fixture.clamps_in_fusion:
+        return
+    zones = [(max(x0, 0.0), max(y0, 0.0), min(x1, size_x), min(y1, size_y))
+             for x0, y0, x1, y1 in job.fixture.clamp_zones_in]
+    zones = [z for z in zones if z[2] > z[0] and z[3] > z[1]]
+    if not zones:
+        return
+    try:
+        adapter.add_clamps(sheet.name, zones, job.fixture.clamp_height_in)
+    except AdapterError as e:
+        sheet.warnings.append(Issue(E.OP_WARNING, f"the clamps aren't shown in Fusion's simulation ({e}); "
+                                                  "the program check still keeps the cutter clear of them"))
+
+
 def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> None:
     tool = job.tooling.tools[sheet.tool_key]
     copy_ids = [p.body_id for _, p in sheet.instances]
@@ -1260,6 +1278,7 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
         return
     size_x, size_y = sheet.size or (job.sheet.width_in, job.sheet.length_in)
     adapter.make_sheet(sheet.name, sheet.origin, size_x, size_y, sheet.thickness_in, copy_ids)
+    _add_clamps(adapter, job, sheet, size_x, size_y)
     ops = adapter.apply_template(sheet.name, tool.template_path)
 
     wrong = [o.name for o in ops if o.tool_guid != tool.guid]
