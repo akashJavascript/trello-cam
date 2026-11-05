@@ -1392,13 +1392,13 @@ class Runner:
         data, report, main, run_job, stops = vs.tap_bytes, vs.check.guard, sheet.tap, job, True
         if nostop and vs.pause_count:
             try:
-                plain = remove_pauses(data.decode("ascii"), sheet.outer_order, pause_spec(job), job.pauses.after_last_part)
+                plain = remove_pauses(data.decode("ascii"), sheet.main_order, pause_spec(job), job.pauses.after_last_part)
             except PauseError as e:
                 return f"the stops couldn't be taken out ({e})"
             run_job = replace(job, pauses=replace(job.pauses, enabled=False))
             data = plain.encode("ascii")
             check = check_sheet_program(data, run_job, sheet.thickness_in, sheet.tool, sheet.outer_order, counts,
-                                        sheet.by_hand)
+                                        sheet.by_hand, sheet.outlines_last)
             if not check.passed:
                 return "the program without stops failed its check (" + "; ".join(check.problems()) + ")"
             report, main, stops = check.guard, f"{stem}{NO_STOP_SUFFIX}.tap", False
@@ -1415,7 +1415,7 @@ class Runner:
                 return f"the air test couldn't be made ({e})"
             air_data = air_text.encode("ascii")
             check = check_air_test(air_data, run_job, sheet.thickness_in, sheet.tool, sheet.outer_order, counts, gap,
-                                   sheet.by_hand)
+                                   sheet.by_hand, sheet.outlines_last)
             if not check.passed:
                 return "the air test failed its check (" + "; ".join(check.problems()) + ")"
             programs[air_test_name(main)] = (air_data, check.guard)

@@ -60,6 +60,11 @@ def _small(s):
     return next((p for p in s.programs if p.kind == "small"), None)
 
 
+def _outlines(s):
+    """The OUTLINES program (core 0.26.0): the hole-fit parts cut out last, after their laps."""
+    return next((p for p in s.programs if p.kind == "outlines"), None)
+
+
 def scribed_keys(s) -> set:
     """Parts whose bend lines this sheet scribes, in its own program or its SCRIBE program."""
     scribe = _scribe(s)
@@ -101,7 +106,8 @@ def sheet_title(job: Job, vs: VerifiedSheet, offcut_number: Optional[int] = None
     count = (f"{n} part{'s' if n != 1 else ''}" + (f", {faced} faced" if faced and not s.by_hand else
                                                    (", faced" if faced else ""))
              + (f", run {s.repeat}x" if s.repeat > 1 else ""))
-    seconds = (s.machining_time_s or 0) + sum(p.machining_time_s or 0 for p in (face, _scribe(s), _small(s)) if p)
+    seconds = (s.machining_time_s or 0) + sum(p.machining_time_s or 0
+                                              for p in (face, _scribe(s), _small(s), _outlines(s)) if p)
     cutters = s.cutter_label + (f" + {_small(s).cutter_label}" if _small(s) else "")
     bits = [stock, cutters, count, _minutes(seconds), f"{job.run_id} S{s.index}"]
     title = " - ".join(b for b in bits if b)
@@ -205,6 +211,12 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
     if vs.cuttable:
         for f in fit_series(job, s):
             lines += [""] + fit_lines(f, s)
+        late = _outlines(s)
+        if late:
+            names = ", ".join(dict.fromkeys(part_cards.get(p.part_key, (p.part_key, ""))[0] for p in late.parts))
+            about = f" (about {_minutes(late.machining_time_s)})" if late.machining_time_s else ""
+            once = "it fits" if len({p.part_key for p in late.parts}) == 1 else "they fit"
+            lines += ["", f"LAST: once {once}, run {late.tap}{about}, same cutter and zero. It cuts out {names}."]
     on_sheet = {p.part_key for p in s.parts}
     faced = {p.part_key for p in face.parts} if face else set()
     scribed = scribed_keys(s)
@@ -230,6 +242,7 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         name = part_cards.get(part_key, (part_key, ""))[0]
         of = f" ({counts[part_key]} of {totals[part_key]})" if totals.get(part_key, 1) > 1 else ""
         marks = [m for m, on in (("faced", part_key in faced), ("fit", part_key in fitted),
+                                 ("cut out last", instance in s.outlines_last),
                                  ("tabs", part_key in tabbed), ("bent", part_key in bent_keys),
                                  ("scribed", part_key in scribed), ("spare", part_key in spare_keys)) if on]
         lines.append(f"{i}. {name}{of}" + "".join(f" - {m}" for m in marks))
@@ -349,6 +362,12 @@ def fit_lines(f: dict, s) -> List[str]:
     laps = ", then ".join(f"{p.tap} ({p.stock_in:+.4g})" for p in f["laps"])
     slug = (" Its slug is held by tabs: after the program, break the slug out by hand (the first lap also takes the "
             "tab stubs off the wall), then try the fit." if f["laps"][0].cutout else " After the program, try the fit.")
+    if hole and any(i.rsplit("-", 1)[0] == f["part_key"] for i in s.outlines_last):
+        # outlines last (core 0.26.0): the part stays solid in the sheet until the LAST program cuts it out
+        return [f"FIT {f['series']}: {what}",
+                f"The program cuts it {f['fit'].stocks_in[0]:.4g} in tight and leaves {f['name']} in the sheet.{slug} "
+                f"Too tight? Run the next lap (same cutter and zero) and try again: {laps}.",
+                f"Tick the one that fit under \"{f['checklist']}\"."]
     return [f"FIT {f['series']}: {what}",
             f"The program cuts it {f['fit'].stocks_in[0]:.4g} in {tight} (radial) and leaves {f['name']} in, held by "
             f"tabs: don't take it out at its stop.{slug} Still {fits}? Run the next lap, with the same cutter and "

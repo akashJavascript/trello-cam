@@ -56,7 +56,8 @@ already going), on its own: an offcut or a new sheet, not a sheet waiting in She
 Need a press fit or a slip fit you'll tune at the machine? Add a line like Fit: 1.125 hole (that hole's size: 0.5,
 1/2 and 22 mm all work; any round hole that isn't drilled. A hole over 1.5 in is cut with its slug tabbed: break the
 slug out before the laps) or Fit: outline. It's cut a little tight, and the sheet card gets short programs that each take a little more off,
-to run one at a time until it fits; tick the one that did, and the next time starts there.
+to run one at a time until it fits; tick the one that did, and the next time starts there. A part with a fitted
+hole stays in the sheet until a last program cuts it out.
 Labels, if needed: {smoked} for smoked polycarbonate, {tool} to force the 1/8 in endmill, {face} for a clean
 top (it's skimmed {face_depth} in off the top, in a program run before the sheet's).
 Spares for the spares box? Set Spares in the Onshape panel, or use Send spares on the shop page's Plates tab. They

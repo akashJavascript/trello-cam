@@ -10,7 +10,8 @@ from typing import List, Optional
 from autocam_core import CORE_VERSION
 from autocam_core.errors import Issue
 from autocam_core.hotfolder import Queue
-from autocam_core.names import face_program_name, fit_program_name, instance_id, program_name
+from autocam_core.names import (face_program_name, fit_program_name, instance_id, outlines_program_name,
+                                program_name)
 from autocam_core.offcuts import beside_as_loaded, placement_for
 from autocam_core.pauses import insert
 from autocam_core.schema_job import read_job
@@ -21,10 +22,18 @@ from autocam_core.schema_result import (
 from autocam_core.sheetcheck import check_face_program, check_fit_program, check_sheet_program, pause_spec
 
 
-def make_program(name: str, instances: List[str], thickness: float, mist: bool) -> str:
+def make_program(name: str, instances: List[str], thickness: float, mist: bool, skip=()) -> str:
+    """skip: copies whose outline another program cuts (outlines last): their slot stays where it is."""
     clear, retract = thickness + 2.0, thickness + 0.2
     lines = [f"[{name}]"] + (["M11 C8"] if mist else []) + ["G90", "G20", "G53 Z", "[inner]", "S18000", "M3", "G4 X4."]
+    for k, inst in enumerate(instances):          # the fitted holes, tight, in the parts cut out last
+        if inst in skip:
+            y = 2 + 4 * k
+            lines += ["[bore holes]", f"G0 X5.5 Y{y + 1.5:g}", f"G0 Z{retract:g}", "G1 Z0. F20.", "G1 X5.6 F60.",
+                      f"G0 Z{clear:g}"]
     for k, inst in enumerate(instances):          # one after another along the sheet's length (Y)
+        if inst in skip:
+            continue
         y = 2 + 4 * k
         lines += [f"[outer {inst}]", f"G0 X4. Y{y}.", f"G0 Z{retract:g}", "G1 Z0. F20.", "G1 X7. F60.",
                   f"G1 Y{y + 3}.", "G1 X4.", f"G1 Y{y}.", f"G0 Z{clear:g}"]
@@ -82,15 +91,20 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
         placed = [p for p in job.parts if p.part_key not in (defer_part, part_error)]
         instances = [instance_id(p.part_key, n) for p in placed for n in range(1, p.qty + 1)]
         name = program_name(job.material.program_prefix, thickness, job.run_id, 1)
-        program = make_program(name, instances, thickness, job.material.use_mist)
+        # like the pipeline: hole-fit parts cut out last are left out of the sheet's program, at the cut order's end
+        late = [i for i in instances if any(p.part_key == i.rsplit("-", 1)[0] and p.fit is not None
+                                            and p.fit.outline_last for p in placed)]
+        own = [i for i in instances if i not in late]
+        program = make_program(name, instances, thickness, job.material.use_mist, skip=late)
         if job.pauses.enabled:
-            program = insert(program, instances, pause_spec(job), job.pauses.after_last_part)
+            program = insert(program, own, pause_spec(job), job.pauses.after_last_part)
         if reject_sheet:
             program = program.replace("G1 Z0. F20.", "G1 Z-0.02 F20.", 1)
         if shallow_outlines:  # template bottom height left at the selected (top) face
             program = program.replace("G1 Z0. F20.", f"G1 Z{thickness:g} F20.")
         data = program.encode("ascii")
-        check = check_sheet_program(data, job, thickness, tool, instances, {p.part_key: p.qty for p in placed})
+        check = check_sheet_program(data, job, thickness, tool, own + late, {p.part_key: p.qty for p in placed},
+                                    last=late)
         programs = ()
         faced = [p for p in placed if p.face]
         if faced and job.face is not None:            # like the pipeline: a FACE program over the faced copies
@@ -137,6 +151,25 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
                     machining_time_s=30.0, parts=(SheetPart(p.part_key, p.qty),), stock_in=stock, series=series,
                     lap=lap, feature=f"{p.fit.diameter_in:g} hole" if not outline else "outline"),)
                 assert lc.passed, lc.problems()
+        if late:                                      # like the pipeline: the OUTLINES program, last
+            out_name = outlines_program_name(name)
+            slots = [instances.index(i) for i in late]
+            out_data = make_fit_lap(out_name, slots, instances, thickness, job.material.use_mist, True).encode("ascii")
+            counts = {}
+            for i in late:
+                counts[i.rsplit("-", 1)[0]] = counts.get(i.rsplit("-", 1)[0], 0) + 1
+            oc = check_fit_program(out_data, job, thickness, tool, tuple(late), counts, what="outlines program")
+            assert oc.passed, oc.problems()
+            (claim.out_dir / f"{out_name}.tap").write_bytes(out_data)
+            og = oc.guard
+            programs += (ProgramResult(
+                kind="outlines", name=out_name, runs="after", tool_guid=job.tooling.tools[tool].guid,
+                cutter_label=job.tooling.tools[tool].cutter_label, tool_number=job.tooling.tools[tool].number,
+                tap=f"{out_name}.tap", tap_rejected=None, tap_bytes=len(out_data), tap_sha256=og.sha256,
+                guard=GuardSummary(og.passed, og.sha256, og.floor_in, og.min_z_in, og.units, og.offenders,
+                                   og.clamp_violations, og.problems),
+                machining_time_s=60.0, parts=tuple(SheetPart(k, n) for k, n in sorted(counts.items())),
+                feature="outlines"),)
         tap_name = f"{name}.tap" if check.passed else f"{name}.REJECTED.tap"
         (claim.out_dir / tap_name).write_bytes(data)
         (claim.out_dir / f"{name}.png").write_bytes(b"\x89PNG fake preview")
@@ -178,7 +211,8 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
                                 tuple(PauseEntryResult(e.after, e.line) for e in check.pauses.entries),
                                 check.pauses.problems) if check.pauses else None,
             machining_time_s=900.0, preview_png=f"{name}.png",
-            parts=tuple(SheetPart(p.part_key, p.qty) for p in placed), outer_order=tuple(instances),
+            parts=tuple(SheetPart(p.part_key, p.qty) for p in placed), outer_order=tuple(own + late),
+            outlines_last=tuple(late),
             tool_forced_by=(),
             errors=tuple(Issue("TAP_REJECTED", msg) for msg in check.problems()),
             warnings=(), notes=(), offcut_id=offcut.id if offcut else None,

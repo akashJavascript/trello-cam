@@ -81,7 +81,9 @@ def pause_spec(job: Job) -> PauseSpec:
 
 
 def plan_problems(text: str, job: Job, thickness_in: float, tool_key: str, outer_order: Sequence[str],
-                  part_counts: Mapping[str, int]) -> List[str]:
+                  part_counts: Mapping[str, int], last: Sequence[str] = ()) -> List[str]:
+    """last (core 0.26.0): copies whose outline the sheet's OUTLINES program cuts after their hole's fit laps: the
+    end of the cut order, and not in this program."""
     out: List[str] = []
     if not any(abs(thickness_in - t) <= 1e-9 for t in job.material.thicknesses_in):
         out.append(f"sheet thickness {thickness_in:g} in is not a {job.material.name} stock thickness")
@@ -94,9 +96,17 @@ def plan_problems(text: str, job: Job, thickness_in: float, tool_key: str, outer
     expected = sorted(instance_id(k, n) for k, c in part_counts.items() for n in range(1, c + 1))
     if sorted(outer_order) != expected or len(set(outer_order)) != len(outer_order):
         out.append(f"cut order {list(outer_order)} doesn't match the parts on the sheet {expected}")
+    if last and list(outer_order[len(outer_order) - len(last):]) != list(last):
+        out.append(f"the outlines cut last {list(last)} aren't the end of the cut order {list(outer_order)}")
+    elif last:
+        fitted = {p.part_key for p in job.parts if p.fit is not None and p.fit.outline_last}
+        wrong = sorted({i.rsplit("-", 1)[0] for i in last} - fitted)
+        if wrong:
+            out.append(f"outlines left for last that aren't hole fits cut out last: {', '.join(wrong)}")
+    own = [i for i in outer_order if i not in set(last)]
     in_program = [m.group(1) for m in (_OUTER_LINE.match(l.strip()) for l in text.splitlines()) if m]
-    if in_program != list(outer_order):
-        out.append(f"outline ops in the program {in_program} don't match the cut order {list(outer_order)}")
+    if in_program != own:
+        out.append(f"outline ops in the program {in_program} don't match the cut order {own}")
     if not part_counts:
         out.append("no parts on the sheet")
     out += outer_depth_problems(text, job.guard.z_floor_in)
@@ -175,9 +185,11 @@ def outer_depth_problems(text: str, floor_in: float) -> List[str]:
 
 def check_sheet_program(data: bytes, job: Job, thickness_in: float, tool_key: str,
                         outer_order: Sequence[str], part_counts: Mapping[str, int],
-                        by_hand: bool = False) -> SheetCheck:
+                        by_hand: bool = False, last: Sequence[str] = ()) -> SheetCheck:
+    """last: copies cut out by the OUTLINES program instead (plan_problems); the stops go between the rest."""
     text = data.decode("ascii", errors="replace")
-    problems = tuple(plan_problems(text, job, thickness_in, tool_key, outer_order, part_counts))
+    problems = tuple(plan_problems(text, job, thickness_in, tool_key, outer_order, part_counts, last))
+    own = [i for i in outer_order if i not in set(last)]
     if tool_key not in job.tooling.tools:
         return SheetCheck(_failed(check_program(data, GuardSpec()), "unknown tool"), None, problems)
     spec = guard_spec(job, thickness_in, tool_key, by_hand)
@@ -186,7 +198,7 @@ def check_sheet_program(data: bytes, job: Job, thickness_in: float, tool_key: st
         if report.stop_count:
             report = _failed(report, f"pauses are off for this job but the program has {report.stop_count} stops")
         return SheetCheck(report, None, problems)
-    pauses = verify(text, outer_order, pause_spec(job), after_last_part=job.pauses.after_last_part,
+    pauses = verify(text, own, pause_spec(job), after_last_part=job.pauses.after_last_part,
                     safe_z_in=spec.clamp_clear_z_in)
     return SheetCheck(report, pauses, problems)
 
@@ -305,10 +317,11 @@ def check_small_program(data: bytes, job: Job, thickness_in: float, tool_key: st
 
 
 def check_fit_program(data: bytes, job: Job, thickness_in: float, tool_key: str, outer_order: Sequence[str],
-                      part_counts: Mapping[str, int], by_hand: bool = False) -> SheetCheck:
+                      part_counts: Mapping[str, int], by_hand: bool = False, what: str = "fit lap") -> SheetCheck:
     """A fit lap (core 0.16.0): the sheet's guard with its tool, no stops, only parts that ask for a fit, and for an
     outline fit exactly the fitted copies' outlines, each still reaching the stock bottom (the lap is the outline
-    again with a little less stock, tabs and all). A hole lap cuts no outline."""
+    again with a little less stock, tabs and all). A hole lap cuts no outline. The OUTLINES program (core 0.26.0,
+    what="outlines program") is checked the same way: exactly the outlines left for last, each to the bottom."""
     text = data.decode("ascii", errors="replace")
     problems: List[str] = []
     if not any(abs(thickness_in - t) <= 1e-9 for t in job.material.thicknesses_in):
@@ -318,21 +331,21 @@ def check_fit_program(data: bytes, job: Job, thickness_in: float, tool_key: str,
     fitted = {p.part_key for p in job.parts if p.fit is not None}
     others = sorted(set(part_counts) - fitted)
     if not part_counts:
-        problems.append("the fit lap lists no parts")
+        problems.append(f"the {what} lists no parts")
     if others:
-        problems.append(f"the fit lap lists parts that don't ask for a fit: {', '.join(others)}")
+        problems.append(f"the {what} lists parts that don't ask for a fit: {', '.join(others)}")
     in_program = [m.group(1) for m in (_OUTER_LINE.match(l.strip()) for l in text.splitlines()) if m]
     if in_program != list(outer_order):
-        problems.append(f"outline ops in the fit lap {in_program} aren't the fitted copies {list(outer_order)}")
+        problems.append(f"outline ops in the {what} {in_program} aren't the fitted copies {list(outer_order)}")
     if outer_order:
         problems += outer_depth_problems(text, job.guard.z_floor_in)
     report = check_program(data, guard_spec(job, thickness_in, tool_key, by_hand))
     if report.stop_count:
-        report = _failed(report, f"the fit lap has {report.stop_count} stops; laps never stop")
+        report = _failed(report, f"the {what} has {report.stop_count} stops; it never stops")
     if report.min_z_in is None:
-        problems.append("the fit lap has no Z move")
+        problems.append(f"the {what} has no Z move")
     elif report.min_z_in > job.guard.z_floor_in + THROUGH_CUT_TOL_IN:   # every fitted feature goes through
-        problems.append(f"the fit lap never reaches the stock bottom (lowest Z {report.min_z_in:.4f} in)")
+        problems.append(f"the {what} never reaches the stock bottom (lowest Z {report.min_z_in:.4f} in)")
     return SheetCheck(report, None, tuple(problems))
 
 

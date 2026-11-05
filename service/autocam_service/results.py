@@ -81,7 +81,7 @@ class IngestedJob:
 
 
 def verify_program(folder: Path, job: Job, sheet: SheetResult, program: ProgramResult) -> VerifiedProgram:
-    if program.kind not in ("face", "scribe", "small", "fit"):
+    if program.kind not in ("face", "scribe", "small", "fit", "outlines"):
         return VerifiedProgram(program, None, None, (f"unknown kind of program {program.kind!r}",))
     if not program.tap:
         return VerifiedProgram(program, None, None, (f"the {program.kind} program {program.name} wasn't offered for "
@@ -95,6 +95,8 @@ def verify_program(folder: Path, job: Job, sheet: SheetResult, program: ProgramR
         problems.append(f"{program.tap} changed after Fusion checked it")
     if program.kind == "fit":
         return _verify_fit(job, sheet, program, data, problems)
+    if program.kind == "outlines":
+        return _verify_outlines(job, sheet, program, data, problems)
     if program.kind == "scribe":
         return _verify_scribe(job, sheet, program, data, problems)
     if program.kind == "small":
@@ -128,6 +130,38 @@ def _verify_fit(job: Job, sheet: SheetResult, program: ProgramResult, data: byte
     if tool is None or program.tool_guid != tool.guid:
         problems.append(f"{program.name} used tool GUID {program.tool_guid}, not the sheet's")
     return VerifiedProgram(program, data, check, tuple(problems))
+
+
+def _verify_outlines(job: Job, sheet: SheetResult, program: ProgramResult, data: bytes, problems) -> VerifiedProgram:
+    """The OUTLINES program (core 0.26.0): checked like an outline lap, against the outlines the sheet left for last."""
+    counts = {p.part_key: p.count for p in program.parts}
+    check = check_fit_program(data, job, sheet.thickness_in, sheet.tool, sheet.outlines_last, counts, sheet.by_hand,
+                              what="outlines program")
+    problems += [f"{program.name}: {p}" for p in check.problems()]
+    tool = job.tooling.tools.get(sheet.tool)
+    if tool is None or program.tool_guid != tool.guid:
+        problems.append(f"{program.name} used tool GUID {program.tool_guid}, not the sheet's")
+    return VerifiedProgram(program, data, check, tuple(problems))
+
+
+def _outlines_problems(job: Job, sheet: SheetResult, counts: Dict[str, int]) -> List[str]:
+    """Every copy of a part whose hole fit is cut out last is left for the OUTLINES program, and only those; it
+    cuts them all (core 0.26.0)."""
+    late = {p.part_key for p in job.parts if p.fit is not None and p.fit.outline_last and p.part_key in counts}
+    want = sorted(i for i in sheet.outer_order if i.rsplit("-", 1)[0] in late)
+    out = []
+    if sorted(sheet.outlines_last) != want:
+        out.append(f"the outlines left for last {sorted(sheet.outlines_last)} aren't the hole-fit parts' {want}")
+    programs = [p for p in sheet.programs if p.kind == "outlines"]
+    if len(programs) > 1:
+        out.append(f"the sheet has {len(programs)} outlines programs")
+    if want and not programs:
+        out.append("the hole-fit parts' outlines are left for last but the sheet has no outlines program")
+    elif programs and not want:
+        out.append("the sheet has an outlines program but nothing is left for last")
+    elif programs and {q.part_key: q.count for q in programs[0].parts} != {k: counts[k] for k in late}:
+        out.append("the outlines program doesn't cut out every copy of the hole-fit parts")
+    return out
 
 
 def _verify_scribe(job: Job, sheet: SheetResult, program: ProgramResult, data: bytes, problems) -> VerifiedProgram:
@@ -172,7 +206,8 @@ def verify_sheet(folder: Path, job: Job, sheet: SheetResult) -> VerifiedSheet:
     if hashlib.sha256(data).hexdigest() != sheet.tap_sha256:
         problems.append(f"{sheet.tap} changed after Fusion checked it")
     counts = {p.part_key: p.count for p in sheet.parts}
-    check = check_sheet_program(data, job, sheet.thickness_in, sheet.tool, sheet.outer_order, counts, sheet.by_hand)
+    check = check_sheet_program(data, job, sheet.thickness_in, sheet.tool, sheet.outer_order, counts, sheet.by_hand,
+                                sheet.outlines_last)
     problems += check.problems()
     tool = job.tooling.tools.get(sheet.tool)
     if tool is not None and sheet.tool_guid != tool.guid:
@@ -204,6 +239,7 @@ def verify_sheet(folder: Path, job: Job, sheet: SheetResult) -> VerifiedSheet:
     if any(q.part_key not in endmill or counts.get(q.part_key) != q.count for q in sheet.scribed):
         problems.append("the sheet's program scribes parts that don't ask for it with its cutter")
     problems += _fit_problems(job, sheet, counts)
+    problems += _outlines_problems(job, sheet, counts)
     return VerifiedSheet(sheet, data, check, tuple(problems), programs)
 
 

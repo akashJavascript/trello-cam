@@ -34,7 +34,9 @@ from .tracker.base import Tracker
 log = logging.getLogger("autocam.pictures")
 
 Cuts = List[Tuple[List[Move], float]]           # each program's moves and its cutter's diameter
-KINDS = ("small", "scribe")                     # programs drawn besides the main one (face skims, fits lap)
+KINDS = ("small", "scribe", "outlines")         # programs drawn besides the main one (face skims, fits lap)
+SAID = {"small": "the small-tool program, {cutter} (run it first)", "scribe": "the scribe program, {cutter} (run it first)",
+        "outlines": "the outlines program (run it last)"}
 MADE_WITHIN_S = 300                             # an offcut's card is made in the pass its sheet goes to Cut
 
 
@@ -185,8 +187,7 @@ class CardPictures:
         for p in programs:
             if p.get("kind") in KINDS and p.get("tap"):
                 prog = read_program((folder / p["tap"]).read_text(encoding="ascii", errors="replace"), thickness)
-                what = "small-tool" if p["kind"] == "small" else "scribe"
-                others.append((f"the {what} program, {p.get('cutter_label', '')} (run it first)", prog,
+                others.append((SAID[p["kind"]].format(cutter=p.get("cutter_label", "")), prog,
                                _kerf(job, guid=str(p.get("tool_guid") or ""))))
         earlier: Cuts = []
         hand: List[Rect] = []

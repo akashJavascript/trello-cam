@@ -97,7 +97,7 @@ def fit_spec(cfg: Config, store: Optional["fitting.FitStore"], material: str, fi
         return None
     learned = store.learned(fitting.key(material, fit, part_name)) if store is not None else None
     return FitSpec(kind=fit[0], stocks_in=fitting.stocks(cfg.fit.start_in, cfg.fit.step_in, cfg.fit.laps, learned),
-                   diameter_in=fit[1])
+                   diameter_in=fit[1], outline_last=cfg.fit.outlines_last and fit[0] == "hole")
 
 
 def sheet_fixture(cfg: Config, material: Optional[str] = None) -> fixture.Fixture:

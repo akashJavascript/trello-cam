@@ -79,8 +79,9 @@ class ProgramResult:
     """A program a sheet needs besides its main one (core 0.14.0): kind "face" skims the tops of the faced parts
     with the surfacing bit, run before the main program; kind "scribe" (0.18.0) scribes bent parts' bend lines
     with the chamfer mill, run after the face program and before the main one; kind "small" (0.19.0) cuts the holes
-    and cutouts only the small tool can make, run just before the main one."""
-    kind: str                      # "face", "scribe", "small", "fit"
+    and cutouts only the small tool can make, run just before the main one; kind "fit" (0.16.0) is a fit lap, run
+    after it; kind "outlines" (0.26.0) cuts out the parts whose hole is fitted, run last, after their laps."""
+    kind: str                      # "face", "scribe", "small", "fit", "outlines"
     name: str                      # program name, e.g. 6061_0p25_r030_S1_FACE
     runs: str                      # "before" the main program
     tool_guid: str
@@ -145,6 +146,14 @@ class SheetResult:
     programs: Tuple[ProgramResult, ...] = ()
     # Copies whose bend lines this program scribes with the sheet's cutter (core 0.18.0)
     scribed: Tuple[SheetPart, ...] = ()
+    # Copies whose outline is cut by the OUTLINES program, after their hole's fit laps, not by this one (core
+    # 0.26.0). They're the end of outer_order (the cut order), in the order that program cuts them.
+    outlines_last: Tuple[str, ...] = ()
+
+    @property
+    def main_order(self) -> Tuple[str, ...]:
+        """The outlines this sheet's own program cuts, in order (its stops go between them)."""
+        return tuple(i for i in self.outer_order if i not in self.outlines_last)
 
 
 @dataclass(frozen=True)

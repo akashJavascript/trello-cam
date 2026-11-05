@@ -411,6 +411,10 @@ start_in = 0.003                # radial stock the sheet's program leaves on it 
 step_in = 0.001                 # each lap takes this much more off (radial): 0.002 on a hole's diameter
 laps = 4                        # so the laps leave 0.002, 0.001, 0 and -0.001; once a fit is ticked on a sheet
                                 # card, the next one starts two steps above where it fit
+outlines_last = true            # a hole fit: the part's outline isn't in the sheet's program, so the part stays
+                                # solid in the sheet while the hole is lapped; the sheet's OUTLINES program cuts
+                                # it out once the hole fits (the user's ask, 2026-11-04). false: cut out first,
+                                # lapped on its tabs
 
 [hand_cuts]                     # parts cut out of offcuts outside AutoCAM. A "Cut by hand:" line on the offcut's
                                 # card always works; this lets the card carry the program that cut it instead

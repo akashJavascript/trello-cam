@@ -220,6 +220,8 @@ class Fit:
     start_in: float = 0.003      # radial stock the sheet's program leaves (+: a hole smaller, an outline bigger)
     step_in: float = 0.001       # each lap leaves this much less
     laps: int = 4
+    outlines_last: bool = True   # a hole fit's part stays solid in the sheet while its hole is lapped: its outline
+                                 # is cut by the sheet's OUTLINES program once the hole fits (2026-11-04)
 
 
 @dataclass(frozen=True)
@@ -883,7 +885,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
     if "fit" in top.data:
         t = top.table("fit")
         fit = Fit(enabled=t.boolean("enabled"), start_in=t.number("start_in"), step_in=t.number("step_in", positive=True),
-                  laps=t.integer("laps", minimum=1))
+                  laps=t.integer("laps", minimum=1), outlines_last=t.boolean("outlines_last", default=True))
         t.finish()
 
     hand_cuts = HandCuts()

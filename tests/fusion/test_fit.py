@@ -114,3 +114,105 @@ def test_a_hole_over_the_bore_range_is_fitted_as_a_cutout_with_its_slug_tabbed_t
     [series] = fit_series(job, sheet)
     assert "break the slug out by hand" in " ".join(fit_lines(series, sheet))
     assert rig.service_view(job, result).sheets[0].cuttable
+
+
+# ---- outlines last (core 0.26.0): a hole fit's part stays solid in the sheet until its OUTLINES program
+
+def test_a_hole_fit_leaves_the_parts_outlines_for_the_outlines_program_run_last(tmp_path):
+    from autocam_core.names import outlines_program_name
+    rig = Rig(tmp_path)
+    job = hole_job(rig)
+    assert job.parts[0].fit.outline_last and not job.parts[1].fit
+    result = rig.run(job)
+    assert result.status == "ok", (result.sheets[0].errors, [p.errors for p in result.parts])
+    (sheet,) = result.sheets
+    assert sheet.outlines_last == ("p01-1", "p01-2") and sheet.outer_order[-2:] == sheet.outlines_last
+    assert sheet.main_order == ("p02-1",)
+    main = rig.fake.sheets[sheet.name]
+    assert [o for o in main["ops"] if o.startswith("[outer]")] == ["[outer] p02-1"]   # the spacer only
+    assert "[outer] p01-1" not in main["tab_points"]
+    late = sheet.programs[-1]
+    assert (late.kind, late.name, late.runs) == ("outlines", outlines_program_name(sheet.name), "after")
+    assert late.tap and late.guard.passed and [(q.part_key, q.count) for q in late.parts] == [("p01", 2)]
+    out = rig.fake.sheets[late.name]
+    assert out["ops"] == ["[outer] p01-1", "[outer] p01-2"]                 # its outlines alone, in cut order
+    assert out["tab_points"]["[outer] p01-1"] and out["tab_points"]["[outer] p01-2"]   # held by tabs, as ever
+    assert [p.kind for p in sheet.programs] == ["fit"] * 4 + ["outlines"]  # after every lap
+    (vs,) = rig.service_view(job, result).sheets
+    assert vs.cuttable and all(v.ok for v in vs.programs)
+
+
+def test_a_sheet_of_only_hole_fit_parts_has_no_outline_in_its_own_program(tmp_path):
+    rig = Rig(tmp_path)
+    job = rig.job([("retainer", 2, plate(holes=(0.5,)), (4.0, 4.0))], fits={"retainer": ("hole", 0.5)})
+    result = rig.run(job)
+    assert result.status == "ok", result.sheets[0].errors
+    (sheet,) = result.sheets
+    main = rig.fake.sheets[sheet.name]
+    assert not [o for o in main["ops"] if o.startswith("[outer]")]          # the template's op, deleted untouched
+    assert sheet.main_order == () and sheet.outlines_last == ("p01-1", "p01-2")
+    assert rig.service_view(job, result).sheets[0].cuttable
+
+
+def test_an_outline_fit_and_the_switch_off_leave_nothing_for_last(tmp_path):
+    rig = Rig(tmp_path)
+    job = rig.job([("slider", 1, plate(), (5.0, 3.0))], fits={"slider": ("outline", 0.0)})
+    assert not job.parts[0].fit.outline_last                                # its laps are on the outline itself
+    result = rig.run(job)
+    assert result.sheets[0].outlines_last == () and "outlines" not in [p.kind for p in result.sheets[0].programs]
+    rig = Rig(_sub(tmp_path, "off"))
+    job = hole_job(rig)
+    job = dataclasses.replace(job, parts=tuple(
+        dataclasses.replace(p, fit=dataclasses.replace(p.fit, outline_last=False)) if p.fit else p for p in job.parts))
+    result = rig.run(job)
+    (sheet,) = result.sheets
+    assert sheet.outlines_last == () and "[outer] p01-1" in rig.fake.sheets[sheet.name]["ops"]
+    assert "outlines" not in [p.kind for p in sheet.programs] and rig.service_view(job, result).sheets[0].cuttable
+
+
+def test_an_outlines_program_that_fails_its_check_stops_the_sheet(tmp_path):
+    from autocam_core.names import outlines_program_name
+    rig = Rig(tmp_path)
+    job = hole_job(rig)
+    rig.fake.below_floor.add(outlines_program_name("6061_0p125_r001_S1"))
+    result = rig.run(job)
+    (sheet,) = result.sheets
+    assert sheet.tap is None and any("OUTLINES" in e.msg and "below" in e.msg for e in sheet.errors)
+
+
+def test_the_service_wants_the_outlines_program_and_the_outlines_left_out(tmp_path):
+    from autocam_core.schema_result import result_json
+    rig = Rig(tmp_path)
+    job = hole_job(rig)
+    result = rig.run(job)
+    s = result.sheets[0]
+    for bad, said in (
+            (dataclasses.replace(s, programs=s.programs[:-1]), "has no outlines program"),
+            (dataclasses.replace(s, outlines_last=("p01-1",)), "aren't the hole-fit parts'"),
+            (dataclasses.replace(s, outlines_last=()), "don't match the cut order")):
+        sub = Rig(_sub(tmp_path, f"t{len(said)}"))
+        sub.out.mkdir(parents=True)
+        for f in rig.out.iterdir():
+            if f.is_file():
+                (sub.out / f.name).write_bytes(f.read_bytes())
+        changed = dataclasses.replace(result, sheets=(bad,))
+        (sub.out / "result.json").write_text(result_json(changed), encoding="utf-8")
+        (vs,) = sub.service_view(job, changed).sheets
+        problems = list(vs.problems) + [p for v in vs.programs for p in v.problems]
+        assert not vs.cuttable and any(said in p for p in problems), (said, problems)
+
+
+def test_the_rooms_a_sheet_leaves_count_the_outlines_cut_last(tmp_path):
+    from autocam_worker.pipeline import _cut_text
+    rig = Rig(tmp_path)
+    job = hole_job(rig)
+    result = rig.run(job)
+    (sheet,) = result.sheets
+    late = sheet.programs[-1]
+
+    class S:                                       # what _cut_text reads of the worker's sheet
+        outlines_result = late
+    text = _cut_text(rig.out, S, sheet.tap)
+    assert text.startswith((rig.out / sheet.tap).read_text()) and text.endswith((rig.out / late.tap).read_text())
+    S.outlines_result = None
+    assert _cut_text(rig.out, S, sheet.tap) == (rig.out / sheet.tap).read_text()

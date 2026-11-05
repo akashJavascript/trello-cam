@@ -146,10 +146,13 @@ MAX_FIT_STOCK_IN = 0.02
 class FitSpec:
     """A feature cut tight and then fitted at the machine (core 0.16.0): the part's holes of `diameter_in` (bored
     ones) or its outline. The sheet's program leaves stocks_in[0] of radial stock on it (+: a hole smaller, the
-    outline bigger); each lap program after it leaves the next value, a little less each time."""
+    outline bigger); each lap program after it leaves the next value, a little less each time.
+    outline_last (core 0.26.0, hole fits): the part's outline isn't in the sheet's program but in the sheet's
+    OUTLINES program, run once the hole fits, so the part stays solid in the sheet while its hole is lapped."""
     kind: str                                          # "hole" | "outline"
     stocks_in: Tuple[float, ...]
     diameter_in: float = 0.0                           # hole fits
+    outline_last: bool = False                         # hole fits: cut the part out after the laps
 
 
 @dataclass(frozen=True)
@@ -358,6 +361,8 @@ class Job:
                              "each less than the one before")
                 if not p.tabs:
                     e.append(f"{where}.fit: a fitted part is always held by tabs (its laps run after it's cut out)")
+                if f.outline_last and f.kind != "hole":
+                    e.append(f"{where}.fit.outline_last: only a hole fit can leave the outline for last")
                 if p.by_hand:
                     e.append(f"{where}.fit: parts placed by hand aren't fitted yet")
             if p.scribe:

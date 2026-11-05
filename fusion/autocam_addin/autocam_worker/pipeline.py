@@ -67,8 +67,9 @@ from autocam_core.hotfolder import write_atomic
 from autocam_core.layout import Placed, plan_layout
 from autocam_core.cutmap import CutMapError, cut_map
 from autocam_core.offcuts import Placement, beside_as_loaded, free_rooms, placement_for
-from autocam_core.names import (face_program_name, fit_program_name, instance_id, outer_op_name, program_name,
-                                scribe_op_name, scribe_program_name, small_program_name)
+from autocam_core.names import (face_program_name, fit_program_name, instance_id, outer_op_name,
+                                outlines_program_name, program_name, scribe_op_name, scribe_program_name,
+                                small_program_name)
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
 from autocam_core.plate import PlateAnalysis, analyze
@@ -225,6 +226,9 @@ class _Sheet:
     small_name: str = ""                      # its SMALL setup and program, if any part on it is split
     small_counts: Dict[str, int] = field(default_factory=dict)
     small_result: Optional[ProgramResult] = None
+    last: Tuple[str, ...] = ()                # copies cut out by its OUTLINES program, after their hole's fit laps
+    outlines_name: str = ""                   # ...that setup and program (core 0.26.0)
+    outlines_result: Optional[ProgramResult] = None
 
     def counts(self) -> Dict[str, int]:
         return dict(Counter(p.part_key for _, p in self.instances))
@@ -953,6 +957,16 @@ def _sheet_use(job: Job, sheet: _Sheet, parts: Dict[str, _Part], tap_text: Optio
     return out
 
 
+def _cut_text(out_dir: Path, sheet: _Sheet, tap: Optional[str]) -> Optional[str]:
+    """What cuts the sheet through, for its rooms: its program and its OUTLINES program (core 0.26.0: the fitted
+    parts' outlines are only there). None if either can't be read."""
+    text = _tap_text(out_dir, tap)
+    if text is None or sheet.outlines_result is None:
+        return text
+    late = _tap_text(out_dir, sheet.outlines_result.tap)
+    return None if late is None else text + "\n" + late
+
+
 def _tap_text(out_dir: Path, tap: Optional[str]) -> Optional[str]:
     """The sheet's posted program (None if it has none or it can't be read)."""
     if not tap:
@@ -1177,11 +1191,12 @@ def _tabbed_cutouts(adapter: Adapter, job: Job, sheet: _Sheet, where: str, base_
 
 def _tab_op(adapter: Adapter, job: Job, sheet: _Sheet, op_name: str,
             contours: Sequence[Tuple[str, int, Optional[int]]], per_contour: int, tool_d: float,
-            setup: Optional[str] = None, width: Optional[float] = None, wide: Optional[bool] = None) -> None:
+            setup: Optional[str] = None, width: Optional[float] = None, wide: Optional[bool] = None,
+            record: bool = False) -> None:
     """Tabs on one contour op: `per_contour` on each of its contours (copy id, face id, inner loop index or None
     for the outer loop), placed by tabs.place_tabs and given to Fusion as points; if that fails, Fusion spreads
     the same number evenly (and the sheet card says so). setup: another setup of the sheet (a fit lap): the same
-    tabs there, nothing recorded twice. wide: the setup takes wide tabs (_decide_wide; None: the sheet's).
+    tabs there, nothing recorded twice (record: they're only there, the OUTLINES program's). wide: the setup takes wide tabs (_decide_wide; None: the sheet's).
     width: 0.0 for the template's (a cutout without room for wide tabs)."""
     where = setup or sheet.name
     wide = sheet.wide_tabs if wide is None else wide
@@ -1223,7 +1238,7 @@ def _tab_op(adapter: Adapter, job: Job, sheet: _Sheet, op_name: str,
             if trace is not None:
                 trace.append(f"  tabs {where} {said}")
             adapter.set_tab_points(where, op_name, points)
-            if setup is None:
+            if setup is None or record:
                 sheet.tab_points[op_name] = [(round(x - sheet.origin[0], 4), round(y - sheet.origin[1], 4))
                                              for x, y in points]
                 sheet.notes.append(f"{op_name}: {len(points)} tabs at points, {on_lines} on straight edges, {clear} "
@@ -1408,11 +1423,22 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     points = [(inst, _sheet_xy(sheet, placed)) for inst, placed in sheet.instances]
     sheet.outer_order = tuple(order_outlines(points))
     by_instance = {inst: placed for inst, placed in sheet.instances}
+    # Outlines last (core 0.26.0): a part whose hole is fitted stays solid in the sheet while the hole's laps run;
+    # its outline is cut by the OUTLINES program once the hole fits (_build_outlines). They end the cut order.
+    late = {f.part_key for f in sheet.fits
+            if f.kind == "hole" and parts[f.part_key].spec.fit is not None and parts[f.part_key].spec.fit.outline_last}
+    sheet.last = tuple(i for i in sheet.outer_order if by_instance[i].part_key in late)
+    sheet.outer_order = tuple(i for i in sheet.outer_order if i not in sheet.last) + sheet.last
     outlines = [(outer_op_name(inst), by_instance[inst].body_id, outline_face(parts[by_instance[inst].part_key]))
-                for inst in sheet.outer_order]
-    adapter.make_outer_ops(sheet.name, by_tag[OUTER][0], outlines)
+                for inst in sheet.outer_order if inst not in sheet.last]
+    if outlines:
+        adapter.make_outer_ops(sheet.name, by_tag[OUTER][0], outlines)
+    else:                                             # every outline on it is cut last: the op, untouched, goes
+        adapter.delete_op(sheet.name, by_tag[OUTER][0])
     outline_fits = {f.part_key: f for f in sheet.fits if f.kind == "outline"}
     for inst in sheet.outer_order:                    # the template's tabs, on for the parts that ask for them
+        if inst in sheet.last:
+            continue                                  # their tabs go on in the OUTLINES program
         part = parts[by_instance[inst].part_key]
         fit = outline_fits.get(part.key)
         if fit is not None:                           # a fitted outline: cut tight by the first stock
@@ -1430,6 +1456,7 @@ def _build_sheet(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Pa
     _build_scribe(adapter, job, sheet, parts)
     _build_small(adapter, job, sheet, parts)
     _build_fits(adapter, job, sheet, parts)
+    _build_outlines(adapter, job, sheet, parts)
 
 
 def _outline_tabs(job: Job, part: _Part, tool_d: float) -> int:
@@ -1472,6 +1499,38 @@ def _build_fits(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Par
                         _tab_op(adapter, job, sheet, outer_op_name(inst), [(cid, fid, None)], n, tool.diameter_in,
                                 setup=name)
             fit.laps.append(name)
+
+
+def _build_outlines(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> None:
+    """The sheet's OUTLINES program (core 0.26.0): the outlines of the parts whose hole is fitted, cut out once the
+    hole fits, after its laps. A setup of its own on the sheet's stock and zero with the sheet template's [outer]
+    op alone (the others it brings deleted untouched), a copy per outline in cut order, each with the tabs it would
+    have had in the sheet's program."""
+    if not sheet.last or sheet.errors:
+        return
+    tool = job.tooling.tools[sheet.tool_key]
+    by_instance = dict(sheet.instances)
+    name = outlines_program_name(sheet.name)
+    adapter.make_extra_setup(sheet.name, name, sorted({by_instance[i].body_id for i in sheet.last}))
+    ops = [o.name for o in adapter.apply_template(name, tool.template_path)]
+    keep = next((o for o in ops if _op_tag(o) == OUTER), None)
+    if keep is None:
+        sheet.errors.append(Issue(E.TEMPLATE_PROBLEM, f"template has no [outer] op for {name}"))
+        return
+    for o in ops:
+        if o != keep:
+            adapter.delete_op(name, o)
+    adapter.make_outer_ops(name, keep, [(outer_op_name(i), by_instance[i].body_id,
+                                         outline_face(parts[by_instance[i].part_key])) for i in sheet.last])
+    for i in sheet.last:
+        part = parts[by_instance[i].part_key]
+        n = _outline_tabs(job, part, tool.diameter_in) if part.spec.tabs else 0
+        if n:
+            _tab_op(adapter, job, sheet, outer_op_name(i), [(by_instance[i].body_id, outline_face(part), None)], n,
+                    tool.diameter_in, setup=name, record=True)
+        elif part.spec.tabs:
+            sheet.warnings.append(Issue(E.OP_WARNING, f"{part.spec.name} is too small for tabs: it's cut free"))
+    sheet.outlines_name = name
 
 
 def _build_face(adapter: Adapter, job: Job, sheet: _Sheet, parts: Dict[str, _Part]) -> None:
@@ -1807,14 +1866,15 @@ def _post_sheet(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> Non
     text = posted.read_bytes().decode("ascii", errors="surrogateescape")
     if job.pauses.enabled:
         try:
-            text = insert(text, sheet.outer_order, pause_spec(job), after_last_part=job.pauses.after_last_part)
+            text = insert(text, [i for i in sheet.outer_order if i not in sheet.last], pause_spec(job),
+                          after_last_part=job.pauses.after_last_part)
         except PauseError as e:
             sheet.errors.append(Issue(E.PAUSES_WRONG, f"couldn't insert the pauses: {e}"))
             return
     data = text.encode("ascii", errors="surrogateescape")
     counts = sheet.counts()
     check = check_sheet_program(data, job, sheet.thickness_in, sheet.tool_key, sheet.outer_order, counts,
-                                sheet.by_hand)
+                                sheet.by_hand, sheet.last)
     if check.passed:
         # The tool center must never be inside a part: catches a cutout or outline cut on the wrong side. Scribing
         # is meant to be inside its parts: it must be on their bend lines instead.
@@ -2088,6 +2148,57 @@ def _post_fits(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> None
                 return
 
 
+def _post_outlines(adapter: Adapter, job: Job, sheet: _Sheet, out_dir: Path) -> None:
+    """Post and check the OUTLINES program (core 0.26.0): the fit laps' check (exactly the outlines left for last,
+    each to the stock bottom, no stops, the sheet's guard) and the tool center never inside a part. One that fails
+    stops the sheet."""
+    tool = job.tooling.tools[sheet.tool_key]
+    name = sheet.outlines_name
+    by_instance = dict(sheet.instances)
+    counts = dict(Counter(by_instance[i].part_key for i in sheet.last))
+    raw_dir = out_dir / "raw" / name
+    if raw_dir.exists():
+        shutil.rmtree(raw_dir)
+    raw_dir.mkdir(parents=True)
+    try:
+        posted = adapter.post(name, name, raw_dir, job.post.path, job.post.properties)
+    except AdapterError as e:
+        sheet.errors.append(Issue(E.POST_FAILED, f"posting {name} failed: {e}"))
+        return
+    data = posted.read_bytes()
+    text = data.decode("ascii", errors="surrogateescape")
+    check = check_fit_program(data, job, sheet.thickness_in, sheet.tool_key, sheet.last, counts, sheet.by_hand,
+                              what="outlines program")
+    problems = check.problems()
+    if check.passed:
+        try:
+            hits = adapter.cuts_into_parts(name, cutting_points(text, sheet.thickness_in))
+        except AdapterError as e:
+            hits = []
+            problems.append(f"couldn't check the toolpaths against the parts: {e}")
+        if hits:
+            where = "; ".join(f"line {n} (X{x:.4f} Y{y:.4f})" for n, x, y in hits[:5])
+            problems.append(f"the tool cuts into a part: {where}")
+    ok = check.passed and not problems
+    tap, rejected = (f"{name}.tap", None) if ok else (None, f"{name}.REJECTED.tap")
+    write_atomic(out_dir / (tap or rejected), data)
+    try:
+        machining = adapter.machining_time(name)
+    except AdapterError:
+        machining = None
+    g = check.guard
+    sheet.outlines_result = ProgramResult(
+        kind="outlines", name=name, runs="after", tool_guid=tool.guid, cutter_label=tool.cutter_label,
+        tool_number=tool.number, tap=tap, tap_rejected=rejected, tap_bytes=len(data),
+        tap_sha256=g.sha256 if tap else None,
+        guard=GuardSummary(g.passed, g.sha256, g.floor_in, g.min_z_in, g.units, g.offenders, g.clamp_violations,
+                           g.problems),
+        machining_time_s=machining, parts=tuple(SheetPart(k, n) for k, n in sorted(counts.items())),
+        feature="outlines")
+    if not ok:
+        sheet.errors += [Issue(E.TAP_REJECTED, f"{name}: {msg}") for msg in problems]
+
+
 # ------------------------------------------------------------------ the job
 
 def process_job(job: Job, adapter: Adapter, out_dir: Path, *, attempt: int = 1, keep_open: bool = False,
@@ -2206,7 +2317,8 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             states = adapter.generate([s.name for s in built] + [s.face_name for s in built if s.face_name]
                                       + [s.scribe_name for s in built if s.scribe_counts]
                                       + [s.small_name for s in built if s.small_name]
-                                      + [lap for s in built for f in s.fits for lap in f.laps])
+                                      + [lap for s in built for f in s.fits for lap in f.laps]
+                                      + [s.outlines_name for s in built if s.outlines_name])
         except AdapterError as e:
             for s in built:
                 s.errors.append(Issue(E.OP_ERROR, f"toolpath generation failed: {e}"))
@@ -2237,7 +2349,8 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
                 _drop_scribe(sheet, parts, "; ".join(f"{st.name}: {st.error or 'no toolpath'}" for st in bad)
                              or "Fusion reported no toolpaths for it")
         for setup in [sheet.name] + ([sheet.face_name] if sheet.face_name else []) + \
-                ([sheet.small_name] if sheet.small_name else []) + [lap for f in sheet.fits for lap in f.laps]:
+                ([sheet.small_name] if sheet.small_name else []) + [lap for f in sheet.fits for lap in f.laps] + \
+                ([sheet.outlines_name] if sheet.outlines_name else []):
             if setup not in states and not sheet.errors:
                 sheet.errors.append(Issue(E.OP_ERROR, f"Fusion reported no toolpaths for {setup}"))
             for st in states.get(setup, []):
@@ -2255,6 +2368,8 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             _post_small(adapter, job, sheet, parts, out_dir)      # the sheet isn't offered without it
         if not sheet.errors and sheet.fits:
             _post_fits(adapter, job, sheet, out_dir)              # before it too, for the same reason
+        if not sheet.errors and sheet.outlines_name:
+            _post_outlines(adapter, job, sheet, out_dir)          # and its OUTLINES program
         if not sheet.errors:
             _post_sheet(adapter, job, sheet, out_dir)
 
@@ -2305,9 +2420,11 @@ def _run(job: Job, adapter: Adapter, out_dir: Path, log: Callable[[str], None], 
             programs=((sheet.face_result,) if sheet.face_result else ())
             + ((sheet.scribe_result,) if sheet.scribe_result else ())
             + ((sheet.small_result,) if sheet.small_result else ())
-            + tuple(r for f in sheet.fits for r in f.results),
+            + tuple(r for f in sheet.fits for r in f.results)
+            + ((sheet.outlines_result,) if sheet.outlines_result else ()),
+            outlines_last=sheet.last,
             scribed=tuple(SheetPart(k, n) for k, n in sorted(sheet.scribed.items())) if sheet.result else (),
-            **({} if sheet.by_hand else _sheet_use(job, sheet, parts, _tap_text(out_dir, base.tap)))))
+            **({} if sheet.by_hand else _sheet_use(job, sheet, parts, _cut_text(out_dir, sheet, base.tap)))))
 
     f3d_name: Optional[str] = None
     f3d_bytes: Optional[int] = None

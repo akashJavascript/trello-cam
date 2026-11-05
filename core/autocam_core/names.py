@@ -84,6 +84,18 @@ def fit_program_name(sheet_program: str, series: int, lap: int) -> str:
     return name
 
 
+OUTLINES_SUFFIX = "_OUTLINES"
+
+
+def outlines_program_name(sheet_program: str) -> str:
+    """The sheet's OUTLINES program (core 0.26.0), e.g. 6061_0p25_r068_S1_OUTLINES: the outlines of the parts whose
+    hole is fitted, left out of the sheet's program and cut once the hole fits (after the fit laps)."""
+    name = f"{sheet_program}{OUTLINES_SUFFIX}"
+    if not is_safe_name(name):
+        raise ValueError(f"program name {name!r} has characters the post would strip")
+    return name
+
+
 def filter_comment(text: str) -> str:
     """What the post keeps of a comment (without the brackets)."""
     return "".join(c for c in text if c in COMMENT_CHARS)[:COMMENT_MAX]
