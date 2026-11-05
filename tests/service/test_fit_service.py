@@ -45,14 +45,14 @@ def test_a_fit_card_gets_its_laps_steps_and_checklist(tmp_path):
                                                                         for k in range(1, 5)] + \
         ["6061_0p125_r001_S1_OUTLINES.tap"]
     desc = h.tracker.cards[s1.id].desc
-    assert "FIT 1: plate's 0.5 holes (2 copies)" in desc
+    assert "2. Fit plate's 0.5 holes (2 copies)" in desc
     # outlines last: the plate stays in the sheet while its holes are lapped, then the LAST program cuts it out
-    assert "The program cuts it 0.003 in tight and leaves plate in the sheet." in desc
-    assert "6061_0p125_r001_S1_FIT1_1.tap (+0.002), then 6061_0p125_r001_S1_FIT1_2.tap (+0.001)" in desc
-    assert "LAST: once it fits, run 6061_0p125_r001_S1_OUTLINES.tap (about 1 min), same cutter and zero. It cuts " \
-           "out plate." in desc
+    assert "Fit plate's 0.5 holes (2 copies): cut 0.003 in tight on purpose. Try it." in desc
+    assert "Leave plate in" not in desc                                  # it's still part of the sheet
+    assert "Run 6061_0p125_r001_S1_FIT1_1.tap to _FIT1_4.tap, one at a time, until it fits." in desc
+    assert "3. 6061_0p125_r001_S1_OUTLINES.tap · about 1 min · once it fits: cuts out plate" in desc
     assert "1. spacer\n" in desc and "2. plate (1 of 2) - fit - cut out last" in desc
-    assert "It stops after each part but the last" not in desc            # the sheet's program cuts one outline
+    assert "stops after each part" not in desc                           # the sheet's program cuts one outline
     rows = h.tracker.checklists[(s1.id, "Fit: plate 0.5 hole")]
     assert [r[0] for r in rows] == ["Fits after the sheet's program (+0.003)", "Fits after FIT1_1 (+0.002)",
                                     "Fits after FIT1_2 (+0.001)", "Fits after FIT1_3 (+0)", "Fits after FIT1_4 (-0.001)",
@@ -65,7 +65,7 @@ def test_with_outlines_last_off_the_part_is_cut_out_first_and_lapped_on_its_tabs
     s1 = sheet(h)
     assert "6061_0p125_r001_S1_OUTLINES.tap" not in programs(h, s1.id)
     desc = h.tracker.cards[s1.id].desc
-    assert "leaves plate in, held by tabs: don't take it out at its stop" in desc and "LAST:" not in desc
+    assert "Leave plate in at its stop." in desc and "OUTLINES" not in desc
     assert "1. plate (1 of 2) - fit\n" in desc and "3. spacer\n" in desc
 
 

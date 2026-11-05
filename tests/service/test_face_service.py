@@ -35,10 +35,9 @@ def test_a_faced_sheet_card_has_both_programs_and_says_to_face_first(tmp_path):
     card = h.tracker.cards[s1.id]
     assert "3 parts, 2 faced" in card.name and "19 min" in card.name          # 15 min cut + 4 min face
     desc = card.desc
-    assert "Cutters: 6 mm 3-flute ALU (T2) to face, then 4 mm O-flute ALU (T1)." in desc
-    assert (f"1. Face first: load the 6 mm 3-flute ALU (T2), measure it on the fixed tool setter, and run {FACE} "
-            "(about 4 min). It skims 0.005 in off the tops of the parts marked faced, nothing else.") in desc
-    assert "2. Then load the 4 mm O-flute ALU (T1), measure it, and run 6061_0p125_r001_S1.tap (about 15 min)." in desc
+    assert "Cutter: 6 mm 3-flute ALU (T2) first" in desc
+    assert f"1. {FACE} · 6 mm 3-flute ALU (T2) · about 4 min · skims the faced tops" in desc
+    assert "2. 6061_0p125_r001_S1.tap · 4 mm O-flute ALU (T1) · about 15 min" in desc
     assert "1. plate (1 of 2) - faced" in desc and "3. spacer" in desc and "3. spacer -" not in desc
 
 
@@ -51,7 +50,7 @@ def test_options_keep_the_face_program(tmp_path):
     h.runner.tick()
     assert set(programs(h, s1.id)) == {"6061_0p125_r001_S1_NOSTOP.tap", FACE}
     desc = h.tracker.cards[s1.id].desc
-    assert f"run {FACE}" in desc and "run 6061_0p125_r001_S1_NOSTOP.tap" in desc
+    assert f"1. {FACE} ·" in desc and "2. 6061_0p125_r001_S1_NOSTOP.tap ·" in desc
 
 
 def test_a_face_program_that_fails_its_check_offers_nothing(tmp_path):

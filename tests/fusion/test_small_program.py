@@ -45,8 +45,7 @@ def test_small_holes_get_their_own_eighth_program_and_the_sheet_stays_on_the_4mm
     (vs,) = view.sheets
     assert vs.cuttable and all(p.ok for p in vs.programs)
     desc = sheet_description(job, view, vs, resume_key="F1", part_cards={"p01": ("Bracket", ""), "p02": ("Spacer", "")})
-    assert f"1. First cut what only the {small.cutter_label} can: load it (T{small.tool_number}), measure it, and run {name}.tap" in desc
-    assert "It cuts only the 2 holes in bracket; leave the sheet where it is." in desc and "It cuts everything else, outlines last." in desc
+    assert f"1. {name}.tap · {small.cutter_label} (T{small.tool_number})" in desc and "· 2 holes in bracket" in desc
 
 
 def test_a_tight_cutout_goes_in_the_small_program_with_its_tabs(tmp_path):

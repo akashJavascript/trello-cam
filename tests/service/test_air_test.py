@@ -49,14 +49,14 @@ def test_options_start_unticked(tmp_path):
 def test_cut_without_stopping_swaps_the_program_and_back(tmp_path):
     h, s1 = two_part_sheet(tmp_path)
     stopping = programs(h, s1.id)["6061_0p125_r001_S1.tap"]
-    assert stopping.count(b"\r\nG4 [TAKE PART") == 1 and "It stops after each part" in h.tracker.cards[s1.id].desc
+    assert stopping.count(b"\r\nG4 [TAKE PART") == 1 and "stops after each part" in h.tracker.cards[s1.id].desc
 
     tick(h, s1.id, NO_STOP)
     h.runner.tick()
     [(name, plain)] = programs(h, s1.id).items()
     assert name == "6061_0p125_r001_S1_NOSTOP.tap" and b"G4 [TAKE PART" not in plain
     desc = h.tracker.cards[s1.id].desc
-    assert "Program: 6061_0p125_r001_S1_NOSTOP.tap" in desc and "without stopping" in desc and "stops after" not in desc
+    assert "6061_0p125_r001_S1_NOSTOP.tap ·" in desc and "no stops" in desc and "stops after" not in desc
     assert h.tracker.comments_on(s1.id)[-1] == "Now cuts the whole sheet without stopping: 6061_0p125_r001_S1_NOSTOP.tap."
     # exactly the posted program: put the stops back and it's the original byte for byte
     order = ["p01-1", "p01-2"]
@@ -67,7 +67,7 @@ def test_cut_without_stopping_swaps_the_program_and_back(tmp_path):
     tick(h, s1.id, NO_STOP, done=False)
     h.runner.tick()
     assert programs(h, s1.id) == {"6061_0p125_r001_S1.tap": stopping}
-    assert "It stops after each part" in h.tracker.cards[s1.id].desc
+    assert "stops after each part" in h.tracker.cards[s1.id].desc
     assert h.tracker.comments_on(s1.id)[-1] == "Back to stopping after each part: 6061_0p125_r001_S1.tap."
 
 
@@ -115,7 +115,7 @@ def test_a_rebuilt_sheet_gets_its_options_again(tmp_path):
     files = programs(h, s1.id)
     assert sorted(files) == ["6061_0p125_r002_S1_NOSTOP.tap", "6061_0p125_r002_S1_NOSTOP_AIRTEST.tap"]
     assert files["6061_0p125_r002_S1_NOSTOP.tap"].count(b"[outer") == 2
-    assert "without stopping" in h.tracker.cards[s1.id].desc
+    assert "no stops" in h.tracker.cards[s1.id].desc
     assert [r[1] for r in h.tracker.checklists[(s1.id, "Options")]] == [True, True]   # the boxes keep their state
 
 

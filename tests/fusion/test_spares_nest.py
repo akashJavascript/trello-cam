@@ -68,7 +68,7 @@ def test_the_sheet_card_marks_the_spares(tmp_path):
     view = rig.service_view(job, result)
     (vs,) = view.sheets
     desc = sheet_description(job, view, vs, resume_key="ENTER", part_cards={"p01": ("Plate", ""), "p02": ("Tab", "")})
-    assert "Parts marked spare go in the spares box, not on the robot." in desc
+    assert "Parts marked spare go in the spares box." in desc
     assert "Tab (1 of 2) - spare" in desc and "Plate (1 of 2)\n" in desc + "\n" and "Plate (1 of 2) - spare" not in desc
 
 

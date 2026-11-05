@@ -130,9 +130,10 @@ def test_full_run(tmp_path):
                            "PC smoked 1/8in - 4 mm WCP POLY - 1 part - 15 min - r001 S1"}
     alu = sheets["6061 1/8in - 4 mm O-flute ALU - 2 parts - 15 min - r001 S1"]
     assert h.files_on(alu.id) == ["6061_0p125_r001_S1.tap", "6061_0p125_r001_S1.png"]
-    assert alu.desc.startswith("LOAD\nStock: 6061 1/8in (0.125), 24 x 48\nCutter: 4 mm O-flute ALU (T1).")
+    assert alu.desc.startswith("LOAD\nStock: 6061 1/8in (0.125), 24 x 48\nCutter: 4 mm O-flute ALU (T1) (check the "
+                               "cutter itself: tool numbers are shared). Clamps:")
     assert "Clamps: left and right edges only. Mist: on." in alu.desc
-    assert "It stops after each part but the last (1 stops)" in alu.desc and "Lowest Z 0.0000in" in alu.desc
+    assert "stops after each part: take it out, then press ENTER" in alu.desc and "Lowest Z 0.0000in" in alu.desc
     assert "CUT ORDER\n1. hood_gusset (1 of 2)\n2. hood_gusset (2 of 2)" in alu.desc
     assert "`" not in alu.desc and "**" not in alu.desc
     assert h.tracker.checklist(alu.id, "Review").total == 2

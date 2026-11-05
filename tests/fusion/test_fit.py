@@ -112,7 +112,7 @@ def test_a_hole_over_the_bore_range_is_fitted_as_a_cutout_with_its_slug_tabbed_t
         assert not lap["tab_points"] and not lap["tabs"]                  # the slug's out by then: a full lap
     from autocam_service.sheet_cards import fit_lines, fit_series
     [series] = fit_series(job, sheet)
-    assert "break the slug out by hand" in " ".join(fit_lines(series, sheet))
+    assert "Break the slug out by hand" in " ".join(fit_lines(series, sheet))
     assert rig.service_view(job, result).sheets[0].cuttable
 
 

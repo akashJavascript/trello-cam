@@ -105,8 +105,8 @@ def test_the_chamfer_mill_scribes_in_a_program_of_its_own(tmp_path):
     (vs,) = view.sheets
     assert vs.cuttable and vs.scribe is not None and vs.scribe.ok
     desc = sheet_description(job, view, vs, resume_key="F1", part_cards={"p01": ("Bracket", "")})
-    assert f"First scribe the bend lines: load the 6 mm 45 deg chamfer mill (T16), measure it, and run {name}.tap" in desc
-    assert "2. Then load the" in desc and "Bracket (1 of 2) - bent - scribed" in desc
+    assert f"1. {name}.tap · 6 mm 45 deg chamfer mill (T16)" in desc and "scribes the bend lines" in desc
+    assert "\n2. " in desc and "Bracket (1 of 2) - bent - scribed" in desc
 
 
 def test_a_faced_part_is_scribed_below_its_faced_top(tmp_path):

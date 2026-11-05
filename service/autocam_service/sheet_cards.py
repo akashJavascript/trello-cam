@@ -31,6 +31,10 @@ def _minutes(seconds: Optional[float]) -> Optional[str]:
     return f"{max(1, round(seconds / 60))} min" if seconds else None
 
 
+def _about(seconds: Optional[float]) -> str:
+    return f" · about {_minutes(seconds)}" if seconds else ""
+
+
 def _clamp_edges(job: Job) -> str:
     return clamp_edges(job.fixture.clamp_zones_in, job.sheet.width_in)
 
@@ -147,92 +151,63 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
     if not vs.cuttable:
         problems = list(vs.problems) + [p for v in vs.programs for p in v.problems]
         lines += ["NOT CUTTABLE. This sheet failed the checks:"] + [f"- {p}" for p in problems] + [""]
-    cutter = f"Cutter: {s.cutter_label} (T{tool.number})"
-    before = [f"{p.cutter_label} (T{p.tool_number}) to "
-              f"{ {'face': 'face', 'scribe': 'scribe', 'small': 'cut the small features'}[p.kind] }"
-              for p in (face, scribe, small) if p]
-    if before:
-        cutter = f"Cutters: {', then '.join(before)}, then {s.cutter_label} (T{tool.number})"
+    first = next((p for p in (face, scribe, small) if p), None)
+    cutter = (f"Cutter: {first.cutter_label} (T{first.tool_number}) first" if first else
+              f"Cutter: {s.cutter_label} (T{tool.number})") + " (check the cutter itself: tool numbers are shared)"
 
     if s.by_hand:
-        lines += ["LOAD"] + _by_hand_load(job, vs, part_cards) + [
-            f"{cutter}. Check the cutter itself: tool numbers are shared.",
-            f"Mist: {'on' if m.use_mist else 'off'}."]
+        lines += ["LOAD"] + _by_hand_load(job, vs, part_cards) + [f"{cutter}. Mist: {'on' if m.use_mist else 'off'}."]
     else:
         lines += ["LOAD",
                   stock or f"Stock: {material_label(m)} {thickness_label(s.thickness_in)} ({s.thickness_in:g}), "
                            f"{job.sheet.width_in:g} x {job.sheet.length_in:g}",
-                  f"{cutter}. Check the cutter itself: tool numbers are shared.",
-                  f"Clamps: {_clamp_edges(job)}. Mist: {'on' if m.use_mist else 'off'}."]
+                  f"{cutter}. Clamps: {_clamp_edges(job)}. Mist: {'on' if m.use_mist else 'off'}."]
     for forced in s.tool_forced_by:
         name = part_cards.get(forced.part_key, (forced.part_key, ""))[0]
         lines.append(f"This sheet uses the {s.cutter_label} because of {name}: {forced.reason}.")
 
     if vs.cuttable:
+        # one line per program, in the order they're run (2026-11-05, the user: shorter; the machine screen walks
+        # through the same steps)
         n = vs.pause_count
         key = resume_key or "the continue key"
-        run = f"Program: {program or s.tap}" + (f" (about {_minutes(s.machining_time_s)})" if s.machining_time_s else "")
-        lines += ["", "RUN"]
         steps = []
-        each = " on each copy, before cutting it" if s.by_hand and s.repeat > 1 else ""
-        if face:
-            about = f" (about {_minutes(face.machining_time_s)})" if face.machining_time_s else ""
-            steps.append(f"Face first: load the {face.cutter_label} (T{face.tool_number}), measure it on the fixed "
-                         f"tool setter, and run {face.tap}{about}{each}. It skims {face.depth_in:g} in off the tops of "
-                         "the parts marked faced, nothing else.")
-        if scribe:
-            about = f" (about {_minutes(scribe.machining_time_s)})" if scribe.machining_time_s else ""
-            steps.append(f"{'Then' if face else 'First'} scribe the bend lines: load the {scribe.cutter_label} "
-                         f"(T{scribe.tool_number}), measure it, and run {scribe.tap}{about}{each}. It draws a fine line "
-                         f"{scribe.depth_in:g} in deep down the middle of each bend of the parts marked scribed, with a U or D "
-                         "beside it.")
-        if small:
-            about = f" (about {_minutes(small.machining_time_s)})" if small.machining_time_s else ""
-            steps.append(f"{'Then' if steps else 'First'} cut what only the {small.cutter_label} can: load it "
-                         f"(T{small.tool_number}), measure it, and run {small.tap}{about}{each}. It cuts only the "
-                         f"{small.feature or 'small holes and cutouts'}; leave the sheet where it is.")
-        if steps:
-            steps.append(f"Then load the {s.cutter_label} (T{tool.number}), measure it, and run {program or s.tap}"
-                         + (f" (about {_minutes(s.machining_time_s)})." if s.machining_time_s else ".")
-                         + (" It cuts everything else, outlines last." if small else ""))
-            lines += [f"{i}. {text}" for i, text in enumerate(steps, 1)]
-        else:
-            lines.append(run)
+        doing = {"face": "skims the faced tops", "scribe": "scribes the bend lines", "small": "the small features"}
+        for p in (face, scribe, small):
+            if p:
+                what = (p.feature or doing["small"]) if p.kind == "small" else doing[p.kind]
+                steps.append(f"{p.tap} · {p.cutter_label} (T{p.tool_number})" + _about(p.machining_time_s)
+                             + f" · {what}")
+        main = f"{program or s.tap}" + (f" · {s.cutter_label} (T{tool.number})" if steps else "") + \
+            _about(s.machining_time_s)
         if s.by_hand and s.repeat > 1:
-            name = part_cards.get(s.parts[0].part_key, (s.parts[0].part_key, ""))[0] if s.parts else "the part"
-            lines.append(f"It cuts one {name}: run it {s.repeat} times, zeroing at a fresh spot each time.")
+            main += f" · run it {s.repeat} times, zeroed at a fresh spot each time"
         if n and stops:
-            lines.append(f"It stops after each part but the last ({n} stops), spindle off. Take the part out, "
-                         f"hands clear, then press {key}. Never press Esc at a stop: it ends the program.")
+            main += f" · stops after each part: take it out, then press {key} (never Esc: it ends the program)"
         elif n:
-            lines.append("It cuts the whole sheet without stopping: cut parts stay loose in the sheet until it's "
-                         "done. Keep hands off until the spindle stops at the end.")
-
-    if vs.cuttable:
+            main += " · no stops: hands off until the spindle stops"
+        steps.append(main)
         for f in fit_series(job, s):
-            lines += [""] + fit_lines(f, s)
+            steps += fit_lines(f, s)
         late = _outlines(s)
         if late:
             names = ", ".join(dict.fromkeys(part_cards.get(p.part_key, (p.part_key, ""))[0] for p in late.parts))
-            about = f" (about {_minutes(late.machining_time_s)})" if late.machining_time_s else ""
-            once = "it fits" if len({p.part_key for p in late.parts}) == 1 else "they fit"
-            lines += ["", f"LAST: once {once}, run {late.tap}{about}, same cutter and zero. It cuts out {names}."]
+            steps.append(f"{late.tap}" + _about(late.machining_time_s) + f" · once it fits: cuts out {names}")
+        lines += ["", "RUN"] + ([f"{i}. {t}" for i, t in enumerate(steps, 1)] if len(steps) > 1 else steps)
     on_sheet = {p.part_key for p in s.parts}
     faced = {p.part_key for p in face.parts} if face else set()
     scribed = scribed_keys(s)
     fitted = {f["part_key"] for f in fit_series(job, s)}
     tabbed = {p.part_key for p in job.parts if p.tabs} & on_sheet
     if vs.cuttable and tabbed == on_sheet:
-        lines.append("Every part, and the slug in each of its cutouts, is held by small tabs: leave them in at the "
-                     "stops, and break them out once the program is done.")
+        lines.append("Every part (and slug) is held by small tabs: break them out at the end.")
         tabbed = set()                                # nothing to mark
     elif vs.cuttable and tabbed:
-        lines.append("Parts marked tabs, and the slugs in their cutouts, are held by small tabs: leave them in at "
-                     "the stops, and break them out once the program is done.")
+        lines.append("Parts marked tabs (and their slugs) are held by small tabs: break them out at the end.")
     bent_keys = {p.part_key for p in job.parts if p.bends}
     spare_keys = {p.part_key for p in job.parts if p.spare} & on_sheet
     if spare_keys:
-        lines.append("Parts marked spare go in the spares box, not on the robot.")
+        lines.append("Parts marked spare go in the spares box.")
     lines += ["", "CUT ORDER"]
     counts = {}
     totals = {p.part_key: p.count for p in s.parts}
@@ -354,26 +329,18 @@ def bend_text(bends) -> str:
 
 
 def fit_lines(f: dict, s) -> List[str]:
-    """What the sheet card says about one fit series."""
+    """What the sheet card says about one fit series: one line (2026-11-05: shorter)."""
     hole = f["fit"].kind == "hole"
     copies = f" ({f['copies']} copies)" if f["copies"] > 1 else ""
     what = f"{f['name']}'s {f['feature']}" + ("s" if hole and f["copies"] > 1 else "") + copies
-    tight, fits = ("tight", "too tight") if hole else ("big", "too big")
-    laps = ", then ".join(f"{p.tap} ({p.stock_in:+.4g})" for p in f["laps"])
-    slug = (" Its slug is held by tabs: after the program, break the slug out by hand (the first lap also takes the "
-            "tab stubs off the wall), then try the fit." if f["laps"][0].cutout else " After the program, try the fit.")
-    if hole and any(i.rsplit("-", 1)[0] == f["part_key"] for i in s.outlines_last):
-        # outlines last (core 0.26.0): the part stays solid in the sheet until the LAST program cuts it out
-        return [f"FIT {f['series']}: {what}",
-                f"The program cuts it {f['fit'].stocks_in[0]:.4g} in tight and leaves {f['name']} in the sheet.{slug} "
-                f"Too tight? Run the next lap (same cutter and zero) and try again: {laps}.",
-                f"Tick the one that fit under \"{f['checklist']}\"."]
-    return [f"FIT {f['series']}: {what}",
-            f"The program cuts it {f['fit'].stocks_in[0]:.4g} in {tight} (radial) and leaves {f['name']} in, held by "
-            f"tabs: don't take it out at its stop.{slug} Still {fits}? Run the next lap, with the same cutter and "
-            f"zero, and try again: {laps}.",
-            f"Stop at the first one that fits and tick it under \"{f['checklist']}\": the next sheet with it starts "
-            "there."]
+    tight = "tight" if hole else "big"
+    taps = [p.tap for p in f["laps"]]
+    laps = taps[0] if len(taps) == 1 else f"{taps[0]} to _{'_'.join(taps[-1].rsplit('_', 2)[-2:])}"
+    late = hole and any(i.rsplit("-", 1)[0] == f["part_key"] for i in s.outlines_last)
+    stay = "" if late else f" Leave {f['name']} in at its stop."
+    first = "Break the slug out by hand, then try it." if f["laps"][0].cutout else "Try it."
+    return [f"Fit {what}: cut {f['fit'].stocks_in[0]:.4g} in {tight} on purpose.{stay} {first} Still too {tight}? "
+            f"Run {laps}, one at a time, until it fits. Tick the one that did under \"{f['checklist']}\"."]
 
 
 def fit_recorded_comment(name: str, feature: str, stock: float, next_start: float) -> str:

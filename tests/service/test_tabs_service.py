@@ -25,7 +25,7 @@ def test_with_tabs_off_by_default_part_cards_get_an_unticked_box_and_it_reaches_
     run_fake_worker(h.queue)
     h.runner.tick()
     desc = sheet(h).desc
-    assert "Parts marked tabs, and the slugs in their cutouts, are held by small tabs" in desc
+    assert "Parts marked tabs (and their slugs) are held by small tabs: break them out at the end." in desc
     assert "3. gusset - tabs" in desc and "1. plate (1 of 2)\n" in desc
 
 
@@ -37,7 +37,7 @@ def test_tabs_are_on_by_default(tmp_path):
     run_fake_worker(h.queue)
     h.runner.tick()
     desc = sheet(h).desc
-    assert "Every part, and the slug in each of its cutouts, is held by small tabs" in desc
+    assert "Every part (and slug) is held by small tabs: break them out at the end." in desc
     assert "- tabs" not in desc                                       # said once
 
 
@@ -129,7 +129,7 @@ def test_a_part_placed_by_hand_through_the_real_pipeline(tmp_path, monkeypatch):
     assert "Stock: any piece of 6061 1/8in, anywhere on the bed (bracket is placed by hand, not nested)." in s1.desc
     assert "Zero X and Y at the front-left corner of bracket's box" in s1.desc
     assert "The cutter reaches X -0." in s1.desc and "so the piece must cover that" in s1.desc
-    assert "It cuts one bracket: run it 3 times, zeroing at a fresh spot each time." in s1.desc
+    assert "run it 3 times, zeroed at a fresh spot each time" in s1.desc
     assert "Clamps: left and right" not in s1.desc and "Sheet use" not in s1.desc
     assert h.list_of("c1") == "nested" and h.store.sheet_cards()[s1.id]["by_hand"] is True
     h.runner.tick()                                       # the boxes appear: no Offcut box, no Stock box
