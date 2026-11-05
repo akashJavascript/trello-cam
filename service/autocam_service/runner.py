@@ -53,7 +53,7 @@ from .cards import (MATERIAL_RE, README_CARD, STEP_SUFFIXES, TITLE_QTY_RE, CardP
 from .offcuts import _number as _scrap_number
 from .config import Config
 from .handprograms import ProgramCut, footprint, is_program, parse_cutter, program_cuts
-from .program_checks import check_comment, check_hand, hand_spec, signature as check_signature
+from .program_checks import CheckedPrograms, check_comment, check_hand, hand_spec, signature as check_signature
 from .own_programs import (OWN_PROGRAM_RE, PLACE_MYSELF_RE, own_qty, pack_copies, parse_thickness, placed_name,
                            program_attachments, repeat_program, shift_program)
 from .fits import FitStore, key as fit_key, parse_fit, stocks as fit_stocks
@@ -966,6 +966,8 @@ class Runner:
         again = ("Then move this card back to Ready for CAM to check it again." if from_ready else
                  "It's checked again by itself.")
         passed = False
+        results: Dict[str, Dict] = {}                  # what each file's check said: the machine page lists passes
+        on_sheet = not PLACE_MYSELF_RE.search(card.desc or "")
         key, thickness, cutter, problems = self._program_stock(card)
         if not progs:
             problems.insert(0, "No program attached: attach the .tap (or .nc) to check.")
@@ -975,7 +977,6 @@ class Runner:
         else:
             passed = True
             cutter = cutter or cfg.hand_cuts.cutter_in
-            on_sheet = not PLACE_MYSELF_RE.search(card.desc or "")
             length, width = self._size(key)
             fx = sheet_fixture(cfg, key)
             for att in todo:
@@ -987,6 +988,7 @@ class Runner:
                 box, why, note = footprint(data, thickness, cutter)
                 if box is None or note:
                     passed = False
+                    results[att.id] = {"name": att.name, "passed": False}
                     reason = ("; ".join(why) + "." if box is None else
                               f"{note}. AutoCAM checks programs with Z0 on the spoilboard (the fixed tool setter): in "
                               "Fusion put the setup's origin at the stock's bottom, post it again and attach that.")
@@ -997,11 +999,21 @@ class Runner:
                         if on_sheet else hand_spec(cfg, key, thickness, cutter))
                 check = check_hand(data, spec)
                 passed = passed and check.passed
+                results[att.id] = {"name": att.name, "passed": check.passed}
                 self.t.comment(card.id, check_comment(
                     att.name, check, stock=self._stock_label(key, thickness), material=cfg.materials[key].name,
                     mist=cfg.materials[key].use_mist, cutter_in=cutter, on_sheet=on_sheet,
                     clamps=text.clamp_edges(fx.clamp_zones_in, width), again=again))
                 log.info("check card %s: %s %s", card.id, att.name, "passes" if check.passed else "fails")
+        if problems:
+            results = {a.id: {"name": a.name, "passed": False} for a in todo}
+        try:
+            CheckedPrograms(self.s.store.offcuts_file.with_name("checked_programs.json")).record(
+                card.id, results, [a.id for a in progs], material=key or "", thickness_in=thickness or 0.0,
+                stock=self._stock_label(key, thickness) if key and thickness else "", on_sheet=on_sheet,
+                when=_iso(self.s.clock()))
+        except OSError as e:
+            log.warning("check card %s: couldn't record the result: %s", card.id, e)
         seen[card.id] = sorted(done | set(sigs.values()))
         f.parent.mkdir(parents=True, exist_ok=True)
         write_atomic(f, (json.dumps(seen, indent=1, sort_keys=True) + "\n").encode("utf-8"))

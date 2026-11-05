@@ -1010,6 +1010,23 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - Not rectangles (a part's own notches, the triangle by an angled edge): a part's bounding box counts as used.
   (Since 2026-11-04 the rooms also come from the parts' real cuts: see that day.)
 
+## 2026-11-05: the machine screen (the mockup the user approved, v4)
+
+- **What:** the operator's screen on the ShopSabre's own PC (27 in monitor, beside WinCNC): `/machine`, one card at a
+  time from the shop page's own pieces, with very little text (the user: the Trello cards have way too much). The
+  first 3-column desktop mockup was turned down ("doesn't match the other things, a lot of info, not intuitive").
+- **The user's answers:** the ShopSabre's own PC; programs get to WinCNC by downloading them (WinCNC's yellow folder
+  button), so each program has a Download button; no Slack sign-in (its own key, `machine-link`); air test only when
+  ticked; AutoCAM decides keep or scrap, one link changes it, and Undo; Check-label programs and own programs show;
+  the fit's Yes / Not yet replaces ticking the Fit checklist; Sheet review stays on Trello for now.
+- **How:** every button is a box on the sheet card or the card moving (`docs/machine.md`), so nothing new decides
+  anything: the service's passes treat it as if someone did it on Trello. New: `Tracker.set_check` (tick one item),
+  `state/machine.json` (each sheet's step, waiting moves), `state/checked_programs.json` (what the Check label said
+  per file).
+- **Move to Cut waits 3 minutes** (`UNDO_S`): automation never moves a card into Ready to cut (decision 16), so a
+  card already in Cut can't be undone from the screen; until it moves, Undo just forgets it.
+- Not yet: the CAD changed stop, finish notes, a folder helper on the ShopSabre's PC instead of Downloads.
+
 ## 2026-11-04: fit series, outlines last (core 0.26.0; the user: "build stricter fit series")
 
 - **What:** for a hole fit, the sheet's program cuts the fitted hole tight but leaves that part's outline out, so the

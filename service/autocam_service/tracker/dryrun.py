@@ -57,6 +57,10 @@ class DryRunTracker(Tracker):
     def _remove_checklists(self, card_id, name):
         self.intended.append(("remove_checklists", card_id, name))
 
+    def _set_check(self, card_id, checklist, item, done):
+        self.intended.append(("set_check", card_id, checklist, item, done))
+        return True
+
     def _update_card(self, card_id, title, desc):
         self.intended.append(("update_card", card_id, title))
 

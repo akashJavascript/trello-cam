@@ -133,6 +133,11 @@ class Tracker(abc.ABC):
         """Delete every checklist with this name (a rebuilt sheet gets fresh, unticked ones)."""
         self._remove_checklists(card_id, name)
 
+    def set_check(self, card_id: str, checklist: str, item: str, done: bool) -> bool:
+        """Tick (or untick) one item of a checklist on the card, found by both names (the machine page, 2026-11-05).
+        False if the card has no such item."""
+        return self._set_check(card_id, checklist, item, done)
+
     def update_card(self, card_id: str, title: str, desc: str) -> None:
         self._update_card(card_id, title, desc)
 
@@ -203,3 +208,6 @@ class Tracker(abc.ABC):
 
     def _remove_label(self, card_id: str, name: str) -> None:
         raise NotImplementedError(f"{type(self).__name__} can't remove labels")
+
+    def _set_check(self, card_id: str, checklist: str, item: str, done: bool) -> bool:
+        raise NotImplementedError(f"{type(self).__name__} can't tick checklist items")

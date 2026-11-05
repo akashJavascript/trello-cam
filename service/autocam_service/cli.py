@@ -12,6 +12,7 @@
     onshape-check     one logged Onshape call: do the keys and onshape.base_url work, and whose are they
     preview-labels    draw the part labels on a finished job's sheet previews, to look at what the card gets
     shop-qr           a page to print for the saw and the lathe: the shop's shaft list as a QR code (needs segno)
+    machine-link      a page with the machine screen's link, to open on the ShopSabre's PC and bookmark
     shop-sign-out     end the shop page's Slack sign-ins: one person's (by name) or everyone's (--all)
 """
 
@@ -64,6 +65,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     pl.add_argument("--out", type=Path, help="where to write it (one .png only; default: <sheet>.labelled.png beside it)")
     sq = sub.add_parser("shop-qr", help="a page to print: the shop's shaft list as a QR code (pip install segno)")
     sq.add_argument("--out", type=Path, help="default: state/shop-qr.html")
+    ml = sub.add_parser("machine-link", help="a page with the machine screen's link (to bookmark on the ShopSabre's PC)")
+    ml.add_argument("--out", type=Path, help="default: state/machine-link.html")
     so = sub.add_parser("shop-sign-out", help="end the shop page's Slack sign-ins: one name's, or everyone's (--all)")
     so.add_argument("name", nargs="?", default="", help="the name the shop knows them by")
     so.add_argument("--all", action="store_true", help="everyone")
@@ -108,6 +111,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return trello_setup(cfg, env_file, args.board, args.create, args.workspace)
         if args.command == "shop-qr":
             return shop_qr(cfg, env_file, args.out)
+        if args.command == "machine-link":
+            return machine_link(cfg, env_file, args.out)
         if args.command == "shop-sign-out":
             return shop_sign_out(cfg, args.name, args.all)
     except CredentialsError as e:
@@ -165,6 +170,45 @@ def shop_qr(cfg, env_file: Path, out: Optional[Path]) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     write_atomic(out, page.encode("utf-8"))
     print(f"Wrote {out}. Open it on this computer and print it: one for the saw, one for the lathe.")
+    return 0
+
+
+MACHINE_LINK_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>The machine screen</title>
+<style>
+  body { margin: 0; font-family: "Hanken Grotesk", system-ui, sans-serif; color: #1c1b1a; background: #fdf9f6; }
+  main { max-width: 560px; margin: 64px auto; padding: 0 16px; }
+  h1 { color: #692c00; font-size: 22px; }
+  a { display: inline-block; margin: 8px 0 16px; padding: 14px 18px; border-radius: 999px; background: #692c00; color: #fff;
+      font-weight: 700; text-decoration: none; }
+  p { line-height: 1.5; }
+</style></head><body><main>
+<h1>AutoCAM at the machine</h1>
+<p>Open this on the ShopSabre's PC, then bookmark the page it opens (Ctrl+D). The link is the screen's password:
+keep it on that PC.</p>
+<a href="{link}">Open the machine screen</a>
+</main></body></html>
+"""
+
+
+def machine_link(cfg, env_file: Path, out: Optional[Path]) -> int:
+    """A page with the machine screen's link (machine.py): it carries the screen's key, so it goes only into that
+    file, never to the terminal or a log."""
+    if not cfg.panel.machine or not cfg.panel.public_url:
+        print("The machine screen needs [panel] machine = true and [panel] public_url.")
+        return 1
+    creds = load_credentials(env_file)
+    if creds.missing("panel"):
+        print("AUTOCAM_PANEL_KEY isn't in .env (the machine screen's key is worked out from it).")
+        return 1
+    import html as html_mod
+    from autocam_core.hotfolder import write_atomic
+    from .panel.api import machine_key
+    link = f"{cfg.panel.public_url.rstrip('/')}/machine?key={machine_key(creds.get('AUTOCAM_PANEL_KEY'))}"
+    out = out or cfg.paths.state / "machine-link.html"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_atomic(out, MACHINE_LINK_PAGE.replace("{link}", html_mod.escape(link, quote=True)).encode("utf-8"))
+    print(f"Wrote {out}. Open it on the ShopSabre's PC and bookmark the screen it opens.")
     return 0
 
 

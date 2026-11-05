@@ -153,6 +153,14 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
     app = PanelApp(cfg, creds.get("AUTOCAM_PANEL_KEY"), onshape, board, Names(cfg.paths.state / "panel_users.json"),
                    inbox=inbox, hook_secret=secret, shafts=shafts, parts=parts, order_sheet=sheet, assemblies=assemblies,
                    people=people, signin=shop_signin(cfg, creds, people))
+    if p.machine:                             # the operator's screen on the ShopSabre's PC (machine.py)
+        from .machine import MachineView
+        from .offcuts import OffcutStore
+        from .program_checks import CheckedPrograms
+        app.machine = MachineView(tracker, cfg, services.store, OffcutStore(services.store.offcuts_file),
+                                  CheckedPrograms(cfg.paths.state / "checked_programs.json"), app.plates,
+                                  cfg.paths.state / "machine.json")
+        app.machine.keep_running()
     start_server(app, p.port)
     pictures = PictureWatch(onshape, services.store, tracker) if p.pictures else None
     usage = None

@@ -31,6 +31,16 @@ and finish shafts, nothing else):
     GET  /api/shop?device=...                the shafts to make, and the ones done today
     POST /api/shop/start|stop|done|undo      {id, device}
 
+The machine page (machine.py, 2026-11-05): the operator's screen on the ShopSabre's PC, with its own key
+(machine_key(): no sign-in; it can tick a sheet card's boxes, move it to Cut or back to Sheet review, and download
+its programs, nothing else):
+    GET  /machine?key=...                    the page
+    GET  /api/machine                        the sheets to cut, and the ones cut today
+    GET  /api/machine/sheet?id=...           one sheet's steps, and where it's up to
+    POST /api/machine/act                    {id, do: progress|loaded|stops|fit|cantfind|stock|keep|finish|undo|problem}
+    GET  /api/machine/file?id&name&key       a program on the card, as a download
+    GET  /api/machine/picture?id&what&key    the sheet's picture (or its offcut's)
+
 Every /api request carries the key in an X-AutoCAM-Key header (the preview, an <img>, in its query instead).
 """
 
@@ -105,6 +115,11 @@ def shop_key(panel_key: str) -> str:
     """The shop page's key, worked out from the panel's: nothing new to keep in .env, and the shop's link (on a QR
     code at the saw) can't send cards."""
     return hmac.new(panel_key.encode("utf-8"), b"autocam shop page", hashlib.sha256).hexdigest()[:32]
+
+
+def machine_key(panel_key: str) -> str:
+    """The machine page's key, worked out from the panel's like the shop's: bookmarked on the ShopSabre's PC."""
+    return hmac.new(panel_key.encode("utf-8"), b"autocam machine page", hashlib.sha256).hexdigest()[:32]
 
 
 def body_limit(path: str) -> int:
@@ -206,9 +221,11 @@ class PanelApp:
                  today: Callable[[], str] = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                  inbox: Optional[ChangeInbox] = None, hook_secret: str = "", shafts: Optional[ShaftList] = None,
                  parts: Optional[PartList] = None, order_sheet: str = "", assemblies: Any = None,
-                 people: Optional[People] = None, signin: Optional[ShopSignIn] = None):
+                 people: Optional[People] = None, signin: Optional[ShopSignIn] = None, machine: Any = None):
         if not key:
             raise ValueError("the panel needs AUTOCAM_PANEL_KEY")
+        self.machine = machine                # the operator's screen (machine.MachineView; None: off)
+        self._machine_key = machine_key(key).encode("utf-8")
         self.people = people                  # who does what (people.py; None: no names, no Plates tab)
         self.signin = signin                  # Slack sign-in on the shop page (signin.py; None: the key link only)
         self.plates = None if people is None else PlatesView(
@@ -247,6 +264,8 @@ class PanelApp:
             if path in (START, CALLBACK) and method == "GET" and shop_on and self.signin is not None \
                     and self.signin.ready:
                 return self._sign_in(path, query, headers)
+            if path == "/machine" and method == "GET" and self.machine is not None:
+                return self._machine_page(query)
             if path.startswith("/static/") and method == "GET":
                 return self._static(path[len("/static/"):])
             if not path.startswith("/api/"):
@@ -254,6 +273,8 @@ class PanelApp:
             if path.startswith(HOOK_PREFIX):                 # Onshape's webhook: its address is its password
                 return self.hook(method, path, body)
             given = query.get("key", "") if path == "/api/preview" else headers.get("x-autocam-key", "")
+            if (path == "/api/machine" or path.startswith("/api/machine/")) and self.machine is not None:
+                return self._machine(method, path, query, headers, body)
             if path == "/api/shop" or path.startswith("/api/shop/"):
                 return self._shop(method, path, query, given, body, headers)
             if not self._key_ok(given):
@@ -303,6 +324,51 @@ class PanelApp:
 
     def _key_ok(self, given: str) -> bool:
         return bool(given) and hmac.compare_digest(given.encode("utf-8"), self._key)
+
+    def _machine_key_ok(self, given: str) -> bool:
+        return bool(given) and hmac.compare_digest(given.encode("utf-8"), self._machine_key)
+
+    # ---- the machine page (machine.py)
+    def _machine_page(self, query: Dict[str, str]) -> Response:
+        out = {"Content-Security-Policy": CSP, "Referrer-Policy": "no-referrer", "Cache-Control": "no-store",
+               "X-Content-Type-Options": "nosniff"}
+        if self._machine_key_ok(query.get("key", "")):
+            return Response(200, versioned_page("machine.html"), "text/html; charset=utf-8", out)
+        return Response(403, b"This isn't AutoCAM's machine link (the key is wrong). Ask a mentor.",
+                        "text/plain; charset=utf-8", out)
+
+    def _machine(self, method: str, path: str, query: Dict[str, str], headers: Dict[str, str],
+                 body: bytes) -> Response:
+        from ..machine import MachineError
+        downloads = ("/api/machine/file", "/api/machine/picture")
+        given = query.get("key", "") if path in downloads else headers.get("x-autocam-key", "")
+        if not self._machine_key_ok(given):
+            return _json(403, {"error": "This isn't AutoCAM's machine link (the key is wrong). Ask a mentor."})
+        if len(body) > MAX_BODY:
+            return _json(413, {"error": "That's too much text."})
+        try:
+            if path == "/api/machine" and method == "GET":
+                return _json(200, self.machine.view())
+            if path == "/api/machine/sheet" and method == "GET":
+                return _json(200, self.machine.sheet(query.get("id", "")))
+            if path == "/api/machine/act" and method == "POST":
+                data = json.loads(body.decode("utf-8")) if body else {}
+                if not isinstance(data, dict):
+                    raise Refused(400, "Bad request")
+                return _json(200, self.machine.act(data))
+            if path == "/api/machine/file" and method == "GET":
+                name, data = self.machine.file(query.get("id", ""), query.get("name", ""))
+                safe = re.sub(r'[^A-Za-z0-9_. ()-]+', "_", name)
+                return Response(200, data, "application/octet-stream",
+                                {"Content-Disposition": f'attachment; filename="{safe}"', "Cache-Control": "no-store",
+                                 "X-Content-Type-Options": "nosniff"})
+            if path == "/api/machine/picture" and method == "GET":
+                png = self.machine.picture(query.get("id", ""), query.get("what", "sheet"))
+                return Response(200, png, "image/png", {"Cache-Control": "private, max-age=300",
+                                                        "X-Content-Type-Options": "nosniff"})
+        except MachineError as e:
+            return _json(e.status, {"error": str(e)})
+        return _json(404, {"error": "Not found"})
 
     def _shop_key_ok(self, given: str) -> bool:
         return bool(given) and hmac.compare_digest(given.encode("utf-8"), self._shop_key)

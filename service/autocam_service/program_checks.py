@@ -17,10 +17,14 @@ cutter never inside a part). A hand program has no parts to check against, so it
 """
 
 import hashlib
+import json
+import threading
 from dataclasses import dataclass
-from typing import Optional, Sequence, Tuple
+from pathlib import Path
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 from autocam_core.fixture import clamp_clear_z
+from autocam_core.hotfolder import write_atomic
 from autocam_core.pauses import stop_problems
 from autocam_core.tapguard import GuardReport, GuardSpec, check_program
 
@@ -116,3 +120,30 @@ def check_comment(program: str, check: HandCheck, *, stock: str, material: str, 
     lines += ["", "Still simulate it in Fusion: these checks can't see your parts, so they can't tell if it cuts "
                   "into one."]
     return "\n".join(lines)
+
+
+class CheckedPrograms:
+    """state/checked_programs.json: what the last check of each Check card's programs said (2026-11-05), so the
+    machine page lists the ones that passed. {card id: {"files": {attachment id: {"name", "passed"}}, "material",
+    "thickness_in", "stock", "on_sheet", "when"}}."""
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self._lock = threading.Lock()
+
+    def all(self) -> Dict[str, Dict[str, Any]]:
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def record(self, card_id: str, files: Dict[str, Dict[str, Any]], on_card: Sequence[str], **about: Any) -> None:
+        """files: this check's results by attachment id; earlier ones for files still on the card are kept."""
+        with self._lock:
+            data = self.all()
+            had = (data.get(card_id) or {}).get("files") or {}
+            merged = {a: r for a, r in {**had, **files}.items() if a in set(on_card)}
+            data[card_id] = {**(data.get(card_id) or {}), **about, "files": merged}
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            write_atomic(self.path, (json.dumps(data, indent=1, sort_keys=True) + "\n").encode("utf-8"))

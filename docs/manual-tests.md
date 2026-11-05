@@ -554,6 +554,22 @@ A part card with `Fit: 0.88 hole` (or any bored hole size it has), on a sheet wi
 | 4 | Once it fits, `..._OUTLINES.tap` with the same cutter and zero cuts the part out on its tabs | |
 | 5 | Tick the lap that fit: the card comments what it learned | |
 
+### 25. The machine screen (2026-11-05)
+
+On the laptop: `python -m autocam_service machine-link`, then open `state/machine-link.html` on the ShopSabre's PC and
+bookmark the screen.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | The list shows the sheets in Ready to cut (Rush first), placed-by-hand ones and passed Check programs apart | |
+| 2 | Start, Loaded: the card's At the machine boxes are ticked | |
+| 3 | Download: the .tap lands in Downloads without a prompt (else switch the browser's "ask where to save" off); WinCNC's yellow folder opens it | |
+| 4 | The Stop after each part switch off: the `_NOSTOP` program appears within a minute and downloads | |
+| 5 | A fit: Not yet shows the next lap; Yes ticks that run in the card's Fit checklist | |
+| 6 | Move to Cut: the card stays in Ready to cut for 3 minutes (Undo works), then moves to Cut and the part cards follow | |
+| 7 | Something went wrong: the card is in Sheet review with what happened in a comment | |
+| 8 | Close the browser mid-sheet and reopen: it's under In progress and Continue opens the same step | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

@@ -485,6 +485,8 @@ shop_signin = "slack"           # the phone page (/shop): Sign in with Slack (pa
                                 # AUTOCAM_SLACK_CLIENT_ID, _SECRET and _TEAM_ID are in .env; "" = only the key link
 shop_session_days = 60          # a signed-in phone stays signed in this long after it was last used
 shop_old_link_days = 7          # the old key link keeps working this long after the first Slack sign-in
+machine = true                  # the operator's screen on the ShopSabre's PC (/machine?key=..., its own key, no
+                                # sign-in: `autocam machine-link` prints the link; machine.py, docs/machine.md)
 
 [shafts]                        # the shop's shaft list (service/autocam_service/shafts.py, docs/shafts.md; 2026-11-02):
                                 # library shafts in an assembly are sent from the Onshape panel with its plates and made

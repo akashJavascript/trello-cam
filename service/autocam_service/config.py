@@ -271,6 +271,7 @@ class Panel:
                                          # is in .env (panel/signin.py); "" = only the key link
     shop_session_days: int = 60          # a signed-in phone stays signed in this long after it was last used
     shop_old_link_days: int = 7          # the key link keeps working this long after the first Slack sign-in
+    machine: bool = True                 # the operator's screen on the ShopSabre's PC (/machine, machine.py)
 
 
 @dataclass(frozen=True)
@@ -920,7 +921,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                       team_usage_hours=t.number("team_usage_hours", minimum=0, default=24.0),
                       shop_signin=t.string("shop_signin", choices=("slack", ""), default="slack"),
                       shop_session_days=t.integer("shop_session_days", minimum=1, default=60),
-                      shop_old_link_days=t.integer("shop_old_link_days", minimum=0, default=7))
+                      shop_old_link_days=t.integer("shop_old_link_days", minimum=0, default=7),
+                      machine=t.boolean("machine", default=True))
         t.finish()
 
     costs = Costs()

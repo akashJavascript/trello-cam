@@ -103,6 +103,17 @@ class PlatesView:
                 "rush": (title or "").upper().startswith("RUSH"), "cut": cut, "who": cutters.get(sheet_id, ""),
                 "plates": plates}
 
+    def plates_for(self, info: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """A sheet's plates as the list shows them: [{"id", "name", "qty"}] (the machine page, 2026-11-05)."""
+        self._board()
+        counts = info.get("counts") or {}
+        out = []
+        for part_id in info.get("parts") or []:
+            name, qty, spare = self._name(part_id)
+            out.append({"id": part_id, "name": name, "qty": int(counts.get(part_id) or qty or 0),
+                        **({"spare": True} if spare else {})})
+        return out
+
     def view(self) -> Dict[str, Any]:
         """{"sheets": [...]}: Ready to cut in the machine's order, then the ones cut today."""
         order, titles = self._board()

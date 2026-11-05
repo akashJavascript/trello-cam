@@ -92,6 +92,14 @@ class FakeTracker(Tracker):
         self.log.append(("checklist", card_id, name))
         return self._id("cl")
 
+    def _set_check(self, card_id: str, checklist: str, item: str, done: bool) -> bool:
+        for row in self.checklists.get((card_id, checklist), []):
+            if row[0] == item:
+                row[1] = done
+                self.log.append(("check", card_id, checklist, item, done))
+                return True
+        return False
+
     def _remove_checklists(self, card_id: str, name: str) -> None:
         self.checklists.pop((card_id, name), None)
         self.log.append(("remove_checklist", card_id, name))

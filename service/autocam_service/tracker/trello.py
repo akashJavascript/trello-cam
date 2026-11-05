@@ -177,6 +177,19 @@ class TrelloTracker(Tracker):
             if cl.get("name") == name:
                 self.http.call("DELETE", f"/checklists/{cl['id']}")
 
+    def _set_check(self, card_id: str, checklist: str, item: str, done: bool) -> bool:
+        lists = self.http.call("GET", f"/cards/{card_id}/checklists", {"fields": "name", "checkItem_fields": "name,state"})
+        for cl in lists or []:
+            if cl.get("name") != checklist:
+                continue
+            for i in cl.get("checkItems") or []:
+                if i.get("name") == item:
+                    if (i.get("state") == "complete") != done:
+                        self.http.call("PUT", f"/cards/{card_id}/checkItem/{i['id']}",
+                                       {"state": "complete" if done else "incomplete"})
+                    return True
+        return False
+
     def _update_card(self, card_id: str, title: str, desc: str) -> None:
         self.http.call("PUT", f"/cards/{card_id}", {"name": title[:TEXT_LIMIT], "desc": desc[:TEXT_LIMIT]})
 
