@@ -1010,6 +1010,34 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - Not rectangles (a part's own notches, the triangle by an angled edge): a part's bounding box counts as used.
   (Since 2026-11-04 the rooms also come from the parts' real cuts: see that day.)
 
+## 2026-11-05: straight rows after Fusion nests (core 0.27.0; the user: "Compare a straight layout")
+
+- Seen on a real sheet: three p0201 bars (about 15.4 x 2 in) that Arrange stacked at about 12 deg. They took 7.7 in
+  of the sheet's length and nearly its full width, so no room beside them was kept. Straight, they take about 7 in
+  and leave about 5.5 x 7 in beside them.
+- **After the squeeze, the sheet is also planned in straight rows** (`rows.py`). This applies to every sheet that
+  ends in a free stretch with at most `[nest] straight_max` (12) parts in that stretch.
+  - Each part goes long side across.
+  - The deepest parts come first, and each row is filled left to right (first fit).
+  - Robot parts come before spares.
+- **The comparison** (`rows.used_up`): the length the parts take times the band's width, less the rooms beside them
+  big enough to keep. This is the offcut's own rule, measured on the parts' boxes.
+  - The rows are tried in Fusion only when the plan beats Fusion's layout by 0.25 in of length.
+  - They're kept only when they still beat it as placed.
+  - Otherwise their copies are hidden and Fusion's layout stays.
+  - The worker log says which layout was kept and why.
+- **Each row is still placed by Arrange,** in an area only 0.1 in deeper than its deepest part, so it can't tilt
+  them.
+  - The try is a whole new copy of the sheet at a new spot, like the squeeze. Its copies come from one set made
+    before any Arrange: Fusion refuses copies made after one.
+  - Parts beside earlier cuts are arranged again in the same rooms.
+- **Not tried:**
+  - a part longer than the sheet is wide (it can't go across);
+  - a sheet with more than `straight_max` parts in its stretch;
+  - a sheet that only fills room beside earlier cuts.
+- The plan uses the imported part's box, like the squeeze's lower bound. A part drawn at an angle looks bigger than
+  it is, so its rows are rarely tried.
+
 ## 2026-11-05: the machine screen (the mockup the user approved, v4)
 
 - **What:** the operator's screen on the ShopSabre's own PC (27 in monitor, beside WinCNC): `/machine`, one card at a

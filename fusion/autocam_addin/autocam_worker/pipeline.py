@@ -72,6 +72,7 @@ from autocam_core.names import (face_program_name, fit_program_name, instance_id
                                 small_program_name)
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
+from autocam_core.rows import row_boxes, rows_depth, straight_rows, used_up
 from autocam_core.plate import PlateAnalysis, analyze
 from autocam_core.preview import (BADGE_MIN_PX, flatten, inside_polygon, label_spot, pixels_per_unit, preview_size,
                                   to_pixels)
@@ -371,6 +372,9 @@ NEST_ORDERS = ("as listed",)   # biggest first and longest first went in 0.23.0:
 SQUEEZE_TRIES = 6           # halvings of a sheet's length when looking for the shortest strip (4 until 0.23.0)
 SQUEEZE_STEP_IN = 0.25      # stop halving when the next try would gain less than this (0.5 until 0.23.0)
 SQUEEZE_MIN_GAIN_IN = 2.0   # only worth trying if the sheet could get at least this much shorter
+STRAIGHT_SLACK_IN = 0.1     # a straight row's area is this much deeper than its deepest part: no room to tilt them
+STRAIGHT_MIN_GAIN_IN = 0.25 # straight rows are kept when they save at least this much of the sheet's length (counting
+                            # the room beside the parts they leave as length saved)
 PRIORITY_VERY_HIGH = 0.5    # Arrange's very high priority: parts at least half the biggest part's box area
 PRIORITY_HIGH = 0.15        # high: at least this share of it; smaller parts as Fusion has them
 
@@ -554,6 +558,28 @@ def _reserve(adapter: Adapter, parts: Sequence[_Part], up: Dict[str, int],
     return sets
 
 
+def _reserve_rows(adapter: Adapter, job: Job, parts: Sequence[_Part], up: Dict[str, int],
+                  log: Callable[[str], None]) -> Dict[str, List[str]]:
+    """The straight rows' copies (core 0.27.0): one set, a copy of every copy of every part, made with the squeeze's
+    before anything is arranged (see _reserve). Each sheet's rows take theirs from it; the caller hides the ones
+    not kept. Empty when [nest] straight_max is 0."""
+    made: Dict[str, List[str]] = {p.key: [] for p in parts}
+    if job.nest.straight_max <= 0:
+        return made
+    try:
+        for p in parts:
+            for cid in p.copies:
+                copy = f"{cid}~r"
+                adapter.add_copy(p.copies[0], copy)
+                made[p.key].append(copy)
+                up[copy] = up[cid]
+    except AdapterError as e:
+        log(f"couldn't make copies to try straight rows: {e}")
+        _discard(adapter, [c for cs in made.values() for c in cs], log)
+        return {p.key: [] for p in parts}
+    return made
+
+
 def _squeeze_all(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part],
                  sizes: Dict[str, Tuple[float, float]], face: Dict[str, float], up: Dict[str, int], x_start: float,
                  slot: int, pitch: float, thickness: float, sets: Sequence[Dict[str, List[str]]], hints: _Hints,
@@ -653,6 +679,117 @@ def _squeeze(adapter: Adapter, job: Job, best: "_Try", idx: List[int], parts: Se
     return slot
 
 
+def _straighten_all(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part],
+                    sizes: Dict[str, Tuple[float, float]], up: Dict[str, int], x_start: float, slot: int, pitch: float,
+                    thickness: float, pool: Dict[str, List[str]], hints: _Hints, log: Callable[[str], None]) -> int:
+    """After the squeeze: every sheet whose last area is a free stretch, with at most [nest] straight_max parts in
+    it, tried in straight rows (_straighten). One pool is enough: the sheets hold different copies. Returns the next
+    free sheet slot."""
+    if not best.envelopes or best.failed or not any(pool.values()):
+        return slot
+    pool = {key: list(cs) for key, cs in pool.items()}
+    spares = {p.key for p in parts if p.spec.spare}
+    for origin in list(dict.fromkeys(o for o, _ in best.envelopes)):
+        idx = [i for i, (o, _) in enumerate(best.envelopes) if o == origin]
+        if best.areas[idx[-1]] is None:
+            slot = _straighten(adapter, job, best, idx, parts, sizes, spares, up, x_start, slot, pitch, thickness,
+                               pool, hints, log)
+    return slot
+
+
+def _straighten(adapter: Adapter, job: Job, best: "_Try", idx: List[int], parts: Sequence[_Part],
+                sizes: Dict[str, Tuple[float, float]], spares: Set[str], up: Dict[str, int], x_start: float,
+                slot: int, pitch: float, thickness: float, pool: Dict[str, List[str]], hints: _Hints,
+                log: Callable[[str], None]) -> int:
+    """Fusion's Arrange turns parts to any angle, and a few long parts can end up stacked on a slant across the
+    sheet (the user's p0201, 2026-11-05). Lay the sheet's free-stretch parts in straight rows instead (rows.py: long
+    side across, deepest first, robot parts before spares) and keep whichever leaves the better offcut: the shorter
+    stretch used, counting the room beside the parts big enough to keep (rows.used_up). The rows are only tried in
+    Fusion when the plan beats Fusion's layout. Each row is still placed by Arrange, in an area as deep as its
+    deepest part (plus STRAIGHT_SLACK_IN), so it can't tilt them; like the squeeze, the try is a whole new copy of
+    the sheet at a new spot, its parts beside earlier cuts arranged again in the same rooms. Returns the next free
+    sheet slot."""
+    origin, env = best.envelopes[idx[-1]]
+    last = list(best.placed[idx[-1]])
+    where = "the last sheet" if idx[-1] == len(best.envelopes) - 1 else f"the sheet at x={origin[0]:g}"
+    say = f"{thickness:g} in: {where}"
+    if len(last) > job.nest.straight_max:
+        log(f"{say}: not tried in straight rows ({len(last)} parts, more than {job.nest.straight_max})")
+        return slot
+
+    def key(c: str) -> str:
+        return c.rsplit(".", 1)[0]
+    spacing = job.nest.part_spacing_in
+    items = [(c, sizes[key(c)][0], sizes[key(c)][1]) for c in last]
+    rows = straight_rows(items, env[2] - env[0], spacing, {c: 1 for c in last if key(c) in spares})
+    if rows is None:
+        log(f"{say}: not tried in straight rows (a part is longer than the sheet is wide, or its size is unknown)")
+        return slot
+    if rows_depth(rows, spacing) > env[3] - env[1] + 1e-9:
+        log(f"{say}: not tried in straight rows ({rows_depth(rows, spacing):.1f} in deep, more than its stretch)")
+        return slot
+    x0, x1, y0 = env[0] - spacing, env[2] + spacing, env[1] - spacing          # the band across the nest region
+    clear = spacing + job.nest.offcut_gap_in
+
+    def use(boxes):
+        return used_up(boxes, x0, x1, y0, spacing, clear, job.nest.offcut_beside_min_in)
+    try:
+        was = use([adapter.box(c).xy for c in last])
+    except AdapterError:
+        return slot
+    need = STRAIGHT_MIN_GAIN_IN * (x1 - x0)
+    plan = use(list(row_boxes(rows, env[0], env[1], spacing).values()))
+    said = lambda u: f"{u.length:.1f} in long, {u.room:.0f} in2 kept beside"   # noqa: E731
+    if plan.used > was.used - need:
+        log(f"{say} stays as Fusion nested it ({said(was)}; straight rows would be {said(plan)})")
+        return slot
+    wanted = Counter(key(c) for i in idx for c in best.placed[i])
+    if any(len(pool.get(k, [])) < n for k, n in wanted.items()):
+        log(f"{say}: not tried in straight rows (no copies left for it)")
+        return slot
+    o = (x_start + slot * pitch, 0.0)
+    slot += 1
+    dx, dy = o[0] - origin[0], o[1] - origin[1]
+    moved = [(e[0] + dx, e[1] + dy, e[2] + dx, e[3] + dy) for e in (best.envelopes[i][1] for i in idx)]
+    copies = [[pool[key(c)].pop(0) for c in best.placed[i]] for i in idx]
+    swap_last = dict(zip(last, copies[-1]))
+    why = ""
+    try:
+        for area, cs in zip(moved[:-1], copies[:-1]):      # rooms beside earlier cuts: as Fusion had them
+            got = _arrange(adapter, job, cs, area, up, hints, log)
+            if set(got.placed) != set(cs):
+                why = "the parts beside earlier cuts didn't all fit there again"
+                break
+        y = moved[-1][1]
+        for n, row in enumerate(rows if not why else (), 1):
+            cs = [swap_last[c] for c, _, _ in row.items]
+            strip = (moved[-1][0], y, moved[-1][2], min(moved[-1][3], y + row.depth + STRAIGHT_SLACK_IN))
+            got = _arrange(adapter, job, cs, strip, up, hints, log)
+            if set(got.placed) != set(cs):
+                why = f"Fusion placed {len(got.placed)} of row {n}'s {len(cs)}"
+                break
+            y = max(adapter.box(c).y1 for c in cs) + spacing
+        now = None if why else use([(b.x0 - dx, b.y0 - dy, b.x1 - dx, b.y1 - dy)
+                                    for b in (adapter.box(c) for c in copies[-1])])
+    except AdapterError as e:
+        why, now = f"Fusion: {e}", None
+    if now is not None and now.used > was.used - need:
+        why = f"in Fusion they were {said(now)}"
+    if why:
+        log(f"{say} stays as Fusion nested it ({said(was)}; straight rows: {why})")
+        return slot                                  # the caller hides the rows' copies
+    old = [c for i in idx for c in best.placed[i]]
+    _discard(adapter, old, log)
+    swap = dict(zip(old, [c for cs in copies for c in cs]))
+    for p in parts:
+        p.copies = [swap.get(c, c) for c in p.copies]
+    for n, i in enumerate(idx):
+        best.envelopes[i] = (o, moved[n])
+        best.placed[i] = tuple(copies[n])
+    log(f"{say} laid in {len(rows)} straight row(s): {said(was)} -> {said(now)}")
+    return slot
+
+
 def _part_order(parts: Sequence[_Part], order: str, sizes: Dict[str, Tuple[float, float]]) -> List[str]:
     """The parts as listed (the only order since 0.23.0; Arrange's priority does what "biggest first" tried)."""
     return [p.key for p in parts]
@@ -735,6 +872,7 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
             continue
         tries.append(_Try(order, made, spin))
     reserve = _reserve(adapter, parts, up, log)
+    rows_pool = _reserve_rows(adapter, job, parts, up, log)
 
     for i, t in enumerate(tries):
         remaining = [c for k in _part_order(parts, t.order, sizes) for c in t.copies[k] if by_key[k].ok]
@@ -810,8 +948,9 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
     for p in parts:
         p.copies = list(best.copies[p.key])
     slot = _squeeze_all(adapter, job, best, parts, sizes, face, up, x_start, slot, pitch, thickness, reserve, hints, log)
+    slot = _straighten_all(adapter, job, best, parts, sizes, up, x_start, slot, pitch, thickness, rows_pool, hints, log)
     kept = {c for p in parts for c in p.copies}
-    _discard(adapter, [c for cs in reserve for k in cs.values() for c in k if c not in kept], log)
+    _discard(adapter, [c for cs in reserve + [rows_pool] for k in cs.values() for c in k if c not in kept], log)
     up = {c: up[c] for p in parts for c in p.copies}
     envelopes = best.envelopes
     stock_of = {env: st for (_, env), st in zip(best.envelopes, best.stock)}

@@ -118,6 +118,7 @@ class Nest:
     offcut_min_in: float
     offcut_beside_min_in: float
     priority_by_size: bool = True
+    straight_max: int = 12
 
 
 @dataclass(frozen=True)
@@ -664,6 +665,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         offcut_min_in=t.number("offcut_min_in", positive=True),
         offcut_beside_min_in=t.number("offcut_beside_min_in", positive=True),
         priority_by_size=t.boolean("priority_by_size"),
+        straight_max=t.integer("straight_max", minimum=0, default=12),
     )
     t.finish()
 

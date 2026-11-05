@@ -570,6 +570,17 @@ bookmark the screen.
 | 7 | Something went wrong: the card is in Sheet review with what happened in a comment | |
 | 8 | Close the browser mid-sheet and reopen: it's under In progress and Continue opens the same step | |
 
+### 26. Straight rows after Fusion nests (2026-11-05, core 0.27.0)
+
+A few long parts on one sheet (e.g. three of p0201), Rush so they don't join an open sheet.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | `worker.log` says "laid in N straight row(s): ... -> ..." or "stays as Fusion nested it (...)" for the sheet | |
+| 2 | Laid straight: the sheet picture shows the parts square across the sheet, one row behind the other, at the front | |
+| 3 | The card's offcut keeps the room beside the rows (Offcut line), and the program passes the guard like any other | |
+| 4 | A sheet Fusion already laid square (e.g. a few small plates) is left as it was | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

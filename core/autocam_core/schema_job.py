@@ -65,6 +65,8 @@ class NestSpec:
     offcut_min_in: float = 6.0        # a free stretch shorter than this isn't worth loading the offcut for
     offcut_beside_min_in: float = 3.0   # room beside earlier cuts is kept and used when both its sides are this long
     priority_by_size: bool = True     # Arrange's priority: the biggest parts very high, mid-size high (2026-11-04)
+    straight_max: int = 12            # a sheet's free stretch with at most this many parts is tried in straight rows too
+                                      # (rows.py, core 0.27.0); 0: never
 
 
 @dataclass(frozen=True)

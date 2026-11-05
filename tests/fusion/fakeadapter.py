@@ -39,6 +39,8 @@ class FakeAdapter(Adapter):
         self.copies: Dict[str, str] = {}               # copy id -> STEP path
         self.boxes: Dict[str, Box] = {}
         self.columns = False          # True: pack like Fusion did in r009 (down the left edge first)
+        self.tilted: Dict[str, Tuple[float, float]] = {}   # part key -> its box laid on a slant, which Arrange
+                                                             # picks whenever the area has room for it (p0201, r09x)
         self.arranged = False                          # an Arrange has run
         self.late: Set[str] = set()                    # copies made after an Arrange: refused, like r012/r013
         self.sheets: Dict[str, dict] = {}
@@ -127,11 +129,14 @@ class FakeAdapter(Adapter):
             if cid.rsplit(".", 1)[0] in self.refuse:
                 refused[cid] = "upDirection (0, 1, 0) is across the top face"
                 continue
-            geometry, (w, h) = self.parts[self.copies[cid]]
-            px, py, prow = x, y, row
-            if px + w > x1 + 1e-9:
-                px, py, prow = x0, y + row + spacing_in, 0.0
-            if px + w > x1 + 1e-9 or py + h > y1 + 1e-9:
+            geometry, size = self.parts[self.copies[cid]]
+            for w, h in ([self.tilted[cid.rsplit(".", 1)[0]]] if cid.rsplit(".", 1)[0] in self.tilted else []) + [size]:
+                px, py, prow = x, y, row
+                if px + w > x1 + 1e-9:
+                    px, py, prow = x0, y + row + spacing_in, 0.0
+                if not (px + w > x1 + 1e-9 or py + h > y1 + 1e-9):
+                    break
+            else:
                 continue                      # doesn't fit; the next one might
             z0 = 0.5 if cid in self.bad_z else 0.0
             self.boxes[cid] = Box(px, py, z0, px + w, py + h, z0 + geometry.thickness_in)

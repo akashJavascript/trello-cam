@@ -1,6 +1,6 @@
 # Status
 
-_Last updated 2026-11-04 (branch `main`)._
+_Last updated 2026-11-05 (branch `main`)._
 
 ## Where things are
 
@@ -23,6 +23,7 @@ _Last updated 2026-11-04 (branch `main`)._
 | Hand-made programs checked (2026-11-04) | **Built, tested offline**: every hand program (own programs AutoCAM places, "Place it myself", and the new **Check** label, which only checks) gets AutoCAM's guard plus the mist for its material and safe stops (`program_checks.py`, `pauses.stop_problems`). A Check card gets a comment saying it passes or why not; nothing is placed. The Check label is on the board. Left: manual-tests section 23 |
 | Fits, outlines last (2026-11-04) | **Works in Fusion** (r092, core 0.26.0): a hole fit's part stays solid in the sheet while its hole is lapped; `<sheet>_OUTLINES` cuts it out after the laps (the card's LAST line). `[fit] outlines_last`. Left: a real cut (manual-tests section 24) |
 | Machine screen (2026-11-05) | **Built, tested offline and clicked through in a local browser**: the operator's screen on the ShopSabre's PC (`/machine`, `docs/machine.md`): the sheets to cut, then one step at a time; every button is a box on the sheet card or the card moving. Left: open it on the ShopSabre's PC (`machine-link`), manual-tests section 25 |
+| Straight rows (2026-11-05) | **Built, tested offline** (core 0.27.0): after Fusion nests a sheet, its parts are also laid in straight rows (each row placed by Arrange in an area as deep as its deepest part), and the layout that leaves the better offcut is kept. `rows.py`, `[nest] straight_max`. Left: see it in Fusion (manual-tests section 26) |
 | Panel options explained (2026-11-04) | **Live**: one plain line under each option in the Onshape panel (Rush, Fit, tabs, nesting, Drafts...) |
 | Bought-parts list (2026-11-02) | **Built, tested offline and in a local browser**: an assembly's bought parts (no screws or nuts) sent from the panel go on the phone page's Parts tab: In the bin, or Order (opens the team's order sheet; AutoCAM never writes to it). `docs/bought-parts.md`. Counts (some in the bin, order the rest), "CAD has 6", order age and notes added the same day; the sheet's link is in the laptop's `.env` |
 
