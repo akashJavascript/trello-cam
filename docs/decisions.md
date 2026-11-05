@@ -1041,6 +1041,14 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   rows from the box (15.2 in) and didn't try them.
 - **If Arrange places none of a row** (it raises NO_ROOM and moves nothing; its rotation steps may not hit the part's
   angle exactly), the row gets one more try in an area 0.3 in deeper than its deepest part.
+- **Seen in Fusion:**
+  - r099: works for a part drawn square. Three p0201-Mirrored bars (1/8 in) on offcut #4 were laid in three rows.
+    Fusion had them 7.4 in long with nothing beside them. The rows take 8.5 in but keep a 4.8 x 8.5 in room beside
+    them, so less is used up overall.
+  - r098: fails for a part drawn at 11 deg. Arrange placed nothing even in 2.3 and 2.5 in rows (NO_ROOM), so it
+    doesn't turn a part by any angle and can't straighten one drawn at an odd angle. The sheet kept Fusion's layout.
+  - Still to build for those parts: AutoCAM turns the copies itself (the occurrence's transform) before the rows'
+    Arrange.
 
 ## 2026-11-05: the machine screen (the mockup the user approved, v4)
 
