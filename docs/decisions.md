@@ -1048,7 +1048,36 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   - r098: fails for a part drawn at 11 deg. Arrange placed nothing even in 2.3 and 2.5 in rows (NO_ROOM), so it
     doesn't turn a part by any angle and can't straighten one drawn at an odd angle. The sheet kept Fusion's layout.
   - Still to build for those parts: AutoCAM turns the copies itself (the occurrence's transform) before the rows'
-    Arrange.
+    Arrange. Built differently in 0.28.0 (next entry): the rows' Arrange lays them along an edge.
+
+## 2026-11-05: offcuts on the rack, the smallest offcut, rows along an edge (core 0.28.0; the user: "do 1 2")
+
+- **Seen on 2026-11-05:** three p0201-Mirrored bars went on offcut #4 (35 in free), not #3 (a 9.3 in strip when
+  turned round). Turning #3 counted against it, but it had been taken off the bed the day before: loading it
+  either way round was the same work (the user: "we took it off the bed yesterday").
+- **Only one offcut can be on the bed** (`Runner.on_bed`, `OffcutSpec.on_bed`): the one the sheet cut last was cut
+  from, or the new offcut it left. That holds only on the same day (the laptop's date), and only until someone
+  presses Loaded for another sheet on the machine screen (machine.json now keeps when each sheet was loaded). No
+  extra button: a "leave it on the bed / put it on the rack" choice on the machine screen was offered as the
+  alternative; the automatic rule was recommended and built. The worker log lists each offcut as on the bed or on
+  the rack.
+- **An offcut on the rack is loaded whichever way round gives the longer free stretch,** in every try. Turning
+  counts against a nest only for the offcut on the bed, as before. A job from before 0.28.0 (no `on_bed`) treats
+  every offcut as on the bed.
+- **The smallest offcut that fits wins a tie:** the nest score is (copies placed, new sheets, on-bed offcuts turned,
+  sheets, the offcuts' sizes, the last sheet's reach). An offcut's size is its room the better way round, so the two
+  ways of loading the same offcut count the same. Offcuts were already filled smallest room first; that order now
+  uses the way round each would be loaded.
+- **Straight rows lay a part that's off square along its long straight edge:** for a part whose smallest rectangle
+  is more than 0.5 deg from square as Fusion laid it, the longest straight top edge along that rectangle's long side
+  goes to each row's Arrange (`ArrangeComponent.setRotationUsingEdge`, which points the edge at Arrange's zero angle;
+  Arrange still turns it the ways the job allows). Every copy of a part shares the component's edges, so the edge
+  found on the copy Fusion laid flat (its `tempId`) holds for the rows' copies. A part with no straight edge that way
+  is left to Arrange as before. Chosen over turning the copies' transforms: Fusion's own API reference (the laptop's
+  `adsk/fusion.py`) has `ArrangeComponent.rotation` and `setRotationUsingEdge` for this, and Arrange may lay a part
+  from its own geometry wherever it starts.
+- **The fake Arrange is stricter now:** it keeps a part at the angle it lies (as r098 showed Fusion does), unless
+  it's given an edge.
 
 ## 2026-11-05: the machine screen (the mockup the user approved, v4)
 

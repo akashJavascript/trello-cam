@@ -580,6 +580,15 @@ A few long parts on one sheet (e.g. three of p0201), Rush so they don't join an 
 | 2 | Laid straight: the sheet picture shows the parts square across the sheet, one row behind the other, at the front | |
 | 3 | The card's offcut keeps the room beside the rows (Offcut line), and the program passes the guard like any other | |
 | 4 | A sheet Fusion already laid square (e.g. a few small plates) is left as it was | |
+| 5 | (core 0.28.0) A part drawn at an odd angle (p0201 at 1/4 in, drawn at 11 deg): `worker.log` says "off square, laid along a straight edge in the rows: p01" and "laid in N straight row(s)"; the Arrange notes say "laid along an edge"; the picture shows the bars square | |
+
+### 27. Offcuts on the rack (2026-11-05, core 0.28.0)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Cut a sheet that keeps an offcut, then send a part the same day: `worker.log` says "offcuts, smallest first: <id> (on the bed)", and it's only turned round if that saves a new sheet | |
+| 2 | The next day (or after Loaded on another sheet on the machine screen), a part that fits an offcut only turned round goes on it turned round, and the card says which end goes at the front | |
+| 3 | Two offcuts on the rack that both fit: the smaller one is used | |
 
 ## M5: status card, start at logon, reboot test on the shop PC
 

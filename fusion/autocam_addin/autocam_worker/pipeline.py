@@ -950,6 +950,9 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
     rack = _on_rack(job)
     last_turned = {o.id: o.last_turned for o in job.offcuts if o.on_bed}      # turning only these is extra work
     rooms = _offcut_rooms(job, offcuts)
+    if offcuts:
+        log(f"{thickness:g} in: offcuts, smallest first: " + ", ".join(
+            f"{oid} ({'on the rack' if oid in rack else 'on the bed'})" for oid, _, _ in offcuts))
     tries = [_Try(NEST_ORDERS[0], {p.key: list(p.copies) for p in parts})]
     seen = [_part_order(parts, NEST_ORDERS[0], sizes)]
     plans = [(order, False) for order in NEST_ORDERS[1:]]
