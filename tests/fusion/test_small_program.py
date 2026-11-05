@@ -46,6 +46,7 @@ def test_small_holes_get_their_own_eighth_program_and_the_sheet_stays_on_the_4mm
     assert vs.cuttable and all(p.ok for p in vs.programs)
     desc = sheet_description(job, view, vs, resume_key="F1", part_cards={"p01": ("Bracket", ""), "p02": ("Spacer", "")})
     assert f"1. {name}.tap · {small.cutter_label} (T{small.tool_number})" in desc and "· 2 holes in bracket" in desc
+    assert "2. 6061_0p125_r001_S1.tap · change to 4 mm O-flute ALU (T1) and measure its height" in desc
 
 
 def test_a_tight_cutout_goes_in_the_small_program_with_its_tabs(tmp_path):

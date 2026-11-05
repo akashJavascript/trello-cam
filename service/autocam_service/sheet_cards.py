@@ -153,7 +153,8 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         lines += ["NOT CUTTABLE. This sheet failed the checks:"] + [f"- {p}" for p in problems] + [""]
     first = next((p for p in (face, scribe, small) if p), None)
     cutter = (f"Cutter: {first.cutter_label} (T{first.tool_number}) first" if first else
-              f"Cutter: {s.cutter_label} (T{tool.number})") + " (check the cutter itself: tool numbers are shared)"
+              f"Cutter: {s.cutter_label} (T{tool.number})") + \
+        ", its height measured on the tool setter (check the cutter itself: tool numbers are shared)"
 
     if s.by_hand:
         lines += ["LOAD"] + _by_hand_load(job, vs, part_cards) + [f"{cutter}. Mist: {'on' if m.use_mist else 'off'}."]
@@ -173,12 +174,19 @@ def sheet_description(job: Job, ing: IngestedJob, vs: VerifiedSheet, *, resume_k
         key = resume_key or "the continue key"
         steps = []
         doing = {"face": "skims the faced tops", "scribe": "scribes the bend lines", "small": "the small features"}
+        held = None                                   # the cutter in the spindle: every change says to measure it
+
+        def cutter_for(label: str) -> str:
+            nonlocal held
+            said = label if held in (None, label) else f"change to {label} and measure its height"
+            held = label
+            return said
         for p in (face, scribe, small):
             if p:
                 what = (p.feature or doing["small"]) if p.kind == "small" else doing[p.kind]
-                steps.append(f"{p.tap} · {p.cutter_label} (T{p.tool_number})" + _about(p.machining_time_s)
-                             + f" · {what}")
-        main = f"{program or s.tap}" + (f" · {s.cutter_label} (T{tool.number})" if steps else "") + \
+                steps.append(f"{p.tap} · {cutter_for(f'{p.cutter_label} (T{p.tool_number})')}"
+                             + _about(p.machining_time_s) + f" · {what}")
+        main = f"{program or s.tap}" + (f" · {cutter_for(f'{s.cutter_label} (T{tool.number})')}" if steps else "") + \
             _about(s.machining_time_s)
         if s.by_hand and s.repeat > 1:
             main += f" · run it {s.repeat} times, zeroed at a fresh spot each time"

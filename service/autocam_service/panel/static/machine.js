@@ -1,7 +1,8 @@
 // The machine page (machine.py, the mockup the user approved 2026-11-05): the operator's screen on the ShopSabre's
 // PC. The list (in progress, ready to cut, placed by hand, checked programs, cut today), then one card for the step
 // to do now. Each button is something Trello already understands (a box on the sheet card, or the card moving), so
-// the service does the rest. Download saves the program to this PC's Downloads; WinCNC opens it from there.
+// the service does the rest. Loading and every cutter change insist on the tool height being measured (the user,
+// 2026-11-05: "one of the most common ways we lose parts"): their button stays off until each box is ticked. Download saves the program to this PC's Downloads; WinCNC opens it from there.
 // Plain JavaScript, no build step; everything from the server goes in as text, never as HTML.
 (function () {
   "use strict";
@@ -60,7 +61,8 @@
     return path + "?" + q.toString();
   }
 
-  var S = { open: null, sheet: null, list: null, at: null, busy: false, got: {}, problem: false, confirm: false, toast: "", error: "" };
+  var S = { open: null, sheet: null, list: null, at: null, busy: false, got: {}, problem: false, confirm: false, toast: "", error: "",
+            ticks: {} };          // the boxes ticked on this step (Load, Change the cutter): cleared whenever the step changes
   var toastTimer = null;
   function say(text) {
     S.toast = text; render();
@@ -97,6 +99,7 @@
       lapRan: S.at.lapRan }).catch(function () {});
   }
   function go(step) {
+    S.ticks = {};
     S.at = { step: step, rep: 1, lap: 0, lapRan: false };
     save(); render(); window.scrollTo(0, 0);
   }
@@ -144,7 +147,7 @@
     return out;
   }
   function open(id) {
-    S.open = id; S.sheet = null; S.at = null; S.got = {}; render(); window.scrollTo(0, 0);
+    S.open = id; S.sheet = null; S.at = null; S.got = {}; S.ticks = {}; render(); window.scrollTo(0, 0);
     loadSheet(id, false);
   }
   function home() { S.open = null; S.sheet = null; S.at = null; S.problem = false; S.confirm = false; render(); loadList(); }
@@ -164,9 +167,23 @@
     items = items.filter(Boolean);
     return items.length ? h("ul", { class: "todo" }, items.map(function (t) { return h("li", null, t); })) : null;
   }
-  function one(label, onclick, cls) {
+  // boxes to tick before the step's button works: [label, sub, key] (key: the tool height, outlined until ticked)
+  function musts(items) {
+    return h("div", { class: "musts" }, items.filter(Boolean).map(function (it, i) {
+      var on = !!S.ticks[i];
+      return h("button", { class: "must" + (it[2] ? " key" : ""), type: "button", role: "checkbox", "aria-checked": String(on),
+        onclick: function () { S.ticks[i] = !S.ticks[i]; render(); } },
+        h("span", { class: "box" }, on ? icon("check") : null),
+        h("span", { class: "label" }, it[0], it[1] ? h("span", { class: "why" }, it[1]) : null));
+    }));
+  }
+  function ticked(items) {
+    return items.filter(Boolean).every(function (_, i) { return !!S.ticks[i]; });
+  }
+  function height() { return ["Tool height measured on the tool setter", "Skip it and parts are lost", true]; }
+  function one(label, onclick, cls, off) {
     return h("div", { class: "item-btns one" }, h("button", { class: "btn " + (cls || "btn-primary"), type: "button",
-      disabled: S.busy, onclick: onclick }, icon("check"), label));
+      disabled: S.busy || !!off, onclick: onclick }, icon("check"), label));
   }
   function picture(what) {
     var img = h("img", { src: link("/api/machine/picture", { id: S.open, what: what }), alt: what === "offcut" ? "What the offcut looks like" : "The sheet" });
@@ -206,20 +223,21 @@
             h("button", { class: "btn btn-primary", type: "button", disabled: S.busy, onclick: next }, icon("check"), "Found it"))
             : one("Found it", next));
       case "load":
+        var load = [st.cutter ? [st.cutter + " in the spindle"] : null, height(), ["Zero X/Y at the front-left corner"]];
         return card("Load", st.stock, [st.where, "clamps " + st.clamps, "mist " + (st.mist ? "on" : "off")].join(" · "), true,
-          [st.picture ? picture("sheet") : null,
-            todo([st.how, st.cutter ? "Cutter: " + st.cutter : "", "Zero X/Y at the front-left corner", "Z from the tool setter"])],
-          one("Loaded", loaded));
+          [st.picture ? picture("sheet") : null, todo([st.how]), musts(load)],
+          one("Loaded", loaded, null, !ticked(load)));
       case "piece":
         return card("Get a piece", st.stock, st.size ? "Any piece at least " + st.size : "Any piece big enough for the part", true, null,
           one("Got one", next));
       case "loadhand":
+        var hand = [st.cutter ? [st.cutter + " in the spindle"] : null, height(), ["Zero X/Y at the part’s front-left corner"]];
         return card("Load", "Anywhere on the bed", "Clamps at least 1/2 in clear of the part · mist " + (st.mist ? "on" : "off"), true,
-          todo([st.cutter ? "Cutter: " + st.cutter : "", "Zero X/Y at the part’s front-left corner", "Z from the tool setter"]),
-          one("Loaded", loaded));
+          musts(hand), one("Loaded", loaded, null, !ticked(hand)));
       case "cutter":
-        return card("Change the cutter", st.cutter + (st.tool ? " · " + st.tool : ""), "Measure it on the tool setter", true, null,
-          one("Done", next));
+        var change = [[st.cutter + (st.tool ? " · " + st.tool : "") + " in the spindle"], height()];
+        return card("Change the cutter", st.cutter + (st.tool ? " · " + st.tool : ""), "", true, musts(change),
+          one("Done", next, null, !ticked(change)));
       case "air":
         return card("Air test", st.file ? stem(st.file) : "Making it…", "Nothing is cut: it runs " + st.gap + " above the sheet", false,
           todo(["Check it misses the clamps"]), download(st.file, next));
@@ -335,6 +353,7 @@
     var canBack = at.step > 0 || at.rep > 1 || at.lap > 0;
     return [bars, stepCard(st), h("div", { class: "links" },
       canBack ? h("button", { class: "link-btn quiet", type: "button", onclick: function () {
+        S.ticks = {};                                 // re-tick the boxes on the step it goes back to
         if (at.rep > 1) at.rep -= 1;
         else if (at.lap > 0) { if (at.lapRan) at.lapRan = false; else at.lap -= 1; }
         else { at.step -= 1; at.rep = 1; at.lap = 0; at.lapRan = false; }

@@ -35,9 +35,10 @@ def test_a_faced_sheet_card_has_both_programs_and_says_to_face_first(tmp_path):
     card = h.tracker.cards[s1.id]
     assert "3 parts, 2 faced" in card.name and "19 min" in card.name          # 15 min cut + 4 min face
     desc = card.desc
-    assert "Cutter: 6 mm 3-flute ALU (T2) first" in desc
+    assert "Cutter: 6 mm 3-flute ALU (T2) first, its height measured on the tool setter" in desc
     assert f"1. {FACE} · 6 mm 3-flute ALU (T2) · about 4 min · skims the faced tops" in desc
-    assert "2. 6061_0p125_r001_S1.tap · 4 mm O-flute ALU (T1) · about 15 min" in desc
+    # every cutter change says to measure it (the user: a missed tool height is how parts get lost)
+    assert "2. 6061_0p125_r001_S1.tap · change to 4 mm O-flute ALU (T1) and measure its height · about 15 min" in desc
     assert "1. plate (1 of 2) - faced" in desc and "3. spacer" in desc and "3. spacer -" not in desc
 
 

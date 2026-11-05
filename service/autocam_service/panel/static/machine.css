@@ -121,5 +121,18 @@ svg { width: 18px; height: 18px; flex: none; }
 .opt:hover { border-color: var(--primary-container); }
 .opt b { font-size: 15px; }
 .opt span { font-size: 13px; color: var(--on-surface-variant); }
+/* boxes to tick before a step's button works (the tool height, outlined until it's ticked) */
+.musts { display: flex; flex-direction: column; gap: 6px; }
+.must { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 12px; border-radius: 12px; text-align: left;
+  border: 1px solid var(--outline-variant); background: var(--surface); font-weight: 600; font-size: 15px; cursor: pointer; }
+.must .box { width: 26px; height: 26px; border-radius: 7px; border: 2px solid var(--outline); display: grid; place-items: center;
+  flex: none; color: var(--on-primary); }
+.must .box svg { width: 16px; height: 16px; }
+.must .label { flex: 1; min-width: 0; }
+.must .why { display: block; font-size: 12px; font-weight: 500; color: var(--rush); }
+.must.key { border: 2px solid var(--accent-coral); background: var(--rush-container); }
+.must[aria-checked="true"] { border: 1px solid var(--good); background: var(--good-container); }
+.must[aria-checked="true"] .box { background: var(--good); border-color: var(--good); }
+.must[aria-checked="true"] .why { display: none; }
 .notice { padding: 12px; border-radius: 12px; font-size: 14px; background: var(--error-container); color: var(--on-error-container); }
 @media (prefers-reduced-motion: reduce) { .btn:active { transform: none; } .tog .knob, .tog .knob::after { transition: none; } }

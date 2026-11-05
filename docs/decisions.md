@@ -1026,6 +1026,9 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - **Move to Cut waits 3 minutes** (`UNDO_S`): automation never moves a card into Ready to cut (decision 16), so a
   card already in Cut can't be undone from the screen; until it moves, Undo just forgets it.
 - **The Trello sheet card is shorter** (the user's answer): RUN is one line per program in order (its file, cutter, minutes, and for the main one the stops), each fit one line (its laps first to last), the outlines cut last one line; the tabs and spares notes one short line each. LOAD and CUT ORDER as before. Cards made before keep their old text until they're rebuilt or an option changes.
+- **The tool height can't be skipped** (the user, the same day: "one of the most common ways we lose parts"): Load
+  and every cutter change have tick boxes, the height one outlined until it's ticked, and the button stays off until
+  all are ticked; the sheet card says to measure at every cutter change.
 - Not yet: the CAD changed stop, finish notes, a folder helper on the ShopSabre's PC instead of Downloads.
 
 ## 2026-11-04: fit series, outlines last (core 0.26.0; the user: "build stricter fit series")

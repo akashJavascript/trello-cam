@@ -25,6 +25,12 @@ A started sheet shows only the step to do now: find the offcut, load, change the
 ticked), each program (Download, then Done), try the fit (Yes / Not yet, with a lap in between), the outlines cut
 last, then what's left of the sheet.
 
+**The tool height is insisted on** (the user: a missed tool height "is one of the most common ways we lose parts"):
+Load (and Load for a part placed by hand) and every Change the cutter have boxes to tick (the cutter in the spindle,
+"Tool height measured on the tool setter", and at Load the zero), and their button stays off until every box is
+ticked. Back a step clears them. The sheet card says it too: "its height measured on the tool setter" at LOAD and
+"change to ... and measure its height" at every cutter change in RUN.
+
 ## What the buttons do on Trello
 
 Every button is something the board already understands; the service's own passes do the rest.
