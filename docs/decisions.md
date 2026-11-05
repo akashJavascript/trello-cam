@@ -1010,6 +1010,38 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - Not rectangles (a part's own notches, the triangle by an angled edge): a part's bounding box counts as used.
   (Since 2026-11-04 the rooms also come from the parts' real cuts: see that day.)
 
+## 2026-11-04: fit series, outlines last (core 0.26.0; the user: "build stricter fit series")
+
+- **What:** for a hole fit, the sheet's program cuts the fitted hole tight but leaves that part's outline out, so the
+  part is still held by the whole sheet, not hanging on tabs, while the laps open the hole a thousandth at a time.
+  A new `<sheet>_OUTLINES` program cuts those outlines once the hole fits. It's run after the laps, with the same
+  cutter and zero, and has the tabs the part would have had. Outline fits are unchanged: their laps are on the outline
+  itself, so the part stays tabbed.
+- **How:** `FitSpec.outline_last` (the service sets it for hole fits from `[fit] outlines_last`, on); the worker's
+  sheet setup leaves those copies' `[outer]` ops out (the template's op is deleted untouched if none are left), and
+  an extra setup like a lap's has the `[outer]` op alone, a copy per outline. `SheetResult.outlines_last` lists those
+  copies; they end `outer_order` (the card's cut order), and the stops go between the rest (`main_order`).
+- **Checks:** the sheet's program must cut exactly the cut order minus the copies left for last, and those must be the
+  end of it and hole fits cut out last. The OUTLINES program is checked like an outline lap (`check_fit_program`,
+  `what="outlines program"`): exactly those outlines, each to the stock bottom, no stops, the sheet's guard, the tool
+  center never inside a part. The service wants it whenever something is left for last, and nowhere else.
+- **Offcuts:** the rooms a sheet leaves come from its program and the OUTLINES program together, so a room never
+  covers a fitted part whose outline isn't in the sheet's own program.
+- **The card:** the fit section says the part stays in the sheet, and one line, `LAST: once it fits, run ..._OUTLINES.tap
+  ...`, says when to cut it out; the cut order marks it "cut out last"; the toolpath picture draws it.
+- **Seen in Fusion** (r092: P-2015 x2 with `Fit: 0.88 hole` and one P-2015 without, 6061 3/16): the sheet's
+  program had the tight `[bearing holes (2)]` and only the other part's outline; four laps, each its bearing op alone,
+  to Z0; `_OUTLINES` had exactly `[outer p01-1]`, `[outer p01-2]`, each with 6 tabs on straight edges and the same
+  passes as the other part's outline, guard passed, about 3 min. The card listed all six programs, the LAST line and
+  the cut order with the fitted copies last; its toolpath picture was made. Not cut yet (`docs/manual-tests.md`
+  section 24).
+
+## 2026-11-04: the panel's options explained (the user: labels like Rush or Fit series "are not very clear")
+
+Each option in the Onshape panel (one part, and an assembly's parts) has one plain line under its name, e.g. Rush:
+"Cut it next, by itself, without waiting for other parts." Always shown, not a tooltip, since tooltips don't work on
+touch and people new to it don't know to hover.
+
 ## 2026-11-04: the clamps in Fusion's simulation (core 0.25.0; the user picked it from the brief's leftovers)
 
 - **What:** each clamp strip (decision 5: the keep-out along a clamped edge, reach + clearance wide, the whole sheet

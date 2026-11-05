@@ -542,6 +542,18 @@ labels and updates the how-to card), or make a label named Check by hand.
 | 4 | A program for one part, zeroed at its own corner: fails on the clamps and says to add Place it myself; with that line it passes | |
 | 5 | An own program (no Check label) that would have passed before but has the wrong mist: refused in Needs fixing saying so | |
 
+### 24. A fit with the outline cut last (2026-11-04, core 0.26.0)
+
+A part card with `Fit: 0.88 hole` (or any bored hole size it has), on a sheet with another part.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | The sheet card lists the laps, then a `LAST:` line with `..._OUTLINES.tap`; in the cut order the fitted part comes last, marked "cut out last" | |
+| 2 | Air: the sheet's program cuts the other part's outline and the fitted hole, never the fitted part's outline | |
+| 3 | After the program the fitted part is still solid in the sheet; a lap opens the hole a little; try the fit | |
+| 4 | Once it fits, `..._OUTLINES.tap` with the same cutter and zero cuts the part out on its tabs | |
+| 5 | Tick the lap that fit: the card comments what it learned | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

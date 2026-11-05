@@ -20,7 +20,9 @@ _Last updated 2026-11-04 (branch `main`)._
 | Watched assemblies (2026-11-02) | **Built, tested offline**: assemblies with things on the shop's lists, or with cards for parts from another document's saved version, are read again in the background after Onshape says they changed (at most hourly): "Changed in CAD" and "CAD has 6" without opening the panel, and version cards follow their assembly to newer versions (CAD changed on an uncut sheet). `panel/assemblies.py`, `docs/panel.md` |
 | Shop sign-in (2026-11-04) | **Built, tested offline and in a local browser with a pretend Slack**: the phone page is opened by signing in with Slack (team workspace only, the name not the email); the Onshape panel keeps its key. Waiting for the Slack app's id and secret in the laptop's `.env` (`docs/panel.md`); until then the key link works as before, and for a week after the first sign-in. `panel/signin.py` |
 | Clamps in Fusion's simulation (2026-11-04) | **Works in Fusion** (r086-r091, core 0.25.0): each sheet's setup (and its FACE, SMALL, SCRIBE, fit-lap setups) has the clamp strips as fixtures, blocks the clamp height on the plate, so a simulation shows a cutter hitting a clamp; measured after Fusion makes them; the programs are byte-identical with and without (r088 vs r089). Not on parts placed by hand. `[clamps] in_fusion`. Left: see it in a simulation (`docs/manual-tests.md` section 22) |
-| Hand-made programs checked (2026-11-04) | **Built, tested offline**: every hand program (own programs AutoCAM places, "Place it myself", and the new **Check** label, which only checks) gets AutoCAM's guard plus the mist for its material and safe stops (`program_checks.py`, `pauses.stop_problems`). A Check card gets a comment saying it passes or why not; nothing is placed. Left: the Check label on the board (`trello-setup`), manual-tests section 23 |
+| Hand-made programs checked (2026-11-04) | **Built, tested offline**: every hand program (own programs AutoCAM places, "Place it myself", and the new **Check** label, which only checks) gets AutoCAM's guard plus the mist for its material and safe stops (`program_checks.py`, `pauses.stop_problems`). A Check card gets a comment saying it passes or why not; nothing is placed. The Check label is on the board. Left: manual-tests section 23 |
+| Fits, outlines last (2026-11-04) | **Works in Fusion** (r092, core 0.26.0): a hole fit's part stays solid in the sheet while its hole is lapped; `<sheet>_OUTLINES` cuts it out after the laps (the card's LAST line). `[fit] outlines_last`. Left: a real cut (manual-tests section 24) |
+| Panel options explained (2026-11-04) | **Live**: one plain line under each option in the Onshape panel (Rush, Fit, tabs, nesting, Drafts...) |
 | Bought-parts list (2026-11-02) | **Built, tested offline and in a local browser**: an assembly's bought parts (no screws or nuts) sent from the panel go on the phone page's Parts tab: In the bin, or Order (opens the team's order sheet; AutoCAM never writes to it). `docs/bought-parts.md`. Counts (some in the bin, order the rest), "CAD has 6", order age and notes added the same day; the sheet's link is in the laptop's `.env` |
 
 M1.1 pure core covers:
@@ -154,7 +156,10 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
   with lap programs taking 0.001 more each, run one by one at the machine; the run that fit is ticked on the sheet card
   and the next series starts there. Holes over 1.5 in too (cut as cutouts: the slug comes out by hand, then the laps,
   which have no tabs). **Works in Fusion** (r034, r036, r038; no dialogs since r036); not cut yet
-  (`docs/manual-tests.md` → M3 section 17). `[fit] enabled` switches it off.
+  (`docs/manual-tests.md` → M3 section 17). `[fit] enabled` switches it off. **Outlines last** (2026-11-04, core
+  0.26.0, works in Fusion r092): a hole fit's part stays solid in the sheet while its hole is lapped, and
+  `<sheet>_OUTLINES` cuts it out after (`[fit] outlines_last`; manual-tests section 24). Fits on parts placed by hand:
+  not yet.
 - **Bearing holes** (2026-11-01): their own `[bearing]` op in every template, the bore with a 0.005 in finishing lap;
   press fits tuned in config (`holes.bearing_stock_in`, radial: + tighter, - looser). **Work in Fusion** (r030, r031:
   0.002 in made the hole 0.004 smaller across); none cut yet. Tune it from the first real bearing's fit.
