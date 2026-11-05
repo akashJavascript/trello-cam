@@ -482,11 +482,29 @@
       icon(iconName || (kind === "good" ? "check" : kind === "bad" ? "alert" : "info")),
       h("div", null, title ? h("b", null, title) : null, text ? h("p", null, text) : null));
   }
-  function switchLine(label, on, onChange, disabled) {
+  // what: an optional one-line plain explanation under the name (2026-11-04: for people new to the panel)
+  function switchLine(label, on, onChange, disabled, what) {
     var input = h("input", { type: "checkbox", role: "switch", checked: on, disabled: disabled,
       onchange: function () { onChange(input.checked); } });
-    return h("label", { class: "line" }, h("span", { class: "name" }, label), h("span", { class: "switch" }, input, h("span")));
+    return h("label", { class: "line" }, h("span", { class: "name" }, label, explain(what)),
+      h("span", { class: "switch" }, input, h("span")));
   }
+  function explain(what) { return what ? h("span", { class: "sub" }, what) : null; }
+  // the options' explanations, as plain as possible (one: a single part; many: an assembly's parts)
+  var WHAT = {
+    tabs: ["Small tabs keep it stuck to the sheet while it's cut. Snap it out after.",
+           "Small tabs keep each part stuck to the sheet while it's cut. Snap them out after."],
+    nest: ["Cut on a sheet with other parts. Off: it gets its own program and you place it yourself.",
+           "Cut on sheets with other parts. Off: each gets its own program and you place it yourself."],
+    face: ["Skims a thin layer off the top first, so it's clean and flat.",
+           "Skims a thin layer off the tops first, so they're clean and flat."],
+    rush: ["Cut it next, by itself, without waiting for other parts.",
+           "Cut them next, without waiting for other parts."],
+    drafts: ["Not ready yet? It waits in Drafts and isn't cut until someone moves it on.",
+             "Not ready yet? They wait in Drafts and aren't cut until someone moves them on."],
+    assign: "Whose job it is. Anyone can still do it.",
+    fitted: "Always on for a part with a fit."
+  };
   // "Assign to" (people.py, 2026-11-04): whoever's name goes on what's sent (soft: anyone can still start it).
   // The shop's names, and the sender's own. Hidden until there's a name to pick.
   function people() {
@@ -499,7 +517,7 @@
     var sel = h("select", { class: "select", "aria-label": "Assign to", onchange: function () { onChange(sel.value); } },
       h("option", { value: "" }, "Nobody"),
       names.map(function (n) { return h("option", { value: n, selected: n === value ? "selected" : null }, n); }));
-    return h("label", { class: "line" }, h("span", { class: "name" }, "Assign to"), sel);
+    return h("label", { class: "line" }, h("span", { class: "name" }, "Assign to", explain(WHAT.assign)), sel);
   }
   function whoChip(name) { return name ? chip(name, "who") : null; }
 
@@ -655,11 +673,11 @@
       add(bodyEl, group("Bought parts", h("div", { class: "parts" }, a.bought.map(boughtRow), a.boughtGone.map(boughtGoneRow))));
     }
     add(bodyEl, group("Options",
-      switchLine("Hold them in with tabs", o.tabs, function (v) { o.tabs = v; render(); }),
-      switchLine("Nest them with other parts", o.nest, function (v) { o.nest = v; render(); }),
-      a.face ? switchLine("Face their tops", o.face, function (v) { o.face = v; render(); }) : null,
-      switchLine("Rush", o.rush, function (v) { o.rush = v; render(); }),
-      switchLine("Send plates to Drafts", o.drafts, function (v) { o.drafts = v; render(); }),
+      switchLine("Hold them in with tabs", o.tabs, function (v) { o.tabs = v; render(); }, false, WHAT.tabs[1]),
+      switchLine("Nest them with other parts", o.nest, function (v) { o.nest = v; render(); }, false, WHAT.nest[1]),
+      a.face ? switchLine("Face their tops", o.face, function (v) { o.face = v; render(); }, false, WHAT.face[1]) : null,
+      switchLine("Rush", o.rush, function (v) { o.rush = v; render(); }, false, WHAT.rush[1]),
+      switchLine("Send plates to Drafts", o.drafts, function (v) { o.drafts = v; render(); }, false, WHAT.drafts[1]),
       assignLine(o.assign, function (v) { o.assign = v; render(); }),
       h("span", { class: "hint" }, "A fit is set on one part, from its Part Studio.")));
 
@@ -1234,34 +1252,41 @@
     // options, all in one list
     var fitted = f.fitKind !== "none";
     var poly = (m && m.key && m.family === "polycarbonate");
-    var ownSwitch = switchLine("I CAM'd it myself", f.own, function (v) { f.own = v; f.error = ""; render(); });
+    var ownSwitch = switchLine("I CAM'd it myself", f.own, function (v) { f.own = v; f.error = ""; render(); }, false,
+      "You made the program yourself. AutoCAM checks it and finds it a spot.");
     var opts = f.own ? [ownSwitch] : [
-      switchLine("Hold it in with tabs", f.tabs || fitted, function (v) { f.tabs = v; render(); }, fitted),
-      switchLine("Nest it with other parts", f.nest || fitted, function (v) { f.nest = v; render(); }, fitted)
+      switchLine("Hold it in with tabs", f.tabs || fitted, function (v) { f.tabs = v; render(); }, fitted,
+        fitted ? WHAT.fitted : WHAT.tabs[0]),
+      switchLine("Nest it with other parts", f.nest || fitted, function (v) { f.nest = v; render(); }, fitted,
+        fitted ? WHAT.fitted : WHAT.nest[0])
     ];
-    if (st.face && !f.own) opts.push(switchLine("Face the top", f.face, function (v) { f.face = v; render(); }));
-    if (!f.own) opts.push(switchLine("Cut all of it with the 1/8 in endmill", f.tool18, function (v) { f.tool18 = v; render(); }));
+    if (st.face && !f.own) opts.push(switchLine("Face the top", f.face, function (v) { f.face = v; render(); }, false, WHAT.face[0]));
+    if (!f.own) opts.push(switchLine("Cut all of it with the 1/8 in endmill", f.tool18, function (v) { f.tool18 = v; render(); }, false,
+      "Rarely needed: AutoCAM already uses it where the bigger bit won't fit."));
     if (st.scribe && d.part.bent && !f.own) {
       var ssel = h("select", { class: "select", id: "scribe", onchange: function () { f.scribe = ssel.value; render(); } },
         [["", "No"], ["endmill", "With the endmill"], ["chamfer", "With the chamfer mill"]].map(function (o) {
           return h("option", { value: o[0], selected: (f.scribe || "") === o[0] ? "selected" : null }, o[1]);
         }));
-      opts.push(h("div", { class: "line" }, h("label", { class: "name", for: "scribe" }, "Scribe the bend lines"), ssel));
+      opts.push(h("div", { class: "line" }, h("label", { class: "name", for: "scribe" }, "Scribe the bend lines",
+        explain("Cuts a shallow line on top where each bend goes.")), ssel));
     }
     if (st.fit && !f.own) {
       var fsel = h("select", { class: "select", id: "fit", onchange: function () { f.fitKind = fsel.value; render(); } },
         [["none", "None"], ["hole", "A hole"], ["outline", "Outline"]].map(function (o) {
           return h("option", { value: o[0], selected: f.fitKind === o[0] ? "selected" : null }, o[1]);
         }));
-      opts.push(h("div", { class: "line" }, h("label", { class: "name", for: "fit" }, "Fit"), fsel));
+      opts.push(h("div", { class: "line" }, h("label", { class: "name", for: "fit" }, "Fit",
+        explain("For a tight fit: it's cut a bit small, then opened up a little at a time until it fits.")), fsel));
       if (f.picked) opts.push(h("span", { class: "hint" }, f.picked));
       if (f.fitKind === "hole") {
         var size = h("input", { class: "input size", type: "text", inputmode: "decimal", placeholder: "1.125", value: f.fitSize,
           "aria-label": "Hole size", oninput: function () { f.fitSize = size.value; } });
-        opts.push(h("div", { class: "line" }, h("span", { class: "name" }, "Hole size (in, or mm)"), size));
+        opts.push(h("div", { class: "line" }, h("span", { class: "name" }, "Hole size (in, or mm)",
+          explain("The size of the hole that has to fit.")), size));
       }
     }
-    if (!f.own) opts.push(switchLine("Rush", f.rush, function (v) { f.rush = v; render(); }));
+    if (!f.own) opts.push(switchLine("Rush", f.rush, function (v) { f.rush = v; render(); }, false, WHAT.rush[0]));
     if (poly && !f.own) {
       // which sheet: Onshape's polycarbonate is also smoked PC and SRPP (each kind its own stock)
       var kinds = (st.materials || []).filter(function (o) { return o.onshape.toLowerCase() === m.onshape.toLowerCase(); });
@@ -1271,11 +1296,12 @@
           f.sheet = shsel.value === m.key ? "" : shsel.value; f.smoked = !!(picked && picked.smoked);
           loadCheck(S.partId, f.sheet); render(); } },
           kinds.map(function (o) { return h("option", { value: o.value, selected: (f.sheet || m.key) === o.value ? "selected" : null }, o.label); }));
-        opts.push(h("div", { class: "line" }, h("label", { class: "name", for: "sheet" }, "Sheet"), shsel));
+        opts.push(h("div", { class: "line" }, h("label", { class: "name", for: "sheet" }, "Sheet",
+          explain("Which kind of plastic sheet it's cut from.")), shsel));
       }
     }
     if (!f.own) {
-      opts.push(switchLine("Send to Drafts", f.drafts, function (v) { f.drafts = v; render(); }));
+      opts.push(switchLine("Send to Drafts", f.drafts, function (v) { f.drafts = v; render(); }, false, WHAT.drafts[0]));
       opts.push(ownSwitch);
     }
     var notes = h("textarea", { class: "textarea", placeholder: "Notes for the CAM person", "aria-label": "Notes", maxlength: "300",
