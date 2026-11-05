@@ -1107,6 +1107,11 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - **Switch:** `[nest] square_parts` (on). Off: no probe, as 0.28.0.
 - **Cost:** one extra Arrange per thickness (the measuring one), two when a part is off square, plus three hidden
   copies per part.
+- **Seen in Fusion, r105:** p0201-Mirrored (1/4 in, drawn at 11 deg) x3. The probe found -2.67 deg the way that
+  comes out square (as r103 did), and every Arrange laid the bars square; Fusion then nested them into each other
+  (one turned end for end): 7.5 in long with a 3.1 x 7.5 in room kept, against r102's slanted 8.8 in and r103's
+  straight rows' 8.5 in. Guard passed. (r104 failed first, safely: the service built it seconds before it restarted
+  into 0.29.0, and the add-in, already on 0.29.0, refused the 0.28.0 job.)
 
 ## 2026-11-05: the machine screen (the mockup the user approved, v4)
 

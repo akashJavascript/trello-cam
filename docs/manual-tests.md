@@ -594,7 +594,7 @@ A few long parts on one sheet (e.g. three of p0201), Rush so they don't join an 
 
 | # | Check | Result |
 |---|---|---|
-| 1 | A part drawn at an angle in CAD (p0201 at 11 deg): `worker.log` says "drawn off square, laid square in every Arrange: p01 (turned ... deg on from its edge)", and the sheet picture shows it square from Fusion's own nest | |
+| 1 | A part drawn at an angle in CAD (p0201 at 11 deg): `worker.log` says "drawn off square, laid square in every Arrange: p01 (turned ... deg on from its edge)", and the sheet picture shows it square from Fusion's own nest | **Pass** (r105, 2026-11-05: -2.67 deg; three bars square, 7.5 in long) |
 | 2 | Parts drawn square: the log has no "drawn off square" line and the sheets look as before | |
 | 3 | The f3d: the probe copies (`~m1`..`~m3`) are hidden, behind the sheets (negative Y), and in no setup | |
 
