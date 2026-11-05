@@ -209,6 +209,7 @@ class Labels:
     face: str = "Face"
     cad_changed: str = "CAD changed"    # a part changed in Onshape after it was CAM'd (panel/board.py)
     spare: str = "Spare"                # spares for the spares box: nested after the robot parts (2026-11-04)
+    check: str = "Check"                # a hand-made program to check only, nothing placed (program_checks.py)
 
 
 @dataclass(frozen=True)
@@ -759,7 +760,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
     t = top.table("labels")
     labels = Labels(smoked=t.string("smoked", required=True), tool_eighth=t.string("tool_eighth", required=True),
                     rush=t.string("rush", default="Rush"), face=t.string("face", default="Face"),
-                    cad_changed=t.string("cad_changed", default="CAD changed"), spare=t.string("spare", default="Spare"))
+                    cad_changed=t.string("cad_changed", default="CAD changed"), spare=t.string("spare", default="Spare"),
+                    check=t.string("check", default="Check"))
     t.finish()
 
     t = top.table("onshape")
@@ -1235,9 +1237,9 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
             warnings.append(f"{where}.file: {_rel(tpl.file, cfg.root)} not exported yet")
 
     names = [_norm_label(n) for n in (cfg.labels.smoked, cfg.labels.tool_eighth, cfg.labels.rush, cfg.labels.face,
-                                      cfg.labels.spare)]
+                                      cfg.labels.spare, cfg.labels.check)]
     if len(set(names)) != len(names):
-        e("labels: smoked, tool_eighth, rush, face and spare must all differ")
+        e("labels: smoked, tool_eighth, rush, face, spare and check must all differ")
 
     for name, key in cfg.onshape.material_map.items():
         if key not in cfg.materials:

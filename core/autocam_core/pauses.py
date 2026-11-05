@@ -242,8 +242,8 @@ def _show(words: Words) -> str:
     return " ".join(f"{l}{'' if v is None else _num(v)}" for l, v in words)
 
 
-def _first_move_problem(lines: List[str], start: int, safe_z_in: float) -> Optional[str]:
-    z = TOP  # the stop block retracted to machine top
+def _first_move_problem(lines: List[str], start: int, safe_z_in: float, z: float = TOP) -> Optional[str]:
+    # z: where the cutter is at the stop (AutoCAM's stop block retracts to machine top)
     for i in range(start, len(lines)):
         try:
             words = parse_code(lines[i])
@@ -262,6 +262,67 @@ def _first_move_problem(lines: List[str], start: int, safe_z_in: float) -> Optio
         if "X" in values or "Y" in values:
             return None if z >= safe_z_in else f"line {i + 1}: first sideways move is at Z{_num(z)}"
     return None
+
+
+_CUT_G = frozenset({1.0, 2.0, 3.0, 73.0, 81.0, 82.0, 83.0})
+_MOTION_G = frozenset({0.0}) | _CUT_G
+
+
+def stop_problems(text: str, safe_z_in: float, mist: bool) -> List[str]:
+    """A hand-made program's own stops (bare G4s), held to what AutoCAM's stop blocks do (2026-11-04): the cutter
+    is up at or above safe_z_in (the clamps' height) with the mist off when it stops, after ENTER the first move comes
+    down from there, and the mist is back on before the next cut when the material uses it. A stop with the spindle
+    running, or a cut with it stopped, already fails the guard."""
+    lines, _ = _split(text)
+    problems: List[str] = []
+    z: Optional[float] = None            # None: not known yet (the program's start)
+    motion: Optional[float] = None       # the modal motion code
+    mist_on = False
+    stopped_at: Optional[int] = None     # the last stop's line, until the mist is on again or a cut shows it isn't
+    for i, line in enumerate(lines):
+        words = _words(line)
+        if not words:
+            continue
+        gs = [v for l, v in words if l == "G"]
+        ms = [v for l, v in words if l == "M"]
+        values = {l: v for l, v in words if l not in ("G", "M")}
+        if words == STOP_WORDS:
+            where = f"line {i + 1}"
+            if z is None or z < safe_z_in:
+                problems.append(f"{where}: stops with the cutter at "
+                                f"{'an unknown height' if z is None else 'Z' + _num(z)}, below Z{_num(safe_z_in)} "
+                                "(the clamps' height): retract first (G53 Z)")
+            if mist_on:
+                problems.append(f"{where}: stops with the mist on (M12 C8 first)")
+            after = _first_move_problem(lines, i + 1, safe_z_in, TOP if z is None else z)
+            if after:
+                problems.append(f"after the stop at {where}: {after}")
+            stopped_at = i + 1 if mist else None
+            continue
+        if 53.0 in gs:
+            if "Z" in values:
+                z = TOP
+            continue
+        if 4.0 in gs:                     # a dwell
+            continue
+        if 11.0 in ms:
+            mist_on = True
+            stopped_at = None
+        if 12.0 in ms:
+            mist_on = False
+        if 80.0 in gs:
+            motion = None
+        for g in gs:
+            if g in _MOTION_G:
+                motion = g
+        moves = any(l in values for l in ("X", "Y", "Z"))
+        if moves and motion in _CUT_G and stopped_at is not None and not mist_on:
+            problems.append(f"line {i + 1}: cuts after the stop at line {stopped_at} with the mist still off "
+                            "(M11 C8 after the stop)")
+            stopped_at = None
+        if "Z" in values and values["Z"] is not None:
+            z = max(values["Z"], values.get("R") or values["Z"]) if motion in _CUT_G - {1.0, 2.0, 3.0} else values["Z"]
+    return problems
 
 
 def air_test_program(spec: PauseSpec) -> str:

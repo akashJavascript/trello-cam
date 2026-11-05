@@ -1010,6 +1010,49 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - Not rectangles (a part's own notches, the triangle by an angled edge): a part's bounding box counts as used.
   (Since 2026-11-04 the rooms also come from the parts' real cuts: see that day.)
 
+## 2026-11-04: the clamps in Fusion's simulation (core 0.25.0; the user picked it from the brief's leftovers)
+
+- **What:** each clamp strip (decision 5: the keep-out along a clamped edge, reach + clearance wide, the whole sheet
+  long) is a block in the Fusion file, from the plate top up `clamps.height_in`, in a `CLAMPS <sheet>` component, set
+  as the fixtures of the sheet's setup and of every extra setup made from it (FACE, SMALL, SCRIBE, fit laps), so a
+  simulation shows a cutter or holder hitting a clamp. The brief planned it; it was skipped at first because the guard
+  already fails any move too low over a strip, and that stays the real check.
+- **Not on a part placed by hand** (zeroed on its own box, clamped anywhere), and hidden while the preview picture is
+  taken (the picture is unchanged).
+- **Never stops a sheet:** if Fusion won't take them the sheet posts with a warning. Fusion makes each block, then it's
+  measured (BRepBody.boundingBox): one not where it belongs is hidden and warned about, never left to mislead the
+  simulation.
+- **`[clamps] in_fusion = true`**; false switches it off. Older job files read as off.
+- **Seen in Fusion** on r068's two plates (one faced, so a FACE and a SMALL program too): r086, r088, r090, r091 ok, the
+  blocks exactly at (0 to 1.25, 22.75 to 24) x (0 to 48) x (0.125 to 1.625) on a 1/8 in sheet. r088 (on) and r089
+  (off): the sheet and FACE programs byte-identical; the SMALL program drills the same 21 holes in another order, as
+  it also did between two runs with clamps (Fusion's own hole order). So the fixtures change nothing that's cut.
+- **Watch:** r087 failed its second outline with Fusion's "Failed to write Job File". These plates did that before
+  (r071-r074, vendor links in the templates, since fixed); with clamps it was 1 run in 5. If it comes back on real
+  sheets, try `in_fusion = false` first.
+
+## 2026-11-04: hand-made programs get AutoCAM's checks, and a Check label (the user: "the same ones you run on the autocam to make sure they dont crash"; picked "Both")
+
+- **Already, before today:** an own program AutoCAM places, or one with "Place it myself", went through the guard
+  (spoilboard, codes WinCNC runs, inches, sideways rapids below the plate top, the spindle at stops and cuts, and
+  where placed: clamps, reach, sheet).
+- **Added for every hand program** (`service/autocam_service/program_checks.py`): the mist for its material, as on
+  AutoCAM's sheets (aluminum on, polycarbonate off; the shop's post ticks Use mist coolant unless someone unticks it,
+  so a polycarbonate program posted as it comes now fails, and the comment says to untick it); and its own stops held
+  to what AutoCAM's stop blocks do (`pauses.stop_problems`): the cutter at or above the clamps' height with the mist
+  off when it stops, the first move after ENTER coming down from there, the mist back on before the next cut.
+- **The cutter number** (offered) needed nothing: the shop's post writes no tool numbers, and a T word already fails
+  the guard.
+- **The Check label** (new, `labels.check`, yellow): a card with it and a .tap or .nc attached, plus Material and
+  Thickness lines (Cutter optional), gets each program checked and a comment: passes, with what was checked, or the
+  problems. Nothing is placed and no sheet card is made. Checked as zeroed at a full sheet's front-left corner (so the
+  clamps, reach and sheet edges too); a Place it myself line checks it as zeroed anywhere. In Ready for CAM it's
+  always checked and then goes back to Drafts (passed) or to Needs fixing; in Drafts it's checked once per file, lines
+  and labels, and stays. Picked up where the service already reads every tick (Drafts and Ready for CAM): no extra
+  Trello calls.
+- **What it can't do:** check against the parts (AutoCAM's gouge check needs the part models in Fusion). Every
+  comment says to simulate it in Fusion too. That was option 4 in the question, not picked.
+
 ## 2026-11-04: Sign in with Slack on the shop page (the user: "should still build auth"; everyone is on the team's Slack)
 
 - **Only the phone page.** The Onshape panel keeps its key: it runs in Onshape's frame, where a sign-in page can't.

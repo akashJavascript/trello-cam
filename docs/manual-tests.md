@@ -516,6 +516,32 @@ robot parts leave.
 | 6 | Tap your name, Sign out: the sign-in page. `shop-sign-out --all` on the laptop: every phone gets the sign-in page on its next refresh | |
 | 7 | A Slack account from another workspace is turned away | |
 
+### 22. The clamps in Fusion's simulation (2026-11-04, core 0.25.0)
+
+Already seen by Claude in the run results (r086-r091): the blocks made, set as fixtures and measured where they belong.
+What only a person can see is the simulation itself.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Open a new sheet's Fusion file: a `CLAMPS <sheet>` component with a block on each clamped edge (1.25 in wide, the whole length, 1.5 in tall, sitting on the plate) | |
+| 2 | Simulate the sheet's setup with the fixture shown: the blocks show, and nothing the program does touches them (rapids pass over at the clearance height) | |
+| 3 | Its FACE or SMALL setup shows the same blocks | |
+| 4 | The sheet card's preview picture looks as before (no blocks on it) | |
+| 5 | In a copy of the file, lower an op's clearance height below 1.5 in above the plate: the simulation flags the collision | |
+
+### 23. Checking a hand-made program (the Check label, 2026-11-04)
+
+Needs the Check label on the board once: run `autocam trello-setup --board <board>` on the laptop (it adds missing
+labels and updates the how-to card), or make a label named Check by hand.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | A card in Ready for CAM with the Check label, a .tap someone posted from a sheet-sized setup (origin at the stock's bottom front-left corner), Material: 6061 and Thickness: 1/8: within a minute a comment says it passes (or why not) and the card is back in Drafts; no sheet card, no run | |
+| 2 | The same card in Drafts: commented once, stays in Drafts; attaching a new .tap gets a new comment | |
+| 3 | A polycarbonate program posted with Use mist coolant ticked: fails, and says to untick it | |
+| 4 | A program for one part, zeroed at its own corner: fails on the clamps and says to add Place it myself; with that line it passes | |
+| 5 | An own program (no Check label) that would have passed before but has the wrong mist: refused in Needs fixing saying so | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

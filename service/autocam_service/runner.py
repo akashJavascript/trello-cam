@@ -37,14 +37,12 @@ from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from autocam_core import CORE_VERSION
 from autocam_core.airtest import SUFFIX as AIR_SUFFIX, AirTestError, air_test_name, air_test_program, check_air_test
-from autocam_core.fixture import clamp_clear_z
 from autocam_core.hotfolder import Queue, write_atomic
 from autocam_core.offcuts import add_used, as_loaded, compact, cut_away, free_length, to_own, turn_rect
 from autocam_core.pauses import PauseError, remove as remove_pauses
 from autocam_core.sheetcheck import check_sheet_program, pause_spec
 from autocam_core.schema import SchemaError
 from autocam_core.schema_job import OffcutSpec, PartSpec, job_json, load_job
-from autocam_core.tapguard import GuardSpec, check_program
 
 from . import health, labels, tally
 from . import sheet_cards as text
@@ -55,6 +53,7 @@ from .cards import (MATERIAL_RE, README_CARD, STEP_SUFFIXES, TITLE_QTY_RE, CardP
 from .offcuts import _number as _scrap_number
 from .config import Config
 from .handprograms import ProgramCut, footprint, is_program, parse_cutter, program_cuts
+from .program_checks import check_comment, check_hand, hand_spec, signature as check_signature
 from .own_programs import (OWN_PROGRAM_RE, PLACE_MYSELF_RE, own_qty, pack_copies, parse_thickness, placed_name,
                            program_attachments, repeat_program, shift_program)
 from .fits import FitStore, key as fit_key, parse_fit, stocks as fit_stocks
@@ -257,7 +256,15 @@ class Runner:
         fresh: List[Card] = []
         for list_key in ("inbox", "ready_for_cam"):
             for card in self.t.list_cards(list_key):
-                if card.is_template or card.name.strip() == README_CARD or self._own_program_card(card):
+                if card.is_template or card.name.strip() == README_CARD:
+                    continue
+                if self._check_card(card):            # a program to check only (program_checks.py)
+                    try:
+                        self._check_programs(card)
+                    except Exception as e:  # noqa: BLE001 - one card mustn't stop the tick
+                        log.warning("check card %s: %s", card.id, e)
+                    continue
+                if self._own_program_card(card):
                     continue                          # own programs: placed by own_programs, not nested
                 if not any(c.checklist == t.nest_checklist for c in card.checks):
                     try:
@@ -920,7 +927,7 @@ class Runner:
         if self.dry_run or not self.cfg.hand_cuts.place_programs:
             return
         for card in self.t.list_cards("ready_for_cam"):
-            if card.is_template or not self._own_program_card(card):
+            if card.is_template or self._check_card(card) or not self._own_program_card(card):
                 continue
             try:
                 self._place_own(card)
@@ -931,12 +938,81 @@ class Runner:
         self.t.move(card.id, self.targets["part_rejected"])
         self.t.comment(card.id, problem_comment("Not placed", problems))
 
-    def _place_own(self, card: Card) -> None:
+    # ------------------------------------------------------------ programs checked only (program_checks.py)
+    def _check_card(self, card: Card) -> bool:
+        return _label(self.cfg.labels.check) in {_label(l) for l in card.labels}
+
+    def _check_programs(self, card: Card) -> None:
+        """A card with the Check label: each program on it checked like AutoCAM's own (program_checks.py), the result
+        in a comment; nothing is placed and no sheet card is made. In Drafts it's checked once per file, lines and
+        labels, and stays; from Ready for CAM it's always checked, then goes back to Drafts if everything passed, or
+        to Needs fixing."""
+        if self.dry_run:
+            return
+        cfg = self.cfg
+        f = self.s.store.offcuts_file.with_name("program_checks.json")
+        try:
+            seen = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            seen = {}
+        done = set(seen.get(card.id, []))
+        progs = program_attachments(card)
+        from_ready = card.list_key == "ready_for_cam"
+        sigs = {a.id: check_signature(a.id, card.desc, card.labels) for a in progs} or \
+            {"": check_signature("", card.desc, card.labels)}
+        todo = [a for a in progs if from_ready or sigs[a.id] not in done]
+        if not from_ready and (not progs and sigs[""] in done or progs and not todo):
+            return
+        again = ("Then move this card back to Ready for CAM to check it again." if from_ready else
+                 "It's checked again by itself.")
+        passed = False
+        key, thickness, cutter, problems = self._program_stock(card)
+        if not progs:
+            problems.insert(0, "No program attached: attach the .tap (or .nc) to check.")
+        if problems:
+            self.t.comment(card.id, "Not checked:\n" + "\n".join(f"- {p}" for p in problems)
+                           + f"\n\nAdd what's missing. {again}")
+        else:
+            passed = True
+            cutter = cutter or cfg.hand_cuts.cutter_in
+            on_sheet = not PLACE_MYSELF_RE.search(card.desc or "")
+            length, width = self._size(key)
+            fx = sheet_fixture(cfg, key)
+            for att in todo:
+                path = cfg.paths.cache / "trello" / f"{att.id}.tap"      # attachments never change once uploaded
+                if not path.is_file():
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    write_atomic(path, self.t.download(att))
+                data = path.read_bytes()
+                box, why, note = footprint(data, thickness, cutter)
+                if box is None or note:
+                    passed = False
+                    reason = ("; ".join(why) + "." if box is None else
+                              f"{note}. AutoCAM checks programs with Z0 on the spoilboard (the fixed tool setter): in "
+                              "Fusion put the setup's origin at the stock's bottom, post it again and attach that.")
+                    self.t.comment(card.id, f"Checked {att.name}: not checked further.\n\n- {reason}\n\n"
+                                            f"Fix it. {again}")
+                    continue
+                spec = (hand_spec(cfg, key, thickness, cutter, zones=fx.clamp_zones_in, sheet_in=(width, length))
+                        if on_sheet else hand_spec(cfg, key, thickness, cutter))
+                check = check_hand(data, spec)
+                passed = passed and check.passed
+                self.t.comment(card.id, check_comment(
+                    att.name, check, stock=self._stock_label(key, thickness), material=cfg.materials[key].name,
+                    mist=cfg.materials[key].use_mist, cutter_in=cutter, on_sheet=on_sheet,
+                    clamps=text.clamp_edges(fx.clamp_zones_in, width), again=again))
+                log.info("check card %s: %s %s", card.id, att.name, "passes" if check.passed else "fails")
+        seen[card.id] = sorted(done | set(sigs.values()))
+        f.parent.mkdir(parents=True, exist_ok=True)
+        write_atomic(f, (json.dumps(seen, indent=1, sort_keys=True) + "\n").encode("utf-8"))
+        if from_ready:
+            self.t.move(card.id, "inbox" if passed else self.targets["part_rejected"])
+
+    def _program_stock(self, card: Card) -> Tuple[Optional[str], Optional[float], Optional[float], List[str]]:
+        """A hand program card's Material, Thickness and Cutter lines: (material key, thickness, cutter or None for
+        the default, problems)."""
         cfg = self.cfg
         problems: List[str] = []
-        progs = program_attachments(card)
-        if len(progs) > 1:
-            problems.append("More than one program attached. Make a card for each.")
         hints = [v.strip() for v in MATERIAL_RE.findall(card.desc or "") if v.strip()]
         key = None
         if not hints:
@@ -953,6 +1029,16 @@ class Runner:
             if why:
                 problems.append(why)
         cutter, why = parse_cutter(card.desc or "")
+        problems += why
+        return key, thickness, cutter, problems
+
+    def _place_own(self, card: Card) -> None:
+        cfg = self.cfg
+        problems: List[str] = []
+        progs = program_attachments(card)
+        if len(progs) > 1:
+            problems.append("More than one program attached. Make a card for each.")
+        key, thickness, cutter, why = self._program_stock(card)
         problems += why
         qty, why_qty = own_qty(card.name, card.desc or "")
         if why_qty:
@@ -1016,19 +1102,13 @@ class Runner:
             moved = text_out.encode("ascii", errors="replace")
             piece_length = (pieces[spot.offcut_id].get("length_in") if spot.offcut_id and
                             pieces[spot.offcut_id].get("scrap") else None) or length
-            spec = GuardSpec(z_floor_in=cfg.machine.z_floor_in, allowed_g=frozenset(cfg.tapguard.allowed_g),
-                             allowed_m=frozenset(cfg.tapguard.allowed_m), park=cfg.machine.park,
-                             clamp_zones_in=fx.clamp_zones_in,
-                             clamp_clear_z_in=clamp_clear_z(thickness, cfg.clamps.height_in,
-                                                            cfg.tapguard.clamp_margin_in),
-                             tool_radius_in=cutter / 2, reach_y_in=cfg.machine.reach_y_in, stock_top_in=thickness,
-                             sheet_in=(width, piece_length))
-            return moved, check_program(moved, spec)
+            spec = hand_spec(cfg, key, thickness, cutter, zones=fx.clamp_zones_in, sheet_in=(width, piece_length))
+            return moved, check_hand(moved, spec)
 
         for group in groups:                           # every copy checked before any card is made
-            _, report = program_for(group, "H0")
-            if not report.passed:
-                self._refuse_own(card, [f"{att.name}, moved to its spot, failed AutoCAM's checks: {report.summary()}"])
+            _, check = program_for(group, "H0")
+            if not check.passed:
+                self._refuse_own(card, [f"{att.name}, moved to its spot, failed AutoCAM's checks: {check.summary()}"])
                 return
         stock = self._stock_label(key, thickness)
         part = " ".join(card.name.split())
@@ -1037,7 +1117,8 @@ class Runner:
             spot, copies = group.spot, len(group.offsets)
             label = self._own_label()
             name = placed_name(att.name, label)
-            moved, report = program_for(group, label)
+            moved, check = program_for(group, label)
+            report = check.report
             number = (pieces[spot.offcut_id].get("number") if spot.offcut_id else None)
             title = (f"{stock}" + (f" offcut #{number}" if number else " offcut" if spot.offcut_id else "")
                      + f" - own program {att.name}" + (f" x{copies}" if copies > 1 else "") + f" - {part} - {label}")
@@ -1088,13 +1169,11 @@ class Runner:
         """An own program with "Place it myself": its card in Sheet review with the program as it is, zeroed on
         whatever piece the operator picks (own_programs.py)."""
         cfg = self.cfg
-        spec = GuardSpec(z_floor_in=cfg.machine.z_floor_in, allowed_g=frozenset(cfg.tapguard.allowed_g),
-                         allowed_m=frozenset(cfg.tapguard.allowed_m), park=cfg.machine.park,
-                         tool_radius_in=cutter / 2, stock_top_in=thickness)
-        report = check_program(data, spec)
-        if not report.passed:
-            self._refuse_own(card, [f"{att.name} failed AutoCAM's checks: {report.summary()}"])
+        check = check_hand(data, hand_spec(cfg, key, thickness, cutter))
+        if not check.passed:
+            self._refuse_own(card, [f"{att.name} failed AutoCAM's checks: {check.summary()}"])
             return
+        report = check.report
         label = self._own_label()
         stock = self._stock_label(key, thickness)
         part = " ".join(card.name.split())

@@ -36,7 +36,7 @@ README_TITLE = README_CARD
 TEMPLATE_TITLE = "New part"
 TEMPLATE_DESC = "Paste the Part Studio link here\nQty: "
 LABEL_COLORS = {"smoked": "black", "tool_eighth": "orange", "rush": "red", "face": "green", "cad_changed": "purple",
-                "spare": "sky"}
+                "spare": "sky", "check": "yellow"}
 
 
 def _norm(name: str) -> str:
@@ -119,6 +119,7 @@ def setup_board(http, *, board: Optional[str] = None, create: Optional[str] = No
                                                    rush=labels.get("rush", "Rush"),
                                                    face=labels.get("face", "Face"),
                                                    spare=labels.get("spare", "Spare"),
+                                                   check=labels.get("check", "Check"),
                                                    face_depth=f"{face_depth:g}",
                                                    tabs=TABS_HELP[tabs_default]))
     template = card(TEMPLATE_TITLE, "inbox", TEMPLATE_DESC, template=True)

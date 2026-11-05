@@ -241,7 +241,7 @@ def test_how_many_comes_from_a_qty_line_or_the_title():
 
 
 def test_a_program_cut_more_than_once_repeats_only_its_moves():
-    src = program().decode("ascii")
+    src = program(mist=False).decode("ascii")
     out = repeat_program(src, [(1.0, 2.0), (6.0, 2.0)], "NOTE")
     lines = out.split("\r\n")
     assert lines[:7] == ["G90", "[NOTE]", "G20", "G53 Z", "S18000", "M3", "G4 X4."]          # the start once

@@ -72,6 +72,10 @@ CAM'd it yourself? Attach your .tap instead, with lines like Material: 6061 and 
 if it's over 1/4 in), or use "I CAM'd it myself" in the Onshape panel. Add a line Place it myself to cut it wherever
 you like instead: its card goes to Sheet review with your program as it is. AutoCAM picks it a spot on an offcut or a new sheet, moves the program there and puts it in
 Sheet review: zero X/Y at the piece's front-left corner like any sheet. Its Z0 must be the spoilboard.
+Running a program yourself (from a USB stick)? Check it first: a card with the {check} label, the .tap attached and
+lines like Material: 6061 and Thickness: 3/16. Within a minute a comment says whether it passes AutoCAM's checks
+(spoilboard, clamps, reach, rapids, mist, stops) and nothing is placed. They're checked as zeroed at a full sheet's
+front-left corner; add a line Place it myself if you zero it somewhere else.
 
 Offcuts: each one has a number (#4); write it on the piece when it goes on the rack. If a sheet card names an
 offcut that isn't there, tick "The offcut isn't on the rack" under Stock on that card. To add a full-width

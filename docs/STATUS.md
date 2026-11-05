@@ -1,6 +1,6 @@
 # Status
 
-_Last updated 2026-11-03 (branch `main`)._
+_Last updated 2026-11-04 (branch `main`)._
 
 ## Where things are
 
@@ -19,6 +19,8 @@ _Last updated 2026-11-03 (branch `main`)._
 | Shaft list (2026-11-02) | **Built, tested offline and in a local browser**: library shafts sent from the Onshape panel go on a phone page (`/shop`) instead of Trello. `docs/shafts.md`. Read right off the Shooter assembly's real BOM (2026-11-02) |
 | Watched assemblies (2026-11-02) | **Built, tested offline**: assemblies with things on the shop's lists, or with cards for parts from another document's saved version, are read again in the background after Onshape says they changed (at most hourly): "Changed in CAD" and "CAD has 6" without opening the panel, and version cards follow their assembly to newer versions (CAD changed on an uncut sheet). `panel/assemblies.py`, `docs/panel.md` |
 | Shop sign-in (2026-11-04) | **Built, tested offline and in a local browser with a pretend Slack**: the phone page is opened by signing in with Slack (team workspace only, the name not the email); the Onshape panel keeps its key. Waiting for the Slack app's id and secret in the laptop's `.env` (`docs/panel.md`); until then the key link works as before, and for a week after the first sign-in. `panel/signin.py` |
+| Clamps in Fusion's simulation (2026-11-04) | **Works in Fusion** (r086-r091, core 0.25.0): each sheet's setup (and its FACE, SMALL, SCRIBE, fit-lap setups) has the clamp strips as fixtures, blocks the clamp height on the plate, so a simulation shows a cutter hitting a clamp; measured after Fusion makes them; the programs are byte-identical with and without (r088 vs r089). Not on parts placed by hand. `[clamps] in_fusion`. Left: see it in a simulation (`docs/manual-tests.md` section 22) |
+| Hand-made programs checked (2026-11-04) | **Built, tested offline**: every hand program (own programs AutoCAM places, "Place it myself", and the new **Check** label, which only checks) gets AutoCAM's guard plus the mist for its material and safe stops (`program_checks.py`, `pauses.stop_problems`). A Check card gets a comment saying it passes or why not; nothing is placed. Left: the Check label on the board (`trello-setup`), manual-tests section 23 |
 | Bought-parts list (2026-11-02) | **Built, tested offline and in a local browser**: an assembly's bought parts (no screws or nuts) sent from the panel go on the phone page's Parts tab: In the bin, or Order (opens the team's order sheet; AutoCAM never writes to it). `docs/bought-parts.md`. Counts (some in the bin, order the rest), "CAD has 6", order age and notes added the same day; the sheet's link is in the laptop's `.env` |
 
 M1.1 pure core covers:
@@ -203,7 +205,7 @@ r005-r007 were turned 90 degrees for the ShopSabre: don't cut them (`docs/decisi
 ### Stretch ideas (not planned; rough size)
 - **Board upkeep** (small): cards in Cut archive themselves after ~14 days; old job folders and exports pruned
   (keeping what open sheets need); a machine queue on the System card ("Ready to cut: 3 sheets, about 2 h 40").
-- **Brief leftovers** (small each): clamp-strip blocks in the Fusion setup so the simulation shows them; the
+- **Brief leftovers** (small each; the clamp blocks in the Fusion setup were built 2026-11-04): the
   "stock/cutter loaded" and "clamps as shown" items back in the required Review checklist; lowest Z per sheet
   in the run summary; a parts checklist on sheet cards.
 - **Even fewer Onshape calls:** one export per Part Studio (the add-in splits the bodies), and not

@@ -9,10 +9,13 @@ from test_offcut_finding import note, pieces, scrap
 from test_offcuts_service import cut, first_sheet, offcut_cards
 
 
-def program(z_cut="0.", units="G20", x1=3.0, y1=2.0):
-    """A square cut from the program's zero to (x1, y1), like a part cut with its own program."""
-    lines = ["G90", units, "G53 Z", "S18000", "M3", "G4 X4.", "G0 X0. Y0.", "G0 Z0.325", f"G1 Z{z_cut} F20.",
-             f"G1 X{x1:g} F60.", f"G1 Y{y1:g}", "G1 X0.", "G1 Y0.", "G0 Z2.125", "G53 Z", "M5", "G53 P10"]
+def program(z_cut="0.", units="G20", x1=3.0, y1=2.0, mist=True):
+    """A square cut from the program's zero to (x1, y1), like a part cut with its own program. With the mist on and
+    off like the shop's post writes it (its Use mist coolant box is ticked unless someone unticks it)."""
+    lines = (["M11 C8"] if mist else []) + [
+        "G90", units, "G53 Z", "S18000", "M3", "G4 X4.", "G0 X0. Y0.", "G0 Z0.325", f"G1 Z{z_cut} F20.",
+        f"G1 X{x1:g} F60.", f"G1 Y{y1:g}", "G1 X0.", "G1 Y0.", "G0 Z2.125", "G53 Z", "M5"] + (
+        ["M12 C8"] if mist else []) + ["G53 P10"]
     return ("\r\n".join(lines) + "\r\n").encode("ascii")
 
 
