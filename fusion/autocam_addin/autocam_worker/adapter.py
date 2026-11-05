@@ -127,14 +127,15 @@ class Adapter:
 
     def arrange(self, copy_ids: Sequence[str], envelope: Rect, spacing_in: float,
                 up_faces: Mapping[str, int], priorities: Optional[Mapping[str, int]] = None,
-                along: Optional[Mapping[str, str]] = None) -> Arranged:
+                along: Optional[Mapping[str, Tuple[str, float]]] = None) -> Arranged:
         """Nest what fits into one envelope. The rest stay where they were.
 
         up_faces: for each copy, the face that must end up facing +Z (a pocket's open side). A copy that
         can't be laid that way is refused, not arranged. priorities: copy -> 2 (very high) or 1 (high), the rest
-        as Fusion has them. along: copy -> the key of a straight top edge (top_edges) Arrange lays along X, from
-        where it still turns the part the ways it may (core 0.28.0: a straight row's part drawn at an odd angle,
-        which Arrange doesn't turn by itself, r098)."""
+        as Fusion has them. along: copy -> (the key of a straight top edge (top_edges), degrees): Arrange lays the
+        edge along X, then turns the part that much more, counterclockwise seen from above, from where it still turns
+        it the ways it may (core 0.28.0: a straight row's part drawn at an odd angle, which Arrange doesn't turn by
+        itself, r098; the degrees bring its smallest rectangle square when its edges aren't, r102)."""
         raise NotImplementedError
 
     def box(self, copy_id: str) -> Box:

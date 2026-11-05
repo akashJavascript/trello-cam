@@ -45,6 +45,9 @@ class FakeAdapter(Adapter):
                                               # area too shallow for it at that angle places nothing, r098), unless
                                               # it's given an edge to lay along (arrange's along: then it's square)
         self.slant: Dict[str, float] = {}    # copy id -> the angle it lies at now (its outline: a turned rectangle)
+        self.edge_skew: Dict[str, float] = {}   # part key -> how far its straight edges run off its rectangle (deg;
+                                                # p0201-Mirrored: 2.67, r102)
+        self.rotation_sign = 1.0             # which way Arrange's rotation turns a part laid top up (1: as documented)
         self.arranged = False                          # an Arrange has run
         self.late: Set[str] = set()                    # copies made after an Arrange: refused, like r012/r013
         self.sheets: Dict[str, dict] = {}
@@ -154,7 +157,10 @@ class FakeAdapter(Adapter):
                 refused[cid] = "upDirection (0, 1, 0) is across the top face"
                 continue
             geometry, size = self.parts[self.copies[cid]]
-            deg = None if cid in along else self.slant.get(cid)        # laid along an edge: square
+            deg = self.slant.get(cid)
+            if cid in along:                  # its edge along X, then turned on: square if turned the right way
+                deg = self.rotation_sign * along[cid][1] - self.edge_skew.get(cid.rsplit(".", 1)[0], 0.0)
+                deg = None if abs(deg) < 1e-6 else deg
             w, h = size if deg is None else self._box_at(size, deg)
             px, py, prow = x, y, row
             if px + w > x1 + 1e-9:
@@ -163,6 +169,8 @@ class FakeAdapter(Adapter):
                 continue                      # doesn't fit; the next one might
             if deg is None:
                 self.slant.pop(cid, None)     # laid square
+            else:
+                self.slant[cid] = deg
             z0 = 0.5 if cid in self.bad_z else 0.0
             self.boxes[cid] = Box(px, py, z0, px + w, py + h, z0 + geometry.thickness_in)
             placed.append(cid)
@@ -291,9 +299,16 @@ class FakeAdapter(Adapter):
     def top_edges(self, copy_id, face_ids):
         b = self.boxes[copy_id]
         tops = self.tops.get(self.copies[copy_id], {})
-        if not tops and copy_id.rsplit(".", 1)[0] in self.tilted and face_ids:   # its outline's four edges
-            segs = self.loop_segments(copy_id, face_ids[0], None)
-            return {face_ids[0]: [(f"e{n}", sg.points[0], sg.points[-1], True) for n, sg in enumerate(segs, 1)]}
+        if not tops and copy_id.rsplit(".", 1)[0] in self.tilted and face_ids:   # its outline's four edges,
+            segs = self.loop_segments(copy_id, face_ids[0], None)              # each turned by its skew
+            k = math.radians(self.edge_skew.get(copy_id.rsplit(".", 1)[0], 0.0))
+            out = []
+            for n, sg in enumerate(segs, 1):
+                (ax, ay), (bx, by) = sg.points[0], sg.points[-1]
+                dx, dy = bx - ax, by - ay
+                out.append((f"e{n}", (ax, ay), (ax + dx * math.cos(k) - dy * math.sin(k),
+                                                 ay + dx * math.sin(k) + dy * math.cos(k)), True))
+            return {face_ids[0]: out}
         return {fid: [(k, (a[0] + b.x0, a[1] + b.y0), (c[0] + b.x0, c[1] + b.y0), st) for k, a, c, st in tops[fid]]
                 for fid in face_ids if fid in tops}
 

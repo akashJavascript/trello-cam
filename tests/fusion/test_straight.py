@@ -129,7 +129,8 @@ def test_a_part_drawn_at_an_angle_is_laid_along_its_long_edge_in_each_row(tmp_pa
     rows = [a for a in rig.fake.arrange_along if a]
     # each row's Arrange: its copy, laid along one of the bar's long edges (the fake outline's 1st or 3rd, 15 in)
     assert [sorted(a) for a in rows] == [["p01.1~r"], ["p01.2~r"], ["p01.3~r"]]
-    assert len({e for a in rows for e in a.values()}) == 1 and set(rows[0].values()) <= {"e1", "e3"}
+    assert len({e for a in rows for e in a.values()}) == 1 and {e for e, _ in rows[0].values()} <= {"e1", "e3"}
+    assert all(abs(turn) < 1e-6 for a in rows for _, turn in a.values())    # its edges run along its rectangle
     assert "off square, laid along a straight edge in the rows: p01" in log(rig)
 
 
@@ -142,3 +143,26 @@ def test_without_an_edge_to_lay_it_along_a_slanted_part_fits_no_row(tmp_path, mo
     [sheet] = result.sheets
     assert "straight rows: Fusion placed 0 of row 1's 1" in log(rig)
     assert all(p.placed == p.qty for p in result.parts) and sheet.free_length_in < 38.5 - 6.5
+
+
+def test_a_part_whose_edges_run_off_its_rectangle_is_turned_on_from_its_edge(tmp_path):
+    # p0201-Mirrored (r102): its long edges are 2.67 deg off its smallest rectangle, so laid along an edge it's still
+    # too deep for its row; turned on by that much it fits.
+    rig = Rig(tmp_path)
+    rig.fake.no_room_raises = True
+    rig.fake.tilted, rig.fake.edge_skew = {"p01": SLANT}, {"p01": 2.67}
+    result = rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))
+    assert "laid in 3 straight row(s)" in log(rig) and "turned +2.67 deg on from it" in log(rig)
+    assert result.sheets[0].free_length_in == 38.5 - 6.5
+    assert len(strips(rig, 2.0)) == 3                     # each row fit the first time
+
+
+def test_if_fusion_turns_the_other_way_each_row_is_tried_turned_the_other_way(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.no_room_raises = True
+    rig.fake.tilted, rig.fake.edge_skew, rig.fake.rotation_sign = {"p01": SLANT}, {"p01": 2.67}, -1.0
+    result = rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))
+    assert "laid in 3 straight row(s)" in log(rig) and result.sheets[0].free_length_in == 38.5 - 6.5
+    assert len(strips(rig, 2.0)) == 6                     # each row: turned one way (no room), then the other
+    turns = [round(t, 2) for a in rig.fake.arrange_along if a for _, t in a.values()]
+    assert turns[:2] == [2.67, -2.67]

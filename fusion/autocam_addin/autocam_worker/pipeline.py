@@ -428,7 +428,7 @@ NO_ROOM = "ARRANGE_ERROR_NO_ROOM"
 
 def _arrange(adapter: Adapter, job: Job, copies: Sequence[str], envelope: Rect, up: Dict[str, int],
              hints: Optional[_Hints] = None, log: Optional[Callable[[str], None]] = None,
-             along: Optional[Dict[str, str]] = None):
+             along: Optional[Dict[str, Tuple[str, float]]] = None):
     """adapter.arrange with the parts' priorities; what Fusion says it set goes in the log. An area none of the
     copies fits places nothing: Fusion's Arrange places what fits, but raises ARRANGE_ERROR_NO_ROOM when nothing
     does (r084: a room beside the robot parts too small for any spare)."""
@@ -750,7 +750,8 @@ def _straighten(adapter: Adapter, job: Job, best: "_Try", idx: List[int], parts:
     spacing = job.nest.part_spacing_in
     by_key = {p.key: p for p in parts}
     flat: Dict[str, Tuple[float, float]] = {}
-    edge_of: Dict[str, str] = {}                     # part key -> the straight top edge its rows' copies lie along
+    edge_of: Dict[str, Tuple[str, float]] = {}       # part key -> (a straight top edge, degrees to turn on from it):
+                                                     # how its rows' copies lie square
     for c in last:                                   # each part's smallest rectangle, from its outline as it lies
         if key(c) not in flat:
             flat[key(c)] = _flat_size(adapter, by_key[key(c)], c) or sizes[key(c)]
@@ -759,7 +760,8 @@ def _straighten(adapter: Adapter, job: Job, best: "_Try", idx: List[int], parts:
                 edge_of[key(c)] = edge
     log(f"{say}: parts' smallest rectangles: " + ", ".join(f"{k} {a:.2f} x {b:.2f} in" for k, (a, b) in flat.items()))
     if edge_of:
-        log(f"{say}: off square, laid along a straight edge in the rows: {', '.join(sorted(edge_of))}")
+        log(f"{say}: off square, laid along a straight edge in the rows: "
+            + ", ".join(f"{k} (turned {v[1]:+.2f} deg on from it)" for k, v in sorted(edge_of.items())))
     items = [(c, flat[key(c)][0], flat[key(c)][1]) for c in last]
     rows = straight_rows(items, env[2] - env[0], spacing, {c: 1 for c in last if key(c) in spares})
     if rows is None:
@@ -803,10 +805,17 @@ def _straighten(adapter: Adapter, job: Job, best: "_Try", idx: List[int], parts:
         y = moved[-1][1]
         for n, row in enumerate(rows if not why else (), 1):
             cs = [swap_last[c] for c, _, _ in row.items]
-            along = {c: edge_of[key(c)] for c in cs if key(c) in edge_of}
+            turns = [k for k in dict.fromkeys(key(c) for c in cs) if k in edge_of]
+            # which way Fusion's rotation turns a part laid top up isn't proven (r102): if the row doesn't fit
+            # turned on from its edge one way, the other
+            signs = (1.0, -1.0) if any(abs(edge_of[k][1]) > 1e-6 for k in turns) else (1.0,)
             for slack in STRAIGHT_SLACKS_IN:
                 strip = (moved[-1][0], y, moved[-1][2], min(moved[-1][3], y + row.depth + slack))
-                got = _arrange(adapter, job, cs, strip, up, hints, log, along)
+                for sign in signs:
+                    along = {c: (edge_of[key(c)][0], sign * edge_of[key(c)][1]) for c in cs if key(c) in edge_of}
+                    got = _arrange(adapter, job, cs, strip, up, hints, log, along)
+                    if got.placed:
+                        break
                 if got.placed:
                     break                            # some or all placed: those are in this Arrange now
             if set(got.placed) != set(cs):
@@ -860,12 +869,15 @@ def _outline_points(adapter: Adapter, part: _Part, cid: str) -> List[Tuple[float
 SQUARE_DEG = 0.5            # a part whose smallest rectangle is turned more than this from square is laid along an edge
 
 
-def _square_edge(adapter: Adapter, part: _Part, cid: str) -> Optional[str]:
-    """For a copy lying flat that's turned off square (its smallest rectangle more than SQUARE_DEG from X or Y): the
-    key of its longest straight top edge along that rectangle's long side, for a straight row's Arrange to lay along X
-    (adapter.arrange's along; core 0.28.0). Fusion's Arrange doesn't turn a part by an odd angle by itself: p0201,
-    drawn at 11 deg, fit no row (r098). Every copy of a part has the same edges, so the key holds for the rows' copies
-    too. None if it lies square already or no straight edge runs that way (it's left to Arrange, as before)."""
+def _square_edge(adapter: Adapter, part: _Part, cid: str) -> Optional[Tuple[str, float]]:
+    """For a copy lying flat that's turned off square (its smallest rectangle more than SQUARE_DEG from X or Y): its
+    longest straight top edge and how far to turn the part on from that edge lying along X (degrees, counterclockwise
+    seen from above) for the rectangle's long side to lie along X: what a straight row's Arrange is given to lay it
+    square (adapter.arrange's along; core 0.28.0). Fusion's Arrange
+    doesn't turn a part by an odd angle by itself: p0201, drawn at 11 deg, fit no row (r098). A part's edges needn't
+    run along its rectangle: p0201-Mirrored's long edges are 2.67 deg off it (r102). Every copy of a part has the same
+    edges, so the key holds for the rows' copies too. None if it lies square already or has no straight edge (it's
+    left to Arrange, as before)."""
     angle = long_side_angle(_outline_points(adapter, part, cid))
     if angle is None or min(abs(angle), 90.0 - abs(angle)) <= SQUARE_DEG:
         return None
@@ -874,16 +886,16 @@ def _square_edge(adapter: Adapter, part: _Part, cid: str) -> Optional[str]:
         faces = adapter.top_edges(cid, tuple(a.top_face_ids or (a.up_face_id,)))
     except AdapterError:
         return None
-    best: Optional[Tuple[float, str]] = None
+    best: Optional[Tuple[float, str, float]] = None
     for edges in faces.values():
         for k, p0, p1, straight in edges:
             n = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
             if not straight or n < 1e-6:
                 continue
-            off = (math.degrees(math.atan2(p1[1] - p0[1], p1[0] - p0[0])) - angle + 90.0) % 180.0 - 90.0
-            if abs(off) <= SQUARE_DEG and (best is None or n > best[0]):
-                best = (n, str(k))
-    return best[1] if best else None
+            turn = (math.degrees(math.atan2(p1[1] - p0[1], p1[0] - p0[0])) - angle + 90.0) % 180.0 - 90.0
+            if best is None or n > best[0] + 1e-6:
+                best = (n, str(k), round(turn, 3))
+    return (best[1], best[2]) if best else None
 
 
 def _part_order(parts: Sequence[_Part], order: str, sizes: Dict[str, Tuple[float, float]]) -> List[str]:
