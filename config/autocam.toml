@@ -66,6 +66,7 @@ offcut_min_in = 6.0        # an offcut needs a free stretch this long (full widt
 offcut_beside_min_in = 3.0 # room beside the parts cut is kept and filled when it's this big both ways
 priority_by_size = true    # Fusion's Arrange priority: biggest parts very high, mid-size high (2026-11-04)
 straight_max = 12          # a sheet with at most this many parts is also tried in straight rows; the better offcut is kept (0: never)
+square_parts = true        # a part drawn off square in CAD is laid square in every Arrange (Fusion keeps the CAD angle, r098)
 
 [clamps]
 edges = ["left", "right"]  # any of "left", "right" (the long edges), "front" (the end by you); the back overhangs

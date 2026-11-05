@@ -72,6 +72,7 @@ class FakeAdapter(Adapter):
         self.arrange_envelopes: List[Tuple[float, float, float, float]] = []
         self.arrange_hints: List[dict] = []                    # the priorities given, per Arrange
         self.arrange_along: List[dict] = []                    # the edges given to lay copies along, per Arrange
+        self.probe_along: List[dict] = []                      # the square probe's Arranges (pipeline._square_probe)
         self.finished: Optional[bool] = None
         self.fail_tab_points = False                   # set_tab_points refuses (like Fusion without the choice)
         self.round_loops = False                       # inner loops are 0.5 in circles (no straight edge for a tab)
@@ -134,9 +135,12 @@ class FakeAdapter(Adapter):
             self.late.add(copy_id)
 
     def arrange(self, copy_ids, envelope, spacing_in, up_faces, priorities=None, along=None):
-        self.arrange_envelopes.append(envelope)
-        self.arrange_hints.append(dict(priorities or {}))
-        self.arrange_along.append(dict(along or {}))
+        if copy_ids and all("~m" in c for c in copy_ids):    # the square probe's (core 0.29.0): kept apart, so the
+            self.probe_along.append(dict(along or {}))       # tests' Arrange counts stay the nest's own
+        else:
+            self.arrange_envelopes.append(envelope)
+            self.arrange_hints.append(dict(priorities or {}))
+            self.arrange_along.append(dict(along or {}))
         along = along or {}
         # like Fusion is taken to: higher priority first, the rest in the order given
         copy_ids = sorted(copy_ids, key=lambda c: -(priorities or {}).get(c, 0))

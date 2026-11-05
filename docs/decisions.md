@@ -1086,6 +1086,28 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 - **The fake Arrange is stricter now:** it keeps a part at the angle it lies (as r098 showed Fusion does), unless
   it's given an edge (and turned the right way on from it: `edge_skew`, `rotation_sign`).
 
+## 2026-11-05: every part drawn off square laid square (core 0.29.0; the user: "Do 1")
+
+- **Why:** Fusion's Arrange keeps a part at the angle it's drawn at in CAD and steps its rotations from there. The
+  straight rows (0.28.0) squared a part only in their own rows; Fusion's main nest still left p0201 at 11 deg, and
+  so did the squeeze. A part at a slant takes more of the sheet and leaves ragged room beside it.
+- **The probe** (`pipeline._square_probe`), once per stock thickness, before nesting:
+  - One copy of each part is laid flat in a spare area behind the sheets (negative Y, so it takes no sheet slot)
+    and measured: its smallest rectangle's angle and, if that's more than 0.5 deg off square, its longest straight
+    edge and the turn on from it that squares the rectangle (`_square_edge`, as for the rows).
+  - For each part off square, two more copies are laid along that edge, turned on one way and the other, in one
+    Arrange. The one that comes out square says which way: Fusion turned it the other way from its reference in
+    r103, so the probe checks rather than assumes, per part.
+  - The three copies per part are made with the others before any Arrange, and hidden afterwards. A part the probe
+    can't square, or any Fusion error in it, leaves the parts as Arrange lays them (the log says so).
+- **Every later Arrange is told** (`_Hints.turn`, through `_arrange`): the tries, the room beside earlier cuts, the
+  spares, the squeeze, the straight rows and the "fits alone on a sheet" check. Not parts placed by hand (their own
+  Arrange). A part drawn square gets nothing: no change for it.
+- **Kept the rows' own edge and both-ways retry** for a part the probe didn't cover.
+- **Switch:** `[nest] square_parts` (on). Off: no probe, as 0.28.0.
+- **Cost:** one extra Arrange per thickness (the measuring one), two when a part is off square, plus three hidden
+  copies per part.
+
 ## 2026-11-05: the machine screen (the mockup the user approved, v4)
 
 - **What:** the operator's screen on the ShopSabre's own PC (27 in monitor, beside WinCNC): `/machine`, one card at a

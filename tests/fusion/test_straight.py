@@ -6,6 +6,8 @@ an area only as deep as its deepest part, and keeps whichever leaves the better 
 part drawn at an angle (rig.fake.tilted) at that angle, like Fusion did with p0201 (r093, r094; in a row too shallow
 for it that way it placed nothing, r098): its outline is a turned rectangle, its box much bigger. Since core 0.28.0 a
 row's Arrange is given the part's long straight edge to lay along X (setRotationUsingEdge), and then it lies square.
+Since core 0.29.0 a part drawn off square is laid square in every Arrange (test_square.py), so these tests turn that off
+([nest] square_parts) to see the rows square up a part Fusion's own nest left at a slant.
 """
 
 import autocam_worker.pipeline as pipeline
@@ -28,7 +30,7 @@ def strips(rig, depth):
 
 
 def test_bars_on_a_slant_are_laid_straight(tmp_path):
-    rig = Rig(tmp_path)
+    rig = Rig(tmp_path, square_parts=False)
     rig.fake.tilted = {"p01": SLANT}
     result = rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))
     [sheet] = result.sheets
@@ -50,7 +52,7 @@ def test_parts_fusion_already_laid_straight_stay_as_they_are(tmp_path):
     assert sheet.free_length_in == 38.5 - 4.0                           # one row of three, as Fusion put them
     assert not strips(rig, 4.0)                                         # the rows weren't even tried in Fusion
     assert "stays as Fusion nested it" in log(rig)
-    assert not any(c.startswith("discard") and "~r" not in c and "~s" not in c for c in rig.fake.calls)
+    assert not any(c.startswith("discard") and not any(m in c for m in ("~r", "~s", "~m")) for c in rig.fake.calls)
     assert not any(rig.fake.arrange_along)                              # lying square: no edge to lay it along
 
 
@@ -78,7 +80,7 @@ def test_a_part_longer_than_the_sheet_is_wide_is_not_tried(tmp_path):
 
 def test_a_row_fusion_wont_fill_keeps_fusions_layout(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "STRAIGHT_SLACKS_IN", (-0.5, -0.2))     # each row's area too shallow for its part
-    rig = Rig(tmp_path)
+    rig = Rig(tmp_path, square_parts=False)
     rig.fake.no_room_raises = True                                       # like Fusion: an Arrange placing nothing
     rig.fake.tilted = {"p01": SLANT}
     result = rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))
@@ -91,7 +93,7 @@ def test_a_row_fusion_wont_fill_keeps_fusions_layout(tmp_path, monkeypatch):
 
 
 def test_rows_on_an_offcut_keep_the_parts_beside_earlier_cuts(tmp_path):
-    rig = Rig(tmp_path)
+    rig = Rig(tmp_path, square_parts=False)
     rig.fake.tilted = {"p02": SLANT}
     offcut = OffcutSpec("off1", 0.125, ((0.5, 4.0),), beside_in=(BESIDE,))
     job = job_with(rig, [("tab", 1, plate(name="tab"), (3.0, 3.0)), ("bar", 2, plate(name="bar"), BAR)], [offcut])
@@ -105,7 +107,7 @@ def test_rows_on_an_offcut_keep_the_parts_beside_earlier_cuts(tmp_path):
 
 
 def test_the_rows_use_the_parts_real_width_not_their_box_in_cad(tmp_path):
-    rig = Rig(tmp_path)
+    rig = Rig(tmp_path, square_parts=False)
     rig.fake.tilted = {"p01": SLANT}                      # drawn at 11 deg: its box in CAD is 15.1 x 4.8 in
     rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))
     assert "smallest rectangles: p01 15.00 x 2.00 in" in log(rig) and "laid in 3 straight row(s)" in log(rig)
@@ -113,7 +115,7 @@ def test_the_rows_use_the_parts_real_width_not_their_box_in_cad(tmp_path):
 
 def test_a_row_fusion_places_none_of_gets_a_little_more_room(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "STRAIGHT_SLACKS_IN", (-0.5, 0.1))      # the first area too shallow
-    rig = Rig(tmp_path)
+    rig = Rig(tmp_path, square_parts=False)
     rig.fake.no_room_raises = True                        # like Fusion: an Arrange placing nothing raises, moves nothing
     rig.fake.tilted = {"p01": SLANT}
     result = rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))
@@ -123,7 +125,7 @@ def test_a_row_fusion_places_none_of_gets_a_little_more_room(tmp_path, monkeypat
 
 
 def test_a_part_drawn_at_an_angle_is_laid_along_its_long_edge_in_each_row(tmp_path):
-    rig = Rig(tmp_path)
+    rig = Rig(tmp_path, square_parts=False)
     rig.fake.tilted = {"p01": SLANT}
     rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))
     rows = [a for a in rig.fake.arrange_along if a]
@@ -136,7 +138,7 @@ def test_a_part_drawn_at_an_angle_is_laid_along_its_long_edge_in_each_row(tmp_pa
 
 def test_without_an_edge_to_lay_it_along_a_slanted_part_fits_no_row(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "_square_edge", lambda *a: None)     # like 0.27.0 (r098)
-    rig = Rig(tmp_path)
+    rig = Rig(tmp_path, square_parts=False)
     rig.fake.no_room_raises = True
     rig.fake.tilted = {"p01": SLANT}
     result = rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))
@@ -148,7 +150,7 @@ def test_without_an_edge_to_lay_it_along_a_slanted_part_fits_no_row(tmp_path, mo
 def test_a_part_whose_edges_run_off_its_rectangle_is_turned_on_from_its_edge(tmp_path):
     # p0201-Mirrored (r102): its long edges are 2.67 deg off its smallest rectangle, so laid along an edge it's still
     # too deep for its row; turned on by that much it fits.
-    rig = Rig(tmp_path)
+    rig = Rig(tmp_path, square_parts=False)
     rig.fake.no_room_raises = True
     rig.fake.tilted, rig.fake.edge_skew = {"p01": SLANT}, {"p01": 2.67}
     result = rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))
@@ -158,7 +160,7 @@ def test_a_part_whose_edges_run_off_its_rectangle_is_turned_on_from_its_edge(tmp
 
 
 def test_if_fusion_turns_the_other_way_each_row_is_tried_turned_the_other_way(tmp_path):
-    rig = Rig(tmp_path)
+    rig = Rig(tmp_path, square_parts=False)
     rig.fake.no_room_raises = True
     rig.fake.tilted, rig.fake.edge_skew, rig.fake.rotation_sign = {"p01": SLANT}, {"p01": 2.67}, -1.0
     result = rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))

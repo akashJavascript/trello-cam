@@ -12,9 +12,10 @@
    sheets. The one still on the bed (OffcutSpec.on_bed) is loaded the same way round as its last cut; one on the
    rack, whichever way round gives the longer free stretch: loading it is the same work either way (core 0.28.0). On an offcut, the room beside earlier cuts is filled
    first (one Arrange per rectangle), then its free stretch: one sheet, several Arranges. Every Arrange gets
-   Fusion's priority by the parts' size (the biggest very high, mid-size high; core 0.23.0). Arrange turns parts to
-   any angle (it straightened a bar drawn at 30 deg, r081), so parts drawn at an angle need nothing more; their
-   boxes are measured tightly (fx_design.box_in). It's tried once more with offcuts spun round where that gives
+   Fusion's priority by the parts' size (the biggest very high, mid-size high; core 0.23.0). Arrange keeps a part at
+   the angle it's drawn at and steps its rotations from there (p0201 at 11 deg stayed at a slant, r093-r103), so
+   before nesting a probe finds each part drawn off square and how to lay it square (_square_probe, core 0.29.0),
+   and every Arrange is told (_Hints.turn); boxes are measured tightly (fx_design.box_in). It's tried once more with offcuts spun round where that gives
    more room, and the better nest is kept: most copies placed, then fewest new sheets, then fewest offcuts on the
    bed spun round, then fewest sheets, then the smallest offcuts (the scraps used up, the big pieces kept big; core
    0.28.0), then the shortest last sheet. (Until 0.23.0 it was also tried biggest first and
@@ -408,6 +409,8 @@ class _Hints:
     """What each Arrange is told about the parts beyond where they go (core 0.23.0, the user's pick). Not Arrange's
     fillers: Fusion refuses them when it moves the parts given ("Cannot set isFiller for move mode arrange", r077)."""
     levels: Dict[str, int]          # part key -> 2 (very high priority) or 1 (high); missing: as Fusion has it
+    turn: Dict[str, Tuple[str, float]] = field(default_factory=dict)   # part key -> (a straight top edge, degrees):
+                                    # how a part drawn off square is laid square (_square_probe, core 0.29.0)
 
 
 def _hints(job: Job, sizes: Dict[str, Tuple[float, float]]) -> _Hints:
@@ -435,8 +438,10 @@ def _arrange(adapter: Adapter, job: Job, copies: Sequence[str], envelope: Rect, 
     def key(c: str) -> str:
         return c.rsplit(".", 1)[0]
     levels = {c: hints.levels[key(c)] for c in copies if hints and key(c) in hints.levels}
+    lay = {c: hints.turn[key(c)] for c in copies if hints and key(c) in hints.turn}   # every part laid square
+    lay.update({c: e for c, e in (along or {}).items() if c in copies})
     try:
-        kw = {"along": {c: e for c, e in along.items() if c in copies}} if along else {}
+        kw = {"along": lay} if lay else {}
         got = adapter.arrange(list(copies), envelope, job.nest.part_spacing_in, {c: up[c] for c in copies},
                               priorities=levels, **kw)
     except AdapterError as e:
@@ -604,6 +609,101 @@ def _reserve_rows(adapter: Adapter, job: Job, parts: Sequence[_Part], up: Dict[s
         _discard(adapter, [c for cs in made.values() for c in cs], log)
         return {p.key: [] for p in parts}
     return made
+
+
+PROBES = ("~m1", "~m2", "~m3")   # a part's copies for _square_probe: laid as Arrange lays it, then turned each way
+
+
+def _reserve_probes(adapter: Adapter, job: Job, parts: Sequence[_Part], up: Dict[str, int],
+                    log: Callable[[str], None]) -> Dict[str, List[str]]:
+    """_square_probe's copies (core 0.29.0): three of each part, made with the others before anything is arranged
+    (see _reserve). None when [nest] square_parts is off or Arrange may not turn the parts."""
+    made: Dict[str, List[str]] = {}
+    if not job.nest.square_parts or job.nest.rotation != "all":
+        return made
+    try:
+        for p in parts:
+            if not p.ok or not p.copies:
+                continue
+            made[p.key] = []
+            for suffix in PROBES:
+                copy = f"{p.copies[0]}{suffix}"
+                adapter.add_copy(p.copies[0], copy)
+                made[p.key].append(copy)
+                up[copy] = up[p.copies[0]]
+    except AdapterError as e:
+        log(f"couldn't make copies to see which parts are drawn off square: {e}")
+        _discard(adapter, [c for cs in made.values() for c in cs], log)
+        return {}
+    return made
+
+
+def _square_probe(adapter: Adapter, job: Job, parts: Sequence[_Part], probes: Dict[str, List[str]],
+                  sizes: Dict[str, Tuple[float, float]], up: Dict[str, int], x_start: float, slot: int, pitch: float,
+                  thickness: float, log: Callable[[str], None]) -> Tuple[Dict[str, Tuple[str, float]], int]:
+    """Which parts Arrange lays off square, and how to lay them square (core 0.29.0; the user's pick, 2026-11-05).
+    Fusion's Arrange keeps a part at the angle it's drawn at in CAD and steps its rotations from there (p0201 at 11
+    deg, r093-r103), so a part drawn off square is nested, and cut, at a slant. Each part's first probe copy is laid
+    flat in a spare area behind the sheets and measured (_square_edge: its longest straight edge, and the turn on
+    from that edge lying along X that squares its smallest rectangle). For a part off square, the other two are laid
+    with that edge along X, turned one way and the other: which way Fusion's rotation turns a part laid top up isn't
+    settled (r103 needed the other way from its reference), so the way that comes out square is kept. Returns (part
+    key -> (edge, turn) for every later Arrange (_Hints.turn), the next free slot: unchanged, as the spare areas are
+    behind the sheets). The probe copies are hidden;
+    anything that goes wrong leaves the parts as Arrange lays them."""
+    if not probes:
+        return {}, slot
+    by_key = {p.key: p for p in parts}
+    every = [c for cs in probes.values() for c in cs]
+    side = max(max(sizes.get(k, (1.0, 1.0))) for k in probes) + 2.0
+    width = max(job.sheet.width_in, side)
+    depth = sum(2.0 * (max(sizes.get(k, (1.0, 1.0))) + 1.0) for k in probes) + 2.0
+
+    areas = 0
+
+    def spare_area() -> Rect:                        # behind the sheets (all at y >= 0), so it takes no sheet slot
+        nonlocal areas
+        o = x_start + slot * pitch + areas * (width + job.nest.envelope_spacing_in)
+        areas += 1
+        return (o, -10.0 - depth, o + width, -10.0)
+    turn: Dict[str, Tuple[str, float]] = {}
+    try:
+        got = _arrange(adapter, job, [cs[0] for cs in probes.values()], spare_area(), up, None, log)
+        off: Dict[str, Tuple[str, float]] = {}
+        for c in got.placed:
+            found = _square_edge(adapter, by_key[c.rsplit(".", 1)[0]], c)
+            if found is not None:
+                off[c.rsplit(".", 1)[0]] = found
+        if off:
+            along: Dict[str, Tuple[str, float]] = {}
+            for k, (edge, t) in off.items():
+                along[probes[k][1]] = (edge, t)
+                if abs(t) > 1e-6:
+                    along[probes[k][2]] = (edge, -t)
+            got = _arrange(adapter, job, list(along), spare_area(), up, None, log, along)
+            for k, (edge, t) in off.items():
+                for c in (probes[k][1], probes[k][2]):
+                    if c in got.placed and c in along and _lies_square(adapter, by_key[k], c):
+                        turn[k] = along[c]
+                        break
+            missed = sorted(set(off) - set(turn))
+            if turn:
+                log(f"{thickness:g} in: drawn off square, laid square in every Arrange: " + ", ".join(
+                    f"{k} (turned {t:+.2f} deg on from its edge)" for k, (_, t) in sorted(turn.items())))
+            if missed:
+                log(f"{thickness:g} in: drawn off square, but Arrange didn't lay it square: {', '.join(missed)} "
+                    "(nested as Arrange lays it)")
+    except AdapterError as e:
+        log(f"{thickness:g} in: couldn't see which parts are drawn off square ({e}); nested as Arrange lays them")
+        turn = {}
+    _discard(adapter, every, log)
+    return turn, slot
+
+
+def _lies_square(adapter: Adapter, part: _Part, cid: str) -> bool:
+    """Does the copy's smallest rectangle lie within SQUARE_DEG of X or Y?"""
+    angle = long_side_angle(_outline_points(adapter, part, cid))
+    return angle is not None and min(abs(angle), 90.0 - abs(angle)) <= SQUARE_DEG
 
 
 def _squeeze_all(adapter: Adapter, job: Job, best: "_Try", parts: Sequence[_Part],
@@ -993,6 +1093,10 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
         tries.append(_Try(order, made, spin))
     reserve = _reserve(adapter, parts, up, log)
     rows_pool = _reserve_rows(adapter, job, parts, up, log)
+    probes = _reserve_probes(adapter, job, parts, up, log)
+    turn, slot = _square_probe(adapter, job, parts, probes, sizes, up, x_start, slot, pitch, thickness, log)
+    if turn:
+        hints = _Hints(hints.levels, turn)
 
     for i, t in enumerate(tries):
         remaining = [c for k in _part_order(parts, t.order, sizes) for c in t.copies[k] if by_key[k].ok]
@@ -1087,7 +1191,7 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
         envelope = _envelope(job, (x_start + slot * pitch, 0.0))
         slot += 1
         try:
-            alone = adapter.arrange([cid], envelope, job.nest.part_spacing_in, {cid: up[cid]}).placed
+            alone = _arrange(adapter, job, [cid], envelope, up, hints).placed
         except AdapterError:
             alone = ()
         if not alone:

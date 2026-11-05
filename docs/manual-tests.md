@@ -590,6 +590,14 @@ A few long parts on one sheet (e.g. three of p0201), Rush so they don't join an 
 | 2 | The next day (or after Loaded on another sheet on the machine screen), a part that fits an offcut only turned round goes on it turned round, and the card says which end goes at the front | |
 | 3 | Two offcuts on the rack that both fit: the smaller one is used | |
 
+### 28. Parts drawn off square laid square (2026-11-05, core 0.29.0)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | A part drawn at an angle in CAD (p0201 at 11 deg): `worker.log` says "drawn off square, laid square in every Arrange: p01 (turned ... deg on from its edge)", and the sheet picture shows it square from Fusion's own nest | |
+| 2 | Parts drawn square: the log has no "drawn off square" line and the sheets look as before | |
+| 3 | The f3d: the probe copies (`~m1`..`~m3`) are hidden, behind the sheets (negative Y), and in no setup | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)
