@@ -803,18 +803,21 @@ def _straighten(adapter: Adapter, job: Job, best: "_Try", idx: List[int], parts:
                 why = "the parts beside earlier cuts didn't all fit there again"
                 break
         y = moved[-1][1]
+        first = 1.0                                  # the way round that worked last (r103: Fusion turned them -)
         for n, row in enumerate(rows if not why else (), 1):
             cs = [swap_last[c] for c, _, _ in row.items]
             turns = [k for k in dict.fromkeys(key(c) for c in cs) if k in edge_of]
-            # which way Fusion's rotation turns a part laid top up isn't proven (r102): if the row doesn't fit
-            # turned on from its edge one way, the other
-            signs = (1.0, -1.0) if any(abs(edge_of[k][1]) > 1e-6 for k in turns) else (1.0,)
+            # which way Fusion's rotation turns a part laid top up isn't settled (r103 needed the other way from
+            # its counterclockwise, maybe as the plate is laid flipped): if the row doesn't fit turned on from its
+            # edge one way, the other; the way that worked goes first for the next rows
+            signs = (first, -first) if any(abs(edge_of[k][1]) > 1e-6 for k in turns) else (1.0,)
             for slack in STRAIGHT_SLACKS_IN:
                 strip = (moved[-1][0], y, moved[-1][2], min(moved[-1][3], y + row.depth + slack))
                 for sign in signs:
                     along = {c: (edge_of[key(c)][0], sign * edge_of[key(c)][1]) for c in cs if key(c) in edge_of}
                     got = _arrange(adapter, job, cs, strip, up, hints, log, along)
                     if got.placed:
+                        first = sign
                         break
                 if got.placed:
                     break                            # some or all placed: those are in this Arrange now

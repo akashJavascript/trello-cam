@@ -163,6 +163,6 @@ def test_if_fusion_turns_the_other_way_each_row_is_tried_turned_the_other_way(tm
     rig.fake.tilted, rig.fake.edge_skew, rig.fake.rotation_sign = {"p01": SLANT}, {"p01": 2.67}, -1.0
     result = rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))
     assert "laid in 3 straight row(s)" in log(rig) and result.sheets[0].free_length_in == 38.5 - 6.5
-    assert len(strips(rig, 2.0)) == 6                     # each row: turned one way (no room), then the other
-    turns = [round(t, 2) for a in rig.fake.arrange_along if a for _, t in a.values()]
-    assert turns[:2] == [2.67, -2.67]
+    assert len(strips(rig, 2.0)) == 4                     # row 1: turned one way (no room), then the other; rows 2
+    turns = [round(t, 2) for a in rig.fake.arrange_along if a for _, t in a.values()]      # and 3: that way first
+    assert turns == [2.67, -2.67, -2.67, -2.67]

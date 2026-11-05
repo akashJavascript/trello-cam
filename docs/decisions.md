@@ -1076,8 +1076,15 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   is left to Arrange as before. Chosen over turning the copies' transforms: Fusion's own API reference (the laptop's
   `adsk/fusion.py`) has `ArrangeComponent.rotation` and `setRotationUsingEdge` for this, and Arrange may lay a part
   from its own geometry wherever it starts.
+- **A part's edges needn't run along its smallest rectangle** (r102: p0201-Mirrored's long edges are 2.67 deg off
+  it, so no edge was within 0.5 deg and the rows fit nothing again). So the longest straight edge goes along X and
+  `ArrangeComponent.rotation` turns the part on by the measured difference. Fusion turned it the opposite way from
+  the reference's "counterclockwise" (r103; maybe because the plates are laid flipped), so each row tries one way,
+  then the other, and the way that worked goes first for the next rows.
+- **Seen in Fusion, r103:** three p0201-Mirrored bars (1/4 in, drawn at 11 deg) laid in three square rows: 8.5 in
+  long with 41 in2 kept beside them, against Fusion's 8.8 in at a slant with 16 in2. Guard passed.
 - **The fake Arrange is stricter now:** it keeps a part at the angle it lies (as r098 showed Fusion does), unless
-  it's given an edge.
+  it's given an edge (and turned the right way on from it: `edge_skew`, `rotation_sign`).
 
 ## 2026-11-05: the machine screen (the mockup the user approved, v4)
 
