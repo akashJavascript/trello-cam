@@ -5,6 +5,8 @@ occurrences, clear isGroundToParent first, one plane envelope per Arrange with p
 isDirectionFlipped where a part's upDirection points away from the face that must face up.
 """
 
+import math
+
 import adsk.core
 import adsk.fusion
 
@@ -93,11 +95,16 @@ PRIORITY_NAMES = {2: "VeryHighArrangePriority", 1: "HighArrangePriority"}
 
 
 def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, part_in_part: bool,
-            priorities=None) -> Arranged:
+            priorities=None, along=None) -> Arranged:
     """occs: [(copy id, occurrence)]; up_faces: copy id -> face id that must face +Z. priorities: copy id -> 2 or 1
-    (ArrangePriorities VeryHigh, High; the rest as Fusion has them). Never isFiller: Fusion refuses it here
-    ("Cannot set isFiller for move mode arrange", r077): a filler is a part copied to fill the leftover space."""
+    (ArrangePriorities VeryHigh, High; the rest as Fusion has them). along: copy id -> the tempId of a straight
+    edge (fx_geometry.face_edges' key) that ArrangeComponent.setRotationUsingEdge points at Arrange's zero angle:
+    Arrange doesn't turn a part by an odd angle by itself (r098), so a straight row's part drawn at one is laid
+    along its long edge (core 0.28.0). Never isFiller: Fusion refuses it here ("Cannot set isFiller for move mode
+    arrange", r077): a filler is a part copied to fill the leftover space."""
     priorities = priorities or {}
+    along = along or {}
+    laid = {}                                        # copy id -> its rotation once laid along its edge, degrees
     levels = getattr(adsk.fusion, "ArrangePriorities", None)
     notes = []
     if priorities and (levels is None or not all(hasattr(levels, n) for n in PRIORITY_NAMES.values())):
@@ -130,6 +137,15 @@ def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, 
             continue
         if flip:
             comp.isDirectionFlipped = True
+        key = along.get(cid)
+        if key is not None:
+            edge = next((e for e in items(body(occ).edges) if str(e.tempId) == str(key)), None)
+            if edge is None:
+                notes.append(f"{cid}: no edge {key} to lay it along")
+            elif not call(f"setRotationUsingEdge({cid})", comp.setRotationUsingEdge, edge):
+                notes.append(f"{cid}: setRotationUsingEdge said no")
+            else:
+                laid[cid] = math.degrees(comp.rotation)
         level = priorities.get(cid)
         if level and levels is not None and hasattr(levels, PRIORITY_NAMES.get(level, "")):
             call(f"priority {cid}", setattr, comp, "priority", getattr(levels, PRIORITY_NAMES[level]))
@@ -152,6 +168,8 @@ def arrange(design, occs, envelope, spacing_in: float, up_faces, rotation: str, 
                 placed.append(cid)
     if set_to:
         notes.append("priorities read back: " + ", ".join(f"{c}={v}" for c, v in sorted(set_to.items())))
+    if laid:
+        notes.append("laid along an edge: " + ", ".join(f"{c} {v:.1f} deg" for c, v in sorted(laid.items())))
     return Arranged(tuple(placed), refused, tuple(notes))
 
 

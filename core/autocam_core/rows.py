@@ -9,7 +9,9 @@ better offcut. The rows are planned here: each part with its long side across th
 row filled left to right before the next one starts (first fit). A part's sides are its smallest rectangle at any
 angle (`min_rect`, from its outline as it lies after Fusion's Arrange), not its box in CAD. Fusion's Arrange still places each row, in an
 area only as deep as the row's deepest part, so it can't tilt them; the pipeline compares the two by `used_up`:
-the sheet's length the parts take, times its width, less the room beside them big enough to keep.
+the sheet's length the parts take, times its width, less the room beside them big enough to keep. Arrange doesn't
+turn a part by an odd angle by itself (r098: p0201, drawn at 11 deg, fit no row), so a part lying off square
+(`long_side_angle`) is laid along its long straight edge in each row (core 0.28.0).
 """
 
 import math
@@ -35,10 +37,25 @@ def min_rect(points: Sequence[Tuple[float, float]]) -> Optional[Tuple[float, flo
     """(long side, short side) of the smallest rectangle around the points, at any angle: one of its sides lies
     along an edge of their convex hull (rotating calipers). None for fewer than 3 points or none with any area. A part
     drawn at an angle in CAD has a box much bigger than this (p0201 at 11 deg: 4.7 in deep for a 1.6 in bar)."""
+    best = _smallest(points)
+    if best is None:
+        return None
+    return round(best[0], 4), round(best[1], 4)
+
+
+def long_side_angle(points: Sequence[Tuple[float, float]]) -> Optional[float]:
+    """The direction of that rectangle's long side, in degrees from +X, in (-90, 90] (core 0.28.0): how far the part
+    lies from square. None as for min_rect."""
+    best = _smallest(points)
+    return None if best is None else best[2]
+
+
+def _smallest(points: Sequence[Tuple[float, float]]) -> Optional[Tuple[float, float, float]]:
+    """(long, short, the long side's angle in degrees) of the smallest rectangle around the points, or None."""
     hull = _hull(points)
     if len(hull) < 3:
         return None
-    best: Optional[Tuple[float, float, float]] = None          # (area, long, short)
+    best: Optional[Tuple[float, float, float, float]] = None   # (area, long, short, angle)
     for (ax, ay), (bx, by) in zip(hull, hull[1:] + hull[:1]):
         dx, dy = bx - ax, by - ay
         n = math.hypot(dx, dy)
@@ -49,10 +66,12 @@ def min_rect(points: Sequence[Tuple[float, float]]) -> Optional[Tuple[float, flo
         vs = [-x * uy + y * ux for x, y in hull]
         w, h = max(us) - min(us), max(vs) - min(vs)
         if best is None or w * h < best[0] - 1e-12:
-            best = (w * h, max(w, h), min(w, h))
+            deg = math.degrees(math.atan2(uy, ux)) + (0.0 if w >= h else 90.0)    # along the long side
+            deg = (deg + 90.0) % 180.0 - 90.0                                     # [-90, 90)
+            best = (w * h, max(w, h), min(w, h), 90.0 if deg <= -90.0 + 1e-9 else deg)
     if best is None or best[2] <= 1e-9:
         return None
-    return round(best[1], 4), round(best[2], 4)
+    return best[1], best[2], best[3]
 
 
 def _hull(points: Sequence[Tuple[float, float]]) -> List[Tuple[float, float]]:

@@ -2,9 +2,10 @@
 
 Fusion's Arrange turns parts to any angle, and it stacked three long bars on a slant (p0201: 7.7 in of the sheet's
 length, no room beside them). The pipeline also lays a sheet's parts in straight rows, each row placed by Arrange in
-an area only as deep as its deepest part, and keeps whichever leaves the better offcut. The fake Arrange here lays a
-part drawn at an angle (rig.fake.tilted) at that angle whenever the area has room for it, like Fusion did with p0201
-(r093, r094): its outline is a turned rectangle, its box much bigger.
+an area only as deep as its deepest part, and keeps whichever leaves the better offcut. The fake Arrange here keeps a
+part drawn at an angle (rig.fake.tilted) at that angle, like Fusion did with p0201 (r093, r094; in a row too shallow
+for it that way it placed nothing, r098): its outline is a turned rectangle, its box much bigger. Since core 0.28.0 a
+row's Arrange is given the part's long straight edge to lay along X (setRotationUsingEdge), and then it lies square.
 """
 
 import autocam_worker.pipeline as pipeline
@@ -50,6 +51,7 @@ def test_parts_fusion_already_laid_straight_stay_as_they_are(tmp_path):
     assert not strips(rig, 4.0)                                         # the rows weren't even tried in Fusion
     assert "stays as Fusion nested it" in log(rig)
     assert not any(c.startswith("discard") and "~r" not in c and "~s" not in c for c in rig.fake.calls)
+    assert not any(rig.fake.arrange_along)                              # lying square: no edge to lay it along
 
 
 def test_a_sheet_with_more_parts_than_straight_max_is_not_tried(tmp_path):
@@ -118,3 +120,25 @@ def test_a_row_fusion_places_none_of_gets_a_little_more_room(tmp_path, monkeypat
     [sheet] = result.sheets
     assert "laid in 3 straight row(s)" in log(rig) and sheet.free_length_in == 38.5 - 6.5
     assert len(strips(rig, 2.0)) == 6                     # each row: the shallow area, then the one that fit
+
+
+def test_a_part_drawn_at_an_angle_is_laid_along_its_long_edge_in_each_row(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fake.tilted = {"p01": SLANT}
+    rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))
+    rows = [a for a in rig.fake.arrange_along if a]
+    # each row's Arrange: its copy, laid along one of the bar's long edges (the fake outline's 1st or 3rd, 15 in)
+    assert [sorted(a) for a in rows] == [["p01.1~r"], ["p01.2~r"], ["p01.3~r"]]
+    assert len({e for a in rows for e in a.values()}) == 1 and set(rows[0].values()) <= {"e1", "e3"}
+    assert "off square, laid along a straight edge in the rows: p01" in log(rig)
+
+
+def test_without_an_edge_to_lay_it_along_a_slanted_part_fits_no_row(tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline, "_square_edge", lambda *a: None)     # like 0.27.0 (r098)
+    rig = Rig(tmp_path)
+    rig.fake.no_room_raises = True
+    rig.fake.tilted = {"p01": SLANT}
+    result = rig.run(rig.job([("bar", 3, plate(name="bar"), BAR)]))
+    [sheet] = result.sheets
+    assert "straight rows: Fusion placed 0 of row 1's 1" in log(rig)
+    assert all(p.placed == p.qty for p in result.parts) and sheet.free_length_in < 38.5 - 6.5

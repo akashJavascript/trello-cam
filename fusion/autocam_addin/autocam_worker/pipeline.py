@@ -8,14 +8,16 @@
    leftovers go to the next sheet. If a part's copies don't all fit, none are cut this run (layout.py).
    Arrange packs parts against the envelope's edges, so each envelope is the nest region shrunk by the
    part spacing: an outline's tool path (tool radius + lead-in) then stays out of the clamp strips.
-   Offcuts of that thickness (partly used sheets, offcuts.py) are filled first, smallest room first, loaded the
-   same way round as their last cut, then new sheets. On an offcut, the room beside earlier cuts is filled
+   Offcuts of that thickness (partly used sheets, offcuts.py) are filled first, smallest room first, then new
+   sheets. The one still on the bed (OffcutSpec.on_bed) is loaded the same way round as its last cut; one on the
+   rack, whichever way round gives the longer free stretch: loading it is the same work either way (core 0.28.0). On an offcut, the room beside earlier cuts is filled
    first (one Arrange per rectangle), then its free stretch: one sheet, several Arranges. Every Arrange gets
    Fusion's priority by the parts' size (the biggest very high, mid-size high; core 0.23.0). Arrange turns parts to
    any angle (it straightened a bar drawn at 30 deg, r081), so parts drawn at an angle need nothing more; their
    boxes are measured tightly (fx_design.box_in). It's tried once more with offcuts spun round where that gives
-   more room, and the better nest is kept: most copies placed, then fewest new sheets, then fewest offcuts spun
-   round, then fewest sheets, then the shortest last sheet. (Until 0.23.0 it was also tried biggest first and
+   more room, and the better nest is kept: most copies placed, then fewest new sheets, then fewest offcuts on the
+   bed spun round, then fewest sheets, then the smallest offcuts (the scraps used up, the big pieces kept big; core
+   0.28.0), then the shortest last sheet. (Until 0.23.0 it was also tried biggest first and
    longest first: on every real job the orders tied, so Fusion's Arrange ignores the order it's given.) Then each
    sheet with a free stretch is squeezed toward its front (_squeeze). Copies not kept are hidden like any other
    leftover; nothing that an Arrange moved is ever arranged again or deleted.
@@ -72,7 +74,7 @@ from autocam_core.names import (face_program_name, fit_program_name, instance_id
                                 small_program_name)
 from autocam_core.ordering import order_outlines
 from autocam_core.pauses import PauseError, insert
-from autocam_core.rows import min_rect, row_boxes, rows_depth, straight_rows, used_up
+from autocam_core.rows import long_side_angle, min_rect, row_boxes, rows_depth, straight_rows, used_up
 from autocam_core.plate import PlateAnalysis, analyze
 from autocam_core.preview import (BADGE_MIN_PX, flatten, inside_polygon, label_spot, pixels_per_unit, preview_size,
                                   to_pixels)
@@ -331,8 +333,8 @@ def _beside_envelope(job: Job, origin: Tuple[float, float], r: Rect) -> Rect:
 def _offcut_places(job: Job, thickness: float) -> List[Tuple[str, Optional[_Way], Optional[_Way]]]:
     """This thickness's offcuts with room: (id, loaded the same way round as its last cut, spun round), either
     None when that way round leaves too little (no free stretch long enough and no room beside cuts).
-    Smallest room first (best fit): parts go on the scraps they fit, and the big offcuts are kept for big
-    parts."""
+    Smallest room first (best fit), each the way round it would be loaded (_offcut_slots): parts go on the scraps
+    they fit, and the big offcuts are kept for big parts."""
     region = job.fixture.nest_region_in
     out: List[Tuple[str, Optional[_Way], Optional[_Way]]] = []
     for o in job.offcuts:
@@ -347,23 +349,43 @@ def _offcut_places(job: Job, thickness: float) -> List[Tuple[str, Optional[_Way]
             ways[n] = _Way(turned, stretch, beside) if stretch or beside else None
         if any(ways):
             out.append((o.id, ways[0], ways[1]))
-
-    def room(place) -> float:
-        way = place[1] or place[2]
-        return way.length * (region[2] - region[0]) + sum((r[2] - r[0]) * (r[3] - r[1]) for _, r in way.beside)
-    return sorted(out, key=room)                      # ties keep the job's order
+    rack = _on_rack(job)
+    return sorted(out, key=lambda place: _way_room(job, _loaded(place, place[0] in rack)))   # ties: the job's order
 
 
-def _offcut_slots(offcuts, spin: bool) -> List[Tuple[str, _Way]]:
+def _on_rack(job: Job) -> Set[str]:
+    """The offcuts that aren't on the bed: loading them either way round is the same work (core 0.28.0)."""
+    return {o.id for o in job.offcuts if not o.on_bed}
+
+
+def _way_room(job: Job, way: Optional[_Way]) -> float:
+    """The room an offcut loaded that way round offers, in2: its free stretch across the nest region, plus the room
+    beside earlier cuts."""
+    if way is None:
+        return 0.0
+    region = job.fixture.nest_region_in
+    return way.length * (region[2] - region[0]) + sum((r[2] - r[0]) * (r[3] - r[1]) for _, r in way.beside)
+
+
+def _offcut_rooms(job: Job, offcuts) -> Dict[str, float]:
+    """Each offcut's size for picking the smallest one that fits: its room the better way round, so both ways of
+    loading the same offcut count the same."""
+    return {place[0]: max(_way_room(job, w) for w in place[1:]) for place in offcuts}
+
+
+def _loaded(place, spin: bool) -> Optional[_Way]:
+    """An offcut's way round: as for its last cut, unless that leaves too little; with spin, whichever way gives
+    the longer free stretch."""
+    _, same, spun = place
+    if spin and spun is not None and (same is None or spun.length > same.length + 1e-6):
+        return spun
+    return same or spun
+
+
+def _offcut_slots(offcuts, spin: bool, rack: Set[str] = frozenset()) -> List[Tuple[str, _Way]]:
     """Where each offcut takes parts: the same way round as before, unless that leaves too little; with spin,
-    whichever way gives the longer free stretch."""
-    out = []
-    for offcut_id, same, spun in offcuts:
-        if spin and spun is not None and (same is None or spun.length > same.length + 1e-6):
-            out.append((offcut_id, spun))
-        else:
-            out.append((offcut_id, same or spun))
-    return out
+    whichever way gives the longer free stretch. An offcut on the rack always goes the longer way (core 0.28.0)."""
+    return [(place[0], _loaded(place, spin or place[0] in rack)) for place in offcuts]
 
 
 # ------------------------------------------------------------------ 3. nesting
@@ -405,7 +427,8 @@ NO_ROOM = "ARRANGE_ERROR_NO_ROOM"
 
 
 def _arrange(adapter: Adapter, job: Job, copies: Sequence[str], envelope: Rect, up: Dict[str, int],
-             hints: Optional[_Hints] = None, log: Optional[Callable[[str], None]] = None):
+             hints: Optional[_Hints] = None, log: Optional[Callable[[str], None]] = None,
+             along: Optional[Dict[str, str]] = None):
     """adapter.arrange with the parts' priorities; what Fusion says it set goes in the log. An area none of the
     copies fits places nothing: Fusion's Arrange places what fits, but raises ARRANGE_ERROR_NO_ROOM when nothing
     does (r084: a room beside the robot parts too small for any spare)."""
@@ -413,8 +436,9 @@ def _arrange(adapter: Adapter, job: Job, copies: Sequence[str], envelope: Rect, 
         return c.rsplit(".", 1)[0]
     levels = {c: hints.levels[key(c)] for c in copies if hints and key(c) in hints.levels}
     try:
+        kw = {"along": {c: e for c, e in along.items() if c in copies}} if along else {}
         got = adapter.arrange(list(copies), envelope, job.nest.part_spacing_in, {c: up[c] for c in copies},
-                              priorities=levels)
+                              priorities=levels, **kw)
     except AdapterError as e:
         if NO_ROOM not in str(e):
             raise
@@ -481,7 +505,7 @@ class _Try:
     areas: List[Optional[int]] = field(default_factory=list)      # per envelope: room beside cuts it filled
     remaining: List[str] = field(default_factory=list)
     failed: Optional[str] = None
-    score: Tuple[int, int, int, int, float] = (0, 0, 0, 0, 0.0)
+    score: Tuple[int, int, int, int, float, float] = (0, 0, 0, 0, 0.0, 0.0)
 
     @property
     def name(self) -> str:
@@ -726,10 +750,16 @@ def _straighten(adapter: Adapter, job: Job, best: "_Try", idx: List[int], parts:
     spacing = job.nest.part_spacing_in
     by_key = {p.key: p for p in parts}
     flat: Dict[str, Tuple[float, float]] = {}
+    edge_of: Dict[str, str] = {}                     # part key -> the straight top edge its rows' copies lie along
     for c in last:                                   # each part's smallest rectangle, from its outline as it lies
         if key(c) not in flat:
             flat[key(c)] = _flat_size(adapter, by_key[key(c)], c) or sizes[key(c)]
+            edge = _square_edge(adapter, by_key[key(c)], c)
+            if edge is not None:
+                edge_of[key(c)] = edge
     log(f"{say}: parts' smallest rectangles: " + ", ".join(f"{k} {a:.2f} x {b:.2f} in" for k, (a, b) in flat.items()))
+    if edge_of:
+        log(f"{say}: off square, laid along a straight edge in the rows: {', '.join(sorted(edge_of))}")
     items = [(c, flat[key(c)][0], flat[key(c)][1]) for c in last]
     rows = straight_rows(items, env[2] - env[0], spacing, {c: 1 for c in last if key(c) in spares})
     if rows is None:
@@ -773,9 +803,10 @@ def _straighten(adapter: Adapter, job: Job, best: "_Try", idx: List[int], parts:
         y = moved[-1][1]
         for n, row in enumerate(rows if not why else (), 1):
             cs = [swap_last[c] for c, _, _ in row.items]
+            along = {c: edge_of[key(c)] for c in cs if key(c) in edge_of}
             for slack in STRAIGHT_SLACKS_IN:
                 strip = (moved[-1][0], y, moved[-1][2], min(moved[-1][3], y + row.depth + slack))
-                got = _arrange(adapter, job, cs, strip, up, hints, log)
+                got = _arrange(adapter, job, cs, strip, up, hints, log, along)
                 if got.placed:
                     break                            # some or all placed: those are in this Arrange now
             if set(got.placed) != set(cs):
@@ -807,17 +838,52 @@ def _flat_size(adapter: Adapter, part: _Part, cid: str) -> Optional[Tuple[float,
     """(long, short) sides of the smallest rectangle around a copy's outline as it lies now (after an Arrange: flat,
     top up), from its top face's outer loop (every top face's, for a top split along bends); None if Fusion can't
     give it. Not the copy's box: a part drawn at an angle has a much bigger one."""
+    pts = _outline_points(adapter, part, cid)
+    return min_rect(pts) if pts else None
+
+
+def _outline_points(adapter: Adapter, part: _Part, cid: str) -> List[Tuple[float, float]]:
+    """The points of a copy's outline as it lies now (its top faces' outer loops); [] if Fusion can't give them."""
     a = part.analysis
     if a is None:
-        return None
+        return []
     pts: List[Tuple[float, float]] = []
     try:
         for f in (a.top_face_ids or (a.up_face_id,)):
             for seg in adapter.loop_segments(cid, f, None):
                 pts.extend(seg.points)
     except AdapterError:
+        return []
+    return pts
+
+
+SQUARE_DEG = 0.5            # a part whose smallest rectangle is turned more than this from square is laid along an edge
+
+
+def _square_edge(adapter: Adapter, part: _Part, cid: str) -> Optional[str]:
+    """For a copy lying flat that's turned off square (its smallest rectangle more than SQUARE_DEG from X or Y): the
+    key of its longest straight top edge along that rectangle's long side, for a straight row's Arrange to lay along X
+    (adapter.arrange's along; core 0.28.0). Fusion's Arrange doesn't turn a part by an odd angle by itself: p0201,
+    drawn at 11 deg, fit no row (r098). Every copy of a part has the same edges, so the key holds for the rows' copies
+    too. None if it lies square already or no straight edge runs that way (it's left to Arrange, as before)."""
+    angle = long_side_angle(_outline_points(adapter, part, cid))
+    if angle is None or min(abs(angle), 90.0 - abs(angle)) <= SQUARE_DEG:
         return None
-    return min_rect(pts)
+    a = part.analysis
+    try:
+        faces = adapter.top_edges(cid, tuple(a.top_face_ids or (a.up_face_id,)))
+    except AdapterError:
+        return None
+    best: Optional[Tuple[float, str]] = None
+    for edges in faces.values():
+        for k, p0, p1, straight in edges:
+            n = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
+            if not straight or n < 1e-6:
+                continue
+            off = (math.degrees(math.atan2(p1[1] - p0[1], p1[0] - p0[0])) - angle + 90.0) % 180.0 - 90.0
+            if abs(off) <= SQUARE_DEG and (best is None or n > best[0]):
+                best = (n, str(k))
+    return best[1] if best else None
 
 
 def _part_order(parts: Sequence[_Part], order: str, sizes: Dict[str, Tuple[float, float]]) -> List[str]:
@@ -825,12 +891,14 @@ def _part_order(parts: Sequence[_Part], order: str, sizes: Dict[str, Tuple[float
     return [p.key for p in parts]
 
 
-def _score(adapter: Adapter, t: _Try, last_turned: Dict[str, bool]) -> Tuple[int, int, int, int, float]:
-    """Smaller is better: (-copies placed, new sheets, offcuts spun round, sheets, how far the last sheet's parts
+def _score(adapter: Adapter, t: _Try, last_turned: Dict[str, bool],
+           rooms: Optional[Dict[str, float]] = None) -> Tuple[int, int, int, int, float, float]:
+    """Smaller is better: (-copies placed, new sheets, offcuts on the bed spun round (last_turned has only those),
+    sheets, the offcuts' sizes (rooms: the smallest offcut that fits wins, core 0.28.0), how far the last sheet's parts
     reach along its free stretch, Y; 0 if it only has parts beside earlier cuts)."""
     placed = sum(len(p) for p in t.placed)
     if not t.envelopes:
-        return (0, 0, 0, 0, 0.0)
+        return (0, 0, 0, 0, 0.0, 0.0)
     stock = dict(zip((o for o, _ in t.envelopes), t.stock))          # sheet origin -> (offcut id, way)
     reach = 0.0
     if t.areas[-1] is None:
@@ -840,8 +908,10 @@ def _score(adapter: Adapter, t: _Try, last_turned: Dict[str, bool]) -> Tuple[int
         except AdapterError:
             reach = float("inf")
     fresh = sum(1 for offcut_id, _ in stock.values() if offcut_id is None)
-    spins = sum(1 for offcut_id, way in stock.values() if offcut_id and way.turned != last_turned[offcut_id])
-    return (-placed, fresh, spins, len(stock), round(reach, 3))
+    spins = sum(1 for offcut_id, way in stock.values()
+                if offcut_id in last_turned and way.turned != last_turned[offcut_id])
+    size = sum((rooms or {}).get(offcut_id, 0.0) for offcut_id, _ in stock.values() if offcut_id)
+    return (-placed, fresh, spins, len(stock), round(size, 1), round(reach, 3))
 
 def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part], x_start: float, slot: int,
                 log: Callable[[str], None], notes: List[str]) -> Tuple[List[_Sheet], int]:
@@ -877,12 +947,14 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
         except Exception:  # noqa: BLE001 - only a bound for the squeeze
             face[p.key] = 0.0
     offcuts = _offcut_places(job, thickness)
-    last_turned = {o.id: o.last_turned for o in job.offcuts}
+    rack = _on_rack(job)
+    last_turned = {o.id: o.last_turned for o in job.offcuts if o.on_bed}      # turning only these is extra work
+    rooms = _offcut_rooms(job, offcuts)
     tries = [_Try(NEST_ORDERS[0], {p.key: list(p.copies) for p in parts})]
     seen = [_part_order(parts, NEST_ORDERS[0], sizes)]
     plans = [(order, False) for order in NEST_ORDERS[1:]]
-    if _offcut_slots(offcuts, True) != _offcut_slots(offcuts, False):
-        plans.append((NEST_ORDERS[0], True))          # spinning an offcut would give more room: try that too
+    if _offcut_slots(offcuts, True, rack) != _offcut_slots(offcuts, False, rack):
+        plans.append((NEST_ORDERS[0], True))          # spinning the offcut on the bed would give more room: try that too
     for n, (order, spin) in enumerate(plans, 2):
         keys = _part_order(parts, order, sizes)
         if not spin and keys in seen:
@@ -906,7 +978,7 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
 
     for i, t in enumerate(tries):
         remaining = [c for k in _part_order(parts, t.order, sizes) for c in t.copies[k] if by_key[k].ok]
-        for offcut_id, way in _offcut_slots(offcuts, t.spin) + [(None, None)] * job.nest.max_sheets_per_group:
+        for offcut_id, way in _offcut_slots(offcuts, t.spin, rack) + [(None, None)] * job.nest.max_sheets_per_group:
             if not remaining:
                 break
             origin = (x_start + slot * pitch, 0.0)
@@ -959,7 +1031,7 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
             if not took and offcut_id is None:
                 break                                 # a new sheet that takes nothing: nothing more fits
         t.remaining = remaining
-        t.score = _score(adapter, t, last_turned)
+        t.score = _score(adapter, t, last_turned, rooms)
         if i == 0 and t.failed:
             break                                     # the first try's failure rejected the parts; nothing to compare
 
@@ -970,7 +1042,7 @@ def _nest_group(adapter: Adapter, job: Job, thickness: float, parts: List[_Part]
             _discard(adapter, [c for cs in t.copies.values() for c in cs], log)
     if len(tries) > 1:
         def said(t: _Try) -> str:
-            return "failed" if t.failed else f"{-t.score[0]} placed on {t.score[3]} sheet(s), last {t.score[4]:.1f} in"
+            return "failed" if t.failed else f"{-t.score[0]} placed on {t.score[3]} sheet(s), last {t.score[5]:.1f} in"
         log(f"{thickness:g} in: kept '{best.name}' ({'; '.join(f'{t.name}: {said(t)}' for t in tries)})")
         if best is not tries[0] and best.score < tries[0].score:
             notes.append(f"{thickness:g} in: nesting the parts {best.name} beat the listed order "

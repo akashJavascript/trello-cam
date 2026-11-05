@@ -237,6 +237,9 @@ class OffcutSpec:
     beside_in: Tuple[Rect, ...] = ()                   # room beside earlier cuts, in its own coordinates (core 0.5.0)
     can_turn: bool = True                              # False: a piece shorter than a sheet, always loaded at the
                                                        # front the same way round (core 0.6.0)
+    on_bed: bool = True                                # still on the machine the way it was last cut, so turning it
+                                                       # round is extra work; False: on the rack, where loading it
+                                                       # either way round is the same work (core 0.28.0)
 
 
 @dataclass(frozen=True)

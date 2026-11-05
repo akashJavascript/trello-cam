@@ -81,6 +81,7 @@ def test_the_buttons_tick_the_cards_boxes(tmp_path):
     t = h.cfg.trello
     m.act({"id": s1.id, "do": "loaded"})
     assert all(ticked(h, s1.id, t.machine_checklist_name).values())
+    assert list(json.loads(m.path.read_text())["loaded"]) == [s1.id]  # when: the runner's on_bed reads it
     m.act({"id": s1.id, "do": "stops", "on": False})               # the switch off: the no-stop version
     assert ticked(h, s1.id, t.options_checklist)[t.no_stop_item]
     h.runner.tick()                                                 # the service makes it, as if ticked on Trello

@@ -40,8 +40,10 @@ class FakeAdapter(Adapter):
         self.copies: Dict[str, str] = {}               # copy id -> STEP path
         self.boxes: Dict[str, Box] = {}
         self.columns = False          # True: pack like Fusion did in r009 (down the left edge first)
-        self.tilted: Dict[str, float] = {}   # part key -> the angle (deg) it's drawn at in CAD, which Arrange keeps
-                                              # whenever the area has room for it (p0201: 11 deg, r093/r094)
+        self.tilted: Dict[str, float] = {}   # part key -> the angle (deg) it's drawn at in CAD, which Arrange keeps:
+                                              # it doesn't turn a part by an odd angle (p0201: 11 deg, r093/r094; an
+                                              # area too shallow for it at that angle places nothing, r098), unless
+                                              # it's given an edge to lay along (arrange's along: then it's square)
         self.slant: Dict[str, float] = {}    # copy id -> the angle it lies at now (its outline: a turned rectangle)
         self.arranged = False                          # an Arrange has run
         self.late: Set[str] = set()                    # copies made after an Arrange: refused, like r012/r013
@@ -66,6 +68,7 @@ class FakeAdapter(Adapter):
         self.saved_to_team: List[Tuple[str, str, str]] = []
         self.arrange_envelopes: List[Tuple[float, float, float, float]] = []
         self.arrange_hints: List[dict] = []                    # the priorities given, per Arrange
+        self.arrange_along: List[dict] = []                    # the edges given to lay copies along, per Arrange
         self.finished: Optional[bool] = None
         self.fail_tab_points = False                   # set_tab_points refuses (like Fusion without the choice)
         self.round_loops = False                       # inner loops are 0.5 in circles (no straight edge for a tab)
@@ -109,7 +112,11 @@ class FakeAdapter(Adapter):
             self.slant.pop(cid, None)
             return size
         self.slant[cid] = deg
-        c, s_ = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+        return self._box_at(size, deg)
+
+    @staticmethod
+    def _box_at(size, deg):
+        c, s_ = abs(math.cos(math.radians(deg))), abs(math.sin(math.radians(deg)))
         return size[0] * c + size[1] * s_, size[0] * s_ + size[1] * c
 
     def extract(self, copy_id):
@@ -123,9 +130,11 @@ class FakeAdapter(Adapter):
         if self.arranged:
             self.late.add(copy_id)
 
-    def arrange(self, copy_ids, envelope, spacing_in, up_faces, priorities=None):
+    def arrange(self, copy_ids, envelope, spacing_in, up_faces, priorities=None, along=None):
         self.arrange_envelopes.append(envelope)
         self.arrange_hints.append(dict(priorities or {}))
+        self.arrange_along.append(dict(along or {}))
+        along = along or {}
         # like Fusion is taken to: higher priority first, the rest in the order given
         copy_ids = sorted(copy_ids, key=lambda c: -(priorities or {}).get(c, 0))
         if self.arrange_error:
@@ -145,16 +154,14 @@ class FakeAdapter(Adapter):
                 refused[cid] = "upDirection (0, 1, 0) is across the top face"
                 continue
             geometry, size = self.parts[self.copies[cid]]
-            slanted = cid.rsplit(".", 1)[0] in self.tilted
-            for w, h in ([self._slanted(cid, size)] if slanted else []) + [size]:
-                px, py, prow = x, y, row
-                if px + w > x1 + 1e-9:
-                    px, py, prow = x0, y + row + spacing_in, 0.0
-                if not (px + w > x1 + 1e-9 or py + h > y1 + 1e-9):
-                    break
-            else:
+            deg = None if cid in along else self.slant.get(cid)        # laid along an edge: square
+            w, h = size if deg is None else self._box_at(size, deg)
+            px, py, prow = x, y, row
+            if px + w > x1 + 1e-9:
+                px, py, prow = x0, y + row + spacing_in, 0.0
+            if px + w > x1 + 1e-9 or py + h > y1 + 1e-9:
                 continue                      # doesn't fit; the next one might
-            if (w, h) == tuple(size):
+            if deg is None:
                 self.slant.pop(cid, None)     # laid square
             z0 = 0.5 if cid in self.bad_z else 0.0
             self.boxes[cid] = Box(px, py, z0, px + w, py + h, z0 + geometry.thickness_in)
@@ -284,6 +291,9 @@ class FakeAdapter(Adapter):
     def top_edges(self, copy_id, face_ids):
         b = self.boxes[copy_id]
         tops = self.tops.get(self.copies[copy_id], {})
+        if not tops and copy_id.rsplit(".", 1)[0] in self.tilted and face_ids:   # its outline's four edges
+            segs = self.loop_segments(copy_id, face_ids[0], None)
+            return {face_ids[0]: [(f"e{n}", sg.points[0], sg.points[-1], True) for n, sg in enumerate(segs, 1)]}
         return {fid: [(k, (a[0] + b.x0, a[1] + b.y0), (c[0] + b.x0, c[1] + b.y0), st) for k, a, c, st in tops[fid]]
                 for fid in face_ids if fid in tops}
 

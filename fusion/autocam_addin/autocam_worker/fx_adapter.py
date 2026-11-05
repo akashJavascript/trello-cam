@@ -93,13 +93,15 @@ class FusionAdapter(Adapter):
     def add_copy(self, source_id, copy_id):
         self.tokens[copy_id] = fx_design.add_copy(self.design, self._occ(source_id)).entityToken
 
-    def arrange(self, copy_ids, envelope, spacing_in, up_faces, priorities=None):
+    def arrange(self, copy_ids, envelope, spacing_in, up_faces, priorities=None, along=None):
         self._used("arrange_flip")
         if priorities:
             self._used("arrange_priority")
+        if along:
+            self._used("arrange_along")
         nest = self.job.nest
         result = fx_design.arrange(self.design, [(c, self._occ(c)) for c in copy_ids], envelope, spacing_in,
-                                   up_faces, nest.rotation, nest.part_in_part, priorities or {})
+                                   up_faces, nest.rotation, nest.part_in_part, priorities or {}, along or {})
         if result.refused:
             self._used("arrange_refuse")
         return result

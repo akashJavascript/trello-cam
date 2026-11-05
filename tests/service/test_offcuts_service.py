@@ -1,6 +1,7 @@
 """Offcuts on the board: kept when a sheet is cut, offered to the next run, reserved, used up (offcuts.py)."""
 
 import json
+from datetime import timedelta
 
 from autocam_core.schema_job import read_job
 from fakeworker import run_fake_worker
@@ -40,6 +41,27 @@ def test_cutting_a_sheet_keeps_the_rest_as_an_offcut(tmp_path):
     assert h.store.sheet_cards()[s1.id]["cut"] and h.list_of("c1") == "cut"
     h.runner.tick()
     assert len(offcut_cards(h)) == 1                                                  # not made twice
+
+
+def test_the_offcut_just_cut_is_on_the_bed_until_another_day_or_another_sheet_is_loaded(tmp_path):
+    h, s1 = first_sheet(tmp_path)
+    cut(h, s1.id)
+    [off] = offcut_cards(h)
+    assert h.runner.on_bed() == off.id                     # the rest of the sheet just cut: still on the machine
+    add(h, step_card("c2", "gusset"))
+    h.runner.tick()
+    job = read_job(next(h.queue.incoming.glob("*.json")))
+    assert [(o.id, o.on_bed) for o in job.offcuts] == [(off.id, True)]
+    machine = h.store.offcuts_file.with_name("machine.json")
+    stamp = lambda dt: dt.strftime("%Y-%m-%dT%H:%M:%SZ")                   # noqa: E731
+    machine.write_text(json.dumps({"loaded": {s1.id: stamp(h.now - timedelta(minutes=30))}}))
+    assert h.runner.on_bed() == off.id                     # Loaded for the sheet it came from: still there
+    machine.write_text(json.dumps({"loaded": {s1.id: stamp(h.now - timedelta(minutes=30)),
+                                              "other": stamp(h.now + timedelta(minutes=1))}}))
+    assert h.runner.on_bed() is None                       # another sheet went on the machine: it's on the rack
+    machine.unlink()
+    h.now += timedelta(days=1)
+    assert h.runner.on_bed() is None                       # cut yesterday: taken off since
 
 
 def test_unticking_keep_means_no_offcut(tmp_path):

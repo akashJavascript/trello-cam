@@ -12,7 +12,8 @@ someone had done it on Trello:
 - moving the card: to Sheet review when something went wrong, or to Cut once it's done, UNDO_S later, so a mistake
   can be undone (automation never moves a card into Ready to cut, so a card already in Cut can't come back).
 
-Where each sheet is (its step) is kept here (state/machine.json), so a closed browser opens on the same step. No
+Where each sheet is (its step), and when each was loaded (the runner reads that to tell which offcut is still on the
+bed), is kept here (state/machine.json), so a closed browser opens on the same step. No
 sign-in: the page has its own key (machine_key), bookmarked on that PC. No Onshape calls; Trello reads cached.
 """
 
@@ -44,6 +45,7 @@ log = logging.getLogger("autocam.machine")
 UNDO_S = 180.0              # "Move to Cut" waits this long before the card moves, so it can be undone
 CACHE_S = 15.0              # Trello list reads
 CARD_S = 8.0                # one card's read (the open sheet's page asks every few seconds)
+LOADED_KEEP = 20            # Loaded presses remembered (the runner only needs the latest few)
 NO_STOP_SUFFIX = "_NOSTOP"  # runner.NO_STOP_SUFFIX
 NOTES = {"face": "Skims the tops", "scribe": "Draws the bend lines", "small": "The small holes and cutouts",
          "outlines": "Cuts the fitted parts out"}
@@ -98,7 +100,7 @@ class MachineView:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = {}
-        return {k: dict(data.get(k) or {}) for k in ("progress", "pending", "ran")}
+        return {k: dict(data.get(k) or {}) for k in ("progress", "pending", "ran", "loaded")}
 
     def _save(self, st: Dict[str, Dict]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -446,6 +448,9 @@ class MachineView:
             self._save(st)
             return {"ok": True}
         if do == "loaded":                             # best effort: an older card may not have these boxes
+            st = self._state()                         # when: the runner's on_bed (the last sheet's offcut is off)
+            st["loaded"] = dict(sorted({**st["loaded"], card_id: self._iso()}.items(), key=lambda x: x[1])[-LOADED_KEEP:])
+            self._save(st)
             for item in self.cfg.trello.machine_checklist:
                 self.t.set_check(card_id, t.machine_checklist_name, item, True)
             self._stale(card_id)

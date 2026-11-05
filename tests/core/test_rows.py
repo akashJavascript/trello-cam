@@ -57,3 +57,18 @@ def test_min_rect_finds_a_bar_drawn_at_an_angle():
     long, short = min_rect(corners + [(3.5, -0.5)])              # a point inside changes nothing
     assert abs(long - 15.4) < 1e-3 and abs(short - 1.6) < 1e-3
     assert min_rect([(0, 0), (1, 1)]) is None and min_rect([(0, 0), (1, 1), (2, 2)]) is None   # no area
+
+
+def test_long_side_angle_says_how_far_a_part_lies_from_square():
+    import math
+    from autocam_core.rows import long_side_angle
+
+    def bar(deg, long=15.4, short=1.6):
+        a = math.radians(deg)
+        return [(u * math.cos(a) - v * math.sin(a), u * math.sin(a) + v * math.cos(a))
+                for u, v in ((0, 0), (long, 0), (long, short), (0, short))]
+    assert abs(long_side_angle(bar(11.0)) - 11.0) < 1e-4                 # (the hull's points are rounded to 1e-6 in)
+    assert abs(long_side_angle(bar(-11.0)) + 11.0) < 1e-4
+    assert abs(long_side_angle(bar(169.0)) + 11.0) < 1e-4               # the same line, end for end
+    assert abs(long_side_angle(bar(0.0, 2.0, 6.0)) - 90.0) < 1e-4        # its long side along Y
+    assert abs(long_side_angle(bar(0.0))) < 1e-4 and long_side_angle([(0, 0), (1, 1)]) is None

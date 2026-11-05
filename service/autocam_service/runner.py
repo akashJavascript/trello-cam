@@ -113,6 +113,14 @@ def _iso(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _local_day(utc: str) -> str:
+    """The laptop's own date at a UTC time ("" if it can't be read)."""
+    try:
+        return datetime.fromisoformat(utc.replace("Z", "+00:00")).astimezone().date().isoformat()
+    except ValueError:
+        return ""
+
+
 @dataclass
 class Services:
     cfg: Config
@@ -435,6 +443,7 @@ class Runner:
         """The offcuts a job of this material may use: in the Offcuts list, and not reserved by a sheet card
         (except one this run is rebuilding). Offcuts whose card left the list are forgotten."""
         on_board = {c.id for c in self.t.list_cards("offcuts")}
+        bed = self.on_bed()
         out = []
         for offcut_id, piece in self.offcuts.all().items():
             if offcut_id not in on_board:
@@ -446,8 +455,38 @@ class Runner:
                 continue
             out.append(OffcutSpec(offcut_id, piece["thickness_in"], tuple(tuple(s) for s in piece["used"]),
                                   bool((piece.get("last") or {}).get("turned", False)),
-                                  tuple(tuple(r) for r in piece.get("beside", [])), not piece.get("scrap")))
+                                  tuple(tuple(r) for r in piece.get("beside", [])), not piece.get("scrap"),
+                                  on_bed=offcut_id == bed))
         return out
+
+    def on_bed(self) -> Optional[str]:
+        """The offcut still on the machine, if any (core 0.28.0; the user, 2026-11-05: an offcut taken off the bed is
+        the same work to load either way round): the one the sheet cut last was cut from or left, if that was today
+        and no other sheet has been loaded on the machine screen since. Every other offcut is on the rack, where it's
+        loaded whichever way round gives more room."""
+        reg = self.s.store.sheet_cards()
+        cut = [(str(info["cut_utc"]), cid) for cid, info in reg.items() if info.get("cut") and info.get("cut_utc")]
+        if not cut:
+            return None
+        when, sheet = max(cut)
+        if _local_day(when) != _local_day(_iso(self.s.clock())):
+            return None                               # cut on an earlier day: taken off since
+        loaded = self._loaded_at_machine()
+        since = loaded.get(sheet) or when
+        if any(card_id != sheet and at > since for card_id, at in loaded.items()):
+            return None                               # another sheet went on the machine after it
+        offcut_id = reg[sheet].get("offcut_id")
+        if offcut_id and self.offcuts.get(offcut_id) is not None:
+            return offcut_id
+        return next((oid for oid, piece in self.offcuts.all().items() if piece.get("made_from") == sheet), None)
+
+    def _loaded_at_machine(self) -> Dict[str, str]:
+        """Sheet card id -> when Loaded was pressed for it on the machine screen (machine.py's state), UTC."""
+        try:
+            data = json.loads(self.s.store.offcuts_file.with_name("machine.json").read_text(encoding="utf-8"))
+            return {str(k): str(v) for k, v in (data.get("loaded") or {}).items()}
+        except (OSError, ValueError, AttributeError):
+            return {}
 
     def _stock_line(self, vs: VerifiedSheet, info: Optional[Dict] = None) -> Optional[str]:
         """The sheet card's Stock line when the sheet isn't a plain new sheet: which offcut and which end goes

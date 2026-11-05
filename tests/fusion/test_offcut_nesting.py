@@ -37,6 +37,53 @@ def test_spinning_an_offcut_round_wins_only_when_it_saves_a_new_sheet(tmp_path):
     assert any("offcuts spun round beat the listed order" in n for n in result.notes)
 
 
+def test_an_offcut_on_the_rack_goes_the_way_round_with_the_longer_free_stretch(tmp_path):
+    rig = Rig(tmp_path)
+    # As before, all 4 fit either way round: on the bed it stays as it was; on the rack (core 0.28.0) turning it is no
+    # extra work, so it's loaded the way with more room.
+    for on_bed, turned in ((True, False), (False, True)):
+        job = job_with(rig, [("plate", 4, plate(name="plate"), (10.0, 5.0))],
+                       [OffcutSpec("off1", 0.125, ((0.0, 25.0),), on_bed=on_bed)])
+        [sheet] = rig.run(job).sheets
+        assert sheet.offcut_id == "off1" and sheet.offcut_turned is turned
+
+
+def test_the_smaller_offcut_on_the_rack_takes_the_parts_turned_round(tmp_path):
+    rig = Rig(tmp_path)
+    # Offcuts #3 and #4 on 2026-11-05 (r099): the small one has 9 in free the way it was cut (30.5 to 39.5) and 17.5
+    # in turned round; the big one 34 in. The 4 plates take 10.25 in. On the rack, the small one takes them turned
+    # round, and the big one is kept big.
+    offcuts = [OffcutSpec("big", 0.125, ((0.0, 5.0),), on_bed=False),
+               OffcutSpec("small", 0.125, ((0.0, 30.0),), on_bed=False)]
+    [sheet] = rig.run(job_with(rig, [("plate", 4, plate(name="plate"), (10.0, 5.0))], offcuts)).sheets
+    assert sheet.offcut_id == "small" and sheet.offcut_turned
+
+
+def test_turning_the_offcut_on_the_bed_still_counts_against_it(tmp_path):
+    rig = Rig(tmp_path)
+    # The same, but the small one is still on the bed the way it was cut: it isn't turned round to save using a
+    # second offcut (only to save a new sheet); the plates that don't fit it go on the big one, on the rack.
+    offcuts = [OffcutSpec("big", 0.125, ((0.0, 5.0),), on_bed=False), OffcutSpec("small", 0.125, ((0.0, 30.0),))]
+    result = rig.run(job_with(rig, [("plate", 4, plate(name="plate"), (10.0, 5.0))], offcuts))
+    assert [(s.offcut_id, s.offcut_turned) for s in result.sheets] == [("small", False), ("big", True)]
+
+
+def test_ties_go_to_the_smallest_offcut():
+    from autocam_worker.adapter import AdapterError
+    import autocam_worker.pipeline as pipeline
+
+    class NoBoxes:
+        def box(self, cid):
+            raise AdapterError("no")
+
+    def on(offcut_id):
+        t = pipeline._Try("as listed", {})
+        t.envelopes, t.placed, t.areas = [((0.0, 0.0), (0, 0, 1, 1))], [("p01.1",)], [0]
+        t.stock = [(offcut_id, pipeline._Way(False, None))]
+        return pipeline._score(NoBoxes(), t, {}, {"small": 200.0, "big": 700.0})
+    assert on("small") < on("big")
+
+
 def test_what_doesnt_fit_on_the_offcut_goes_on_a_new_sheet(tmp_path):
     rig = Rig(tmp_path)
     job = job_with(rig, [("plate", 12, plate(name="plate"), (10.0, 5.0))], [OffcutSpec("off1", 0.125, ((0.0, 25.0),))])
