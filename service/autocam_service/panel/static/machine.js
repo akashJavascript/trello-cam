@@ -278,15 +278,22 @@
         return card("Done cutting", st.what, "", true, null, one("Move to Cut", finish));
     }
     // finish: AutoCAM says whether what's left is worth keeping; one link changes its mind
+    // what's left stays clamped for the next sheet unless someone takes it off (then: slack for loading it back)
+    var rackLink = h("button", { class: "link-btn quiet", type: "button", disabled: S.busy, onclick: function () { rack(!st.racked); } },
+      st.racked ? "Keep it clamped instead" : "I’m putting it back on the rack");
     if (st.kind === "offcut") {
-      return card("Done cutting", st.usedUp ? "#" + st.n + " is used up" : "Put #" + st.n + " back on the rack",
-        st.usedUp ? "Scrap what’s left" : (st.size ? st.size + " free after this" : ""), true, null, one("Move to Cut", finish));
+      if (st.usedUp) return card("Done cutting", "#" + st.n + " is used up", "Scrap what’s left", true, null, one("Move to Cut", finish));
+      return card("Done cutting", st.racked ? "Put #" + st.n + " back on the rack" : "Keep #" + st.n + " clamped",
+        st.size ? st.size + " free after this" : "", true, rackLink, one("Move to Cut", finish));
     }
     var v = st.size ? "What’s left: " + st.size : "Done cutting";
     if (!st.can) return card("Done cutting", v, "Too small to keep: scrap it", true, null, one("Move to Cut", finish));
-    return card("Done cutting", v, st.keep ? "AutoCAM keeps it as an offcut" : "AutoCAM scraps it", true,
-      h("button", { class: "link-btn quiet", type: "button", disabled: S.busy, onclick: function () { keep(!st.keep); } },
-        st.keep ? "Scrap it instead" : "Keep it after all"),
+    return card("Done cutting", v, st.keep ? (st.racked ? "AutoCAM keeps it: back on the rack" : "AutoCAM keeps it: keep it clamped")
+      : "AutoCAM scraps it", true,
+      h("div", null,
+        h("button", { class: "link-btn quiet", type: "button", disabled: S.busy, onclick: function () { keep(!st.keep); } },
+          st.keep ? "Scrap it instead" : "Keep it after all"),
+        st.keep ? rackLink : null),
       one("Move to Cut", finish));
   }
 
@@ -295,6 +302,7 @@
   function refresh() { return loadSheet(S.open, true); }
   function switchStops(on) { act({ do: "stops", on: on }).then(refresh, function () {}); }
   function keep(on) { act({ do: "keep", on: on }).then(refresh, function () {}); }
+  function rack(on) { act({ do: "rack", on: on }).then(refresh, function () {}); }
   function stock(choice) {
     act({ do: "stock", choice: choice }).then(function () {
       say(choice === "renest" ? "Its parts go back to be nested again." : "Cut it on a new sheet: the same program.");

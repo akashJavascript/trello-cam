@@ -289,10 +289,10 @@ def test_the_gap_after_earlier_cuts_is_said_to_be_on_purpose(tmp_path):
     assert h.runner._stock_text(off.id, piece["material"], piece["thickness_in"], False).endswith(
         "The parts start about 1 in past the earlier cuts on purpose (part spacing, plus a little in case it sits "
         "slightly differently).")
-    # nested as still clamped from its last cut (core 0.31.0): no slack, and the card says so
+    # nested as still clamped from its last cut (core 0.31.0): 1/16 in of slack (2026-11-06), and the card says so
     assert h.runner._stock_text(off.id, piece["material"], piece["thickness_in"], False, still=True).endswith(
-        "The parts start about 0.75 in past the earlier cuts on purpose. It was nested as still clamped from r001 S1, "
-        "with no slack for loading it back: if it was taken off since, line it up exactly as it was.")
+        "The parts start about 0.81 in past the earlier cuts on purpose. It was nested as still clamped from r001 S1, "
+        "with almost no slack for loading it back: if it was taken off since, line it up exactly as it was.")
 
 
 def test_the_shop_keeps_a_quarter_inch_of_slack():
@@ -310,5 +310,21 @@ def test_a_sheet_nested_on_the_offcut_still_clamped_says_so(tmp_path):
     s2 = sheet(h)
     [off] = offcut_cards(h)
     assert h.runner.on_bed() == off.id
-    assert "It was nested as still clamped from r001 S1, with no slack for loading it back" in s2.desc
-    assert "about 0.75 in past the earlier cuts" in s2.desc
+    assert "It was nested as still clamped from r001 S1, with almost no slack for loading it back" in s2.desc
+    assert "about 0.81 in past the earlier cuts" in s2.desc
+
+
+def test_putting_the_piece_back_on_the_rack_takes_it_off_the_bed(tmp_path):
+    # 2026-11-06, the user: the Done step says keep it clamped, with a button for putting it back on the rack.
+    h, s1 = first_sheet(tmp_path)
+    cut(h, s1.id)
+    [off] = offcut_cards(h)
+    machine = h.store.offcuts_file.with_name("machine.json")
+    machine.write_text(json.dumps({"racked": {s1.id: h.now.strftime("%Y-%m-%dT%H:%M:%SZ")}}))
+    assert h.runner.on_bed() is None
+    add(h, step_card("c2", "gusset"))
+    h.runner.tick()
+    job = read_job(next(h.queue.incoming.glob("*.json")))
+    assert [(o.id, o.on_bed) for o in job.offcuts] == [(off.id, False)]
+    machine.write_text(json.dumps({"racked": {"another-sheet": h.now.strftime("%Y-%m-%dT%H:%M:%SZ")}}))
+    assert h.runner.on_bed() == off.id                     # another sheet's piece racked: this one still clamped

@@ -471,7 +471,9 @@ class Runner:
         when, sheet = max(cut)
         if _local_day(when) != _local_day(_iso(self.s.clock())):
             return None                               # cut on an earlier day: taken off since
-        loaded = self._loaded_at_machine()
+        if sheet in self._machine_state("racked"):
+            return None                               # "I'm putting it back on the rack" on the machine screen
+        loaded = self._machine_state("loaded")
         since = loaded.get(sheet) or when
         if any(card_id != sheet and at > since for card_id, at in loaded.items()):
             return None                               # another sheet went on the machine after it
@@ -480,11 +482,12 @@ class Runner:
             return offcut_id
         return next((oid for oid, piece in self.offcuts.all().items() if piece.get("made_from") == sheet), None)
 
-    def _loaded_at_machine(self) -> Dict[str, str]:
-        """Sheet card id -> when Loaded was pressed for it on the machine screen (machine.py's state), UTC."""
+    def _machine_state(self, key: str) -> Dict[str, str]:
+        """From the machine screen's state (machine.py): "loaded", sheet card id -> when Loaded was pressed for it;
+        "racked", sheet card id -> when the piece it left was put back on the rack. UTC."""
         try:
             data = json.loads(self.s.store.offcuts_file.with_name("machine.json").read_text(encoding="utf-8"))
-            return {str(k): str(v) for k, v in (data.get("loaded") or {}).items()}
+            return {str(k): str(v) for k, v in (data.get(key) or {}).items()}
         except (OSError, ValueError, AttributeError):
             return {}
 
@@ -607,7 +610,7 @@ class Runner:
 
     def _gap_after_cuts(self, still: bool = False) -> float:
         """How far past an offcut's earlier cuts the next parts start: the part spacing kept round the earlier
-        cuts, the offcut slack (none for a piece still clamped from its last cut) and the room for the new parts'
+        cuts, the offcut slack (offcut_bed_gap_in for a piece still clamped from its last cut) and the room for the new parts'
         cutter (said as 0.75 in until 2026-11-06, which left out the room the new parts kept: their part spacing
         until then, beside_cut_in since)."""
         n = self.cfg.nest

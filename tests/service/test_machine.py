@@ -174,6 +174,12 @@ def test_on_an_offcut_it_starts_with_finding_it_and_says_when_it_isnt_there(tmp_
     assert ticked(h, s1.id, t.stock_checklist)[t.not_found_item]
     assert m.sheet(s1.id)["steps"][0]["missing"]                   # until the service has looked
     assert m.sheet(s1.id)["steps"][-1]["kind"] == "offcut"
+    # Done: what's left stays clamped unless someone says it's going back on the rack (2026-11-06)
+    assert m.sheet(s1.id)["steps"][-1]["racked"] is False
+    m.act({"id": s1.id, "do": "rack", "on": True})
+    assert m.sheet(s1.id)["steps"][-1]["racked"] is True and s1.id in json.loads(m.path.read_text())["racked"]
+    m.act({"id": s1.id, "do": "rack", "on": False})
+    assert m.sheet(s1.id)["steps"][-1]["racked"] is False and s1.id not in json.loads(m.path.read_text())["racked"]
 
 
 def test_a_part_placed_by_hand_gets_a_piece_and_runs_once_per_copy(tmp_path):

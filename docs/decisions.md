@@ -1130,6 +1130,19 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   p0209 (to about 39 in) would have been left off #4's record (fixed by hand to 39.5 in before Part 28 was nested).
   The sheet's `bands` (what another piece of stock must have clear to take the same program) include it too.
 
+## 2026-11-06: keep it clamped, or a button for the rack; 1/16 in slack while clamped
+
+- **Why:** 0.31.0 nests an offcut still clamped from its last cut with no loading slack, taking "still clamped" from
+  the on-the-bed rule (the last sheet cut, today, nothing Loaded since). But the machine screen's Done step told the
+  operator "Put #N back on the rack" every time, so a piece that was racked and put back would be nested as if it
+  never moved.
+- **The user's design:** the Done step says "Keep #N clamped", with a link "I'm putting it back on the rack" (and
+  back). For a new sheet whose rest is kept: "AutoCAM keeps it: keep it clamped", the same link. The machine screen
+  records it per sheet card (machine.json "racked"); `Runner.on_bed` counts nothing on the bed once the last sheet's
+  piece was racked. It still resets each day and when another sheet is Loaded.
+- **Slack while clamped:** `[nest] offcut_bed_gap_in` 1/16 in (0 in 0.31.0): nothing moved, but it covers a bumped
+  clamp or one loosened without the button. Racked: the usual 0.25 in. The card says "almost no slack".
+
 ## 2026-11-06: rush joins a sheet in review, smaller gaps beside earlier cuts, nests scored by what they leave (core 0.31.0; the user: "Do these")
 
 **1. A rush card may join a sheet waiting in Sheet review that nobody has started.**

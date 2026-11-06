@@ -121,7 +121,7 @@ class Nest:
     straight_max: int = 12
     square_parts: bool = True
     beside_cut_in: float = 0.25        # parts' inset from an area's edge next to earlier cuts (2026-11-06)
-    offcut_bed_gap_in: float = 0.0     # offcut_gap_in for an offcut still clamped the way it was cut (2026-11-06)
+    offcut_bed_gap_in: float = 0.0625  # offcut_gap_in for an offcut still clamped the way it was cut (2026-11-06)
 
 
 @dataclass(frozen=True)
@@ -671,7 +671,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         straight_max=t.integer("straight_max", minimum=0, default=12),
         square_parts=t.boolean("square_parts", default=True),
         beside_cut_in=t.number("beside_cut_in", positive=True, default=0.25),
-        offcut_bed_gap_in=t.number("offcut_bed_gap_in", minimum=0, default=0.0),
+        offcut_bed_gap_in=t.number("offcut_bed_gap_in", minimum=0, default=0.0625),
     )
     t.finish()
 

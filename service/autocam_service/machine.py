@@ -100,7 +100,7 @@ class MachineView:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = {}
-        return {k: dict(data.get(k) or {}) for k in ("progress", "pending", "ran", "loaded")}
+        return {k: dict(data.get(k) or {}) for k in ("progress", "pending", "ran", "loaded", "racked")}
 
     def _save(self, st: Dict[str, Dict]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -409,7 +409,10 @@ class MachineView:
                            self.cfg.nest.offcut_gap_in)
 
     def _finish(self, card: Card, info: Dict, checks: Dict) -> Dict[str, Any]:
+        """The Done step. racked: the piece left goes back on the rack (the button); else it stays clamped, and the
+        runner nests the next parts on it with the still-clamped slack (Runner.on_bed, 2026-11-06)."""
         t = self.cfg.trello
+        racked = card.id in self._state()["racked"]
         key = info.get("material")
         width = self.cfg.sheet_for(key).width_in
         if info.get("offcut_id"):
@@ -423,11 +426,11 @@ class MachineView:
             free = self._free(used, piece.get("material") or key)
             gone = free < self.cfg.nest.offcut_min_in and not piece.get("beside")
             return {"t": "finish", "kind": "offcut", "n": piece.get("number"), "size": f"{free:.0f} × {width:g}",
-                    "usedUp": gone}
+                    "usedUp": gone, "racked": racked}
         rest = info.get("rest_in")
         size = f"{rest:.0f} × {width:g}" if rest else ""
         has = (t.offcut_checklist, t.offcut_item) in checks
-        return {"t": "finish", "kind": "new", "size": size, "can": has,
+        return {"t": "finish", "kind": "new", "size": size, "can": has, "racked": racked,
                 "keep": bool(checks.get((t.offcut_checklist, t.offcut_item))) if has else False}
 
     # ---------------------------------------------------------------- actions
@@ -473,6 +476,13 @@ class MachineView:
             self._tick(card_id, t.stock_checklist, item, True)
         elif do == "keep":
             self._tick(card_id, t.offcut_checklist, t.offcut_item, bool(data.get("on")))
+        elif do == "rack":                             # the piece left goes back on the rack: not still clamped
+            st = self._state()
+            st["racked"].pop(card_id, None)
+            if data.get("on"):
+                st["racked"] = dict(sorted({**st["racked"], card_id: self._iso()}.items(),
+                                           key=lambda x: x[1])[-LOADED_KEEP:])
+            self._save(st)
         elif do == "finish":
             return self._finish_now(card, info)
         elif do == "problem":
@@ -504,10 +514,11 @@ class MachineView:
             sub = str(info.get("label") or "")
             fin = self._finish(card, info, {(c.checklist, c.item): c.done for c in card.checks}) \
                 if not info.get("by_hand") else {}
+            where = "back on the rack" if fin.get("racked") else "kept clamped"
             if fin.get("kind") == "new" and fin.get("can"):
-                sub += " · rest kept" if fin.get("keep") else " · rest scrapped"
+                sub += f" · rest kept, {where}" if fin.get("keep") else " · rest scrapped"
             elif fin.get("kind") == "offcut" and fin.get("n"):
-                sub += f" · #{fin['n']} used up" if fin.get("usedUp") else f" · #{fin['n']} back on the rack"
+                sub += f" · #{fin['n']} used up" if fin.get("usedUp") else f" · #{fin['n']} {where}"
         st["pending"][card.id] = {"due": self.clock() + UNDO_S, "title": title, "sub": sub,
                                   "check": info is None}
         st["progress"].pop(card.id, None)

@@ -69,8 +69,9 @@ straight_max = 12          # a sheet with at most this many parts is also tried 
 square_parts = true        # a part drawn off square in CAD is laid square in every Arrange (Fusion keeps the CAD angle, r098)
 beside_cut_in = 0.25       # parts stay this far in from an edge next to earlier cuts (the region's edges keep part_spacing_in):
                            # beside a hole already cut, a part needs room for its cutter, not a strip for tabs (2026-11-06)
-offcut_bed_gap_in = 0.0    # offcut_gap_in for an offcut still clamped the way it was last cut, loaded the same way round:
-                           # its zeros haven't moved (2026-11-06)
+offcut_bed_gap_in = 0.0625 # offcut_gap_in for an offcut still clamped the way it was last cut, loaded the same way round:
+                           # its zeros haven't moved; 1/16 in for a bumped clamp (2026-11-06). Off the bed: the machine
+                           # screen's "I'm putting it back on the rack", another sheet Loaded, or the next day
 
 [clamps]
 edges = ["left", "right"]  # any of "left", "right" (the long edges), "front" (the end by you); the back overhangs
