@@ -516,7 +516,7 @@ class Runner:
                          last.get("label", "its last sheet"), tuple(last.get("stretch", (0.0, 0.0))), turned,
                          self._size(piece["material"])[0], bool(last.get("turned", False)), piece.get("number"),
                          piece.get("length_in") if piece.get("scrap") else None, bool(piece.get("hand_cuts")),
-                         gap_in=self._gap_after_cuts())
+                         gap_in=self._gap_after_cuts(), used=[tuple(s) for s in piece.get("used") or ()])
         return line + (f" ({missing[0].upper() + missing[1:]} wasn't on the rack; this one fits the same program.)"
                        if changed else "")
 

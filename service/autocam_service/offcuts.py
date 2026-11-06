@@ -206,16 +206,35 @@ def card_text(stock: str, free_in: float, used: Sequence[Stretch], last_label: s
     return title, "\n".join(lines)
 
 
-def load_line(stock: str, url: str, last_label: str, last_stretch: Stretch, turned: bool, sheet_length: float,
-              last_turned: bool = False, number: Optional[int] = None, scrap_length: Optional[float] = None,
-              hand_cut: bool = False, gap_in: float = 0.0) -> str:
-    """The sheet card's Stock line for a nest on an offcut: the same way round as its last cut, or spun round.
-    scrap_length: a piece shorter than a sheet (always at the front, never turned). hand_cut: it has parts cut
-    out by hand (a scrap AutoCAM hasn't cut yet then goes in the end they were measured from first)."""
+CUT_END_CLEAR_IN = 1.0      # one end's cuts must come this much nearer its edge than the other's to call it the cut end
+
+
+def cut_end_at_front(used: Sequence[Stretch], last_stretch: Stretch, turned: bool, sheet_length: float) -> bool:
+    """Is the offcut's cut end at the front as it's loaded (turned: end B at the front)? The cut end is the one its
+    cuts come nearest, from every cut on it: what a person sees on the piece. Not where the last cut sat: r101's cut
+    on offcut #4 ran 12.6 to 38.8 in, mostly in the back half, though the earlier cuts reach the front edge and the
+    back 9 in are clean (r107's card said "at the back", 2026-11-05). When both ends are cut about as close, the last
+    cut's middle decides, as before."""
+    if used:
+        from_a = min(s[0] for s in used)
+        from_b = sheet_length - max(s[1] for s in used)
+        if abs(from_a - from_b) >= CUT_END_CLEAR_IN:
+            return (from_a < from_b) != turned
     middle = (last_stretch[0] + last_stretch[1]) / 2
     if turned:
         middle = sheet_length - middle
-    end = "at the front (by you)" if middle < sheet_length / 2 else "at the back (hanging off the bed)"
+    return middle < sheet_length / 2
+
+
+def load_line(stock: str, url: str, last_label: str, last_stretch: Stretch, turned: bool, sheet_length: float,
+              last_turned: bool = False, number: Optional[int] = None, scrap_length: Optional[float] = None,
+              hand_cut: bool = False, gap_in: float = 0.0, used: Sequence[Stretch] = ()) -> str:
+    """The sheet card's Stock line for a nest on an offcut: the same way round as its last cut, or spun round.
+    scrap_length: a piece shorter than a sheet (always at the front, never turned). hand_cut: it has parts cut
+    out by hand (a scrap AutoCAM hasn't cut yet then goes in the end they were measured from first). used: every
+    cut stretch on it, in its own coordinates (cut_end_at_front)."""
+    front = cut_end_at_front(used, last_stretch, turned, sheet_length)
+    end = "at the front (by you)" if front else "at the back (hanging off the bed)"
     head = (f"Stock: offcut #{number} ({stock}), not a new sheet ({url})." if number else
             f"Stock: the {stock} offcut, not a new sheet ({url}).")
     if scrap_length is not None:

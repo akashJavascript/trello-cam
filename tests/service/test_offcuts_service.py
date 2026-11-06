@@ -156,6 +156,20 @@ def test_the_load_line_says_when_to_spin_it():
             "parts were cut goes at the back (hanging off the bed).") in spun
 
 
+def test_the_cut_end_is_where_the_cuts_reach_the_edge_not_where_the_last_one_sat():
+    from autocam_service.offcuts import load_line
+    # offcut #4 after r101 (2026-11-05): H1/H2 at the front edge, r101's p0209 from 12.6 to 38.8 in, the back 9 in clean
+    used = [(0.25, 12.38), (12.63, 38.755)]
+    line = load_line("PC clear 1/8in", "u", "r101 S1", (12.63, 38.755), False, 48.0, last_turned=False, used=used)
+    assert "the same way round as for r101 S1: the end where its parts were cut at the front (by you)" in line
+    spun = load_line("PC clear 1/8in", "u", "r101 S1", (12.63, 38.755), True, 48.0, last_turned=False, used=used)
+    assert "the end where its parts were cut goes at the back (hanging off the bed)" in spun
+    # both ends cut about as close (offcut #3): the last cut decides, as before
+    both = load_line("PC clear 1/8in", "u", "r100 S1", (38.96, 47.485), True, 48.0, last_turned=True,
+                     used=[(0.5, 38.68), (38.96, 47.485)])
+    assert "the end where its parts were cut at the front (by you)" in both
+
+
 def test_sheets_from_the_old_layout_are_retired_and_their_parts_sent_back(tmp_path):
     h, s1 = first_sheet(tmp_path)
     cut(h, s1.id)

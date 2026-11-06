@@ -34,7 +34,7 @@ from autocam_core.schema_result import Result, SheetResult, read_result
 
 from .config import Config
 from .jobs import sheet_fixture
-from .offcuts import OffcutStore
+from .offcuts import OffcutStore, cut_end_at_front
 from .program_checks import CheckedPrograms
 from .run_state import RunStore
 from .sheet_cards import clamp_edges, material_label, thickness_label
@@ -385,11 +385,9 @@ class MachineView:
         if not piece or not last.get("stretch"):
             return ""
         length = self.cfg.sheet_for(piece.get("material")).length_in
-        a, b = last["stretch"]
-        middle = (a + b) / 2
-        if info.get("turned"):
-            middle = length - middle
-        end = "at the front" if middle < length / 2 else "at the back"
+        front = cut_end_at_front([tuple(s) for s in piece.get("used") or ()], tuple(last["stretch"]),
+                                 bool(info.get("turned")), length)
+        end = "at the front" if front else "at the back"
         spin = bool(info.get("turned")) != bool(last.get("turned"))
         return (f"Spin it round from last time: the cut end goes {end}" if spin else f"The cut end goes {end}")
 
