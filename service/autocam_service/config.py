@@ -159,6 +159,7 @@ class Material:
     program_prefix: str
     sheet_length_in: float = 0.0   # its new sheets' size when it isn't [sheet]'s (SWYFT 24 x 24, MAXComposite 47 x 23);
     sheet_width_in: float = 0.0    # 0: [sheet]'s
+    part_spacing_in: float = 0.0   # its own gap between parts (polycarbonate 0.4 in, the user 2026-11-06); 0: [nest]'s
 
 
 @dataclass(frozen=True)
@@ -454,6 +455,11 @@ class Config:
     def stock_types(self) -> List[Tuple[Material, float]]:
         return [(m, t) for m in self.materials.values() for t in m.thicknesses_in]
 
+    def part_spacing_for(self, material: Optional[str]) -> float:
+        """The gap kept between parts of this material: its own if it has one, else [nest]'s (2026-11-06)."""
+        m = self.materials.get(material or "")
+        return m.part_spacing_in if m is not None and m.part_spacing_in else self.nest.part_spacing_in
+
     def sheet_for(self, material: Optional[str]) -> Sheet:
         """A new sheet of this material: its own size if it has one, else [sheet]'s (2026-11-02)."""
         m = self.materials.get(material or "")
@@ -713,6 +719,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
             program_prefix=t.string("program_prefix", pattern=SAFE_NAME_RE, required=True),
             sheet_length_in=t.number("sheet_length_in", minimum=0, default=0.0),
             sheet_width_in=t.number("sheet_width_in", minimum=0, default=0.0),
+            part_spacing_in=t.number("part_spacing_in", minimum=0, default=0.0),
         )
         t.finish()
 
@@ -1121,11 +1128,14 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
             e(f"{where}.flute_in: library says {lib.flute_length_in:.4f} in, config says {tool.flute_in}")
     widest = max([t.diameter_in for t in cfg.tools.values()] + ([cfg.face.diameter_in] if cfg.face else [])
                  + ([cfg.scribe.chamfer_diameter_in] if cfg.scribe else []), default=0.0)
-    if cfg.nest.part_spacing_in <= widest:
-        e("nest.part_spacing_in: must exceed the largest tool diameter (the face tool's too)")
-    if not cfg.nest.part_spacing_in / 2 <= cfg.nest.beside_cut_in <= cfg.nest.part_spacing_in:
-        e("nest.beside_cut_in: must be at least half the part spacing (parts in two rooms that meet stay a part "
-          "spacing apart) and at most the part spacing")
+    spacings = [("nest.part_spacing_in", cfg.nest.part_spacing_in)] + [
+        (f"materials.{k}.part_spacing_in", m.part_spacing_in) for k, m in cfg.materials.items() if m.part_spacing_in]
+    for where, spacing in spacings:
+        if spacing <= widest:
+            e(f"{where}: must exceed the largest tool diameter (the face tool's too)")
+        if not spacing / 2 <= cfg.nest.beside_cut_in <= spacing:
+            e(f"nest.beside_cut_in: must be at least half the part spacing (parts in two rooms that meet stay a part "
+              f"spacing apart) and at most the part spacing ({where} is {spacing:g})")
     if cfg.nest.offcut_bed_gap_in > cfg.nest.offcut_gap_in:
         e("nest.offcut_bed_gap_in: can't be more than offcut_gap_in (it's the slack for a piece that never moved)")
 

@@ -374,7 +374,7 @@ class MachineView:
         own = info.get("own") or {}
         if own.get("box"):
             x0, y0, x1, y1 = own["box"]
-            margin = 2 * self.cfg.nest.part_spacing_in
+            margin = 2 * self.cfg.part_spacing_for(info.get("material"))
             return f"{x1 - x0 + margin:.1f} × {y1 - y0 + margin:.1f} in"
         m = PIECE_RE.search(card.desc or "")
         return f"{m.group(1)} × {m.group(2)} in" if m else ""

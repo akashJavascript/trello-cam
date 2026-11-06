@@ -113,6 +113,7 @@ color = "clear"
 thicknesses_in = [0.0625, 0.125, 0.1875, 0.25]
 use_mist = false
 program_prefix = "PCclear"
+part_spacing_in = 0.4      # between its parts (the user, 2026-11-06): leaves a 0.09 in strip between two 4 mm cuts
 
 [materials.pc_smoked]
 name = "PC"
@@ -121,6 +122,7 @@ color = "smoked"
 thicknesses_in = [0.0625, 0.125, 0.1875, 0.25]
 use_mist = false
 program_prefix = "PCsmoked"
+part_spacing_in = 0.4      # between its parts (the user, 2026-11-06): leaves a 0.09 in strip between two 4 mm cuts
 
 # SRPP (self-reinforced polypropylene), three kinds (the user, 2026-11-02): cut exactly like polycarbonate on the
 # router (its family: same tools, templates and checks) and set to Polycarbonate in Onshape, which is close in weight.

@@ -155,7 +155,7 @@ def build_job(cfg: Config, batch: Batch, run_id: str, created_utc: str, carried:
                         cfg.machine.reach_y_in),
         fixture=FixtureSpec(fx.nest_region_in, fx.clamp_zones_in, cfg.clamps.height_in,
                             cfg.clamps.min_clear_above_stock_in, cfg.clamps.in_fusion),
-        nest=NestSpec(cfg.nest.part_spacing_in, cfg.nest.max_sheets_per_group, cfg.nest.rotation,
+        nest=NestSpec(cfg.part_spacing_for(batch.material_key), cfg.nest.max_sheets_per_group, cfg.nest.rotation,
                       cfg.nest.part_in_part, cfg.nest.envelope_spacing_in, cfg.nest.short_qty,
                       cfg.nest.offcut_gap_in, cfg.nest.offcut_min_in, cfg.nest.offcut_beside_min_in,
                       cfg.nest.priority_by_size, cfg.nest.straight_max, cfg.nest.square_parts,

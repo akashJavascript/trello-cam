@@ -523,7 +523,8 @@ class Runner:
                          last.get("label", "its last sheet"), tuple(last.get("stretch", (0.0, 0.0))), turned,
                          self._size(piece["material"])[0], bool(last.get("turned", False)), piece.get("number"),
                          piece.get("length_in") if piece.get("scrap") else None, bool(piece.get("hand_cuts")),
-                         gap_in=self._gap_after_cuts(still), used=[tuple(s) for s in piece.get("used") or ()],
+                         gap_in=self._gap_after_cuts(piece["material"], still),
+                         used=[tuple(s) for s in piece.get("used") or ()],
                          still=still)
         return line + (f" ({missing[0].upper() + missing[1:]} wasn't on the rack; this one fits the same program.)"
                        if changed else "")
@@ -606,15 +607,16 @@ class Runner:
                          self.cfg.nest.offcut_min_in, piece.get("number"),
                          piece.get("length_in") if piece.get("scrap") else None, piece.get("hand_cuts", []),
                          self._size(piece["material"])[1], self.cfg.hand_cuts.programs,
-                         gap_in=self._gap_after_cuts() if piece.get("used") else 0.0)
+                         gap_in=self._gap_after_cuts(piece["material"]) if piece.get("used") else 0.0)
 
-    def _gap_after_cuts(self, still: bool = False) -> float:
+    def _gap_after_cuts(self, material: Optional[str], still: bool = False) -> float:
         """How far past an offcut's earlier cuts the next parts start: the part spacing kept round the earlier
         cuts, the offcut slack (offcut_bed_gap_in for a piece still clamped from its last cut) and the room for the new parts'
         cutter (said as 0.75 in until 2026-11-06, which left out the room the new parts kept: their part spacing
         until then, beside_cut_in since)."""
         n = self.cfg.nest
-        return round(n.part_spacing_in + (n.offcut_bed_gap_in if still else n.offcut_gap_in) + n.beside_cut_in, 3)
+        return round(self.cfg.part_spacing_for(material) + (n.offcut_bed_gap_in if still else n.offcut_gap_in)
+                     + n.beside_cut_in, 3)
 
     def scan_offcuts(self) -> None:
         """The Offcuts list each pass: offcuts without a number get one (their card says it), a missing offcut
@@ -700,7 +702,8 @@ class Runner:
         used, beside = [tuple(s) for s in piece["used"]], [tuple(r) for r in piece.get("beside", [])]
         for c in cuts:
             used, beside = cut_away(used, beside, tuple(c), self._size(piece["material"])[0], (region[0], region[2]),
-                                    cfg.nest.part_spacing_in, cfg.nest.offcut_gap_in, cfg.nest.offcut_beside_min_in)
+                                    cfg.part_spacing_for(piece["material"]), cfg.nest.offcut_gap_in,
+                                    cfg.nest.offcut_beside_min_in)
         if not piece.get("reserved_by"):
             beside = compact(beside)                  # no sheet holds a room by its place in the list
         piece.update(used=[list(s) for s in used], beside=[list(r) for r in beside])
@@ -756,7 +759,7 @@ class Runner:
         self.t.comment(card.id, f"Recorded the hand cut ({what}): runs keep clear of it. "
                        + (f"{free:.0f} in free now" if free >= cfg.nest.offcut_min_in else "No free stretch now")
                        + (", plus room beside the cuts for small parts." if rooms else ".") + notes)
-        length, slack = full, cfg.nest.part_spacing_in + cfg.nest.offcut_gap_in
+        length, slack = full, cfg.part_spacing_for(piece["material"]) + cfg.nest.offcut_gap_in
         turned = bool(info.get("turned"))
         spans = [(length - c[3], length - c[1]) if turned else (c[1], c[3]) for c in new]
         if any(s0 < b1 + slack and s1 > b0 - slack for s0, s1 in spans for b0, b1 in bands):
@@ -1135,7 +1138,7 @@ class Runner:
         pieces = {oid: p for oid, p in self.offcuts.all().items()
                   if oid in on_board and not p.get("reserved_by") and not p.get("missing")
                   and p["material"] == key and abs(p["thickness_in"] - thickness) < 1e-6}
-        m = cfg.nest.part_spacing_in / 2               # the footprint has the cutter in it: a little to spare
+        m = cfg.part_spacing_for(key) / 2              # the footprint has the cutter in it: a little to spare
         mx = cfg.hand_cuts.place_spare_across_in       # less across, where the region already clears the clamps
         r = fx.nest_region_in
         region = (r[0] + mx, r[1] + m, r[2] - mx, r[3] - m)
@@ -1144,7 +1147,7 @@ class Runner:
         groups, pool, left = [], dict(pieces), qty
         while left:
             group = pack_copies(box, left, pool, region, width, length, cfg.nest.offcut_gap_in,
-                                cfg.nest.part_spacing_in, repeat)
+                                cfg.part_spacing_for(key), repeat)
             if group is None:
                 self._refuse_own(card, [f"{att.name} cuts {box[2] - box[0]:.1f} x {box[3] - box[1]:.1f} in (across "
                                         f"x along): more than a sheet's cutting area ({region[2] - region[0]:.1f} x "
@@ -1195,7 +1198,7 @@ class Runner:
             # On record at once (not cuttable yet), so a pass that stops half way replaces this card next time.
             self.s.store.register_sheet(new.id, label, False, [card.id])
             reg = self.s.store.sheet_cards()
-            spacing = cfg.nest.part_spacing_in
+            spacing = cfg.part_spacing_for(key)
             reg[new.id].update(
                 label=label, url=new.url, material=key, thickness_in=thickness, offcut_id=spot.offcut_id,
                 turned=spot.turned, bands=[[spot.cut_loaded[1] - spacing, spot.cut_loaded[3] + spacing]],
@@ -1243,7 +1246,7 @@ class Runner:
         title = (f"{stock} - placed by hand - own program {att.name}" + (f" x{qty}" if qty > 1 else "")
                  + f" - {part} - {label}")
         desc = text.own_by_hand_description(program=att.name, part=part, part_url=card.url, stock=stock,
-                                            cutter_in=cutter, box=box, margin_in=cfg.nest.part_spacing_in,
+                                            cutter_in=cutter, box=box, margin_in=cfg.part_spacing_for(key),
                                             lowest_z=report.min_z_in, qty=qty)
         new = self.t.create_card(self.targets["sheet_created"], title, desc)
         self.s.store.register_sheet(new.id, label, False, [card.id])

@@ -1130,6 +1130,20 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   p0209 (to about 39 in) would have been left off #4's record (fixed by hand to 39.5 in before Part 28 was nested).
   The sheet's `bands` (what another piece of stock must have clear to take the same program) include it too.
 
+## 2026-11-06: each material its own part spacing; polycarbonate 0.4 in (the user: "make poly 0.4in")
+
+- **Why:** the 0.5 in between parts ([nest] part_spacing_in, "more than 2 tool diameters: a solid strip between two
+  parts' cuts holds their tabs") leaves a 0.19 in strip between two 4 mm cuts. On 1/8 in polycarbonate a thinner
+  strip still holds the tabs; on a sheet of small parts the gaps add up (the user's photo of offcut #4, 2026-11-06).
+- **`[materials.<key>] part_spacing_in`** (0: [nest]'s); `Config.part_spacing_for(material)`. PC clear and PC smoked:
+  0.4 in, a 0.09 in strip between two 4 mm cuts. SRPP keeps 0.5 in (not asked).
+- **Where:** a job's `NestSpec.part_spacing_in` is its material's, so the worker's Arrange spacing, envelope insets,
+  rooms and margins all follow; the service's own uses do too (the "parts start about N in past the earlier cuts"
+  line, hand cuts, own programs' placement and pieces, the machine screen's piece size).
+- **Checked like [nest]'s:** more than the widest tool (the face and chamfer tools too), and beside_cut_in between
+  half of it and all of it.
+- **Left:** a test cut on 1/8 in polycarbonate: two tabbed parts 0.4 in apart (the strip doesn't break or chatter).
+
 ## 2026-11-06: keep it clamped, or a button for the rack; 1/16 in slack while clamped
 
 - **Why:** 0.31.0 nests an offcut still clamped from its last cut with no loading slack, taking "still clamped" from

@@ -153,6 +153,10 @@ BAD_VARIANTS = [
      "must stay below the bore range"),
     ("thickness_tol_too_loose", _set("plate", "thickness_tol_in", 0.04), "under half the smallest gap"),
     ("spacing_below_tool", _set("nest", "part_spacing_in", 0.1), "must exceed the largest tool diameter"),
+    ("material_spacing_below_tool", _set("materials", "pc_clear", "part_spacing_in", 0.2),
+     "materials.pc_clear.part_spacing_in: must exceed the largest tool diameter"),
+    ("material_spacing_under_beside_cut", _set("materials", "pc_clear", "part_spacing_in", 0.24),
+     "(materials.pc_clear.part_spacing_in is 0.24)"),
     ("attachment_over_free_limit", _set("trello", "attachment_limit_mb", 25), "caps attachments at 10 MB"),
     ("bad_trello_id", _set("trello", "lists", "inbox", "nope"), "has the wrong format"),
     ("material_map_unknown", _set("onshape", "material_map", "Steel", "steel"), "no material 'steel'"),
@@ -173,3 +177,11 @@ def test_all_errors_are_reported_together():
         d["tapguard"]["allowed_g"].append(92)
     errors = errors_for(mutate)
     assert len(errors) >= 3, errors
+
+
+def test_each_material_can_keep_its_own_part_spacing():
+    # the user, 2026-11-06: polycarbonate 0.4 in (a 0.09 in strip between two 4 mm cuts); the rest [nest]'s 0.5 in
+    cfg = load_config()
+    assert cfg.part_spacing_for("pc_clear") == cfg.part_spacing_for("pc_smoked") == 0.4
+    assert cfg.part_spacing_for("al6061") == cfg.nest.part_spacing_in == 0.5
+    assert cfg.part_spacing_for("srpp_twill") == 0.5 and cfg.part_spacing_for(None) == 0.5

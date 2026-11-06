@@ -295,6 +295,13 @@ def test_the_gap_after_earlier_cuts_is_said_to_be_on_purpose(tmp_path):
         "with almost no slack for loading it back: if it was taken off since, line it up exactly as it was.")
 
 
+def test_a_polycarbonate_job_keeps_its_own_part_spacing(tmp_path):
+    h = harness(tmp_path, step_card("c1", "plate", material="PC"), step_card("c2", "bracket"))
+    h.runner.tick()
+    spacing = {read_job(f).material.key: read_job(f).nest.part_spacing_in for f in h.queue.incoming.glob("*.json")}
+    assert spacing == {"pc_clear": 0.4, "al6061": 0.5}
+
+
 def test_the_shop_keeps_a_quarter_inch_of_slack():
     from autocam_service.config import load_config
     assert load_config().nest.offcut_gap_in == 0.25
