@@ -68,6 +68,18 @@ def test_turning_the_offcut_on_the_bed_still_counts_against_it(tmp_path):
     assert [(s.offcut_id, s.offcut_turned) for s in result.sheets] == [("small", False), ("big", True)]
 
 
+def test_a_part_fits_beside_an_earlier_cut_by_reaching_into_the_clean_sheet_past_it(tmp_path):
+    # Offcut #4 (2026-11-05): a second p0209 beside the first only fit once the room counted the clean 0.75 in past
+    # r101's band. Here a 3.75 x 26 in plate: 26.1 in of room by the band, 26.9 in with the clean sheet behind it.
+    rig = Rig(tmp_path)
+    off = OffcutSpec("off4", 0.125, ((0.25, 12.38), (12.63, 38.755)), beside_in=((6.25, 12.63, 22.75, 38.755),))
+    result = rig.run(job_with(rig, [("p0209", 1, plate(name="p0209"), (3.75, 26.0))], [off]))
+    [sheet] = result.sheets
+    assert sheet.offcut_id == "off4" and not sheet.offcut_turned and sheet.beside_used == (0,)
+    [(a, b)] = sheet.beside_along_in
+    assert b > 38.755                                     # past the band: the service records it as used
+
+
 def test_ties_go_to_the_smallest_offcut():
     from autocam_worker.adapter import AdapterError
     import autocam_worker.pipeline as pipeline

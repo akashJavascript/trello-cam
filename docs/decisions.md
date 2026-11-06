@@ -1113,6 +1113,22 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   straight rows' 8.5 in. Guard passed. (r104 failed first, safely: the service built it seconds before it restarted
   into 0.29.0, and the add-in, already on 0.29.0, refused the 0.28.0 job.)
 
+## 2026-11-05: room beside a cut reaches into the clean sheet past it (core 0.30.0; the user: "make all your changes")
+
+- **Seen on offcut #4:** a second p0209 (25.12 in) wouldn't go beside the first. The room beside r101's cut stopped
+  where r101's band did (38.755 in), so with part spacing at both ends Arrange had 25.125 in, and Fusion wouldn't
+  take it. The sheet was clean from there to the machine's reach (39.5 in). The user: "i see space on the sheet why
+  cant i cut it right next to where i cut r101". Fixed by hand on #4 for r110 (the room to 39.5 in), then here.
+- **At nest time** (`offcuts.reach_clean`, per way round): a room that ends where the used stretch it's in ends
+  reaches on into the clean sheet, up to the next used stretch (less the gap) or the nest region's end; the same at
+  its front. Not where that clean strip is this way round's free stretch: that's offered whole, in its own Arrange,
+  and the two could overlap. Turned round, #4's clean end was the free stretch (Part 28 went there, r112).
+- **After the cut:** the worker reports, per room beside earlier cuts it filled, the stretch along Y its parts take
+  with their tool paths (`SheetResult.beside_along_in`); the service adds it to the offcut's used stretches, as it
+  does the free stretch's. Before, parts that only went beside earlier cuts changed no used stretch, and r110's
+  p0209 (to about 39 in) would have been left off #4's record (fixed by hand to 39.5 in before Part 28 was nested).
+  The sheet's `bands` (what another piece of stock must have clear to take the same program) include it too.
+
 ## 2026-11-05: the machine screen (the mockup the user approved, v4)
 
 - **What:** the operator's screen on the ShopSabre's own PC (27 in monitor, beside WinCNC): `/machine`, one card at a

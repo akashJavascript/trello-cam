@@ -69,7 +69,7 @@ from autocam_core.holes import ToolProfile
 from autocam_core.hotfolder import write_atomic
 from autocam_core.layout import Placed, plan_layout
 from autocam_core.cutmap import CutMapError, cut_map
-from autocam_core.offcuts import Placement, beside_as_loaded, free_rooms, placement_for
+from autocam_core.offcuts import Placement, as_loaded, beside_as_loaded, free_rooms, placement_for, reach_clean
 from autocam_core.names import (face_program_name, fit_program_name, instance_id, outer_op_name,
                                 outlines_program_name, program_name, scribe_op_name, scribe_program_name,
                                 small_program_name)
@@ -347,6 +347,9 @@ def _offcut_places(job: Job, thickness: float) -> List[Tuple[str, Optional[_Way]
                                     job.nest.offcut_min_in, turned)
             beside = tuple(beside_as_loaded(o.beside_in, job.sheet.width_in, job.sheet.length_in, turned, region,
                                             job.nest.offcut_beside_min_in))
+            # a room that ends where its cut does reaches on into clean sheet this way round doesn't offer
+            beside = tuple(reach_clean(beside, as_loaded(o.used_in, job.sheet.length_in, turned), stretch, region,
+                                       job.nest.offcut_gap_in, job.sheet.length_in))
             ways[n] = _Way(turned, stretch, beside) if stretch or beside else None
         if any(ways):
             out.append((o.id, ways[0], ways[1]))
@@ -1304,9 +1307,12 @@ def _sheet_use(job: Job, sheet: _Sheet, parts: Dict[str, _Part], tap_text: Optio
             by_cut = []
         size = lambda rs: sum((r[2] - r[0]) * (r[3] - r[1]) for r in rs)
         return by_cut if size(by_cut) > size(by_box) + 1e-6 else by_box
+    along: List[Tuple[float, float]] = []
     for which, bs in boxes.items():
         if which is not None and bs:               # what's left of room beside cuts: every empty corner of it
             left += rooms(bs, tuple(beside[which]))
+            # where its parts are along the length: a room can reach past the cuts it's beside (reach_clean)
+            along.append((round(min(b[1] for b in bs) - margin, 3), round(max(b[3] for b in bs) + margin, 3)))
     stretch = next((e for w, e in sheet.areas if w is None), None)
     bs = boxes.get(None, [])
     if stretch is not None and bs:
@@ -1317,6 +1323,7 @@ def _sheet_use(job: Job, sheet: _Sheet, parts: Dict[str, _Part], tap_text: Optio
         left += rooms(bs, (region[0], used[0], region[2], used[1]))
     out["beside_used"] = tuple(sorted(w for w, bs in boxes.items() if w is not None and bs))
     out["beside_left_in"] = tuple(left)
+    out["beside_along_in"] = tuple(along)
     return out
 
 

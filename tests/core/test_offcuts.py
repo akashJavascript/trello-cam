@@ -162,3 +162,23 @@ def test_rooms_never_overlap_and_stay_clear_of_every_part():
                 assert r[2] <= q[0] + 1e-6 or q[2] <= r[0] + 1e-6 or r[3] <= q[1] + 1e-6 or q[3] <= r[1] + 1e-6
         areas = [(r[2] - r[0]) * (r[3] - r[1]) for r in rooms]
         assert areas == sorted(areas, reverse=True)      # biggest first
+
+
+def test_a_room_that_ends_where_its_cut_does_reaches_into_the_clean_sheet_past_it():
+    from autocam_core.offcuts import Placement, reach_clean
+    region = (1.25, 0.5, 22.75, 39.5)                         # X across, Y along (the machine reaches 39.5 in)
+    # offcut #4 after r101 (2026-11-05), loaded as before: the room beside r101's p0209 ends with its band at
+    # 38.755 in; past it the sheet is clean and too short to offer as a free stretch
+    used = [(0.25, 12.38), (12.63, 38.755)]
+    room = [(0, (6.25, 12.63, 22.75, 38.755))]
+    assert reach_clean(room, used, None, region, 0.25, 48.0) == [(0, (6.25, 12.63, 22.75, 39.5))]
+    # turned round, that clean end is the free stretch at the front: the room stays as it is
+    turned_used = [(9.245, 35.37), (35.62, 47.75)]
+    turned_room = [(0, (1.25, 9.245, 17.75, 35.37))]
+    assert reach_clean(turned_room, turned_used, Placement(True, 0.5, 8.995), region, 0.25, 48.0) == turned_room
+    # a room that stops short of its band's end (parts behind it) stays as it is
+    inner = [(0, (6.25, 12.63, 22.75, 30.0))]
+    assert reach_clean(inner, used, None, region, 0.25, 48.0) == inner
+    # the next cut stops it, less the gap
+    two = [(0.5, 10.0), (20.0, 30.0)]
+    assert reach_clean([(0, (8.0, 0.5, 22.75, 10.0))], two, None, region, 0.25, 48.0) == [(0, (8.0, 0.5, 22.75, 19.75))]

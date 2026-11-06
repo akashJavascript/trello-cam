@@ -75,9 +75,11 @@ def make_fit_lap(name: str, slots: List[int], instances: List[str], thickness: f
 
 def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optional[str] = None,
                     defer_part: Optional[str] = None, part_error: Optional[str] = None,
-                    shallow_outlines: bool = False, beside: bool = False, face_too_deep: bool = False) -> List[str]:
+                    shallow_outlines: bool = False, beside: bool = False, face_too_deep: bool = False,
+                    beside_reach: float = 0.0) -> List[str]:
     """beside: report room beside the parts cut and fill an offcut's room beside earlier cuts first, like the
-    real worker (off by default so the older tests' offcut cards keep their plain titles)."""
+    real worker (off by default so the older tests' offcut cards keep their plain titles). beside_reach: the parts in
+    that room reach this far past its end along Y (core 0.30.0: a room can reach into clean sheet past its cut)."""
     processed = []
     for job_id in queue.pending():
         claim = queue.claim(job_id)
@@ -197,6 +199,7 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
         start = place.x0 if place else region[1]
         used_x = (round(start, 3), round(start + 4.0 * len(instances), 3)) if instances and not room else None
         beside_used = (room[0],) if room else ()
+        beside_along = ((room[1][1], round(room[1][3] + beside_reach, 3)),) if room else ()
         beside_left = ((7.75, used_x[0], region[2], used_x[1]),) if beside and used_x else ()
         turned = offcut.last_turned if room else bool(place and place.turned)
         sheet = SheetResult(
@@ -217,6 +220,7 @@ def run_fake_worker(queue: Queue, *, reject_sheet: bool = False, fail_job: Optio
             errors=tuple(Issue("TAP_REJECTED", msg) for msg in check.problems()),
             warnings=(), notes=(), offcut_id=offcut.id if offcut else None,
             offcut_turned=turned, used_y_in=used_x, beside_used=beside_used, beside_left_in=beside_left,
+            beside_along_in=beside_along,
             parts_area_in2=9.0 * len(instances), programs=programs)       # 3 x 3 in each
         parts = []
         for p in job.parts:

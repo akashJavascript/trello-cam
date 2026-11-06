@@ -533,7 +533,8 @@ class Runner:
             beside_used: Set[int] = set()
         else:
             bands = [tuple(used_along)] if used_along else []
-            beside_used = set(info.get("beside_used") or ())
+            bands += [tuple(b) for b in info.get("beside_along") or ()]   # parts beside earlier cuts can reach past
+            beside_used = set(info.get("beside_used") or ())             # them (core 0.30.0, reach_clean)
         if not info.get("job") or not (bands or beside_used) or not info.get("cuttable") \
                 or info.get("offcut_done"):
             return
@@ -1990,8 +1991,10 @@ class Runner:
         extra = {"label": f"{run_id} S{sheet.index}", "offcut_id": sheet.offcut_id, "turned": sheet.offcut_turned,
                  "used_along": list(sheet.used_y_in) if sheet.used_y_in else None,
                  "beside_used": list(sheet.beside_used), "beside_left": [list(r) for r in sheet.beside_left_in],
+                 "beside_along": [list(b) for b in sheet.beside_along_in],
                  "rush": state.rush, "parts_area_in2": sheet.parts_area_in2, "by_hand": sheet.by_hand,
-                 "bands": self._bands(sheet.used_y_in, sheet.beside_used, sheet.offcut_id, sheet.offcut_turned),
+                 "bands": self._bands(sheet.used_y_in, sheet.beside_used, sheet.offcut_id, sheet.offcut_turned)
+                 + [list(b) for b in sheet.beside_along_in],
                  "converted": False, "asked": False, "instead_of": None,
                  "fits": [{"checklist": f["checklist"], "name": f["name"], "feature": f["feature"],
                            "key": fit_key(js.material, (f["fit"].kind, f["fit"].diameter_in), f["name"]),

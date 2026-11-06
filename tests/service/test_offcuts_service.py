@@ -254,6 +254,25 @@ def test_an_offcut_with_only_room_beside_its_cuts_is_kept(tmp_path):
     assert [o.id for o in job.offcuts] == [off.id]
 
 
+def test_parts_beside_earlier_cuts_that_reach_past_them_are_recorded(tmp_path):
+    # Offcut #4 after r110 (2026-11-05): a second p0209 in the room beside r101's cut ran past that cut's band; its
+    # stretch must be recorded, or a nest turned round could be put on it.
+    h = harness(tmp_path, step_card("c1", "plate", qty=2))
+    run_beside(h)
+    cut(h, sheet(h).id)
+    [off] = offcut_cards(h)
+    before = json.loads(h.store.offcuts_file.read_text())[off.id]
+    assert before["used"] == [[0.5, 8.5]] and before["beside"] == [[7.75, 0.5, 22.75, 8.5]]
+    add(h, step_card("c2", "tab"))
+    run(h, beside=True, beside_reach=1.25)                # in the room beside, 1.25 in past its end
+    h.runner.tick()
+    s2 = sheet(h)
+    assert h.store.sheet_cards()[s2.id]["beside_along"] == [[0.5, 9.75]]
+    cut(h, s2.id)
+    after = json.loads(h.store.offcuts_file.read_text())[off.id]
+    assert after["used"] == [[0.5, 9.75]]
+
+
 def test_the_gap_after_earlier_cuts_is_said_to_be_on_purpose(tmp_path):
     """P-0509 started about 1 in past r068's cuts on offcut #3 and it looked like a mistake (2026-11-04): the slack
     went from 0.5 to 0.25 in, and the cards say the gap is meant."""

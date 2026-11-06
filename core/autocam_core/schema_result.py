@@ -139,6 +139,9 @@ class SheetResult:
     beside_used: Tuple[int, ...] = ()                 # which of its offcut's beside_in got parts
     beside_left_in: Tuple[Tuple[float, float, float, float], ...] = ()   # room beside this sheet's parts once
                                                       # it's cut, sheet coordinates as loaded (X across, Y along)
+    beside_along_in: Tuple[Tuple[float, float], ...] = ()   # per room beside earlier cuts it filled, the stretch
+                                                      # along Y its parts take with their tool paths, as loaded (core
+                                                      # 0.30.0: a room can reach past the cuts it's beside)
     # A part placed by hand (core 0.12.0): one copy, zeroed at its box's front-left corner, run `repeat` times
     by_hand: bool = False
     repeat: int = 1

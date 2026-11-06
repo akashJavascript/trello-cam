@@ -125,6 +125,34 @@ def beside_as_loaded(beside: Sequence[Rect], width: float, length: float, turned
     return out
 
 
+def reach_clean(rooms: Sequence[Tuple[int, Rect]], used: Sequence[Stretch], stretch: Optional[Placement],
+                region: Rect, gap: float, sheet_length: float) -> List[Tuple[int, Rect]]:
+    """Rooms beside earlier cuts (as loaded, from beside_as_loaded) that run to the end of the used stretch they're
+    in reach on into the clean sheet past it: up to the next used stretch (less the gap) or the nest region's end.
+    Not where that clean strip is this way round's free stretch (it's offered whole, full width, in its own
+    Arrange). The room was cut off at the end of the cut it's beside, though nothing was cut past it (offcut #4,
+    2026-11-05: a room 26.1 in long beside a 25.12 in p0209 had 0.75 in more clean sheet behind it, and a second
+    p0209 didn't fit until it was counted). used: the used stretches as loaded (as_loaded)."""
+    def blocked(a: float, b: float) -> bool:
+        return stretch is not None and stretch.x0 < b - 1e-9 and stretch.x1 > a + 1e-9
+    out: List[Tuple[int, Rect]] = []
+    for i, (x0, y0, x1, y1) in rooms:
+        band = next((u for u in used if u[0] - 1e-6 <= y0 and y1 <= u[1] + 1e-6), None)
+        if band is not None:
+            if abs(y1 - band[1]) < 0.01:
+                after = [u[0] for u in used if u[0] > band[1] + 1e-9]
+                end = min(min(after) - gap if after else sheet_length, region[3])
+                if end > y1 + 1e-6 and not blocked(band[1], end):
+                    y1 = round(end, 3)
+            if abs(y0 - band[0]) < 0.01:
+                before = [u[1] for u in used if u[1] < band[0] - 1e-9]
+                start = max(max(before) + gap if before else 0.0, region[1])
+                if start < y0 - 1e-6 and not blocked(start, band[0]):
+                    y0 = round(start, 3)
+        out.append((i, (x0, y0, x1, y1)))
+    return out
+
+
 def room_beside(boxes: Sequence[Rect], band: Stretch, right: float, margin: float, gap: float,
                 min_side: float) -> Optional[Rect]:
     """The room to the right of parts (boxes in sheet coordinates) in a band along the length: from their right
