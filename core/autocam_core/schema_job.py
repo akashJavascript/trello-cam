@@ -68,6 +68,18 @@ class NestSpec:
     straight_max: int = 12            # a sheet's free stretch with at most this many parts is tried in straight rows too
                                       # (rows.py, core 0.27.0); 0: never
     square_parts: bool = True         # a part drawn off square is laid square in every Arrange (core 0.29.0)
+    beside_cut_in: Optional[float] = None   # how far parts stay in from an area's edge next to earlier cuts (not
+                                      # on the nest region's edge); None: the part spacing, as before core 0.31.0
+    offcut_bed_gap_in: Optional[float] = None   # offcut_gap_in for an offcut still clamped the way it was last cut,
+                                      # loaded the same way round; None: offcut_gap_in, as before core 0.31.0
+
+    @property
+    def beside_cut(self) -> float:
+        return self.part_spacing_in if self.beside_cut_in is None else self.beside_cut_in
+
+    def gap_for(self, still_clamped: bool) -> float:
+        """How far a new nest stays past an offcut's used stretches (the loading slack)."""
+        return self.offcut_bed_gap_in if still_clamped and self.offcut_bed_gap_in is not None else self.offcut_gap_in
 
 
 @dataclass(frozen=True)

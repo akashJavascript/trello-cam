@@ -153,6 +153,56 @@ def reach_clean(rooms: Sequence[Tuple[int, Rect]], used: Sequence[Stretch], stre
     return out
 
 
+EDGE_TOL_IN = 0.01                    # an area's edge this close to the nest region's is on it
+
+
+def inset_area(area: Rect, region: Rect, spacing: float, beside_cut: float) -> Rect:
+    """Where Arrange may put parts in an area (machine X/Y: a free stretch, a room beside earlier cuts, a new sheet's
+    nest region): an edge on the nest region's edge comes in by the part spacing, as on a new sheet; any other edge is
+    next to earlier cuts and comes in only by beside_cut (2026-11-06: next to a hole already cut, the new part needs
+    room for its cutter, not the strip between two parts that holds their tabs). beside_cut is at least half the part
+    spacing, so parts in two areas that meet still end up a part spacing apart."""
+    x0, y0, x1, y1 = area
+    return (x0 + (spacing if x0 <= region[0] + EDGE_TOL_IN else beside_cut),
+            y0 + (spacing if y0 <= region[1] + EDGE_TOL_IN else beside_cut),
+            x1 - (spacing if x1 >= region[2] - EDGE_TOL_IN else beside_cut),
+            y1 - (spacing if y1 >= region[3] - EDGE_TOL_IN else beside_cut))
+
+
+def grow_rooms(rooms: Sequence[Tuple[int, Rect]], by: float, region: Rect,
+               used: Sequence[Stretch]) -> List[Tuple[int, Rect]]:
+    """Rooms beside earlier cuts (as loaded) for an offcut still clamped the way it was cut: the rooms were kept the
+    loading slack (`by`, the offcut gap) clear of the parts, in case the piece went back on a little differently; it
+    didn't, so each edge next to the parts moves that much closer to them (2026-11-06). Not an edge on the nest
+    region's edge, nor one on the end of a used stretch (past it is clean sheet, the free stretch or another band, which
+    keep their own clearance), nor one that would then overlap another room. used: the used stretches as loaded."""
+    out = [(i, tuple(r)) for i, r in rooms]
+    ends = [y for u in used for y in u]
+
+    def on_end(y: float) -> bool:
+        return any(abs(y - e) < EDGE_TOL_IN for e in ends)
+
+    def overlaps(a: Rect, b: Rect) -> bool:
+        return a[0] < b[2] - 1e-9 and b[0] < a[2] - 1e-9 and a[1] < b[3] - 1e-9 and b[1] < a[3] - 1e-9
+
+    for n, (i, r) in enumerate(out):
+        x0, y0, x1, y1 = r
+        tries = [(0, x0 - by, x0 > region[0] + EDGE_TOL_IN), (2, x1 + by, x1 < region[2] - EDGE_TOL_IN),
+                 (1, y0 - by, y0 > region[1] + EDGE_TOL_IN and not on_end(y0)),
+                 (3, y1 + by, y1 < region[3] - EDGE_TOL_IN and not on_end(y1))]
+        grown = [x0, y0, x1, y1]
+        for side, value, ok in tries:
+            if not ok:
+                continue
+            edge = min(value, region[side]) if side >= 2 else max(value, region[side])
+            trial = list(grown)
+            trial[side] = edge
+            if not any(overlaps(tuple(trial), other) for m, (_, other) in enumerate(out) if m != n):
+                grown = trial
+        out[n] = (i, tuple(round(v, 3) for v in grown))
+    return out
+
+
 def room_beside(boxes: Sequence[Rect], band: Stretch, right: float, margin: float, gap: float,
                 min_side: float) -> Optional[Rect]:
     """The room to the right of parts (boxes in sheet coordinates) in a band along the length: from their right

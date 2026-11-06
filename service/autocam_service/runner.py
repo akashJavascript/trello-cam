@@ -42,7 +42,7 @@ from autocam_core.offcuts import add_used, as_loaded, compact, cut_away, free_le
 from autocam_core.pauses import PauseError, remove as remove_pauses
 from autocam_core.sheetcheck import check_sheet_program, pause_spec
 from autocam_core.schema import SchemaError
-from autocam_core.schema_job import OffcutSpec, PartSpec, job_json, load_job
+from autocam_core.schema_job import Job, OffcutSpec, PartSpec, job_json, load_job
 
 from . import health, labels, tally
 from . import sheet_cards as text
@@ -488,19 +488,23 @@ class Runner:
         except (OSError, ValueError, AttributeError):
             return {}
 
-    def _stock_line(self, vs: VerifiedSheet, info: Optional[Dict] = None) -> Optional[str]:
+    def _stock_line(self, vs: VerifiedSheet, info: Optional[Dict] = None, job: Optional[Job] = None) -> Optional[str]:
         """The sheet card's Stock line when the sheet isn't a plain new sheet: which offcut and which end goes
-        where, or (info: its stock was changed at the machine) the offcut or new sheet it changed to."""
+        where, or (info: its stock was changed at the machine) the offcut or new sheet it changed to. job: the job
+        that nested it, which says whether the offcut was taken as still clamped from its last cut."""
         if info and info.get("converted"):
             return self._stock_text(info.get("offcut_id"), info["material"], info["thickness_in"],
                                     bool(info.get("turned")), info.get("bands") or [], info.get("instead_of"), True)
         if not vs.sheet.offcut_id:
             return None
-        return self._stock_text(vs.sheet.offcut_id, "", vs.sheet.thickness_in, vs.sheet.offcut_turned)
+        spec = next((o for o in (job.offcuts if job else ()) if o.id == vs.sheet.offcut_id), None)
+        still = bool(spec and spec.on_bed and spec.last_turned == vs.sheet.offcut_turned
+                     and job.nest.gap_for(True) < job.nest.offcut_gap_in)
+        return self._stock_text(vs.sheet.offcut_id, "", vs.sheet.thickness_in, vs.sheet.offcut_turned, still=still)
 
     def _stock_text(self, offcut_id: Optional[str], material: str, thickness: float, turned: bool,
                     bands: Sequence[Sequence[float]] = (), instead_of: Optional[int] = None,
-                    changed: bool = False) -> str:
+                    changed: bool = False, still: bool = False) -> str:
         missing = f"offcut #{instead_of}" if instead_of else "the offcut it was made for"
         if not offcut_id:
             a, b = min(x for x, _ in bands), max(y for _, y in bands)
@@ -516,7 +520,8 @@ class Runner:
                          last.get("label", "its last sheet"), tuple(last.get("stretch", (0.0, 0.0))), turned,
                          self._size(piece["material"])[0], bool(last.get("turned", False)), piece.get("number"),
                          piece.get("length_in") if piece.get("scrap") else None, bool(piece.get("hand_cuts")),
-                         gap_in=self._gap_after_cuts(), used=[tuple(s) for s in piece.get("used") or ()])
+                         gap_in=self._gap_after_cuts(still), used=[tuple(s) for s in piece.get("used") or ()],
+                         still=still)
         return line + (f" ({missing[0].upper() + missing[1:]} wasn't on the rack; this one fits the same program.)"
                        if changed else "")
 
@@ -600,10 +605,13 @@ class Runner:
                          self._size(piece["material"])[1], self.cfg.hand_cuts.programs,
                          gap_in=self._gap_after_cuts() if piece.get("used") else 0.0)
 
-    def _gap_after_cuts(self) -> float:
+    def _gap_after_cuts(self, still: bool = False) -> float:
         """How far past an offcut's earlier cuts the next parts start: the part spacing kept round the earlier
-        cuts plus the offcut slack (1 in until 2026-11-04, when the slack went from 0.5 to 0.25)."""
-        return round(self.cfg.nest.part_spacing_in + self.cfg.nest.offcut_gap_in, 3)
+        cuts, the offcut slack (none for a piece still clamped from its last cut) and the room for the new parts'
+        cutter (said as 0.75 in until 2026-11-06, which left out the room the new parts kept: their part spacing
+        until then, beside_cut_in since)."""
+        n = self.cfg.nest
+        return round(n.part_spacing_in + (n.offcut_bed_gap_in if still else n.offcut_gap_in) + n.beside_cut_in, 3)
 
     def scan_offcuts(self) -> None:
         """The Offcuts list each pass: offcuts without a number get one (their card says it), a missing offcut
@@ -1473,7 +1481,7 @@ class Runner:
             programs[air_test_name(main)] = (air_data, check.guard)
         part_cards = {p.part_key: (p.name, p.card_url) for p in job.parts}
         desc = text.sheet_description(job, ing, vs, resume_key=self.cfg.pauses.resume_key, part_cards=part_cards,
-                                      program=main, stops=stops, stock=self._stock_line(vs, info))
+                                      program=main, stops=stops, stock=self._stock_line(vs, info, job))
         return programs, stem, desc, lift, vs.pause_count > 0
 
     def _send_back(self, card_id: str, comment: str) -> None:
@@ -1483,8 +1491,8 @@ class Runner:
     # ------------------------------------------------------------ start
     def start_run(self, cards: Sequence[Card], rush: bool = False) -> Optional[RunState]:
         """cards: what's in Ready for CAM with the box ticked (a run takes them all, not only the new ones).
-        rush: only the Rush cards, nested on their own: on an offcut or a new sheet, not folded into a sheet
-        waiting in review (only a sheet a rush card is already on is rebuilt: it holds an old copy)."""
+        rush: only the Rush cards, nested at once: on a sheet waiting in review that nobody has started (a rush
+        sheet too), an offcut or a new sheet (2026-11-06; until then never on a sheet in review)."""
         store, cfg = self.s.store, self.cfg
         if not cards:
             return None
@@ -1577,11 +1585,12 @@ class Runner:
                 ready.append(prepared)
 
         renesting = {p.request.card.id for p in ready}
-        open_sheets = self.open_sheets(renesting) if ready else {}
+        # a rush card may join any sheet waiting in Sheet review that nobody has started, a rush sheet too
+        # (2026-11-06: r106, r108 and r111 each went on a new sheet, and three merges by hand put them together)
+        open_sheets = self.open_sheets(renesting, rush=rush) if ready else {}
         if rush:
-            open_sheets = {m: [s for s in sheets if set(s[1]["parts"]) & renesting]
-                           for m, sheets in open_sheets.items()}
-            state.notes.append("Rush: nested right away and on their own (sheets in review were left alone).")
+            state.notes.append("Rush: nested right away, with only the Rush cards (onto a sheet waiting in Sheet "
+                               "review if nobody has started it and they fit).")
         for batch in make_batches(ready):
             reopened = open_sheets.get(batch.material_key, [])
             carried = list({p.card_id: p for _, _, specs in reopened for p in specs}.values())   # dedupe
@@ -1598,7 +1607,8 @@ class Runner:
                                               parts={p.part_key: p.card_id for p in job.parts},
                                               queued_utc=_iso(self.s.clock()),
                                               carried=[p.part_key for p in job.parts[len(batch.parts):]],
-                                              reopened={card_id: {k: info.get(k) for k in ("thickness_in", "parts", "url")}
+                                              reopened={card_id: {k: info.get(k) for k in ("thickness_in", "parts", "url",
+                                                                                              "rush")}
                                                         for card_id, info, _ in reopened})
             for p in job.parts:
                 state.cards[p.card_id] = {"name": p.name, "url": p.card_url}
@@ -1640,13 +1650,15 @@ class Runner:
         return replace(spec, fit=fit_spec(self.cfg, self.fits, material, fit, spec.name),
                        tabs=spec.tabs or bool(fit))
 
-    def open_sheets(self, renesting: Set[str] = frozenset()) -> Dict[str, List[Tuple[str, Dict, List[PartSpec]]]]:
+    def open_sheets(self, renesting: Set[str] = frozenset(),
+                    rush: bool = False) -> Dict[str, List[Tuple[str, Dict, List[PartSpec]]]]:
         """Material -> the open sheet cards a run may nest again, with the parts to carry over from them (from
         the jobs that made them). Open: made by this service with everything a re-nest needs, cuttable, still
         in Sheet review, no Review item ticked, none of its parts also on a sheet that isn't open (a part's
         copies always move together), and every part on it either in On a sheet (carried over; its STEP file
         must still be there) or back in Ready for CAM and in this run (`renesting`: someone changed it, so the
-        sheet is rebuilt with the new version)."""
+        sheet is rebuilt with the new version). A rush sheet is open only to a rush run (rush), or when one of its
+        own parts is back."""
         reg = self.s.store.sheet_cards()
         in_review = {c.id: c for c in self.t.list_cards(self.targets["sheet_created"])}
         nested = {c.id: c for c in self.t.list_cards(self.targets["part_nested"])}
@@ -1662,8 +1674,8 @@ class Runner:
                 continue
             if info.get("by_hand"):
                 continue                              # one part placed by hand: nothing joins it
-            if info.get("rush") and not set(info["parts"]) & set(renesting):
-                continue                              # a rush sheet is for its own parts, unless one changed
+            if info.get("rush") and not rush and not set(info["parts"]) & set(renesting):
+                continue                              # a rush sheet is for rush parts, or its own when one changed
             if not all(p in nested or p in renesting for p in info["parts"]):
                 continue
             job = self._job(info["job"])
@@ -1951,6 +1963,15 @@ class Runner:
         return any(card_id not in in_review or any(c.done for c in in_review[card_id].checks if c.checklist == review)
                    for card_id in card_ids)
 
+    @staticmethod
+    def _rush_sheet(state: RunState, js: JobState, vs: VerifiedSheet) -> bool:
+        """A sheet with a rush part on it: one of a rush run's own cards, or one carried from a rush sheet. A sheet
+        in review a rush card joined becomes a rush sheet; one the rush cards didn't fit on stays as it was."""
+        carried = {js.parts[k] for k in js.carried if k in js.parts}
+        was_rush = {p for info in js.reopened.values() if info.get("rush") for p in info.get("parts", [])}
+        cards = {js.parts.get(p.part_key) for p in vs.sheet.parts}
+        return bool(cards & was_rush) or (state.rush and bool(cards - carried - {None}))
+
     def _publish_sheet(self, state: RunState, js: JobState, ing: IngestedJob, vs: VerifiedSheet,
                        target: Optional[str], part_cards, counts) -> Optional[Tuple[str, str]]:
         """Put one sheet on a card: a new card, or `target` (an open sheet card) updated in place.
@@ -1959,9 +1980,10 @@ class Runner:
         run_id, job_id = state.run_id, ing.job_id
         key = f"{job_id}:S{vs.sheet.index}"
         number = (self.offcuts.get(vs.sheet.offcut_id) or {}).get("number") if vs.sheet.offcut_id else None
-        title = ("RUSH - " if state.rush else "") + text.sheet_title(ing.job, vs, number)
+        rush = self._rush_sheet(state, js, vs)
+        title = ("RUSH - " if rush else "") + text.sheet_title(ing.job, vs, number)
         desc = text.sheet_description(ing.job, ing, vs, resume_key=cfg.pauses.resume_key, part_cards=part_cards,
-                                      stock=self._stock_line(vs))
+                                      stock=self._stock_line(vs, job=ing.job))
         card_id = url = None
         if target is not None:
             # From here until the new program is attached, the card offers nothing to cut.
@@ -1992,7 +2014,7 @@ class Runner:
                  "used_along": list(sheet.used_y_in) if sheet.used_y_in else None,
                  "beside_used": list(sheet.beside_used), "beside_left": [list(r) for r in sheet.beside_left_in],
                  "beside_along": [list(b) for b in sheet.beside_along_in],
-                 "rush": state.rush, "parts_area_in2": sheet.parts_area_in2, "by_hand": sheet.by_hand,
+                 "rush": rush, "parts_area_in2": sheet.parts_area_in2, "by_hand": sheet.by_hand,
                  "bands": self._bands(sheet.used_y_in, sheet.beside_used, sheet.offcut_id, sheet.offcut_turned)
                  + [list(b) for b in sheet.beside_along_in],
                  "converted": False, "asked": False, "instead_of": None,

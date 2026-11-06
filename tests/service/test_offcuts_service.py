@@ -282,13 +282,33 @@ def test_the_gap_after_earlier_cuts_is_said_to_be_on_purpose(tmp_path):
     h.runner.tick()
     cut(h, s1.id)
     [off] = offcut_cards(h)
-    assert "Parts put on it later start about 0.75 in past the earlier cuts, on purpose" in off.desc
+    # 0.5 in kept round the earlier parts, 0.25 in slack, 0.25 in for the new parts' cutter (said as 0.75 until
+    # 2026-11-06, leaving out the room the new parts kept)
+    assert "Parts put on it later start about 1 in past the earlier cuts, on purpose" in off.desc
     piece = h.runner.offcuts.get(off.id)
     assert h.runner._stock_text(off.id, piece["material"], piece["thickness_in"], False).endswith(
-        "The parts start about 0.75 in past the earlier cuts on purpose (part spacing, plus a little in case it sits "
+        "The parts start about 1 in past the earlier cuts on purpose (part spacing, plus a little in case it sits "
         "slightly differently).")
+    # nested as still clamped from its last cut (core 0.31.0): no slack, and the card says so
+    assert h.runner._stock_text(off.id, piece["material"], piece["thickness_in"], False, still=True).endswith(
+        "The parts start about 0.75 in past the earlier cuts on purpose. It was nested as still clamped from r001 S1, "
+        "with no slack for loading it back: if it was taken off since, line it up exactly as it was.")
 
 
 def test_the_shop_keeps_a_quarter_inch_of_slack():
     from autocam_service.config import load_config
     assert load_config().nest.offcut_gap_in == 0.25
+
+
+def test_a_sheet_nested_on_the_offcut_still_clamped_says_so(tmp_path):
+    # core 0.31.0: the offcut the last sheet left, cut today with nothing loaded since, is nested with no loading
+    # slack, and its sheet card tells whoever cuts it.
+    h, s1 = first_sheet(tmp_path)
+    cut(h, s1.id)
+    add(h, step_card("c2", "gusset"))
+    run(h)
+    s2 = sheet(h)
+    [off] = offcut_cards(h)
+    assert h.runner.on_bed() == off.id
+    assert "It was nested as still clamped from r001 S1, with no slack for loading it back" in s2.desc
+    assert "about 0.75 in past the earlier cuts" in s2.desc

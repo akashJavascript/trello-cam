@@ -52,8 +52,9 @@ class Rig:
         data["paths"] = {k: str(tmp_path / k) for k in ("queue", "cache", "state", "logs")}
         for family in data["tooling"].values():
             family["split"] = split
-        # the tests' layouts assume 1/4 in spacing and 0.5 in offcut slack, whatever the shop's are
-        data["nest"].update({"part_spacing_in": 0.25, "offcut_gap_in": 0.5, **nest})
+        # the tests' layouts assume 1/4 in spacing and 0.5 in offcut slack, whatever the shop's are, the slack on the bed
+        # too (core 0.31.0 drops it there)
+        data["nest"].update({"part_spacing_in": 0.25, "offcut_gap_in": 0.5, "offcut_bed_gap_in": 0.5, **nest})
         if team:
             data["fusion_team"] = {"project": team[0], "folder": team[1]}
         self.cfg = parse_config(data, root=REPO_ROOT)

@@ -120,6 +120,8 @@ class Nest:
     priority_by_size: bool = True
     straight_max: int = 12
     square_parts: bool = True
+    beside_cut_in: float = 0.25        # parts' inset from an area's edge next to earlier cuts (2026-11-06)
+    offcut_bed_gap_in: float = 0.0     # offcut_gap_in for an offcut still clamped the way it was cut (2026-11-06)
 
 
 @dataclass(frozen=True)
@@ -668,6 +670,8 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         priority_by_size=t.boolean("priority_by_size"),
         straight_max=t.integer("straight_max", minimum=0, default=12),
         square_parts=t.boolean("square_parts", default=True),
+        beside_cut_in=t.number("beside_cut_in", positive=True, default=0.25),
+        offcut_bed_gap_in=t.number("offcut_bed_gap_in", minimum=0, default=0.0),
     )
     t.finish()
 
@@ -1119,6 +1123,11 @@ def _cross_check(cfg: Config, data: Dict[str, Any], errors: List[str], warnings:
                  + ([cfg.scribe.chamfer_diameter_in] if cfg.scribe else []), default=0.0)
     if cfg.nest.part_spacing_in <= widest:
         e("nest.part_spacing_in: must exceed the largest tool diameter (the face tool's too)")
+    if not cfg.nest.part_spacing_in / 2 <= cfg.nest.beside_cut_in <= cfg.nest.part_spacing_in:
+        e("nest.beside_cut_in: must be at least half the part spacing (parts in two rooms that meet stay a part "
+          "spacing apart) and at most the part spacing")
+    if cfg.nest.offcut_bed_gap_in > cfg.nest.offcut_gap_in:
+        e("nest.offcut_bed_gap_in: can't be more than offcut_gap_in (it's the slack for a piece that never moved)")
 
     # Facing (the Face label): a skim with its own tool, checked against the library like any tool.
     f = cfg.face

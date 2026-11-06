@@ -221,3 +221,66 @@ def test_a_scrap_is_never_turned_round(tmp_path):
     result = rig.run(job_with(rig, [("plate", 4, plate(name="plate"), (10.0, 5.0))], [scrap]))
     assert [(s.offcut_id, s.offcut_turned) for s in result.sheets] == [("scrap", False)]
     assert max(y1 for _, _, _, y1 in rig.fake.arrange_envelopes) <= 19.25 + 1e-6    # only ever its front 19.5 in
+
+
+SHOP = {"part_spacing_in": 0.5, "offcut_gap_in": 0.25, "offcut_bed_gap_in": 0.0, "beside_cut_in": 0.25}
+
+
+def test_an_offcut_still_clamped_takes_parts_right_past_its_cuts(tmp_path):
+    # core 0.31.0, with the shop's settings: still clamped as it was cut, the next parts start 0.25 in past the used
+    # stretch (only their cutter's room); put back on (here a scrap that only goes one way), 0.25 in of slack more.
+    for on_bed, start in ((True, 7.75), (False, 8.0)):
+        (tmp_path / str(on_bed)).mkdir()
+        rig = Rig(tmp_path / str(on_bed), **SHOP)
+        off = OffcutSpec("off1", 0.125, ((0.0, 7.5),), on_bed=on_bed, can_turn=False)
+        [sheet] = rig.run(job_with(rig, [("plate", 2, plate(name="plate"), (10.0, 5.0))], [off])).sheets
+        assert sheet.offcut_id == "off1"
+        [(y0, y1)] = stretches(rig)
+        assert y0 == start and y1 == 39.0                  # the back is the nest region's edge: the part spacing
+
+
+def test_a_second_p0209_fits_beside_the_first_with_room_to_spare(tmp_path):
+    # Offcut #4 on 2026-11-05 with the shop's settings: the room beside r101's p0209 used to leave Arrange 25.125 in
+    # for a 25.12 in part (Fusion wouldn't take it). Now, the piece still clamped, the room reaches back to H2's used
+    # stretch (no slack) and the part stays 0.25 in from it; beside the first p0209 the slack comes back too:
+    # 26.37 in of length, 16 in across.
+    rig = Rig(tmp_path, **SHOP)
+    off = OffcutSpec("off4", 0.125, ((0.25, 12.38), (12.63, 38.755)), beside_in=((6.25, 12.63, 22.75, 38.755),))
+    [sheet] = rig.run(job_with(rig, [("p0209", 1, plate(name="p0209"), (3.75, 25.12))], [off])).sheets
+    assert sheet.offcut_id == "off4" and sheet.beside_used == (0,)
+    room = rig.fake.arrange_envelopes[0]
+    assert (round(room[2] - room[0], 3), room[1], room[3]) == (16.0, 12.63, 39.0)   # core 0.30.0: 15.5 x 25.87 in
+
+
+def test_a_long_part_takes_the_room_and_the_rest_go_in_the_free_stretch_when_that_keeps_the_room_whole(tmp_path):
+    # core 0.31.0 (r110 on offcut #4: Arrange put the p0202s beside the second p0209 in the room by r101's cut and left
+    # a 3.7 in strip). The bar only fits the room; the strips fit either. Rooms first, they crowd in with the bar;
+    # with the free stretch first, the room keeps a 12 x 29.5 in rectangle beside the bar, and that's kept.
+    rig = Rig(tmp_path)
+    rig.fake.columns = True                               # like Fusion: down the left edge first
+    off = OffcutSpec("off", 0.125, ((0.0, 30.5),), beside_in=((6.0, 0.5, 22.75, 30.0),), can_turn=False)
+    parts = [("bar", 1, plate(name="bar"), (3.75, 24.0)), ("strip", 2, plate(name="strip"), (12.0, 2.0))]
+    result = rig.run(job_with(rig, parts, [off]))
+    [sheet] = result.sheets
+    assert sheet.beside_used == (0,) and sheet.used_y_in is not None              # the room and the free stretch
+    assert (10.75, 0.5, 22.75, 30.0) in sheet.beside_left_in
+    assert any("free stretch before rooms beat the listed order" in n for n in result.notes)
+    # its free stretch is still the sheet's last area, so the straight rows look at it
+    assert "the last sheet stays as Fusion nested it" in (rig.out / "worker.log").read_text()
+
+
+def test_small_parts_still_go_in_the_room_beside_cuts_first(tmp_path):
+    # The free stretch is the bigger rectangle: a part that fits the room goes there and the stretch stays whole.
+    rig = Rig(tmp_path)
+    off = OffcutSpec("off", 0.125, ((0.0, 8.5),), beside_in=((8.0, 0.5, 22.75, 8.0),), can_turn=False)
+    [sheet] = rig.run(job_with(rig, [("plate", 1, plate(name="plate"), (5.0, 5.0))], [off])).sheets
+    assert sheet.beside_used == (0,) and sheet.used_y_in is None
+
+
+def test_an_offcut_on_the_rack_goes_the_shorter_way_round_when_that_keeps_more_in_one_piece(tmp_path):
+    # On the rack, both ways round are the same work. Turned round, the free stretch is longer (33 in) but the room by
+    # the earlier cuts is out of reach; as before, the part fits that room and the 25 in stretch stays whole.
+    rig = Rig(tmp_path)
+    off = OffcutSpec("off", 0.125, ((0.0, 14.0),), beside_in=((8.0, 0.5, 22.75, 13.5),), on_bed=False)
+    [sheet] = rig.run(job_with(rig, [("plate", 1, plate(name="plate"), (12.0, 11.0))], [off])).sheets
+    assert not sheet.offcut_turned and sheet.beside_used == (0,) and sheet.used_y_in is None

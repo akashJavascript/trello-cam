@@ -182,3 +182,30 @@ def test_a_room_that_ends_where_its_cut_does_reaches_into_the_clean_sheet_past_i
     # the next cut stops it, less the gap
     two = [(0.5, 10.0), (20.0, 30.0)]
     assert reach_clean([(0, (8.0, 0.5, 22.75, 10.0))], two, None, region, 0.25, 48.0) == [(0, (8.0, 0.5, 22.75, 19.75))]
+
+
+def test_parts_stay_the_part_spacing_from_the_nest_region_and_less_from_earlier_cuts():
+    from autocam_core.offcuts import inset_area
+    region = (1.25, 0.5, 22.75, 39.5)
+    # a new sheet: the nest region less the part spacing all round, as always
+    assert inset_area(region, region, 0.5, 0.25) == (1.75, 1.0, 22.25, 39.0)
+    # offcut #4's room beside r101's p0209, reaching the region's end: 0.25 in from the cuts, 0.5 at the edges
+    assert inset_area((6.25, 12.63, 22.75, 39.5), region, 0.5, 0.25) == (6.5, 12.88, 22.25, 39.0)
+    # a free stretch behind earlier cuts: only its front end is next to them
+    assert inset_area((1.25, 12.63, 22.75, 39.5), region, 0.5, 0.25) == (1.75, 12.88, 22.25, 39.0)
+    # with beside_cut the part spacing, as before core 0.31.0
+    assert inset_area((6.25, 12.63, 22.75, 39.5), region, 0.5, 0.5) == (6.75, 13.13, 22.25, 39.0)
+
+
+def test_rooms_on_an_offcut_still_clamped_get_the_loading_slack_back_next_to_the_parts():
+    from autocam_core.offcuts import grow_rooms
+    region = (1.25, 0.5, 22.75, 39.5)
+    used = [(0.25, 12.38), (12.63, 39.5)]
+    # right of a part: its left edge moves 0.25 in toward the part; its front is a used stretch's end (past it, the
+    # gap to the next band) and its right and back are the region's edges
+    assert grow_rooms([(0, (6.25, 12.63, 22.75, 39.5))], 0.25, region, used) == [(0, (6.0, 12.63, 22.75, 39.5))]
+    # behind a short part inside its band: its front moves toward the part too
+    assert grow_rooms([(1, (1.25, 20.0, 8.0, 39.5))], 0.25, region, used) == [(1, (1.25, 19.75, 8.25, 39.5))]
+    # two rooms that meet don't grow into each other
+    two = [(0, (6.25, 12.63, 14.0, 39.5)), (1, (14.0, 20.0, 22.75, 39.5))]
+    assert grow_rooms(two, 0.25, region, used) == [(0, (6.0, 12.63, 14.0, 39.5)), (1, (14.0, 19.75, 22.75, 39.5))]

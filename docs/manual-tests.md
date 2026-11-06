@@ -598,6 +598,17 @@ A few long parts on one sheet (e.g. three of p0201), Rush so they don't join an 
 | 2 | Parts drawn square: the log has no "drawn off square" line and the sheets look as before | |
 | 3 | The f3d: the probe copies (`~m1`..`~m3`) are hidden, behind the sheets (negative Y), and in no setup | |
 
+### 29. Rush joins a sheet in review, smaller gaps, nests that leave one clean piece (2026-11-06, core 0.31.0)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | With a sheet in Sheet review and nothing ticked on it, send a Rush part of the same material and thickness that fits: the same card is rebuilt, titled RUSH, with both parts and its Review boxes unticked; other waiting cards still wait | |
+| 2 | A second Rush part while that rush sheet is still unreviewed: it joins the rush sheet | |
+| 3 | A sheet someone has ticked a Review item on: a Rush part doesn't join it | |
+| 4 | Cut a sheet that keeps an offcut, and nest a part on it the same day: `worker.log` says "(on the bed)", the part sits about 0.75 in from the earlier parts in the sheet picture, and the card's Stock line says it was nested as still clamped | |
+| 5 | The same the next day (on the rack): about 1 in, and the Stock line says "part spacing, plus a little" | |
+| 6 | A nest on an offcut with a room by earlier cuts: `worker.log` lists the tries with "in2 kept in one piece" and "written off", and the picture keeps the bigger rectangle in one piece | |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

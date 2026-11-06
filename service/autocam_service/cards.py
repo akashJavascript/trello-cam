@@ -52,7 +52,8 @@ Untick "Nest this part" to place it yourself: it gets a program of its own, zero
 the part's box, to cut from any piece anywhere on the bed (one copy; the card says how many times to run it).
 {tabs} (Already on a sheet? Change it and move the card back to Ready for CAM.)
 Need one part now? Add the {rush} label before moving it: it's nested at once (within a minute, after any run
-already going), on its own: an offcut or a new sheet, not a sheet waiting in Sheet review.
+already going), without the other waiting cards: onto a sheet in Sheet review nobody has started, an offcut or a
+new sheet.
 Need a press fit or a slip fit you'll tune at the machine? Add a line like Fit: 1.125 hole (that hole's size: 0.5,
 1/2 and 22 mm all work; any round hole that isn't drilled. A hole over 1.5 in is cut with its slug tabbed: break the
 slug out before the laps) or Fit: outline. It's cut a little tight, and the sheet card gets short programs that each take a little more off,

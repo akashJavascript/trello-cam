@@ -228,11 +228,12 @@ def cut_end_at_front(used: Sequence[Stretch], last_stretch: Stretch, turned: boo
 
 def load_line(stock: str, url: str, last_label: str, last_stretch: Stretch, turned: bool, sheet_length: float,
               last_turned: bool = False, number: Optional[int] = None, scrap_length: Optional[float] = None,
-              hand_cut: bool = False, gap_in: float = 0.0, used: Sequence[Stretch] = ()) -> str:
+              hand_cut: bool = False, gap_in: float = 0.0, used: Sequence[Stretch] = (), still: bool = False) -> str:
     """The sheet card's Stock line for a nest on an offcut: the same way round as its last cut, or spun round.
     scrap_length: a piece shorter than a sheet (always at the front, never turned). hand_cut: it has parts cut
     out by hand (a scrap AutoCAM hasn't cut yet then goes in the end they were measured from first). used: every
-    cut stretch on it, in its own coordinates (cut_end_at_front)."""
+    cut stretch on it, in its own coordinates (cut_end_at_front). still: nested as still clamped from its last cut,
+    with no slack for loading it back (core 0.31.0)."""
     front = cut_end_at_front(used, last_stretch, turned, sheet_length)
     end = "at the front (by you)" if front else "at the back (hanging off the bed)"
     head = (f"Stock: offcut #{number} ({stock}), not a new sheet ({url})." if number else
@@ -246,8 +247,13 @@ def load_line(stock: str, url: str, last_label: str, last_stretch: Stretch, turn
     else:
         how = (f"Spin it round from how it was for {last_label} (flat, same side up, don't flip it over): the end "
                f"where its parts were cut goes {end}.")
-    gap = (f" The parts start about {gap_in:g} in past the earlier cuts on purpose (part spacing, plus a little "
-           "in case it sits slightly differently)." if gap_in else "")
+    if still and gap_in:
+        gap = (f" The parts start about {gap_in:g} in past the earlier cuts on purpose. It was nested as still clamped "
+               f"from {last_label}, with no slack for loading it back: if it was taken off since, line it up exactly as "
+               "it was.")
+    else:
+        gap = (f" The parts start about {gap_in:g} in past the earlier cuts on purpose (part spacing, plus a little "
+               "in case it sits slightly differently)." if gap_in else "")
     return f"{head} {how} Clamps and zero as usual.{gap}"
 
 

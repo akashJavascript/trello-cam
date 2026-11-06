@@ -22,7 +22,7 @@ def job_of(h, run_id):
 
 # ---------------------------------------------------------------- Rush
 
-def test_a_rush_card_is_nested_at_once_and_on_its_own(tmp_path):
+def test_a_rush_card_is_nested_at_once_and_joins_a_sheet_in_review(tmp_path):
     h = harness(tmp_path, step_card("c1", "plate"))
     run(h)
     s1 = sheet(h)                                         # open: in Sheet review, nothing ticked
@@ -30,22 +30,67 @@ def test_a_rush_card_is_nested_at_once_and_on_its_own(tmp_path):
     add(h, step_card("c2", "gusset"))
     add(h, rush_card("c3", "bracket", label=" rush "))    # any case and spacing
     h.runner.tick()
-    # At once, with only the rush card: the open sheet isn't rebuilt and the other card keeps waiting.
+    # At once, with only the rush card, and onto the sheet nobody has started (2026-11-06): the other card waits.
     job = job_of(h, "r002")
-    assert [p.card_id for p in job.parts] == ["c3"]
+    assert [p.card_id for p in job.parts] == ["c3", "c1"]                        # c1 carried from s1
     assert h.store.load("r002").rush
-    assert "Rush: nested right away and on their own" in "\n".join(h.tracker.comments_on(SYS))
+    assert "Rush: nested right away, with only the Rush cards" in "\n".join(h.tracker.comments_on(SYS))
     run_fake_worker(h.queue)
     h.runner.tick()
-    rushed = [c for c in h.sheet_cards() if c.name.startswith("RUSH - ")]
-    assert len(rushed) == 1 and rushed[0].name.endswith("r002 S1") and rushed[0].id != s1.id
-    assert h.tracker.cards[s1.id].name.endswith("r001 S1")                         # left alone
-    assert h.store.sheet_cards()[rushed[0].id]["rush"] is True
-    # The other card's run starts after the usual wait, and fills the open sheet, not the rush sheet.
+    [rushed] = h.sheet_cards()
+    assert rushed.id == s1.id and rushed.name.startswith("RUSH - ") and rushed.name.endswith("r002 S1")
+    assert h.store.sheet_cards()[s1.id]["rush"] is True
+    assert h.tracker.checklist(s1.id, "Review").done == 0                         # its Review boxes start again
+    # The other card's run starts after the usual wait. The rush sheet isn't opened for it: a new sheet.
     h.now = NOW + timedelta(seconds=121)
     h.runner.tick()
-    job3 = job_of(h, "r003")
-    assert sorted(p.card_id for p in job3.parts) == ["c1", "c2"]                   # c1 carried from s1, not c3
+    assert [p.card_id for p in job_of(h, "r003").parts] == ["c2"]
+
+
+def test_rush_cards_land_together_on_a_rush_sheet_waiting_in_review(tmp_path):
+    # 2026-11-05: r106, r108 and r111 were each a rush on a new sheet, merged by hand three times. Now the second
+    # rush joins the first one's sheet while nobody has started it.
+    h = harness(tmp_path, rush_card("c1", "p0202"))
+    run(h)
+    [r1] = h.sheet_cards()
+    assert r1.name.startswith("RUSH - ")
+    add(h, rush_card("c2", "p0209"))
+    h.runner.tick()
+    assert sorted(p.card_id for p in job_of(h, "r002").parts) == ["c1", "c2"]
+    run_fake_worker(h.queue)
+    h.runner.tick()
+    [both] = h.sheet_cards()
+    assert both.id == r1.id and both.name.startswith("RUSH - ") and both.name.endswith("r002 S1")
+    assert sorted(h.store.sheet_cards()[r1.id]["parts"]) == ["c1", "c2"]
+
+
+def test_a_rush_card_leaves_a_sheet_someone_started_reviewing(tmp_path):
+    h = harness(tmp_path, step_card("c1", "plate"))
+    run(h)
+    s1 = sheet(h)
+    h.tracker.checklists[(s1.id, "Review")][0][1] = True              # someone started on it
+    add(h, rush_card("c2", "bracket"))
+    h.runner.tick()
+    assert [p.card_id for p in job_of(h, "r002").parts] == ["c2"]
+    run_fake_worker(h.queue)
+    h.runner.tick()
+    assert h.tracker.cards[s1.id].name.endswith("r001 S1") and not h.store.sheet_cards()[s1.id].get("rush")
+    assert [c.name.startswith("RUSH - ") for c in h.sheet_cards() if c.id != s1.id] == [True]
+
+
+def test_a_sheet_is_a_rush_sheet_only_with_a_rush_part_on_it():
+    from types import SimpleNamespace as NS
+    from autocam_service.runner import Runner
+
+    def on(*keys):
+        return NS(sheet=NS(parts=[NS(part_key=k) for k in keys]))
+    js = NS(parts={"p01": "rush", "p02": "old", "p03": "was_rush"}, carried=["p02", "p03"],
+            reopened={"s1": {"parts": ["old"], "rush": False}, "s2": {"parts": ["was_rush"], "rush": True}})
+    rush_run, plain_run = NS(rush=True), NS(rush=False)
+    assert Runner._rush_sheet(rush_run, js, on("p01", "p02"))          # the rush card joined it
+    assert not Runner._rush_sheet(rush_run, js, on("p02"))             # it didn't fit there: the sheet stays as it was
+    assert Runner._rush_sheet(plain_run, js, on("p03"))                # carried from a rush sheet
+    assert not Runner._rush_sheet(plain_run, js, on("p01", "p02"))
 
 
 def test_rush_waits_for_a_run_already_going_then_goes_first(tmp_path):

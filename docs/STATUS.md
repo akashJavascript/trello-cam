@@ -1,6 +1,6 @@
 # Status
 
-_Last updated 2026-11-05 (branch `main`)._
+_Last updated 2026-11-06 (branch `main`)._
 
 ## Where things are
 
@@ -25,6 +25,9 @@ _Last updated 2026-11-05 (branch `main`)._
 | Machine screen (2026-11-05) | **Built, tested offline and clicked through in a local browser**: the operator's screen on the ShopSabre's PC (`/machine`, `docs/machine.md`): the sheets to cut, then one step at a time; every button is a box on the sheet card or the card moving. Left: open it on the ShopSabre's PC (`machine-link`), manual-tests section 25 |
 | Straight rows (2026-11-05) | **Works in Fusion** (r099 for a part drawn square, core 0.27.0; r103 for one drawn at 11 deg, core 0.28.0): after Fusion nests a sheet, its parts are also laid in straight rows (each row placed by Arrange in an area as deep as its deepest part), and the layout that leaves the better offcut is kept. A part lying off square is laid along its longest straight edge and turned on until its smallest rectangle is square (`setRotationUsingEdge` + `rotation`; Arrange won't turn it by itself, r098). `rows.py`, `[nest] straight_max`. Left: manual-tests section 26 on a real sheet |
 | Parts laid square (2026-11-05) | **Works in Fusion** (r105, core 0.29.0): a probe before nesting finds each part drawn off square in CAD and how to lay it square (its longest straight edge along X, then turned on, checked both ways), and every Arrange is told. `[nest] square_parts`. Left: manual-tests section 28 checks 2-3 on real jobs |
+| Rush joins a sheet in review (2026-11-06) | **Built, tested offline**: a rush run may rebuild a sheet waiting in Sheet review that nobody has started (a rush sheet too); a sheet is RUSH only with a rush part on it (`Runner._rush_sheet`). Left: manual-tests section 29 |
+| Smaller gaps beside earlier cuts (2026-11-06) | **Built, tested offline** (core 0.31.0): an area's edges next to earlier cuts keep `beside_cut_in` (0.25 in), not the part spacing; an offcut still clamped as it was cut has no loading slack (`offcut_bed_gap_in`), its rooms grown back by it (`offcuts.inset_area`, `grow_rooms`). Parts now start about 0.75 / 1 in from earlier parts (1.25 before). Left: manual-tests section 29 on a real offcut |
+| Nests on offcuts scored by what they leave (2026-11-06) | **Built, tested offline** (core 0.31.0): the try that keeps the biggest clean rectangle wins, then the one that writes off least (`_kept`, `_written_off`); a rack offcut is also tried the other way round, an offcut with rooms also free stretch first. Left: manual-tests section 29 |
 | Room beside a cut reaches past it (2026-11-05) | **Built, tested offline** (core 0.30.0): a room beside earlier cuts that ends with its cut reaches into the clean sheet past it when that strip isn't offered as the free stretch; the parts there are recorded as used after the cut (`offcuts.reach_clean`, `SheetResult.beside_along_in`). Left: seen on a real offcut |
 | Offcuts on the rack (2026-11-05) | **Built, tested offline** (core 0.28.0): only the offcut from today's last cut, with no other sheet loaded on the machine screen since, counts as on the bed; an offcut on the rack is loaded whichever way round gives more room, and ties go to the smallest offcut. Left: manual-tests section 27 |
 | Panel options explained (2026-11-04) | **Live**: one plain line under each option in the Onshape panel (Rush, Fit, tabs, nesting, Drafts...) |

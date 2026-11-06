@@ -517,7 +517,8 @@ gusset cost about 85 sq in of an 18 sq in part). The metal is still there. So th
 
 - **Rush:** a part card with the **Rush** label (`labels.rush`, any case) starts a run on the next pass,
   with only the rush cards, before any other waiting run (after one already in Fusion). It's nested on its
-  own: offcuts (room beside cuts first) or a new sheet, never folded into a sheet waiting in review. Its
+  own: offcuts (room beside cuts first) or a new sheet, never folded into a sheet waiting in review (changed
+  2026-11-06: it may join one nobody has started; see that day). Its
   sheet card is titled "RUSH - ...", and later runs don't open it for new parts, unless one of its own
   parts comes back (it holds the old copy, so it's rebuilt). A sheet a rush card is already on is the one
   exception to "on its own", so no part is ever on two uncut sheets. The other waiting cards' 2-minute wait
@@ -1128,6 +1129,69 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   does the free stretch's. Before, parts that only went beside earlier cuts changed no used stretch, and r110's
   p0209 (to about 39 in) would have been left off #4's record (fixed by hand to 39.5 in before Part 28 was nested).
   The sheet's `bands` (what another piece of stock must have clear to take the same program) include it too.
+
+## 2026-11-06: rush joins a sheet in review, smaller gaps beside earlier cuts, nests scored by what they leave (core 0.31.0; the user: "Do these")
+
+**1. A rush card may join a sheet waiting in Sheet review that nobody has started.**
+- **Why:** every rush card used to be nested on its own, so on 2026-11-05 r106 (the p0202s), r108 (the second p0209)
+  and r111 (Part 28) each went on a new sheet, and three merges by hand put them together. Under this rule they'd
+  have landed together.
+- **What changed:** a rush run opens the same sheets a normal run does (in Sheet review, cuttable, no Review item
+  ticked), rush sheets included. It still takes only the Rush cards, still starts at once, and the other waiting
+  cards still wait. A rebuilt sheet card resets its Review boxes, as any rebuilt sheet does.
+- **A sheet is a rush sheet when it holds a rush part:** one of the rush run's own cards, or a part carried from a
+  rush sheet (`Runner._rush_sheet`). A sheet in review that the rush cards didn't fit on keeps its plain title. Before,
+  every sheet a rush run made was titled RUSH, and a rush sheet rebuilt by a normal run lost the title.
+- **Normal runs still leave rush sheets alone,** unless one of their own parts is back, as before.
+- The read-me card ("How to add a part") and the panel's Rush line say a rush part can join a sheet waiting for
+  review. The read-me card on the board changes the next time `autocam trello-setup` runs.
+
+**2. Smaller gaps next to earlier cuts.**
+- **Before:** a nest on an offcut kept, from the earlier parts' edges, the part spacing recorded round them (0.5 in),
+  the loading slack (`offcut_gap_in`, 0.25 in), and then its own part spacing inside its area (0.5 in): 1.25 in.
+- **Next to earlier cuts, only the cutter's room** (`[nest] beside_cut_in`, 0.25 in). The part spacing is the solid
+  strip that holds two parts' tabs. Next to a hole already cut, the strip recorded round the earlier parts is still
+  there (at least 0.34 in of it with the 4 mm cutter). `offcuts.inset_area`:
+  - an area's edges on the nest region's edge still come in by the part spacing;
+  - its other edges come in by `beside_cut_in`.
+  - It must be at least half the part spacing (the config check says so), so parts in two areas that meet still
+    end up a part spacing apart.
+- **No slack for an offcut still clamped** (`[nest] offcut_bed_gap_in`, 0). That's the offcut on the bed, as defined
+  on 2026-11-05: the last sheet's offcut, today, nothing loaded since. It must also be loaded the same way round.
+  - Its free stretch starts right at the used stretch.
+  - Its rooms get the slack back on their edges next to the parts (`offcuts.grow_rooms`). That isn't an edge on the
+    nest region's edge, on a used stretch's end, or one that would run into another room.
+- **The result:** parts start about 0.75 in from the earlier parts when the piece is still clamped, about 1 in when
+  it's been put back on (it was 1.25 in).
+- **What the cards say:** offcut cards now say "about 1 in". Until now they said 0.75 in, which left out the room the
+  new parts kept. A sheet nested on the piece still clamped says so on its Stock line, and to line it up exactly as it
+  was if it was taken off.
+- **Offcut #4's second p0209 now has room to spare.** Beside r101 the room was 25.125 in for the 25.12 in part (Fusion
+  wouldn't take it). Core 0.30.0 gave it 25.87 in; with the piece still clamped it's 26.37 in, and 16 in across
+  instead of 15.5 (test `test_a_second_p0209_fits_beside_the_first_with_room_to_spare`).
+- **Own programs placed by AutoCAM are unchanged.** They keep `offcut_gap_in` and half the part spacing.
+
+**3. A nest on an offcut is chosen by what it leaves.**
+- **The score** (`pipeline._score`): after copies placed, new sheets, offcuts on the bed turned round, sheets and the
+  offcuts' sizes, two new terms come before the last sheet's reach:
+  - **The biggest clean rectangle each sheet keeps, bigger first** (`_kept`). In an area the nest filled, it's the
+    biggest room left among and behind its parts (`free_rooms`, as the offcut will keep them). An area it didn't touch
+    counts whole.
+  - **What it writes off, smaller first** (`_written_off`). This is the straight rows' measure (`rows.used_up`), per
+    area: the strip the parts take, less the rooms kept beside them.
+- **Two more tries give the score something to choose between:**
+  - **An offcut on the rack is also tried the other way round.** Both ways are the same work. Until now it always went
+    the way with the longer free stretch. Now the shorter way wins when, say, it reaches a room by the earlier cuts the
+    part fits, and the free stretch stays whole.
+  - **An offcut with rooms and a free stretch is also tried free stretch first.** Rooms first is still the default, and
+    keeps winning when small parts fit the rooms, because the stretch then stays whole. Stretch first wins when a part
+    only fits a room and the others would crowd in beside it. On r110 that left offcut #4 a 3.7 x 26.9 in strip; in the
+    rig's version of it the room keeps 12 x 29.5 in (341 in² kept in one piece against 276).
+- **r101 itself wouldn't change.** Its p0209 down the middle of #4, loaded either way round, leaves the same area: a
+  16.5 x 26 in room beside it and an 8.5 in strip. What went wrong after it was r110, which this and change 2 address.
+- **The worker log** gives each try's in² kept in one piece and in² written off.
+- **The cost** is up to four tries per thickness on offcuts instead of two: copies and Arranges, a few seconds each
+  in Fusion.
 
 ## 2026-11-05: the machine screen (the mockup the user approved, v4)
 

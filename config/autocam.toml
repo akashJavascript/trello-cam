@@ -67,6 +67,10 @@ offcut_beside_min_in = 3.0 # room beside the parts cut is kept and filled when i
 priority_by_size = true    # Fusion's Arrange priority: biggest parts very high, mid-size high (2026-11-04)
 straight_max = 12          # a sheet with at most this many parts is also tried in straight rows; the better offcut is kept (0: never)
 square_parts = true        # a part drawn off square in CAD is laid square in every Arrange (Fusion keeps the CAD angle, r098)
+beside_cut_in = 0.25       # parts stay this far in from an edge next to earlier cuts (the region's edges keep part_spacing_in):
+                           # beside a hole already cut, a part needs room for its cutter, not a strip for tabs (2026-11-06)
+offcut_bed_gap_in = 0.0    # offcut_gap_in for an offcut still clamped the way it was last cut, loaded the same way round:
+                           # its zeros haven't moved (2026-11-06)
 
 [clamps]
 edges = ["left", "right"]  # any of "left", "right" (the long edges), "front" (the end by you); the back overhangs
