@@ -145,6 +145,11 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
             sheet = sheet_link(creds.get("AUTOCAM_ORDER_SHEET_URL"))
             if not sheet:
                 log.warning("panel: AUTOCAM_ORDER_SHEET_URL in .env isn't a Google Sheets link, so there's no Order button")
+    prints = None
+    if cfg.prints.enabled:                    # the shop's 3D print queue (prints.py, 2026-11-09)
+        from .prints import PrintList
+        prints = PrintList(cfg.paths.state / "prints.json", cfg.paths.state / "print_files",
+                           printers=cfg.prints.printers, keep_days=cfg.prints.keep_days)
     from .panel.assemblies import AssemblyWatch
     assemblies = AssemblyWatch(onshape, board, cfg, cfg.paths.state / "panel_assemblies.json", shafts=shafts,
                                parts=parts, hooks=hooks)
@@ -152,7 +157,7 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
     people = People(cfg.paths.state / "people.json")
     app = PanelApp(cfg, creds.get("AUTOCAM_PANEL_KEY"), onshape, board, Names(cfg.paths.state / "panel_users.json"),
                    inbox=inbox, hook_secret=secret, shafts=shafts, parts=parts, order_sheet=sheet, assemblies=assemblies,
-                   people=people, signin=shop_signin(cfg, creds, people))
+                   people=people, signin=shop_signin(cfg, creds, people), prints=prints)
     if p.machine:                             # the operator's screen on the ShopSabre's PC (machine.py)
         from .machine import MachineView
         from .offcuts import OffcutStore

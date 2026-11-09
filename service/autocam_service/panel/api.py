@@ -24,12 +24,17 @@
     GET  /api/occurrences?d&wvm&w&e&key      a row's occurrence paths in the assembly (to highlight it in Onshape)
     POST /api/shaft                          change a shaft on the shop's list (while nobody has started it)
     POST /api/shaft-remove                   take a shaft off the list (same)
+    POST /api/send-print                     a printed part onto the shop's print queue (prints.py, 2026-11-09)
+    POST /api/print-remove                   take a print off the queue (while it's waiting)
 
 The shop's shaft list (shafts.py, 2026-11-02), with its own key (shop_key(): someone with the shop's link can start
 and finish shafts, nothing else):
     GET  /shop?key=...                       the phone page
     GET  /api/shop?device=...                the shafts to make, and the ones done today
     POST /api/shop/start|stop|done|undo      {id, device}
+    POST /api/shop/print-start|print-failed|print-done|print-undo   {id, device[, printer, minutes]} (prints.py)
+    POST /api/shop/print-upload              {device, filename, data (base64), name, qty, material, color, ...}
+    GET  /api/shop/print-file?id=...         a print's model file (a part's STEP is exported from Onshape the first time)
 
 The machine page (machine.py, 2026-11-05): the operator's screen on the ShopSabre's PC, with its own key
 (machine_key(): no sign-in; it can tick a sheet card's boxes, move it to Cut or back to Sheet review, and download
@@ -78,6 +83,7 @@ from ..shafts import (ACTIVE as SHAFT_ACTIVE, DEVICE_RE, MAX_NOTE, STOCKS, Found
 from ..bought import ACTIVE as PART_ACTIVE, PartList, counts as part_counts, is_hardware, sheet_link, status_chip as part_chip
 from ..people import People
 from ..shoplist import ListError
+from ..prints import PrintList, decode_upload, print_material
 from .plates import PlatesView
 from .signin import CALLBACK, START, Session, ShopSignIn, SignInRefused
 from .spares import SpareError, SparesView
@@ -96,11 +102,15 @@ INSTANCE_RE = re.compile(r"^[A-Za-z0-9+/=_-]{1,40}$")  # an assembly instance id
 MCMASTER_RE = re.compile(r"^\d{4,5}[A-Z]\d{1,5}(?:[_ .-]|$)")   # "91259A496_NO THREADS_Alloy Steel Shoulder Screw"
 PRINTED_RE = re.compile(r"print|\bPLA\b|\bABS\b|PETG|TPU|nylon|onyx|\bASA\b", re.IGNORECASE)
 BOUGHT = "Bought part"
+LIBRARY = "Library part"                 # _not_ours: the common parts library (printed or bought, not a plate)
 RUBBER_RE = re.compile(r"rubber|neoprene|viton|urethane|silicone|EPDM|nitrile|buna|latex|elastomer|santoprene",
                        re.IGNORECASE)                    # belts, wheels, O-rings: bought
 MAX_BODY = 16 * 1024
 MAX_PROGRAM_BODY = 4 * 1024 * 1024        # /api/send-program carries the .tap
 PROGRAM_PATH = "/api/send-program"
+PRINT_UPLOAD_PATH = "/api/shop/print-upload"
+MAX_PRINT_BODY = 96 * 1024 * 1024        # a STEP, STL or 3MF as base64 ([prints] max_file_mb checks the file itself)
+PRINT_FILE_PATH = "/api/shop/print-file"
 SELECTION_LOGS_PER_DAY = 30
 MAX_ASSEMBLY_SEND = 60
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
@@ -123,7 +133,7 @@ def machine_key(panel_key: str) -> str:
 
 
 def body_limit(path: str) -> int:
-    return MAX_PROGRAM_BODY if path == PROGRAM_PATH else MAX_BODY
+    return MAX_PROGRAM_BODY if path == PROGRAM_PATH else MAX_PRINT_BODY if path == PRINT_UPLOAD_PATH else MAX_BODY
 
 
 @dataclass
@@ -221,7 +231,8 @@ class PanelApp:
                  today: Callable[[], str] = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                  inbox: Optional[ChangeInbox] = None, hook_secret: str = "", shafts: Optional[ShaftList] = None,
                  parts: Optional[PartList] = None, order_sheet: str = "", assemblies: Any = None,
-                 people: Optional[People] = None, signin: Optional[ShopSignIn] = None, machine: Any = None):
+                 people: Optional[People] = None, signin: Optional[ShopSignIn] = None, machine: Any = None,
+                 prints: Optional[PrintList] = None):
         if not key:
             raise ValueError("the panel needs AUTOCAM_PANEL_KEY")
         self.machine = machine                # the operator's screen (machine.MachineView; None: off)
@@ -236,6 +247,7 @@ class PanelApp:
             clock=clock)
         self.shafts = shafts if cfg.shafts.enabled else None    # the shop's shaft list (None: off)
         self.parts = parts if cfg.parts.enabled else None       # the shop's bought-parts list (None: off)
+        self.prints = prints if cfg.prints.enabled else None    # the shop's 3D print queue (None: off)
         self.order_sheet = sheet_link(order_sheet) or cfg.parts.order_sheet_url   # Order opens it ("" no Order)
         self.assemblies = assemblies          # assemblies.AssemblyWatch: cards that follow their assembly's versions
         self._shop_key = shop_key(key).encode("utf-8")
@@ -258,7 +270,7 @@ class PanelApp:
         try:
             if path == "/panel" and method == "GET":
                 return self._page(query)
-            shop_on = self.shafts is not None or self.parts is not None or self.plates is not None
+            shop_on = self.shafts is not None or self.parts is not None or self.plates is not None or self.prints is not None
             if path == "/shop" and method == "GET" and shop_on:
                 return self._page(query, shop=True, headers=headers)
             if path in (START, CALLBACK) and method == "GET" and shop_on and self.signin is not None \
@@ -272,7 +284,8 @@ class PanelApp:
                 return Response(404, b"Not found", "text/plain; charset=utf-8")
             if path.startswith(HOOK_PREFIX):                 # Onshape's webhook: its address is its password
                 return self.hook(method, path, body)
-            given = query.get("key", "") if path == "/api/preview" else headers.get("x-autocam-key", "")
+            given = query.get("key", "") if path in ("/api/preview", PRINT_FILE_PATH) and query.get("key") \
+                else headers.get("x-autocam-key", "")
             if (path == "/api/machine" or path.startswith("/api/machine/")) and self.machine is not None:
                 return self._machine(method, path, query, headers, body)
             if path == "/api/shop" or path.startswith("/api/shop/"):
@@ -297,6 +310,7 @@ class PanelApp:
                      ("POST", "/api/shaft"): self.edit_shaft, ("POST", "/api/shaft-remove"): self.remove_shaft,
                      ("POST", "/api/part-remove"): self.remove_part, ("POST", "/api/part"): self.edit_part,
                      ("POST", "/api/spares"): self.send_spares,
+                     ("POST", "/api/send-print"): self.send_print, ("POST", "/api/print-remove"): self.remove_print,
                      }.get((method, path))
             if path == "/api/preview" and method == "GET":
                 return self.preview(query)
@@ -413,15 +427,15 @@ class PanelApp:
     # ---- the shop's lists: shafts and bought parts (their own key)
     def _shop(self, method: str, path: str, query: Dict[str, str], given: str, body: bytes,
               headers: Optional[Dict[str, str]] = None) -> Response:
-        if self.shafts is None and self.parts is None and self.plates is None:
+        if self.shafts is None and self.parts is None and self.plates is None and self.prints is None:
             return _json(404, {"error": "Not found"})
         session = self._session(headers)
         if session is None and not (self._shop_key_ok(given) and self._old_link_open()):
             if self.signin is not None and self.signin.ready:
                 return _json(401, {"error": "Sign in with Slack first.", "kind": "signin"})
             return _json(403, {"error": "This isn't AutoCAM's shop link (the key is wrong). Ask a mentor."})
-        if len(body) > MAX_BODY:
-            return _json(413, {"error": "That's too much text."})
+        if len(body) > body_limit(path):
+            return _json(413, {"error": "That file is too big." if path == PRINT_UPLOAD_PATH else "That's too much text."})
         if path == "/api/shop/sign-out" and method == "POST":
             if self.signin is not None:
                 self.signin.sign_out((headers or {}).get("cookie", ""))
@@ -439,7 +453,13 @@ class PanelApp:
             name_of = self.people.me if self.people is not None else (lambda device: "")
             shafts = self.shafts.shop_view(device, name_of) if self.shafts is not None else {"shafts": [], "done": [], "order": []}
             parts = self.parts.shop_view(device) if self.parts is not None else {"parts": [], "bin": []}
-            out = {**shafts, **parts, "shaftsOn": self.shafts is not None, "partsOn": self.parts is not None,
+            prints = self.prints.shop_view(device) if self.prints is not None else {}
+            if self.prints is not None:
+                pc = self.cfg.prints
+                prints.update(printers=list(pc.printers), printMaterials=list(pc.materials), printColors=list(pc.colors),
+                              printMaxMb=pc.max_file_mb)
+            out = {**shafts, **parts, **prints, "printsOn": self.prints is not None,
+                   "shaftsOn": self.shafts is not None, "partsOn": self.parts is not None,
                    "platesOn": self.plates is not None, "orderSheet": self.order_sheet if self.parts is not None else "",
                    "me": session.name if session is not None else (name_of(device) if device else ""),
                    "people": self.people.names() if self.people else [],
@@ -462,6 +482,10 @@ class PanelApp:
                     out.update(choices=[], platesError="Couldn't read the Trello board just now.")
             return _json(200, out)
         action = path[len("/api/shop/"):]
+        if path == PRINT_FILE_PATH and method == "GET" and self.prints is not None:
+            return self._print_file(query.get("id"))
+        if action.startswith("print-") and method == "POST" and self.prints is not None:
+            return self._shop_print(action, body, session)
         if action == "spares" and method == "POST" and self.spares is not None:
             data = json.loads(body.decode("utf-8")) if body else {}
             if not isinstance(data, dict) or not DEVICE_RE.match(str(data.get("device") or "")):
@@ -499,12 +523,83 @@ class PanelApp:
             raise Refused(400, "Bad request")
         if kind in ("sheet", "plate"):
             return self.people.assign(kind + "s", ids, who)
-        lst = {"shaft": self.shafts, "part": self.parts}.get(kind)
+        lst = {"shaft": self.shafts, "part": self.parts, "print": self.prints}.get(kind)
         if lst is None:
             raise Refused(400, "Bad request")
         name = self.people.add(who) if who else ""
         lst.assign(ids, name)
         return name
+
+    def _shop_print(self, action: str, body: bytes, session: Any) -> Response:
+        """The Prints tab's buttons (prints.py): start (printer, minutes: both optional), failed, done, undo, and a
+        print added from a file."""
+        data = json.loads(body.decode("utf-8")) if body else {}
+        device = str((data or {}).get("device") or "") if isinstance(data, dict) else ""
+        if not DEVICE_RE.match(device):
+            raise Refused(400, "Bad request")
+        if action == "print-upload":
+            self._rate_limit()
+            raw = decode_upload(data.get("data"), self.cfg.prints.max_file_mb * 1024 * 1024)
+            sender = session.name if session is not None else (self.people.me(device) if self.people else "") or "the shop page"
+            x = self.prints.add_file(raw, str(data.get("filename") or ""), {
+                "name": data.get("name"), "qty": data.get("qty") or 1, "material": self._print_material(data.get("material")),
+                "color": data.get("color"), "infill": data.get("infill"), "walls": data.get("walls"),
+                "rush": bool(data.get("rush")), "note": data.get("note"), "sender": sender})
+            log.info("panel: %s added a print from a file (%s, %d bytes)", sender, x["name"], len(raw))
+            return _json(200, {"ok": True, "id": x["id"]})
+        pid = data.get("id")
+        if action == "print-start":
+            self.prints.start(pid, device, data.get("printer") or "", data.get("minutes") or 0)
+        elif action == "print-failed":
+            self.prints.failed(pid, device)
+        elif action == "print-done":
+            self.prints.done(pid, device)
+        elif action == "print-undo":
+            self.prints.undo(pid, device)
+        else:
+            return _json(404, {"error": "Not found"})
+        return _json(200, {"ok": True})
+
+    def _print_file(self, pid: Any) -> Response:
+        """A print's model file. A part from Onshape is exported as a STEP file the first time (Onshape's translation:
+        a few calls), then kept; while Onshape is still making it, the page is told to try again."""
+        x = self.prints.get(pid)
+        if x is None:
+            return _json(404, {"error": "That print isn't on the list any more."})
+        path = self.prints.file_of(pid)
+        if path is None:
+            row = x.get("row") or {}
+            if not row.get("pid"):
+                return _json(404, {"error": "That print has no file."})
+            data, tid = self.onshape.export_step(row["did"], row["wvm"], row["wvmid"], row["eid"], row["pid"],
+                                                 row.get("configuration") or "", tid=x.get("translation") or "")
+            if data is None:
+                self.prints.note_translation(x["id"], tid)
+                return _json(202, {"error": "Onshape is still making the STEP file. Try again in a minute.", "kind": "wait"})
+            path = self.prints.keep_export(x["id"], data)
+            log.info("panel: exported %s as STEP for the print queue (%d bytes)", x.get("name"), len(data))
+        name = self.prints.download_name(self.prints.get(pid) or x)
+        return Response(200, path.read_bytes(), "application/octet-stream",
+                        {"Content-Disposition": f'attachment; filename="{name}"', "X-Content-Type-Options": "nosniff",
+                         "Cache-Control": "no-store"})
+
+    def _print_material(self, value: Any) -> str:
+        """One of [prints] materials (the first when it's none of them)."""
+        mats = self.cfg.prints.materials
+        v = " ".join(str(value or "").split())
+        return v if v in mats else (mats[0] if mats else "")
+
+    def _print_line(self, x: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """A part's print for the panel: how it's going."""
+        if x is None:
+            return None
+        st = x.get("status")
+        if st == "printing":
+            label = "Printing" + (f" on {x['printer']}" if x.get("printer") else "")
+        else:
+            label = {"waiting": "Waiting to print", "done": "Printed"}.get(st, st or "")
+        return {"id": x["id"], "status": st, "label": label, "qty": x.get("qty", 1), "who": x.get("who") or "",
+                "fails": int(x.get("fails") or 0), "active": st in ("waiting", "printing")}
 
     def _static(self, name: str) -> Response:
         path = STATIC / name
@@ -661,7 +756,7 @@ class PanelApp:
         except Exception as e:  # noqa: BLE001
             log.warning("panel: reading the board: %s", e)
             board_error = "Couldn't read the Trello board just now, so statuses are missing."
-        items, shaft_rows, bought_rows = [], [], []
+        items, shaft_rows, bought_rows, print_rows = [], [], [], []
         finishers = self.people.assigned("plates") if self.people is not None else {}
         owners = self._owners(did, rows, cached_only=cached)
         for r in rows:
@@ -674,6 +769,9 @@ class PanelApp:
             material = self._material_of(r["material"])
             not_ours = self._not_ours(did, r, owners)
             why = not_ours or _why_not_cut(r, material)
+            if self.prints is not None and not_ours != BOUGHT and _printed(material, r["name"], not_ours == LIBRARY):
+                print_rows.append(r)                     # printed: it goes on the print queue (prints.py)
+                continue
             if why == BOUGHT and self.parts is not None:
                 if not is_hardware(r["name"]):           # screws and nuts aren't on the parts list (the user)
                     bought_rows.append(r)
@@ -700,7 +798,8 @@ class PanelApp:
         uid = q.get("u", "")
         shafts = self._assembly_shafts(did, eid, shaft_rows)
         bought = self._assembly_bought(did, eid, bought_rows)
-        return {"name": name, "items": items, **shafts, **bought, "boardError": board_error, "queue": self._queue(), "face": self.cfg.face is not None,
+        prints = self._assembly_prints(print_rows)
+        return {"name": name, "items": items, **shafts, **bought, **prints, "boardError": board_error, "queue": self._queue(), "face": self.cfg.face is not None,
                 "user": self.names.get(uid) if USER_RE.match(uid or "") else "", "tabsDefault": self.cfg.tabs.default,
                 "maxQty": MAX_QTY, "callsLeft": self.onshape.calls_left(), "autoRefreshS": self.cfg.panel.auto_refresh_s,
                 "build": static_hash("panel.js"), "people": self._people()}
@@ -738,7 +837,7 @@ class PanelApp:
         if r["did"] == did:
             return ""
         if self.cfg.shafts.library_document and r["did"] == self.cfg.shafts.library_document:
-            return "Library part"
+            return LIBRARY
         owner = owners.get(r["did"], "")
         if self.cfg.panel.company_id and owner and owner != self.cfg.panel.company_id:
             return "Bought part"
@@ -811,6 +910,20 @@ class PanelApp:
             except (Refused, ShaftError) as e:
                 results.append({"key": key, "name": label, "sent": False, "why": str(e), "shaft": True})
         return results
+
+    def _assembly_prints(self, print_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """The assembly's printed parts for the panel, each with its print (if any) on the queue."""
+        if self.prints is None:
+            return {}
+        out = []
+        for r in print_rows:
+            x = self.prints.for_source(_print_source(r["did"], r["eid"], r["pid"], r["configuration"]))
+            line = self._print_line(x)
+            out.append({"key": _row_key(r), "name": self._shown(r), "qty": max(1, r["qty"]),
+                        "material": print_material(r["material"] or "", self.cfg.prints.materials),
+                        "queued": line, "sendable": line is None or not line["active"]})
+        out.sort(key=lambda i: _natural(i["name"]))
+        return {"prints": out, "printMaterials": list(self.cfg.prints.materials)}
 
     def _assembly_bought(self, did: str, eid: str, bought_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         """The assembly's bought parts for the panel (no screws or nuts), each with what's on the parts list for it."""
@@ -886,6 +999,38 @@ class PanelApp:
             raise Refused(400, "The parts list is off.")
         self.parts.remove(d.get("id"))
         log.info("panel: bought part %s taken off the list", d.get("id"))
+        return {"ok": True}
+
+    def send_print(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        """A printed part onto the print queue (prints.py): its material (Onshape's, or any of [prints] materials the
+        student picks), color, how many, Rush, optional infill % and walls, a note."""
+        if self.prints is None:
+            raise Refused(400, "The print queue is off.")
+        self._rate_limit()
+        did, wvm, wvmid, eid = self._studio(d)
+        pid = self._part_id(d)
+        cfg = self._cfg(d)
+        sender = self._sender(d)
+        who = self._assignee(d)
+        self._sender_listed(sender)
+        part = self._find(did, wvm, wvmid, eid, pid, cfg)
+        title = self._titled(did, wvm, wvmid, eid, part.get("name") or pid, cfg)
+        from ..onshape.urls import configuration_query
+        url = f"https://{self._host(d.get('server'))}/documents/{did}/{wvm}/{wvmid}/e/{eid}{configuration_query(cfg)}"
+        [x] = self.prints.add([{
+            "source": _print_source(did, eid, pid, cfg), "name": title, "qty": self._qty(d),
+            "material": self._print_material(d.get("material")), "color": d.get("color"), "infill": d.get("infill"),
+            "walls": d.get("walls"), "rush": bool(d.get("rush")), "note": d.get("note"), "sender": sender, "url": url,
+            "row": {"did": did, "wvm": wvm, "wvmid": wvmid, "eid": eid, "pid": pid, "configuration": cfg},
+            **({"who": who} if who else {})}])
+        log.info("panel: %s sent %s x%d to the print queue", sender, title, x["qty"])
+        return {"print": self._print_line(x)}
+
+    def remove_print(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        if self.prints is None:
+            raise Refused(400, "The print queue is off.")
+        self.prints.remove(d.get("id"))
+        log.info("panel: print %s taken off the queue", d.get("id"))
         return {"ok": True}
 
     def edit_shaft(self, d: Dict[str, Any]) -> Dict[str, Any]:
@@ -1009,7 +1154,50 @@ class PanelApp:
         if bought:
             log.info("panel: %s sent %d of %d bought parts to the parts list", sender,
                      sum(1 for x in bought if x["sent"]), len(bought))
-        return {"results": results + shafts + bought, "list": "Drafts" if drafts else "Ready for CAM"}
+        prints = self._send_prints(d, did, wvm, wvmid, eid, rows, owners, sender, host, who, rush)
+        if prints:
+            log.info("panel: %s sent %d of %d printed parts to the print queue", sender,
+                     sum(1 for x in prints if x["sent"]), len(prints))
+        return {"results": results + shafts + bought + prints, "list": "Drafts" if drafts else "Ready for CAM"}
+
+    def _send_prints(self, d: Dict[str, Any], did: str, wvm: str, wvmid: str, eid: str,
+                     rows: Dict[str, Dict[str, Any]], owners: Dict[str, str], sender: str, host: str, who: str,
+                     rush: bool) -> List[Dict[str, Any]]:
+        """The ticked printed parts onto the print queue: the count and material each says, color Any."""
+        wanted = d.get("prints") if isinstance(d.get("prints"), list) else []
+        if not wanted:
+            return []
+        if self.prints is None:
+            raise Refused(400, "The print queue is off.")
+        ref = self._asm_ref(did, wvm, wvmid, eid, host)
+        from ..onshape.urls import configuration_query
+        results, seen = [], set()
+        for item in wanted[:MAX_ASSEMBLY_SEND]:
+            key = str((item or {}).get("key") or "") if isinstance(item, dict) else ""
+            if key in seen:
+                continue
+            seen.add(key)
+            r = rows.get(key)
+            label = self._shown(r) if r is not None else key
+            try:
+                if r is None:
+                    raise Refused(409, "isn't in this assembly any more")
+                not_ours = self._not_ours(did, r, owners)
+                if not_ours == BOUGHT or not _printed(self._material_of(r["material"]), r["name"], not_ours == LIBRARY):
+                    raise Refused(400, "isn't a printed part")
+                self.prints.add([{
+                    "source": _print_source(r["did"], r["eid"], r["pid"], r["configuration"]), "name": label,
+                    "qty": self._qty(item), "assembly": ref, "sender": sender, "rush": rush,
+                    "material": self._print_material(item.get("material") or print_material(r["material"] or "", self.cfg.prints.materials)),
+                    "color": item.get("color") or "Any",
+                    "url": f"https://{host}/documents/{r['did']}/{r['wvm']}/{r['wvmid']}/e/{r['eid']}{configuration_query(r['configuration'])}",
+                    "row": {"did": r["did"], "wvm": r["wvm"], "wvmid": r["wvmid"], "eid": r["eid"], "pid": r["pid"],
+                            "configuration": r["configuration"]},
+                    **({"who": who} if who else {})}])
+                results.append({"key": key, "name": label, "sent": True, "print": True})
+            except (Refused, ListError) as e:
+                results.append({"key": key, "name": label, "sent": False, "why": str(e), "print": True})
+        return results
 
     def _mark(self, did: str, wvm: str, wvmid: str, eid: str, part: Dict[str, Any],
               material: Optional[Dict[str, Any]], cfg: str = "") -> Optional[str]:
@@ -1041,9 +1229,17 @@ class PanelApp:
         pc = self.board.for_part(did, eid, pid, part.get("name") or "", self.board.part_cards(), cfg=cfg)
         spares = self.board.for_part(did, eid, pid, part.get("name") or "", self.board.part_cards(), cfg=cfg,
                                      spare=True)
-        return {"part": {"id": pid, "name": part.get("name") or "", "material": self._part_material(part),
-                         "bent": self._flat(did, wvm, wvmid, eid, pid, cfg) is not None},
-                "card": self.board.detail(pc) if pc is not None else None, "spares": self.board.spare_line(spares)}
+        material = self._part_material(part)
+        out = {"part": {"id": pid, "name": part.get("name") or "", "material": material,
+                        "bent": self._flat(did, wvm, wvmid, eid, pid, cfg) is not None},
+               "card": self.board.detail(pc) if pc is not None else None, "spares": self.board.spare_line(spares)}
+        if self.prints is not None:                      # a print material: it goes to the print queue (prints.py)
+            pc_ = self.cfg.prints
+            out["print"] = {"printed": _printed(material),
+                            "material": print_material((material or {}).get("onshape", ""), pc_.materials),
+                            "materials": list(pc_.materials), "colors": list(pc_.colors),
+                            "queued": self._print_line(self.prints.for_source(_print_source(did, eid, pid, cfg)))}
+        return out
 
     def qty(self, q: Dict[str, str]) -> Dict[str, Any]:
         did, wvm, wvmid, eid = self._studio(q)
@@ -1527,6 +1723,20 @@ class PanelApp:
         status = "queued" if pc.status == "sheet" else pc.status
         fresh = read_part_card(card, status)
         return {"card": self.board.detail(fresh) if fresh is not None else None, "renest": pc.status == "sheet"}
+
+
+def _print_source(did: str, eid: str, pid: str, cfg: str) -> str:
+    """A part's key on the print queue: the same part (and configuration) from the panel or an assembly."""
+    return f"{did}|{eid}|{pid}|{cfg}"
+
+
+def _printed(material: Optional[Dict[str, Any]], name: str = "", library: bool = False) -> bool:
+    """A part to print, not cut: its Onshape material is a print material (PLA, PETG, TPU...). For a common parts
+    library part, whose material often says 6061 (the user: PLA-STNDF is a print), its name saying so is enough
+    ("PLA-STNDF", "3d printed standoff")."""
+    if material is not None and not material.get("key") and PRINTED_RE.search(material.get("onshape") or ""):
+        return True
+    return library and bool(PRINTED_RE.search(name or ""))
 
 
 def _why_not_cut(r: Dict[str, Any], material: Optional[Dict[str, Any]]) -> str:

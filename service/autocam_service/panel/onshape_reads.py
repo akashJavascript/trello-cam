@@ -173,6 +173,7 @@ class PanelOnshape:
         self.assembly_cache_s = assembly_cache_s
         self.max_assemblies = max_assemblies
         self.clock = clock
+        self.sleep: Callable[[float], None] = time.sleep     # between polls of a translation (tests: none)
         self._lock = threading.RLock()        # one Onshape request at a time: two students never pay twice
         self._parts: Dict[Tuple[str, ...], _Entry] = {}
         self._configs: Dict[Tuple[str, str, str, str], _Entry] = {}
@@ -591,6 +592,47 @@ class PanelOnshape:
                 if p.get("partId") == pid:
                     p["material"] = material
             return True, ""
+
+
+    # ---- a print's model file (prints.py, 2026-11-09: STEP, the user's pick)
+    def export_step(self, did: str, wvm: str, wvmid: str, eid: str, pid: str, cfg: str = "", tid: str = "",
+                    wait_s: float = 40.0) -> Tuple[Optional[bytes], str]:
+        """The part as a STEP file: Onshape's translation (POST /partstudios/.../translations), polled until it's
+        done (GET /translations/{id}), then downloaded (GET /documents/d/{did}/externaldata/{id}). tid: a translation
+        already started for it. Returns (the file, the translation's id), or (None, its id) while Onshape is still
+        making it after wait_s (the next download picks it up)."""
+        with self._lock:
+            client = self._client(needed=3)
+        try:
+            if not tid:
+                started = client.post_json(f"{API}/partstudios/d/{did}/{wvm}/{wvmid}/e/{eid}/translations",
+                                            {"formatName": "STEP", "partIds": pid, "storeInDocument": False,
+                                             **({"configuration": cfg} if cfg else {})}, purpose="panel_print_step")
+                tid = str(started.get("id") or "")
+                if not tid:
+                    raise PanelOnshapeError("Onshape didn't start the STEP export.")
+            waited = 0.0
+            while True:
+                status = client.get_json(f"{API}/translations/{tid}", purpose="panel_print_step_poll")
+                state = status.get("requestState")
+                if state == "DONE":
+                    ids = status.get("resultExternalDataIds") or []
+                    if not ids:
+                        raise PanelOnshapeError("Onshape finished the STEP export but sent no file.")
+                    data = client.get_bytes(f"{API}/documents/d/{did}/externaldata/{ids[0]}",
+                                            purpose="panel_print_step_download")
+                    return data, tid
+                if state == "FAILED":
+                    raise PanelOnshapeError(f"Onshape couldn't export it: {status.get('failureReason') or 'no reason given'}.")
+                if waited >= wait_s:
+                    return None, tid
+                self.sleep(3.0)
+                waited += 3.0
+        except BudgetExceeded as e:
+            raise OutOfCalls(str(e))
+        except OnshapeError as e:
+            log.warning("panel: exporting %s as STEP: %s", pid, e)
+            raise PanelOnshapeError(f"Onshape didn't answer ({getattr(e, 'status', 0) or 'no answer'}).")
 
 
     # ---- the company, its webhook, part pictures (an enterprise admin's keys, 2026-11-01)

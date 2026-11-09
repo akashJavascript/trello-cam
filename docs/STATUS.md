@@ -1,6 +1,6 @@
 # Status
 
-_Last updated 2026-11-06 (branch `main`)._
+_Last updated 2026-11-09 (branch `main`)._
 
 ## Where things are
 
@@ -29,6 +29,7 @@ _Last updated 2026-11-06 (branch `main`)._
 | Smaller gaps beside earlier cuts (2026-11-06) | **Built, tested offline** (core 0.31.0): an area's edges next to earlier cuts keep `beside_cut_in` (0.25 in), not the part spacing; an offcut still clamped as it was cut has no loading slack (`offcut_bed_gap_in`), its rooms grown back by it (`offcuts.inset_area`, `grow_rooms`). Parts now start about 0.75 / 1 in from earlier parts (1.25 before). Left: manual-tests section 29 on a real offcut |
 | Nests on offcuts scored by what they leave (2026-11-06) | **Built, tested offline** (core 0.31.0): the try that keeps the biggest clean rectangle wins, then the one that writes off least (`_kept`, `_written_off`); a rack offcut is also tried the other way round, an offcut with rooms also free stretch first. Left: manual-tests section 29 |
 | It stopped part way (2026-11-08) | **Built, tested offline and on r110's real program**: the machine screen's main Run step asks which part came out last and makes the rest from the next part (`pauses.rest_after`, checked like a sheet, `<sheet>_FROM<n>.tap` on the card). Left: use it at the machine once |
+| 3D print queue (2026-11-09) | **Built, tested offline and clicked through in a local browser**: the shop page's Prints tab (Waiting, Printing on a printer with a print time, Failed back to Waiting counted, Done). Prints come from the Onshape panel (one part or an assembly's printed parts) or a STEP/STL/3MF uploaded on the page; Onshape parts download as STEP, exported on first download. `docs/prints.md`. Left: manual-tests "The print queue" on the laptop |
 | Part spacing per material (2026-11-06) | **Built, tested offline**: `[materials.<key>] part_spacing_in`; polycarbonate 0.4 in (the rest 0.5). Left: a test cut, two tabbed parts 0.4 in apart on 1/8 in PC |
 | Room beside a cut reaches past it (2026-11-05) | **Built, tested offline** (core 0.30.0): a room beside earlier cuts that ends with its cut reaches into the clean sheet past it when that strip isn't offered as the free stretch; the parts there are recorded as used after the cut (`offcuts.reach_clean`, `SheetResult.beside_along_in`). Left: seen on a real offcut |
 | Offcuts on the rack (2026-11-05) | **Built, tested offline** (core 0.28.0): only the offcut from today's last cut, with no other sheet loaded on the machine screen since, counts as on the bed; an offcut on the rack is loaded whichever way round gives more room, and ties go to the smallest offcut. Left: manual-tests section 27 |

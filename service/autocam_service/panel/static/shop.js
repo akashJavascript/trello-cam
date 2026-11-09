@@ -1,4 +1,4 @@
-// The shop's phone page (panel/api.py: /api/shop). Three tabs:
+// The shop's phone page (panel/api.py: /api/shop). Four tabs:
 //   Shafts (shafts.py): one card per shaft: Start, Done.
 //   Parts (bought.py): bought parts sent from an assembly: In the bin (the team has it), or Order. Order opens the
 //   team's order sheet in a new tab and copies the part's name; people write the row themselves (AutoCAM never
@@ -6,6 +6,9 @@
 //   Plates (panel/plates.py): the sheets in Ready to cut (and cut today), who cuts each, and who finishes each plate.
 //   Its Spares section (panel/spares.py, 2026-11-04): spares on the way, and Send spares: a count for any plate
 //   AutoCAM has nested, each plate's spares a card of their own (nested after the robot parts).
+//   Prints (prints.py, 2026-11-09, the mockup the user approved): the 3D print queue. Waiting -> Start printing (a
+//   printer and the print time, both optional; the done time is worked out) -> Done, or Failed (back to Waiting to
+//   print again). Add a print from a STEP, STL or 3MF file. A part's file is a STEP from Onshape.
 // Who does what (people.py, the mockup approved 2026-11-04): a name tag on every item (+ when nobody), "All" on a
 // group, a picker with the shop's names ("Me" first), and this phone's name at the top right. Soft: anyone can still
 // start anything. "Yours" is what this phone started, or what's assigned to its name.
@@ -35,6 +38,10 @@
     minus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>',
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+    play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4l13 8-13 8z"/></svg>',
+    redo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5"/></svg>',
+    file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/></svg>',
+    upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>',
     cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.5 12h12l2-8H6.2"/></svg>'
   };
   function icon(name) {
@@ -97,12 +104,14 @@
   }
 
   // tab: "#parts" in the link picks Parts (for a QR code at the bins); otherwise the last one used on this phone
-  var HASH_TAB = { "#parts": "parts", "#shafts": "shafts", "#plates": "plates" }[location.hash];
+  var HASH_TAB = { "#parts": "parts", "#shafts": "shafts", "#plates": "plates", "#prints": "prints" }[location.hash];
   var S = { data: null, error: "", busy: false, tab: HASH_TAB || remember("tab") || "shafts",
             ask: null, copied: false,          // ask: a part's Order or In the bin question, {id, kind, n}
             picker: null,                      // the name picker: {title, current, pick(name), whoAmI}
             account: false,                    // the signed-in name's sheet (Sign out)
-            spares: null };                    // Send spares: {choices (null: loading), counts: {card id: n}, q, error}
+            spares: null,                      // Send spares: {choices (null: loading), counts: {card id: n}, q, error}
+            printStart: null,                  // Start printing: {item, printer, h, m}
+            printAdd: null };                  // Add a print: {file, name, qty, material, color, other, infill, walls, rush, note, error}
   var toastTimer = 0;
   function toast(text) {
     toastEl.textContent = text; toastEl.hidden = false;
@@ -111,7 +120,7 @@
   }
 
   function load() {
-    if (S.busy || S.spares) return Promise.resolve();          // not while Send spares is open (it'd lose the counts)
+    if (S.busy || S.spares || S.printStart || S.printAdd) return Promise.resolve();   // not while a form is open
     var plates = S.tab === "plates" ? "&plates=1" : "";        // Trello is read only while Plates shows
     return api("GET", "/api/shop?device=" + encodeURIComponent(DEVICE) + plates).then(function (d) {
       if (d.signedIn && KEY) {                                 // signed in: the key leaves the address bar
@@ -144,7 +153,7 @@
   });
 
   // ---------------------------------------------------------------- the page
-  var TITLES = { shafts: "Shafts", parts: "Parts", plates: "Plates" };
+  var TITLES = { shafts: "Shafts", parts: "Parts", plates: "Plates", prints: "Prints" };
   function render() {
     listEl.textContent = "";
     footEl.textContent = ""; footEl.hidden = true;
@@ -156,7 +165,7 @@
       return renderSendSpares();
     }
     var d = S.data;
-    var on = !d ? [] : ["shafts", "parts", "plates"].filter(function (t) { return d[t + "On"]; });
+    var on = !d ? [] : ["shafts", "parts", "plates", "prints"].filter(function (t) { return d[t + "On"]; });
     var tab = on.indexOf(S.tab) >= 0 ? S.tab : on[0] || "shafts";
     tabsEl.hidden = on.length < 2; titleEl.hidden = on.length >= 2;
     titleEl.textContent = !d ? "Shop" : TITLES[tab];
@@ -172,6 +181,7 @@
     if (d.signIn) add(listEl, signInBar(d.signIn));
     if (tab === "parts") renderParts(d);
     else if (tab === "plates") renderPlates(d);
+    else if (tab === "prints") renderPrints(d);
     else renderShafts(d);
   }
 
@@ -199,7 +209,7 @@
     render();
   }
 
-  function closePicker() { S.picker = null; S.account = false; render(); }
+  function closePicker() { S.picker = null; S.account = false; S.printStart = null; S.printAdd = null; render(); }
 
   function renderMe(d) {
     var signedIn = !!(d && d.signedIn);
@@ -218,7 +228,7 @@
   // ---------------------------------------------------------------- signing in (panel/signin.py)
   function signInHref() {
     var tab = (location.hash || "").slice(1);
-    return "/shop/sign-in" + (/^(shafts|parts|plates)$/.test(tab) ? "?tab=" + tab : "");
+    return "/shop/sign-in" + (/^(shafts|parts|plates|prints)$/.test(tab) ? "?tab=" + tab : "");
   }
 
   function shortDay(iso) {
@@ -247,6 +257,8 @@
   function renderPicker() {
     var p = S.picker;
     pickerEl.textContent = "";
+    if (S.printStart && !p) return renderPrintStart();
+    if (S.printAdd && !p) return renderPrintAdd();
     if (S.account && !p) return renderAccount();
     pickerEl.hidden = !p;
     if (!p) return;
@@ -267,7 +279,7 @@
       h("div", { class: "add" }, input, h("button", { class: "btn btn-secondary btn-small", type: "button", onclick: addName }, "Add"))));
   }
   pickerEl.addEventListener("click", function (ev) { if (ev.target === pickerEl) closePicker(); });
-  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && (S.picker || S.account)) closePicker(); });
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && (S.picker || S.account || S.printStart || S.printAdd)) closePicker(); });
 
   function assign(kind, ids, who) {
     S.busy = true; render();
@@ -554,6 +566,182 @@
       toast("Sent " + r.sent + " spare" + (r.sent === 1 ? "" : "s") + (missed ? " (" + missed + " plate" + (missed === 1 ? "" : "s") + " no longer on the board)" : ""));
       closeSpares();
     }, function (e) { S.busy = false; toast(e.message); render(); });
+  }
+
+  // ---------------------------------------------------------------- prints (prints.py)
+  function renderPrints(d) {
+    var all = d.prints || [], name = d.me;
+    function yours(p) { return p.mine || (!!name && p.who === name); }
+    section("Yours", all.filter(yours), printCard);
+    section("Rush", all.filter(function (p) { return p.status === "waiting" && p.rush && !yours(p); }), printCard, { kind: "print" });
+    section("Waiting", all.filter(function (p) { return p.status === "waiting" && !p.rush && !yours(p); }), printCard, { kind: "print" });
+    section("Printing", all.filter(function (p) { return p.status === "printing" && !yours(p); }), printCard);
+    if (!all.length) add(listEl, h("p", { class: "muted" }, "Nothing to print."));
+    var done = d.printsDone || [];
+    if (done.length) {
+      add(listEl, h("section", { class: "group" }, h("div", { class: "group-label" }, "Done today"),
+        h("div", null, done.map(function (p) {
+          return h("div", { class: "done-row" }, h("span", { class: "mark" }, icon("check")),
+            h("span", { class: "name wrap" }, p.name + " ×" + p.qty, h("span", { class: "sub" }, [p.who, p.when].filter(Boolean).join(" · "))),
+            p.undo ? h("button", { class: "btn btn-ghost btn-small", type: "button", disabled: S.busy, onclick: function () { post("print-undo", p); } },
+              icon("undo"), "Undo") : null);
+        }))));
+    }
+    footEl.hidden = false;
+    add(footEl, h("button", { class: "btn btn-secondary", type: "button", disabled: S.busy, onclick: openPrintAdd }, icon("plus"), "Add a print"));
+  }
+
+  // a typed color the browser knows ("red", "navy") shows as itself; one it doesn't, grey
+  var SWATCH = { black: "#1f1f1f", orange: "#ec7a1c", white: "#f7f7f5", gray: "#8e8a86", grey: "#8e8a86", any: "#c9c3bd" };
+  function swatch(color) {
+    var c = String(color || "").toLowerCase().replace(/\s+/g, "");
+    var fill = SWATCH[c] || (window.CSS && CSS.supports && CSS.supports("color", c) ? c : "#c9c3bd");
+    var dot = h("span", { class: "swatch" });
+    dot.style.background = fill;             // set from script: the page's CSP refuses style attributes
+    return dot;
+  }
+
+  function printCard(p) {
+    var off = S.busy;
+    var chips = [];
+    if (p.rush && p.status === "waiting") chips.push(h("span", { class: "chip rush" }, "Rush"));
+    if (p.material) chips.push(h("span", { class: "chip mat" }, p.material));
+    if (p.color && p.color !== "Any") chips.push(h("span", { class: "chip" }, swatch(p.color), p.color));
+    if (p.fails) chips.push(h("span", { class: "chip bad" }, "Reprint · failed " + p.fails + "×"));
+    var settings = p.infill !== null || p.walls !== null ? h("div", { class: "settings" },
+      p.infill !== null ? h("div", null, h("span", { class: "k" }, "Infill"), h("span", { class: "v" }, p.infill + "%")) : null,
+      p.walls !== null ? h("div", null, h("span", { class: "k" }, "Walls"), h("span", { class: "v" }, String(p.walls))) : null) : null;
+    var status = p.status === "printing" && (p.printer || p.finish)
+      ? h("p", { class: "status" }, h("b", null, p.printer || "Printing"), p.finish ? " · done ~" + p.finish : "") : null;
+    return h("article", { class: "item" + (p.status === "printing" ? " started" : "") },
+      h("div", { class: "item-top" },
+        h("div", { class: "item-name part-name" }, p.name,
+          h("span", { class: "from" }, [p.upload ? "Added from a file" : p.assembly, p.sender].filter(Boolean).join(" · "))),
+        whoTag(p.who, "Assign to", function (n) { assign("print", [p.id], n); }),
+        h("span", { class: "qty", "aria-label": "Quantity " + p.qty }, "×" + p.qty),
+        openLink(p.url)),
+      h("div", { class: "chips" }, chips),
+      settings,
+      p.note ? h("p", { class: "note" }, p.note) : null,
+      p.file ? h("div", { class: "file" }, icon("file"), h("button", { class: "link-btn", type: "button", disabled: off,
+        onclick: function () { downloadPrint(p); } }, p.upload ? "Download the file" : "Download the STEP")) : null,
+      status,
+      p.status === "printing"
+        ? h("div", { class: "item-btns" },
+            h("button", { class: "btn btn-ghost", type: "button", disabled: off, onclick: function () { post("print-failed", p); } }, icon("redo"), "Failed"),
+            h("button", { class: "btn btn-primary", type: "button", disabled: off, onclick: function () { post("print-done", p); } }, icon("check"), "Done"))
+        : h("div", { class: "item-btns one" },
+            h("button", { class: "btn btn-primary", type: "button", disabled: off, onclick: function () {
+              S.printStart = { item: p, printer: "", h: "", m: "" }; render();
+            } }, icon("play"), "Start printing")));
+  }
+
+  // The file: fetched (so the key and the sign-in both work), then saved. A part's STEP is made by Onshape the first time.
+  function downloadPrint(p) {
+    toast(p.upload ? "Downloading…" : "Getting the STEP file…");
+    fetch("/api/shop/print-file?id=" + encodeURIComponent(p.id), { headers: { "X-AutoCAM-Key": KEY } }).then(function (r) {
+      if (r.status === 200) {
+        var cd = r.headers.get("Content-Disposition") || "", m = /filename="([^"]+)"/.exec(cd);
+        return r.blob().then(function (b) {
+          var url = URL.createObjectURL(b), a = h("a", { href: url, download: m ? m[1] : p.name });
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+          toastEl.hidden = true;
+        });
+      }
+      return r.json().catch(function () { return {}; }).then(function (j) { toast(j.error || "Couldn't get the file."); });
+    }, function () { toast("Can't reach AutoCAM. Check the Wi-Fi."); });
+  }
+
+  function renderPrintStart() {
+    var st = S.printStart, p = st.item, printers = (S.data && S.data.printers) || [];
+    pickerEl.hidden = false;
+    function num(key, label, max) {
+      return h("label", { class: "field" }, label, h("input", { class: "input", type: "number", min: "0", max: String(max), inputmode: "numeric",
+        value: st[key], placeholder: "0", oninput: function (ev) { st[key] = ev.target.value; } }));
+    }
+    add(pickerEl, h("div", { class: "sheet-card", role: "dialog", "aria-modal": "true", "aria-label": "Start printing" },
+      h("h3", null, "Start printing"), h("p", { class: "muted" }, p.name + " ×" + p.qty),
+      printers.length ? h("div", { class: "field" }, "Printer") : null,
+      printers.length ? h("div", { class: "names" }, printers.map(function (n) {
+        return h("button", { type: "button", "aria-pressed": String(st.printer === n), onclick: function () { st.printer = st.printer === n ? "" : n; render(); } }, n);
+      })) : null,
+      h("div", { class: "field" }, "Print time"),
+      h("div", { class: "fields" }, num("h", "Hours", 168), num("m", "Minutes", 59)),
+      h("div", { class: "item-btns" },
+        h("button", { class: "btn btn-ghost", type: "button", onclick: closePicker }, "Cancel"),
+        h("button", { class: "btn btn-primary", type: "button", disabled: S.busy, onclick: function () {
+          var minutes = (parseInt(st.h, 10) || 0) * 60 + (parseInt(st.m, 10) || 0);
+          var printer = st.printer;
+          S.printStart = null;
+          post("print-start", p, { printer: printer, minutes: minutes });
+        } }, icon("play"), "Start"))));
+  }
+
+  function openPrintAdd() {
+    var d = S.data || {};
+    S.printAdd = { file: null, name: "", qty: "1", material: (d.printMaterials || [])[0] || "", color: (d.printColors || [])[0] || "Any",
+      other: "", infill: "", walls: "", rush: false, note: "", error: "" };
+    render();
+  }
+
+  function renderPrintAdd() {
+    var A = S.printAdd, d = S.data || {};
+    pickerEl.hidden = false;
+    var fileIn = h("input", { type: "file", id: "print-file", accept: ".step,.stp,.stl,.3mf", hidden: true, onchange: function () {
+      var f = fileIn.files && fileIn.files[0];
+      if (!f) return;
+      A.file = f; A.error = "";
+      if (!A.name) A.name = f.name.replace(/\.(step|stp|stl|3mf)$/i, "");
+      render();
+    } });
+    function text(key, label, type, more) {
+      return h("label", { class: "field" + (more && more.wide ? " wide" : "") }, label, h("input", Object.assign({ class: "input", type: type || "text",
+        value: A[key], oninput: function (ev) { A[key] = ev.target.value; } }, more && more.attrs || {})));
+    }
+    function select(key, label, options, withOther) {
+      var sel = h("select", { class: "input", onchange: function () { A[key] = sel.value; render(); } },
+        options.map(function (o) { return h("option", { value: o, selected: A[key] === o ? "selected" : null }, o); })
+          .concat(withOther ? [h("option", { value: "other", selected: A[key] === "other" ? "selected" : null }, "Other…")] : []));
+      return h("label", { class: "field" }, label, sel);
+    }
+    add(pickerEl, h("div", { class: "sheet-card", role: "dialog", "aria-modal": "true", "aria-label": "Add a print" },
+      h("h3", null, "Add a print"),
+      h("label", { class: "drop", for: "print-file" }, icon("upload"), A.file ? A.file.name : "STEP, STL or 3MF"), fileIn,
+      h("div", { class: "fields" },
+        text("name", "Name", "text", { wide: true, attrs: { maxlength: "80" } }),
+        text("qty", "Quantity", "number", { attrs: { min: "1", max: "500", inputmode: "numeric" } }),
+        select("material", "Material", d.printMaterials || []),
+        text("infill", "Infill %", "number", { attrs: { min: "0", max: "100", placeholder: "Optional" } }),
+        text("walls", "Walls", "number", { attrs: { min: "1", max: "30", placeholder: "Optional" } }),
+        select("color", "Color", d.printColors || ["Any"], true),
+        A.color === "other" ? text("other", "Color", "text", { attrs: { maxlength: "30", placeholder: "Type a color" } }) : h("span")),
+      h("label", { class: "check" }, h("input", { type: "checkbox", checked: A.rush, onchange: function (ev) { A.rush = ev.target.checked; } }), "Rush"),
+      h("label", { class: "field" }, "Note", h("textarea", { class: "input textarea", maxlength: "300", placeholder: "Optional",
+        oninput: function (ev) { A.note = ev.target.value; } }, A.note)),
+      A.error ? h("p", { class: "signin-msg" }, A.error) : null,
+      h("div", { class: "item-btns" },
+        h("button", { class: "btn btn-ghost", type: "button", onclick: closePicker }, "Cancel"),
+        h("button", { class: "btn btn-primary", type: "button", disabled: S.busy || !A.file, onclick: uploadPrint },
+          S.busy ? "Adding…" : "Add it"))));
+  }
+
+  function uploadPrint() {
+    var A = S.printAdd, f = A.file, limit = ((S.data && S.data.printMaxMb) || 50) * 1024 * 1024;
+    if (!f) return;
+    if (f.size > limit) { A.error = "That file is over " + Math.round(limit / 1048576) + " MB."; render(); return; }
+    var reader = new FileReader();
+    S.busy = true; render();
+    reader.onload = function () {
+      var data = String(reader.result || "").split(",")[1] || "";
+      api("POST", "/api/shop/print-upload", { device: DEVICE, filename: f.name, data: data, name: A.name.trim(), qty: parseInt(A.qty, 10) || 1,
+        material: A.material, color: A.color === "other" ? (A.other.trim() || "Any") : A.color, infill: A.infill, walls: A.walls,
+        rush: A.rush, note: A.note.trim() }).then(function () {
+        S.busy = false; S.printAdd = null; toast("Added to Waiting."); load();
+      }, function (e) { S.busy = false; A.error = e.message; render(); });
+    };
+    reader.onerror = function () { S.busy = false; A.error = "Couldn't read that file."; render(); };
+    reader.readAsDataURL(f);
   }
 
   // ---------------------------------------------------------------- staying current

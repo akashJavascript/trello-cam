@@ -609,6 +609,19 @@ A few long parts on one sheet (e.g. three of p0201), Rush so they don't join an 
 | 5 | The same the next day (on the rack): about 1 in, and the Stock line says "part spacing, plus a little" | |
 | 6 | A nest on an offcut with a room by earlier cuts: `worker.log` lists the tries with "in2 kept in one piece" and "written off", and the picture keeps the bigger rectangle in one piece | |
 
+### 30. The print queue (2026-11-09, `docs/prints.md`)
+
+| # | Check | Expect |
+|---|---|---|
+| 1 | In the Onshape panel, open a part made of PLA (or any print material) | The print form: Material, Quantity, Color, Infill %, Walls, Rush, Note, Send |
+| 2 | Change the material, pick Other… and type a color, Send | It's on `/shop#prints` under Waiting with that material and color; the part in Onshape is unchanged |
+| 3 | Download it on the shop page | A `.step` file after a few seconds (try again if the page says it's still exporting); a second download makes no Onshape calls (the ledger) |
+| 4 | Start printing: pick a printer, 1 h 30 m | Under Printing with "<printer> · done ~<now + 1:30>" |
+| 5 | Failed | Back in Waiting, "Reprint · failed 1×" |
+| 6 | Start it again, then Done | Done today, with Undo on that phone only |
+| 7 | Add a print: upload an STL | On the queue, named after the file; downloads as the same file |
+| 8 | Send an assembly with a printed part ticked under Prints | On the queue with the assembly's count; sending it again while it waits is refused |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

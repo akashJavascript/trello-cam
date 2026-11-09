@@ -251,6 +251,8 @@
     shaftSel: {},          // shaft key -> {on, qty, ends, other, ops} (the assembly's library shafts)
     shaft: null,           // the shaft editor: {row, listedId, draft, error, saving}
     boughtSel: {},         // bought part key -> {on, qty, note} (the assembly's bought parts, for the shop's parts list)
+    printSel: {},          // printed part key -> {on, qty} (the assembly's printed parts, for the print queue)
+    printForm: null,       // a printed part's form: {id, material, color, other, infill, walls, rush, note, qty, assign, sent, error}
     bought: null,          // the bought part editor: {row, listed, qty, note, error, saving}
     highlight: "",         // the row of the part clicked in the assembly
     form: null,
@@ -347,6 +349,13 @@
       if (!b.sendable) bsel[b.key].on = false;
     });
     S.boughtSel = bsel;
+    var psel = {};
+    (a.prints || []).forEach(function (x) {
+      // unticked to start, like bought parts: prints are sent on purpose
+      psel[x.key] = S.printSel[x.key] || { on: false, qty: x.qty };
+      if (!x.sendable) psel[x.key].on = false;
+    });
+    S.printSel = psel;
     S.mode = "assembly";
     startAuto(a.autoRefreshS);
     render();
@@ -672,6 +681,9 @@
     if (!spareMode && ((a.bought && a.bought.length) || (a.boughtGone && a.boughtGone.length))) {
       add(bodyEl, group("Bought parts", h("div", { class: "parts" }, a.bought.map(boughtRow), a.boughtGone.map(boughtGoneRow))));
     }
+    if (!spareMode && a.prints && a.prints.length) {
+      add(bodyEl, group("Prints", h("div", { class: "parts" }, a.prints.map(printRow))));
+    }
     add(bodyEl, group("Options",
       switchLine("Hold them in with tabs", o.tabs, function (v) { o.tabs = v; render(); }, false, WHAT.tabs[1]),
       switchLine("Nest them with other parts", o.nest, function (v) { o.nest = v; render(); }, false, WHAT.nest[1]),
@@ -705,21 +717,22 @@
     var shafts = (a.shafts || []).filter(function (x) { return x.sendable && S.shaftSel[x.key] && S.shaftSel[x.key].on; });
     var stuck = shafts.filter(function (x) { var sel = S.shaftSel[x.key]; return shaftProblems(x, sel.ops, sel.ends, sel.other).length; });
     var bought = (a.bought || []).filter(function (x) { return x.sendable && S.boughtSel[x.key] && S.boughtSel[x.key].on; });
-    var n = chosen.length, m = shafts.length, k = bought.length;
-    var bits = [n ? count(n, "part") : "", m ? count(m, "shaft") : "", k ? count(k, "bought part") : ""].filter(Boolean);
-    var words = (!m && !k ? "Send " + count(n, "part") + " to " + (o.drafts ? "Drafts" : "Ready for CAM")
+    var prints = (a.prints || []).filter(function (x) { return x.sendable && S.printSel[x.key] && S.printSel[x.key].on; });
+    var n = chosen.length, m = shafts.length, k = bought.length, pn = prints.length;
+    var bits = [n ? count(n, "part") : "", m ? count(m, "shaft") : "", k ? count(k, "bought part") : "", pn ? count(pn, "print") : ""].filter(Boolean);
+    var words = (!m && !k && !pn ? "Send " + count(n, "part") + " to " + (o.drafts ? "Drafts" : "Ready for CAM")
       : "Send " + (bits.length > 1 ? bits.slice(0, -1).join(", ") + " and " + bits[bits.length - 1] : bits[0]))
       + (o.assign ? " for " + o.assign : "");
     if (stuck.length) add(actionEl, h("div", { class: "as" }, "Fix " + stuck.map(function (x) { return x.label; }).join(", ") + " first (the pencil)."));
-    add(actionEl, h("button", { class: "btn btn-primary", type: "button", disabled: S.busy || !(n + m + k) || stuck.length > 0,
-      onclick: function () { sendMany(chosen, shafts, bought, nameInput); } }, S.busy ? "Sending…" : words));
+    add(actionEl, h("button", { class: "btn btn-primary", type: "button", disabled: S.busy || !(n + m + k + pn) || stuck.length > 0,
+      onclick: function () { sendMany(chosen, shafts, bought, nameInput, null, prints); } }, S.busy ? "Sending…" : words));
     if (S.user) {
       add(actionEl, h("div", { class: "as" }, "Sending as " + S.user + " · ",
         h("button", { class: "link-btn", type: "button", onclick: function () { S.user = ""; stored("name", ""); render(); } }, "change")));
     }
   }
 
-  function sendMany(chosen, shafts, bought, nameInput, spares) {
+  function sendMany(chosen, shafts, bought, nameInput, spares, prints) {
     if (nameInput) {
       var typed = nameInput.value.trim();
       if (!typed) { S.asmResult = { results: [{ name: "", sent: false, why: "Type your name first (it goes on the cards)" }], list: "" }; render(); return; }
@@ -732,6 +745,7 @@
       shafts: shafts.map(function (x) { var sel = S.shaftSel[x.key]; return { key: x.key, qty: sel.qty, ends: sel.ends, ops: sel.ops, note: sel.note || "" }; }),
       bought: bought.map(function (x) { var sel = S.boughtSel[x.key]; return { key: x.key, qty: sel.qty, note: sel.note || "" }; }),
       spares: (spares || []).map(function (i) { return { key: i.key, n: S.spareSel[i.key] }; }),
+      prints: (prints || []).map(function (x) { return { key: x.key, qty: S.printSel[x.key].qty }; }),
       tabs: o.tabs, nest: o.nest, face: o.face, rush: o.rush, drafts: o.drafts, assign: o.assign || "", name: S.user, u: ctx.u, server: ctx.server
     })).then(function (r) {
       S.busy = false; S.asmResult = r;
@@ -834,6 +848,104 @@
       b.sendable ? h("input", { class: "qty-in", type: "number", min: "1", max: String(S.asm.maxQty || 100), value: String(sel.qty),
         "aria-label": b.name + " quantity", onchange: function (ev) { sel.qty = Math.max(1, Math.min(S.asm.maxQty || 100, parseInt(ev.target.value, 10) || 1)); render(); } }) : h("span"),
       b.sendable ? pencil : h("span"));
+  }
+
+  // ---------------------------------------------------------------- printed parts (the shop's print queue; prints.py)
+  function printRow(x) {
+    var sel = S.printSel[x.key], cls = "arow bought locate-row" + (S.highlight === x.key ? " hl" : "");
+    function locateRow(ev) { rowLocate(x.key, ev); }
+    var Q = x.queued;
+    if (Q && Q.active) {                       // on the queue: how it's going
+      return h("div", { class: cls, "data-key": x.key, title: "Show it in Onshape", onclick: locateRow },
+        h("span", { class: "mark ok" }, icon("check")), h("span", { class: "name locatable" }, x.name,
+          Q.who ? h("span", { class: "sub" }, whoChip(Q.who)) : null), chip(Q.label, Q.status === "printing" ? "event" : ""), h("span"));
+    }
+    return h("div", { class: cls, "data-key": x.key, title: "Show it in Onshape", onclick: locateRow },
+      x.sendable ? h("input", { type: "checkbox", checked: sel.on, "aria-label": "Print " + x.name,
+        onchange: function (ev) { sel.on = ev.target.checked; render(); } }) : h("span"),
+      h("span", { class: "name locatable" }, x.name, h("span", { class: "sub" }, Q && Q.status === "done" ? "Printed · " + x.material : x.material)),
+      x.sendable ? h("input", { class: "qty-in", type: "number", min: "1", max: String(S.asm.maxQty || 100), value: String(sel.qty),
+        "aria-label": x.name + " quantity", onchange: function (ev) { sel.qty = Math.max(1, Math.min(S.asm.maxQty || 100, parseInt(ev.target.value, 10) || 1)); render(); } }) : h("span"),
+      h("span"));
+  }
+
+  function renderPrint() {
+    var d = S.detail, P = d.print;
+    if (!S.printForm || S.printForm.id !== S.partId) {
+      S.printForm = { id: S.partId, material: P.material, color: P.colors[0] || "Any", other: "", infill: "", walls: "",
+        rush: false, note: "", qty: 0, assign: "", sent: null, error: "" };
+    }
+    var f = S.printForm;
+    add(bodyEl, partHead(d.part, [materialChip(d.part.material)]));
+    var Q = f.sent || P.queued;
+    if (Q && Q.active) {
+      add(bodyEl, notice("good", Q.label + " ×" + Q.qty, Q.fails ? "Failed " + Q.fails + "× so far" : null));
+      actionEl.hidden = false;
+      add(actionEl, h("div", { class: "btn-row" },
+        Q.status === "waiting" ? h("button", { class: "btn btn-ghost", type: "button", disabled: S.busy, onclick: function () { removePrint(Q.id); } }, "Take it off the queue") : null,
+        h("button", { class: "btn btn-ghost", type: "button", onclick: backToList }, "Send another")));
+      return;
+    }
+    var q = S.qty, counted = q && q.assemblies.length ? q.assemblies[0].count : 1;
+    var qty = f.qty || counted;
+    var mat = h("select", { class: "select wide", "aria-label": "Material", onchange: function () { f.material = mat.value; } },
+      P.materials.map(function (o) { return h("option", { value: o, selected: f.material === o ? "selected" : null }, o); }));
+    add(bodyEl, group("Material", mat));
+    add(bodyEl, group("Quantity", h("div", { class: "line" }, stepper(qty, function (n) { f.qty = n; render(); }, "Quantity"),
+      h("div", { class: "from" }, f.qty ? "set by you" : q && q.assemblies.length ? "from " + q.assemblies[0].name : ""))));
+    var color = h("select", { class: "select wide", "aria-label": "Color", onchange: function () { f.color = color.value; render(); } },
+      P.colors.map(function (o) { return h("option", { value: o, selected: f.color === o ? "selected" : null }, o); })
+        .concat([h("option", { value: "other", selected: f.color === "other" ? "selected" : null }, "Other…")]));
+    var other = f.color === "other" ? h("input", { class: "input wide", type: "text", maxlength: "30", placeholder: "Type a color",
+      "aria-label": "Color", value: f.other, oninput: function (ev) { f.other = ev.target.value; } }) : null;
+    add(bodyEl, group("Color", color, other));
+    function num(key, label, lo, hi) {
+      return h("label", { class: "field" }, label, h("input", { class: "input", type: "number", min: String(lo), max: String(hi),
+        placeholder: "Optional", value: f[key], oninput: function (ev) { f[key] = ev.target.value; } }));
+    }
+    add(bodyEl, h("div", { class: "fields" }, num("infill", "Infill %", 0, 100), num("walls", "Walls", 1, 30)));
+    var note = h("textarea", { class: "textarea", placeholder: "Note (optional)", "aria-label": "Note", maxlength: "300",
+      oninput: function () { f.note = note.value; } });
+    note.value = f.note;
+    add(bodyEl, group("Options", switchLine("Rush", f.rush, function (v) { f.rush = v; render(); }), note,
+      assignLine(f.assign, function (v) { f.assign = v; render(); })));
+    actionEl.hidden = false;
+    if (f.error) add(actionEl, notice("bad", null, f.error));
+    var nameInput = null;
+    if (!S.user) {
+      nameInput = h("input", { class: "input wide", type: "text", placeholder: "Your name", maxlength: "40", "aria-label": "Your name" });
+      add(actionEl, nameInput);
+    }
+    add(actionEl, h("button", { class: "btn btn-primary", type: "button", disabled: S.busy,
+      onclick: function () { sendPrint(nameInput, qty); } }, S.busy ? "Sending…" : "Send"));
+    if (S.user) {
+      add(actionEl, h("div", { class: "as" }, "Sending as " + S.user + " · ",
+        h("button", { class: "link-btn", type: "button", onclick: function () { S.user = ""; stored("name", ""); render(); } }, "change")));
+    }
+  }
+
+  function sendPrint(nameInput, qty) {
+    var f = S.printForm, d = S.detail;
+    if (nameInput) {
+      var typed = nameInput.value.trim();
+      if (!typed) { f.error = "Type your name first."; render(); return; }
+      S.user = typed; stored("name", typed);
+    }
+    f.error = ""; S.busy = true; render();
+    api("POST", "/api/send-print", where({
+      p: S.partId, qty: qty, material: f.material, color: f.color === "other" ? (f.other.trim() || "Any") : f.color,
+      infill: f.infill, walls: f.walls, rush: f.rush, note: f.note, assign: f.assign || "", name: S.user, u: ctx.u, server: ctx.server
+    })).then(function (r) {
+      S.busy = false; f.sent = r.print; d.print.queued = r.print; render();
+    }, function (err) { S.busy = false; f.error = err.message; render(); });
+  }
+
+  function removePrint(id) {
+    var f = S.printForm, d = S.detail;
+    S.busy = true; render();
+    api("POST", "/api/print-remove", { id: id }).then(function () {
+      S.busy = false; if (f) f.sent = null; d.print.queued = null; render();
+    }, function (err) { S.busy = false; if (f) f.error = err.message; render(); });
   }
 
   // The pencil: quantity and a note (on the phone's card). Before sending it sets what Send sends; after, it changes
@@ -1020,6 +1132,7 @@
       add(bodyEl, partHead(d.part, [materialChip(d.part.material)]));
       return add(bodyEl, h("div", { class: "group" }, h("div", { class: "skeleton w60" })));
     }
+    if (d.print && d.print.printed && (!card || card.status === "cut")) return renderPrint();   // the print queue
     if (S.sent) return renderSent();
     if (!card || card.status === "cut" || S.editing) return renderForm();
     if (card.status === "back") return renderBack();

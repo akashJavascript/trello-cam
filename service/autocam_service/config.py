@@ -311,6 +311,18 @@ class Parts:
 
 
 @dataclass(frozen=True)
+class Prints:
+    """The shop's 3D print queue (prints.py; 2026-11-09): printed parts sent from the Onshape panel, or a file added on
+    the /shop page, on its Prints tab (Waiting, Printing, Done). No slicing yet."""
+    enabled: bool = False
+    printers: Tuple[str, ...] = ()             # offered when someone starts a print (optional there)
+    materials: Tuple[str, ...] = ()            # the panel's and the page's material choices
+    colors: Tuple[str, ...] = ()               # the color choices (Any first; Other... types one)
+    keep_days: int = 14                        # done prints (and their files) drop off after this long
+    max_file_mb: int = 50                      # an uploaded STEP, STL or 3MF
+
+
+@dataclass(frozen=True)
 class Scribe:
     """Bend lines scribed on bent parts that ask for it (core 0.18.0): with the sheet's own cutter in its program,
     or with the chamfer mill (identified by GUID, checked against the library) in a SCRIBE program of its own."""
@@ -451,6 +463,7 @@ class Config:
     costs: Costs = Costs()
     shafts: Shafts = Shafts()
     parts: Parts = Parts()
+    prints: Prints = Prints()
 
     def stock_types(self) -> List[Tuple[Material, float]]:
         return [(m, t) for m in self.materials.values() for t in m.thicknesses_in]
@@ -989,6 +1002,17 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
                       keep_days=t.integer("keep_days", minimum=1, default=14))
         t.finish()
 
+    prints = Prints()
+    if "prints" in top.data:
+        t = top.table("prints")
+        names = lambda key: tuple(" ".join(str(x).split())[:40] for x in t.strings(key) if str(x).strip())  # noqa: E731
+        prints = Prints(enabled=t.boolean("enabled"), printers=names("printers"), materials=names("materials"),
+                        colors=names("colors"), keep_days=t.integer("keep_days", minimum=1, default=14),
+                        max_file_mb=t.integer("max_file_mb", minimum=1, default=50))
+        t.finish()
+        if prints.enabled and not prints.materials:
+            errors.append("prints.materials: list at least one material")
+
     t = top.table("paths")
     paths = Paths(**{k: root / t.string(k, required=True) for k in ("queue", "cache", "state", "logs")})
     t.finish()
@@ -1004,7 +1028,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         op_tags=op_tags, templates=MappingProxyType(templates), labels=labels, onshape=onshape,
         trello=trello, fusion=fusion, tapguard=tapguard, fusion_team=fusion_team, status=status, paths=paths,
         placeholders=tuple(_placeholders(data)), warnings=(), tabs=tabs, face=face, scribe=scribe, hand_cuts=hand_cuts,
-        fit=fit, panel=panel, costs=costs, shafts=shafts, parts=parts,
+        fit=fit, panel=panel, costs=costs, shafts=shafts, parts=parts, prints=prints,
     )
     warnings: List[str] = []
     _cross_check(cfg, data, errors, warnings)

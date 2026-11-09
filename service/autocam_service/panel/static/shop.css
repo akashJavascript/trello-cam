@@ -166,3 +166,29 @@ a.btn { text-decoration: none; font-weight: 600; }
   background: var(--secondary-container); color: var(--on-secondary-fixed-variant); font-size: 14px; font-weight: 500; }
 .signin-bar .btn { height: 40px; padding: 0 16px; flex: none; font-size: 14px; }
 .account { display: flex; flex-direction: column; gap: 4px; }
+
+/* Prints (prints.py, 2026-11-09, the mockup the user approved): the 3D print queue */
+:root { --print: #1f5f73; --print-container: #d8eef4; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip.mat { background: var(--print-container); color: var(--print); }
+.chip .swatch { margin-right: 6px; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(28, 27, 26, .25); flex: none; }
+.settings { display: flex; gap: 16px; padding: 8px 10px; border-radius: 10px; background: var(--surface-container); }
+.settings div { display: flex; flex-direction: column; }
+.settings .k { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-variant); }
+.settings .v { font-family: var(--font-mono); font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; }
+.status { margin: 0; font-size: 13px; color: var(--on-surface-variant); }
+.status b { color: var(--on-surface); font-weight: 600; }
+.file { display: flex; align-items: center; gap: 8px; color: var(--on-surface-variant); }
+.file svg { width: 15px; height: 15px; flex: none; }
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); }
+.field.wide { grid-column: 1 / -1; }
+.sheet-card .input { width: 100%; min-width: 0; height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--outline-variant);
+  background: var(--surface); color: var(--on-surface); font: inherit; font-size: 15px; font-weight: 500; }
+.sheet-card .textarea { height: 64px; padding: 8px 12px; resize: vertical; }
+.drop { display: flex; align-items: center; gap: 10px; padding: 14px; border-radius: 12px; border: 1.5px dashed var(--outline-variant);
+  background: var(--surface); color: var(--on-surface-variant); font-size: 14px; cursor: pointer; overflow-wrap: anywhere; }
+.drop svg { width: 20px; height: 20px; flex: none; color: var(--primary-container); }
+.check { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+.check input { width: 18px; height: 18px; }

@@ -1130,6 +1130,25 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   p0209 (to about 39 in) would have been left off #4's record (fixed by hand to 39.5 in before Part 28 was nested).
   The sheet's `bands` (what another piece of stock must have clear to take the same program) include it too.
 
+## 2026-11-09: a 3D print queue on the shop page (the mockup the user approved; `docs/prints.md`)
+
+- **Where:** a Prints tab on `/shop`, the same list pattern as shafts and bought parts (`shoplist.py`), Slack names
+  for who does it. Bambu Lab printers, by name: `[prints] printers`.
+- **Just a queue for now** (the user: "dont like slice it or anything"): no slicing, nothing sent to the printers.
+- **Starting is two optional inputs:** the printer, and the print time in hours and minutes; "done ~" is worked
+  out from it (the user dropped a finish-time box and a Needed by date). No check-ins: a printing card is Failed
+  (back to Waiting, "Reprint · failed N×") or Done.
+- **The material can differ from Onshape's** (the user), and nothing is written back.
+- **Color:** a list starting with Any, plus "Other…" to type one in. Optional infill % and walls (the user). A
+  color of Any shows no chip.
+- **Coming in:**
+  - one part from the panel (its material is a print material);
+  - an assembly's printed parts (unticked to start; the name rule only for the common parts library's parts, so a
+    6061 "Printer mount" isn't one);
+  - a STEP, STL or 3MF uploaded on the page.
+- **STEP, not STL** (the user: "export step files not stl"). Exported the first time someone downloads it, then
+  kept, so a print nobody takes costs no Onshape calls.
+
 ## 2026-11-08: the Spares section lists only spares not cut yet
 
 - The user, seeing p0209 x1 and p0202 x4 "Cut Nov 5" in the Plates tab's Spares section: "why do cut spares show up

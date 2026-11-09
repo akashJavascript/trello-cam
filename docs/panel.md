@@ -243,6 +243,10 @@ row. Both are in `docs/shafts.md`.
 Bought parts (no screws or nuts) are listed under **Bought parts** and go on the same phone page's Parts tab: In
 the bin, or Order. See `docs/bought-parts.md`.
 
+A part whose material is a print material (PLA, PETG, TPU...) gets a print form instead: material (changeable),
+quantity, color, optional infill and walls, Rush, note, Send. An assembly's printed parts are listed under
+**Prints**. They go on the shop page's Prints tab. See `docs/prints.md`.
+
 ## Signing in to the shop page (2026-11-04)
 
 The shop's phone page (`/shop`) is opened by signing in with Slack, the team's Slack workspace only. The Onshape

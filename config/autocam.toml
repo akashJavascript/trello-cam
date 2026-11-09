@@ -533,6 +533,14 @@ order_sheet_url = ""            # empty on purpose: the team's sheet link is AUT
                                 # copies the part's name. AutoCAM never writes to it. No link anywhere: no Order button
 keep_days = 14                  # parts put in the bin drop off the list after this long
 
+[prints]                        # the shop's 3D print queue (prints.py, 2026-11-09): the /shop page's Prints tab
+enabled = true
+printers = ["Bartholomew", "Bilbo Baggins", "Darcy", "Ivy", "Oven", "Tandoori"]   # the team's Bambu printers
+materials = ["PLA", "PETG", "TPU 95A", "PLA-CF", "PA-CF", "ASA"]                  # first: when Onshape's isn't one
+colors = ["Any", "Black", "Orange", "White", "Gray"]                              # Other... types any color
+keep_days = 14                  # done prints (and their files) drop off after this long
+max_file_mb = 50                # a STEP, STL or 3MF added on the shop page
+
 [costs]                         # the Onshape panel's cost and sheet use estimate. Prices: WCP's for a 24 x 48 in sheet
                                 # (wcproducts.com, read 2026-11-01; the user's choice), else another vendor's (named on
                                 # the line). A thickness with no price shows only its share of a sheet
