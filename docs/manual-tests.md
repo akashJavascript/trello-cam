@@ -622,6 +622,18 @@ A few long parts on one sheet (e.g. three of p0201), Rush so they don't join an 
 | 7 | Add a print: upload an STL | On the queue, named after the file; downloads as the same file |
 | 8 | Send an assembly with a printed part ticked under Prints | On the queue with the assembly's count; sending it again while it waits is refused |
 
+### 31. Offcuts from a photo (2026-11-09, `docs/offcut-photos.md`)
+
+| # | Check | Expect |
+|---|---|---|
+| 1 | Shop page > Offcuts | The rack: each offcut's number, thickness, size and picture |
+| 2 | Add an offcut: a film-covered poly scrap flat on the floor; material, thickness, taped length | The corners are suggested on its corners (the front edge is the end at the bottom) |
+| 3 | Next | The piece straightened, a box over each hole; fix any (delete a wrong one, drag round a missed one) |
+| 4 | Add it | "Numbering it…", then "Write #N on the front end"; the card in Offcuts says Added as offcut #N, with the photo |
+| 5 | The same with bare aluminum on the plywood table, then on the floor | Table: nearly every hole boxed. Floor: fewer; box the rest |
+| 6 | Re-photo an offcut after cutting something out of it by hand | Its record hatched; only the new cut gets a box; Save adds one Cut by hand line |
+| 7 | Gone, then Undo within 5 s; then Gone and wait | Undo: still there. Waiting: the card archived, off the tab |
+
 ## M5: status card, start at logon, reboot test on the shop PC
 
 ### 1. The System card's status (works as soon as the service has the M5 code)

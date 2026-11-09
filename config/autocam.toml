@@ -533,6 +533,9 @@ order_sheet_url = ""            # empty on purpose: the team's sheet link is AUT
                                 # copies the part's name. AutoCAM never writes to it. No link anywhere: no Order button
 keep_days = 14                  # parts put in the bin drop off the list after this long
 
+[offcut_photos]                 # the shop page's Offcuts tab: add or update an offcut from a phone photo
+enabled = true                  # (offcut_photos.py, docs/offcut-photos.md; finding needs pip install -e ".[photos]")
+
 [prints]                        # the shop's 3D print queue (prints.py, 2026-11-09): the /shop page's Prints tab
 enabled = true
 printers = ["Bartholomew", "Bilbo Baggins", "Darcy", "Ivy", "Oven", "Tandoori"]   # the team's Bambu printers

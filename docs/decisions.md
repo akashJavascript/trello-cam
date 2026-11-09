@@ -1130,6 +1130,26 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   p0209 (to about 39 in) would have been left off #4's record (fixed by hand to 39.5 in before Part 28 was nested).
   The sheet's `bands` (what another piece of stock must have clear to take the same program) include it too.
 
+## 2026-11-09: offcuts from a phone photo (the mockup the user approved; `docs/offcut-photos.md`)
+
+- **Why:** the last thing before the team is told about AutoCAM (the user). Typing `Cut by hand` lines on a Trello card
+  is what nobody would do.
+- **It writes the card a person would:** a new piece is a scrap card (Material, Thickness, Length, a `Cut by hand` line
+  per box), a re-photo adds `Cut by hand` lines, Gone archives the card. The service's offcut pass is unchanged.
+- **Scale = the tape and the corners** (the user's pick): the length typed, the width the sheet's, the four corners.
+  No printed marker. Full width only (an L or notched piece is fine: the missing bit is a box).
+- **The front is the end at the bottom of the photo** (the user); "Other end is the front" swaps it. A re-photo's
+  hatched record shows whether it lines up (#4's record front was at the top of the user's photo).
+- **One box per hole, never a whole row** (the user: "i want to be able to select just a part"); drag around a hole to
+  add one. The service already keeps the room round a cut (cut_away, free_rooms).
+- **Holes found automatically, people fix them** (the user's pick), on the floor (the user's pick), poly usually with its
+  film on. Bare aluminum on concrete: the user wanted it supported with automatic boxes too ("software only... if it
+  cant be done... drag boxes"): it mirrors the concrete, so only sure holes from the cut outlines get a box; on the
+  plywood table it's found well. Wrong boxes are safe (some metal wasted), missed holes aren't: the page says to box
+  every hole.
+- **Gone has Undo** (5 s, nothing sent until then); an offcut a sheet waiting to be cut is on can't go.
+- **OpenCV is optional** (`.[photos]`): without it nothing is suggested and the tab still works.
+
 ## 2026-11-09: a 3D print queue on the shop page (the mockup the user approved; `docs/prints.md`)
 
 - **Where:** a Prints tab on `/shop`, the same list pattern as shafts and bought parts (`shoplist.py`), Slack names

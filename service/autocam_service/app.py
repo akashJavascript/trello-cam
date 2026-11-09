@@ -166,6 +166,12 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
                                   CheckedPrograms(cfg.paths.state / "checked_programs.json"), app.plates,
                                   cfg.paths.state / "machine.json")
         app.machine.keep_running()
+    if cfg.offcut_photos_enabled:           # the shop's Offcuts tab: offcuts from a phone photo (offcut_photos.py)
+        from .offcut_photos import OffcutPhotos
+        from .offcuts import OffcutStore
+        from .panel.api import material_label, material_line
+        app.offcut_photos = OffcutPhotos(tracker, cfg, OffcutStore(services.store.offcuts_file),
+                                         cfg.paths.state / "offcut_photos", material_label, material_line)
     start_server(app, p.port)
     pictures = PictureWatch(onshape, services.store, tracker) if p.pictures else None
     usage = None

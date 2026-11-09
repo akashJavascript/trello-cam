@@ -9,6 +9,7 @@
 //   Prints (prints.py, 2026-11-09, the mockup the user approved): the 3D print queue. Waiting -> Start printing (a
 //   printer and the print time, both optional; the done time is worked out) -> Done, or Failed (back to Waiting to
 //   print again). Add a print from a STEP, STL or 3MF file. A part's file is a STEP from Onshape.
+//   Offcuts (offcut_photos.py, offcuts.js, 2026-11-09): the rack, and offcuts added or updated from a phone photo.
 // Who does what (people.py, the mockup approved 2026-11-04): a name tag on every item (+ when nobody), "All" on a
 // group, a picker with the shop's names ("Me" first), and this phone's name at the top right. Soft: anyone can still
 // start anything. "Yours" is what this phone started, or what's assigned to its name.
@@ -42,6 +43,9 @@
     redo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5"/></svg>',
     file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/></svg>',
     upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>',
+    camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+    flip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 4 4 7M7 4l3 3M17 20V4M17 20l-3-3M17 20l3-3"/></svg>',
+    x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
     cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.5 12h12l2-8H6.2"/></svg>'
   };
   function icon(name) {
@@ -104,7 +108,8 @@
   }
 
   // tab: "#parts" in the link picks Parts (for a QR code at the bins); otherwise the last one used on this phone
-  var HASH_TAB = { "#parts": "parts", "#shafts": "shafts", "#plates": "plates", "#prints": "prints" }[location.hash];
+  var HASH_TAB = { "#parts": "parts", "#shafts": "shafts", "#plates": "plates", "#prints": "prints",
+                   "#offcuts": "offcuts" }[location.hash];
   var S = { data: null, error: "", busy: false, tab: HASH_TAB || remember("tab") || "shafts",
             ask: null, copied: false,          // ask: a part's Order or In the bin question, {id, kind, n}
             picker: null,                      // the name picker: {title, current, pick(name), whoAmI}
@@ -118,10 +123,19 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { toastEl.hidden = true; }, 3000);
   }
+  function toastUndo(text, undo) {                 // a toast with an Undo button, for 5 seconds
+    toastEl.textContent = "";
+    add(toastEl, h("span", { class: "toast-text" }, text));
+    add(toastEl, h("button", { class: "toast-undo", type: "button", onclick: function () { toastEl.hidden = true; undo(); } }, "Undo"));
+    toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.hidden = true; }, 5000);
+  }
+  function offcutsOpen() { return !!(window.ShopOffcuts && window.ShopOffcuts.isOpen()); }
 
   function load() {
-    if (S.busy || S.spares || S.printStart || S.printAdd) return Promise.resolve();   // not while a form is open
-    var plates = S.tab === "plates" ? "&plates=1" : "";        // Trello is read only while Plates shows
+    if (S.busy || S.spares || S.printStart || S.printAdd || offcutsOpen()) return Promise.resolve();   // not while a form is open
+    var plates = S.tab === "plates" ? "&plates=1" : S.tab === "offcuts" ? "&offcuts=1" : "";   // Trello: only while they show
     return api("GET", "/api/shop?device=" + encodeURIComponent(DEVICE) + plates).then(function (d) {
       if (d.signedIn && KEY) {                                 // signed in: the key leaves the address bar
         KEY = "";
@@ -148,16 +162,22 @@
       remember("tab", S.tab);
       try { history.replaceState(null, "", "#" + S.tab); } catch (e) { /* fine */ }
       render(); window.scrollTo(0, 0);
-      if (S.tab === "plates") load();
+      if (S.tab === "plates" || S.tab === "offcuts") load();
     });
   });
 
   // ---------------------------------------------------------------- the page
-  var TITLES = { shafts: "Shafts", parts: "Parts", plates: "Plates", prints: "Prints" };
+  var TITLES = { shafts: "Shafts", parts: "Parts", plates: "Plates", prints: "Prints", offcuts: "Offcuts" };
   function render() {
     listEl.textContent = "";
     footEl.textContent = ""; footEl.hidden = true;
-    backEl.hidden = !S.spares; logoEl.hidden = !!S.spares;
+    var flow = offcutsOpen();
+    backEl.hidden = !S.spares && !flow; logoEl.hidden = !!S.spares || flow;
+    if (flow) {                                   // adding or re-photographing an offcut (offcuts.js)
+      tabsEl.hidden = true; meEl.hidden = true; titleEl.hidden = false;
+      titleEl.textContent = document.title = window.ShopOffcuts.title();
+      return window.ShopOffcuts.renderFlow();
+    }
     if (S.spares) {
       tabsEl.hidden = true; meEl.hidden = true; titleEl.hidden = false; titleEl.textContent = "Send spares";
       document.title = "Send spares";
@@ -165,7 +185,7 @@
       return renderSendSpares();
     }
     var d = S.data;
-    var on = !d ? [] : ["shafts", "parts", "plates", "prints"].filter(function (t) { return d[t + "On"]; });
+    var on = !d ? [] : ["shafts", "parts", "plates", "prints", "offcuts"].filter(function (t) { return d[t + "On"]; });
     var tab = on.indexOf(S.tab) >= 0 ? S.tab : on[0] || "shafts";
     tabsEl.hidden = on.length < 2; titleEl.hidden = on.length >= 2;
     titleEl.textContent = !d ? "Shop" : TITLES[tab];
@@ -182,6 +202,7 @@
     if (tab === "parts") renderParts(d);
     else if (tab === "plates") renderPlates(d);
     else if (tab === "prints") renderPrints(d);
+    else if (tab === "offcuts") window.ShopOffcuts.renderList(d);
     else renderShafts(d);
   }
 
@@ -512,7 +533,7 @@
     }, function (e) { if (S.spares) { S.spares.choices = []; S.spares.error = e.message; render(); } });
   }
   function closeSpares() { S.spares = null; render(); load(); }
-  backEl.addEventListener("click", closeSpares);
+  backEl.addEventListener("click", function () { if (offcutsOpen()) window.ShopOffcuts.back(); else closeSpares(); });
 
   function renderSendSpares() {
     var sp = S.spares;
@@ -746,6 +767,8 @@
 
   // ---------------------------------------------------------------- staying current
   // Every 10 seconds while the page is showing (only the lists on the laptop: no Onshape or Trello calls).
+  if (window.ShopOffcuts) window.ShopOffcuts.init({ h: h, add: add, icon: icon, api: api, toast: toast, toastUndo: toastUndo,
+    render: render, load: load, listEl: listEl, footEl: footEl, DEVICE: DEVICE, data: function () { return S.data; } });
   load();
   setInterval(function () { if (!document.hidden) load(); }, 10000);
   document.addEventListener("visibilitychange", function () { if (!document.hidden) load(); });

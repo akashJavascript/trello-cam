@@ -35,6 +35,8 @@ and finish shafts, nothing else):
     POST /api/shop/print-start|print-failed|print-done|print-undo   {id, device[, printer, minutes]} (prints.py)
     POST /api/shop/print-upload              {device, filename, data (base64), name, qty, material, color, ...}
     GET  /api/shop/print-file?id=...         a print's model file (a part's STEP is exported from Onshape the first time)
+    GET  /api/shop?offcuts=1                 ... and the Offcuts tab: the rack (offcut_photos.py)
+    POST /api/shop/offcut-photo|offcut-flat|offcut-save|offcut-gone   an offcut from a phone photo, step by step
 
 The machine page (machine.py, 2026-11-05): the operator's screen on the ShopSabre's PC, with its own key
 (machine_key(): no sign-in; it can tick a sheet card's boxes, move it to Cut or back to Sheet review, and download
@@ -111,6 +113,8 @@ PROGRAM_PATH = "/api/send-program"
 PRINT_UPLOAD_PATH = "/api/shop/print-upload"
 MAX_PRINT_BODY = 96 * 1024 * 1024        # a STEP, STL or 3MF as base64 ([prints] max_file_mb checks the file itself)
 PRINT_FILE_PATH = "/api/shop/print-file"
+OFFCUT_PHOTO_PATH = "/api/shop/offcut-photo"
+MAX_PHOTO_BODY = 17 * 1024 * 1024      # a phone photo as base64 (the page shrinks it first; offcut_photos checks it)
 SELECTION_LOGS_PER_DAY = 30
 MAX_ASSEMBLY_SEND = 60
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
@@ -133,7 +137,8 @@ def machine_key(panel_key: str) -> str:
 
 
 def body_limit(path: str) -> int:
-    return MAX_PROGRAM_BODY if path == PROGRAM_PATH else MAX_PRINT_BODY if path == PRINT_UPLOAD_PATH else MAX_BODY
+    return MAX_PROGRAM_BODY if path == PROGRAM_PATH else MAX_PRINT_BODY if path == PRINT_UPLOAD_PATH \
+        else MAX_PHOTO_BODY if path == OFFCUT_PHOTO_PATH else 256 * 1024 if path == "/api/shop/offcut-save" else MAX_BODY
 
 
 @dataclass
@@ -236,6 +241,7 @@ class PanelApp:
         if not key:
             raise ValueError("the panel needs AUTOCAM_PANEL_KEY")
         self.machine = machine                # the operator's screen (machine.MachineView; None: off)
+        self.offcut_photos: Any = None        # the shop's Offcuts tab (offcut_photos.OffcutPhotos; None: off)
         self._machine_key = machine_key(key).encode("utf-8")
         self.people = people                  # who does what (people.py; None: no names, no Plates tab)
         self.signin = signin                  # Slack sign-in on the shop page (signin.py; None: the key link only)
@@ -270,7 +276,8 @@ class PanelApp:
         try:
             if path == "/panel" and method == "GET":
                 return self._page(query)
-            shop_on = self.shafts is not None or self.parts is not None or self.plates is not None or self.prints is not None
+            shop_on = self.shafts is not None or self.parts is not None or self.plates is not None or self.prints is not None \
+                or self.offcut_photos is not None
             if path == "/shop" and method == "GET" and shop_on:
                 return self._page(query, shop=True, headers=headers)
             if path in (START, CALLBACK) and method == "GET" and shop_on and self.signin is not None \
@@ -427,7 +434,8 @@ class PanelApp:
     # ---- the shop's lists: shafts and bought parts (their own key)
     def _shop(self, method: str, path: str, query: Dict[str, str], given: str, body: bytes,
               headers: Optional[Dict[str, str]] = None) -> Response:
-        if self.shafts is None and self.parts is None and self.plates is None and self.prints is None:
+        if self.shafts is None and self.parts is None and self.plates is None and self.prints is None \
+                and self.offcut_photos is None:
             return _json(404, {"error": "Not found"})
         session = self._session(headers)
         if session is None and not (self._shop_key_ok(given) and self._old_link_open()):
@@ -435,7 +443,8 @@ class PanelApp:
                 return _json(401, {"error": "Sign in with Slack first.", "kind": "signin"})
             return _json(403, {"error": "This isn't AutoCAM's shop link (the key is wrong). Ask a mentor."})
         if len(body) > body_limit(path):
-            return _json(413, {"error": "That file is too big." if path == PRINT_UPLOAD_PATH else "That's too much text."})
+            return _json(413, {"error": "That file is too big." if path in (PRINT_UPLOAD_PATH, OFFCUT_PHOTO_PATH)
+                               else "That's too much text."})
         if path == "/api/shop/sign-out" and method == "POST":
             if self.signin is not None:
                 self.signin.sign_out((headers or {}).get("cookie", ""))
@@ -459,6 +468,7 @@ class PanelApp:
                 prints.update(printers=list(pc.printers), printMaterials=list(pc.materials), printColors=list(pc.colors),
                               printMaxMb=pc.max_file_mb)
             out = {**shafts, **parts, **prints, "printsOn": self.prints is not None,
+                   "offcutsOn": self.offcut_photos is not None,
                    "shaftsOn": self.shafts is not None, "partsOn": self.parts is not None,
                    "platesOn": self.plates is not None, "orderSheet": self.order_sheet if self.parts is not None else "",
                    "me": session.name if session is not None else (name_of(device) if device else ""),
@@ -474,6 +484,8 @@ class PanelApp:
                 except Exception as e:  # noqa: BLE001 - the other tabs still work
                     log.warning("panel: the Plates tab: %s", e)
                     out.update(sheets=[], spares=[], platesError="Couldn't read the Trello board just now.")
+            if self.offcut_photos is not None and query.get("offcuts") == "1":   # only while the Offcuts tab shows
+                out.update(self.offcut_photos.view())
             if self.spares is not None and query.get("choices") == "1":   # Send spares: the plates it offers
                 try:
                     out.update(self.spares.choices())
@@ -486,6 +498,8 @@ class PanelApp:
             return self._print_file(query.get("id"))
         if action.startswith("print-") and method == "POST" and self.prints is not None:
             return self._shop_print(action, body, session)
+        if action.startswith("offcut-") and method == "POST" and self.offcut_photos is not None:
+            return self._shop_offcut(action, body, session)
         if action == "spares" and method == "POST" and self.spares is not None:
             data = json.loads(body.decode("utf-8")) if body else {}
             if not isinstance(data, dict) or not DEVICE_RE.match(str(data.get("device") or "")):
@@ -529,6 +543,30 @@ class PanelApp:
         name = self.people.add(who) if who else ""
         lst.assign(ids, name)
         return name
+
+    def _shop_offcut(self, action: str, body: bytes, session: Any) -> Response:
+        """The Offcuts tab (offcut_photos.py): a photo taken, its corners set (the piece straightened and its holes
+        found), the boxes saved to the offcut's card; and an offcut gone."""
+        data = json.loads(body.decode("utf-8")) if body else {}
+        device = str((data or {}).get("device") or "") if isinstance(data, dict) else ""
+        if not DEVICE_RE.match(device):
+            raise Refused(400, "Bad request")
+        sender = session.name if session is not None else (self.people.me(device) if self.people else "") or ""
+        op = self.offcut_photos
+        if action == "offcut-photo":
+            self._rate_limit()
+            return _json(200, op.photo(data.get("data"), data.get("material"), data.get("length"), data.get("target")))
+        if action == "offcut-flat":
+            return _json(200, op.flat(data.get("photo"), data.get("corners"), data.get("material"), data.get("length"),
+                                      data.get("target")))
+        if action == "offcut-save":
+            self._rate_limit()
+            return _json(200, op.save(data.get("photo"), data.get("boxes"), sender, data.get("material"),
+                                      data.get("thickness"), data.get("length"), data.get("target")))
+        if action == "offcut-gone":
+            op.gone(data.get("id"), sender)
+            return _json(200, {"ok": True})
+        return _json(404, {"error": "Not found"})
 
     def _shop_print(self, action: str, body: bytes, session: Any) -> Response:
         """The Prints tab's buttons (prints.py): start (printer, minutes: both optional), failed, done, undo, and a

@@ -247,6 +247,8 @@ A part whose material is a print material (PLA, PETG, TPU...) gets a print form 
 quantity, color, optional infill and walls, Rush, note, Send. An assembly's printed parts are listed under
 **Prints**. They go on the shop page's Prints tab. See `docs/prints.md`.
 
+The shop page's **Offcuts** tab adds or updates offcuts from a phone photo. See `docs/offcut-photos.md`.
+
 ## Signing in to the shop page (2026-11-04)
 
 The shop's phone page (`/shop`) is opened by signing in with Slack, the team's Slack workspace only. The Onshape
