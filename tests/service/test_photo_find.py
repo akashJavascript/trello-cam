@@ -36,8 +36,9 @@ def _piece(kind, w, h, rng):
     return np.clip(img, 0, 255).astype(np.uint8)
 
 
-def photo(piece_kind, ground_kind, holes, length_in=30.0, width_in=24.0, seed=3):
-    """A made-up phone photo: holes are (x0, y0, x1, y1) in inches across and along from the front-left corner."""
+def photo(piece_kind, ground_kind, holes, length_in=30.0, width_in=24.0, seed=3, filled=()):
+    """A made-up phone photo: holes are (x0, y0, x1, y1) in inches across and along from the front-left corner; the
+    `filled` ones are still full of crumpled clear film and chips (grey like the metal, but busy)."""
     rng = np.random.default_rng(seed)
     k = 20                                        # px per inch of the flat piece before it's seen at an angle
     w, h = int(width_in * k), int(length_in * k)
@@ -52,6 +53,18 @@ def photo(piece_kind, ground_kind, holes, length_in=30.0, width_in=24.0, seed=3)
     m = cv2.warpPerspective(mask, H, shape[::-1]) > 127
     out = ground.copy()
     out[m] = seen[m]
+    if filled:
+        crinkle = np.clip(np.array([150, 152, 154], np.float32) + rng.normal(0, 4, (h, w, 3)), 0, 255).astype(np.uint8)
+        for _ in range(30000):                    # creases and chips, as dense as the real ones
+            x, y = int(rng.integers(0, w)), int(rng.integers(0, h))
+            cv2.line(crinkle, (x, y), (x + int(rng.integers(-6, 7)), y + int(rng.integers(-6, 7))),
+                     (int(rng.integers(90, 235)),) * 3, 1)
+        fm = np.zeros((h, w), np.uint8)
+        for x0, y0, x1, y1 in filled:
+            cv2.rectangle(fm, (int(x0 * k), int(h - y1 * k)), (int(x1 * k), int(h - y0 * k)), 255, -1)
+        fseen = cv2.warpPerspective(crinkle, H, shape[::-1])
+        fmask = cv2.warpPerspective(fm, H, shape[::-1]) > 127
+        out[fmask] = fseen[fmask]
     ok, buf = cv2.imencode(".jpg", out, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
     return buf.tobytes()
 
@@ -82,6 +95,15 @@ def test_film_on_concrete_finds_corners_and_every_hole():
 
 def test_aluminum_on_wood_is_found_by_look():
     img = pf.decode(photo("aluminum", "wood", HOLES))
+    boxes, how = pf.find_holes(pf.straighten(img, PHOTO_CORNERS, 24, 30), 24, 30)
+    assert how == "look"
+    for hole in HOLES:
+        assert any(covers(b, hole) for b in boxes), (hole, boxes)
+
+
+def test_a_hole_still_full_of_film_and_chips_gets_a_box():
+    """Aluminum on the table with one hole still full of crumpled clear film: grey like the metal, but busy."""
+    img = pf.decode(photo("aluminum", "wood", HOLES, filled=[HOLES[2]]))
     boxes, how = pf.find_holes(pf.straighten(img, PHOTO_CORNERS, 24, 30), 24, 30)
     assert how == "look"
     for hole in HOLES:

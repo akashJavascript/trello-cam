@@ -33,6 +33,7 @@ MARGIN_IN = 1.0            # floor kept round the straightened piece (where "flo
 BOX_MARGIN_IN = 0.25       # added round each hole: what a photo is out by
 MIN_HOLE_IN = 0.6          # a hole smaller than this square isn't suggested (a drilled hole)
 GROW_IN = 2.0              # how far a hole's box may reach past what surely looks like floor (a slot's sunlit hook)
+TEXTURE_MIN = 0.12         # a patch this busy (share of it on short edges) and busier than the floor: film and chips
 SEPARATE = 1.5             # floor and piece this far apart (brightness, colour or grain, in their own spreads):
                            # holes by look. Film on concrete 2.2-4.4, aluminum on wood 5.4, aluminum on concrete
                            # 0.2-0.4 (the team's photos, 2026-11-09)
@@ -385,6 +386,30 @@ def _holes_by_outline(flat, inside, floor_sel, d_edge, ink):
     return boxes
 
 
+def _holes_by_texture(flat, inside, floor_sel, d_edge, ink, bright_max: float = 255.0):
+    """Holes still full of crumpled film and chips (2026-11-09, aluminum on the table): they look like the metal in
+    colour, but they're busy (creases, chips) where bare metal and wood are smooth. Busy = many short edges in a
+    3/8 in patch, clearly more than the floor's own. Strokes (scratches, a hole's own outline, stamped lettering) are
+    opened away."""
+    g = cv2.GaussianBlur(cv2.cvtColor(flat, cv2.COLOR_BGR2GRAY), (3, 3), 0)
+    dens = cv2.blur((cv2.Canny(g, 40, 120) > 0).astype(np.float32), (17, 17))
+    floor_busy = float(np.percentile(dens[floor_sel], 90))
+    # not near the edges (chips and burrs along them; AutoCAM's own parts are never that close) and not paper (a label)
+    L = cv2.cvtColor(flat, cv2.COLOR_BGR2LAB)[:, :, 0]
+    busy = (dens > max(TEXTURE_MIN, 1.5 * floor_busy)) & inside & (d_edge >= 0.5 * PX) & ~ink & (L < bright_max)
+    busy = cv2.morphologyEx(busy.astype(np.uint8), cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15)))
+    # one hole's crinkles come in patches: join them (gaps under ~3/8 in; the metal between two holes is wider and smooth)
+    busy = cv2.morphologyEx(busy, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15)))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(busy)
+    out = []
+    for i in range(1, n):
+        x, y, w, h, a = st[i]
+        if a < (MIN_HOLE_IN * PX) ** 2 or min(w, h) < 0.375 * PX:
+            continue
+        out.append((int(x), int(y), int(x + w), int(y + h)))
+    return out
+
+
 def find_holes(flat, width_in: float, length_in: float) -> Tuple[List[Box], str]:
     """Boxes over the holes of a straightened piece (straighten()), in inches across from the left and along from the
     front end, BOX_MARGIN_IN added round each and kept on the piece; and how they were found: "look", "outline" or
@@ -402,6 +427,14 @@ def find_holes(flat, width_in: float, length_in: float) -> Tuple[List[Box], str]
         px_boxes, how = _holes_by_look(flat, F, inside, floor_sel, rim, d_edge, ink, floor_m, mat_m), "look"
     else:
         px_boxes, how = _holes_by_outline(flat, inside, floor_sel, d_edge, ink), "outline"
+    # holes still full of film and chips: busy where the piece is smooth (added only where nothing was found). Not on
+    # bare aluminum on concrete: there the metal's own scratches and grain read as busy too
+    paper = max(float(floor_m[0][0]), float(mat_m[0][0])) + 40      # far brighter than both the floor and the piece
+    for t in (_holes_by_texture(flat, inside, floor_sel, d_edge, ink, paper) if how == "look" else []):
+        ta = (t[2] - t[0]) * (t[3] - t[1])
+        covered = sum(max(0, min(t[2], b[2]) - max(t[0], b[0])) * max(0, min(t[3], b[3]) - max(t[1], b[1])) for b in px_boxes)
+        if covered < 0.5 * ta:
+            px_boxes.append(t)
     m = MARGIN_IN * PX
     H = flat.shape[0] - 2 * m
     out: List[Box] = []

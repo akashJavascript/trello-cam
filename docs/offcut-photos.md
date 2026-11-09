@@ -39,8 +39,12 @@ Boxes are in the piece's own inches: across from the left edge, along from the f
 - **Holes "by outline"** when they don't (bare aluminum mirrors concrete: same brightness, colour and grain): only the
   long cut edges tell, so only sure holes get a box. Expect to add many by hand; **aluminum on the plywood table** is
   found well.
-- Misses: holes still full of crumpled clear film and chips read as the piece (pull the film out first), bare clear
-  poly with no film is see-through, print and marker are ignored on purpose.
+- **Holes still full of crumpled film and chips** (2026-11-09, the user's aluminum-on-the-table photo: 11 of them were
+  missed): they look like the metal in colour but are busy (creases, chips) where bare metal and wood are smooth, so
+  busy patches clearly busier than the floor also get a box ("by look" photos only; not within 1/2 in of the edges, not
+  paper-white). That photo: 8 of the 11 boxed, 2 partly, 1 missed (smooth clear film over wood). Pulling the film out
+  first still works best.
+- Misses: smooth clear film over a hole, bare clear poly with no film (see-through); print and marker are ignored on purpose.
 
 Needs OpenCV (`pip install -e ".[photos]"` on the laptop). Without it the tab still works with nothing suggested.
 Photos are kept in `state/offcut_photos/` for a day. `[offcut_photos] enabled` switches the tab off.
