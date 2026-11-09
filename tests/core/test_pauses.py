@@ -127,3 +127,41 @@ def test_after_last_part_adds_a_final_stop():
 def test_insert_refuses_bad_order(order, message):
     with pytest.raises(PauseError, match=message.replace("[", r"\[").replace("]", r"\]")):
         insert(SAMPLE, order, MIST)
+
+
+def test_the_rest_of_a_stopped_sheet_starts_at_the_next_part():
+    # The machine screen's "It stopped part way" (2026-11-08): r110 was stopped at its first stop and the rest made by
+    # hand. Here part 1 (p01-1) is out: the units, the restart (mist, spindle, spin-up), then p02-1's outline on.
+    from autocam_core.pauses import rest_after
+    full = insert(SAMPLE, ORDER, MIST)
+    rest = rest_after(full, ORDER, 1, MIST, "6061_0p125_r017_S1_FROM2", safe_z_in=SAFE_Z)
+    lines = rest.split("\r\n")
+    assert lines[:8] == ["[6061_0p125_r017_S1_FROM2]", "G90", "G20", "G53 Z", "M11 C8", "S18000", "M3", "G4 X4"]
+    assert lines[8] == "[outer p02-1]" and "[outer p01-1]" not in lines and "[drill]" not in lines
+    assert rest.count("G4 [TAKE PART") == 1                    # the stop after p02-1 is still there
+    check = verify(rest, ORDER[1:], MIST, safe_z_in=SAFE_Z)
+    assert check.ok, check.problems
+    report = check_program(rest.encode("ascii"), GUARD)
+    assert report.passed, report.summary()
+    last = rest_after(full, ORDER, 2, MIST, "x", safe_z_in=SAFE_Z)   # only the last part left: no stops
+    assert last.count("[outer ") == 1 and "G4 [TAKE PART" not in last
+
+
+def test_the_rest_needs_a_real_stop_to_start_from():
+    from autocam_core.pauses import rest_after
+    full = insert(SAMPLE, ORDER, MIST)
+    for done in (0, 3):                                        # before the first part, or after the last
+        with pytest.raises(PauseError):
+            rest_after(full, ORDER, done, MIST, "x")
+    with pytest.raises(PauseError):
+        rest_after(SAMPLE, ORDER, 1, MIST, "x")                # the version without stops
+
+
+
+def test_the_rest_without_stops_for_a_sheet_run_straight_through():
+    from autocam_core.pauses import rest_after
+    full = insert(SAMPLE, ORDER, MIST)
+    rest = rest_after(full, ORDER, 1, MIST, "x", safe_z_in=SAFE_Z, keep_stops=False)
+    assert "G4 [TAKE PART" not in rest and rest.count("[outer ") == 2
+    report = check_program(rest.encode("ascii"), GUARD)
+    assert report.passed and report.stop_count == 0, report.summary()

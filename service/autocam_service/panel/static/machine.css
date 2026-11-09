@@ -136,3 +136,6 @@ svg { width: 18px; height: 18px; flex: none; }
 .must[aria-checked="true"] .why { display: none; }
 .notice { padding: 12px; border-radius: 12px; font-size: 14px; background: var(--error-container); color: var(--on-error-container); }
 @media (prefers-reduced-motion: reduce) { .btn:active { transform: none; } .tog .knob, .tog .knob::after { transition: none; } }
+/* "It stopped part way": which part came out last (2026-11-08) */
+.choices { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
+.choices .btn { justify-content: flex-start; text-align: left; }

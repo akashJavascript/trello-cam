@@ -62,6 +62,7 @@
   }
 
   var S = { open: null, sheet: null, list: null, at: null, busy: false, got: {}, problem: false, confirm: false, toast: "", error: "",
+            stopped: false,       // "It stopped part way": asking which part came out last
             ticks: {} };          // the boxes ticked on this step (Load, Change the cutter): cleared whenever the step changes
   var toastTimer = null;
   function say(text) {
@@ -96,11 +97,12 @@
   function save() {
     if (!S.open || !S.at) return;
     api("POST", "/api/machine/act", { id: S.open, do: "progress", step: S.at.step, rep: S.at.rep, lap: S.at.lap,
-      lapRan: S.at.lapRan }).catch(function () {});
+      lapRan: S.at.lapRan, rest: S.at.rest || "" }).catch(function () {});
   }
   function go(step) {
     S.ticks = {};
-    S.at = { step: step, rep: 1, lap: 0, lapRan: false };
+    S.at = { step: step, rep: 1, lap: 0, lapRan: false, rest: "" };
+    S.stopped = false;
     save(); render(); window.scrollTo(0, 0);
   }
   function next() { go(Math.min(S.at.step + 1, S.sheet.steps.length - 1)); }
@@ -242,6 +244,26 @@
         return card("Air test", st.file ? stem(st.file) : "Making it…", "Nothing is cut: it runs " + st.gap + " above the sheet", false,
           todo(["Check it misses the clamps"]), download(st.file, next));
       case "run":
+        // It stopped part way (2026-11-08): the parts that came out stay out; the rest is its own program
+        if (st.main && at.rest) {
+          var from = (/_FROM(\d+)/.exec(at.rest) || [])[1];
+          return card("Run the rest", stem(at.rest), "From part " + from + " · same cutter and zero, don’t move the sheet", false,
+            h("button", { class: "link-btn quiet", type: "button", disabled: S.busy, onclick: function () { at.rest = ""; save(); render(); } },
+              "Run the whole program instead"),
+            download(at.rest, function () { at.rest = ""; next(); }));
+        }
+        if (st.main && S.stopped) {
+          return card("It stopped part way", "Which part came out last?", "", true,
+            h("div", { class: "choices" },
+              h("button", { class: "btn btn-secondary", type: "button", disabled: S.busy, onclick: function () {
+                S.stopped = false; render(); say("Run the whole program again: what’s cut already only cuts air.");
+              } }, "None yet"),
+              st.parts.slice(0, -1).map(function (p, i) {
+                return h("button", { class: "btn btn-secondary", type: "button", disabled: S.busy, onclick: function () { resume(i + 1); } },
+                  (i + 1) + " · " + p);
+              })),
+            one("Cancel", function () { S.stopped = false; render(); }, "btn-ghost"));
+        }
         var file = st.file, extra = [];
         var stops = st.nostop ? !st.nostop.on : !!st.stops;
         if (st.nostop) {
@@ -254,6 +276,10 @@
         var k = repeat ? "Run " + at.rep + " of " + st.repeat : "Run";
         var sub = [repeat && at.rep > 1 ? "Zero at a fresh spot first" : "", st.note || "", st.min ? "about " + st.min + " min" : ""]
           .filter(Boolean).join(" · ");
+        if (st.main && st.parts && st.parts.length > 1 && !repeat) {
+          extra.push(h("button", { class: "link-btn quiet", type: "button", disabled: S.busy,
+            onclick: function () { S.stopped = true; render(); } }, "It stopped part way"));
+        }
         return card(k, file ? stem(file) : "Making the no-stop version…", sub, false, extra,
           download(file, function () { if (repeat && at.rep < st.repeat) { at.rep += 1; save(); render(); } else next(); }));
       case "fit":
@@ -302,6 +328,11 @@
   function refresh() { return loadSheet(S.open, true); }
   function switchStops(on) { act({ do: "stops", on: on }).then(refresh, function () {}); }
   function keep(on) { act({ do: "keep", on: on }).then(refresh, function () {}); }
+  function resume(after) {
+    act({ do: "resume", after: after }).then(function (d) {
+      S.stopped = false; S.at.rest = d.file; save(); say("The rest is ready: " + d.file); refresh();
+    }, function () {});
+  }
   function rack(on) { act({ do: "rack", on: on }).then(refresh, function () {}); }
   function stock(choice) {
     act({ do: "stock", choice: choice }).then(function () {

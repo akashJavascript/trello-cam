@@ -1130,6 +1130,28 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   p0209 (to about 39 in) would have been left off #4's record (fixed by hand to 39.5 in before Part 28 was nested).
   The sheet's `bands` (what another piece of stock must have clear to take the same program) include it too.
 
+## 2026-11-08: "It stopped part way" on the machine screen (the user: "do this too")
+
+- **Why:** r110 S1 was stopped at its first stop (pockets, holes and part 1's outline cut); the user wanted "a program
+  for the rest so i dont have to repeat the rest", and it was made by hand (2026-11-05).
+- **Where a sheet can pick up: its stops.** At a stop the cutter is at the top, the part before it is cut out, and
+  the next outline comes down from the top (the pause rules). So the main Run step has a link, "It stopped part way",
+  then "Which part came out last?" (each part as the card's CUT ORDER says it). "None yet" says to run the whole
+  program again (what's cut only cuts air: re-cutting holes and pockets in the middle of an op isn't a safe restart).
+- **The program** (`pauses.rest_after`): the program's code before its spindle starts (units, the cutter up; not the
+  mist, the restart does that), the restart a stop does (mist, spindle, spin-up), then everything from the next
+  part's outline to the end, its stops kept (or taken out, each checked against its part number, when "Stop after
+  each part" is off). Checked like a sheet's: the guard, the stops, the outlines' depth; attached to the card as
+  `<sheet>_FROM<n>.tap` (`_FROM<n>_NOSTOP.tap`) with a comment, so the page's Download takes it; asked again, the same
+  one. The page shows "Run the rest", remembers it (machine.json progress "rest"), and can go back to the whole
+  program. On r110's real program it is the hand-made REST line for line (bar its name and a repeated G90).
+
+## 2026-11-08: the panel's material write seen working
+
+- p0209 (fc8f8554..., part RWJD) had no material; the panel set Polycarbonate on 2026-11-05 at 12:35 (one metadata call,
+  200), and the parts list read a minute later shows Polycarbonate (Onshape Material Library) on the part and its flat
+  pattern. The registration itself was done 2026-11-01 (the user is an enterprise admin).
+
 ## 2026-11-06: each material its own part spacing; polycarbonate 0.4 in (the user: "make poly 0.4in")
 
 - **Why:** the 0.5 in between parts ([nest] part_spacing_in, "more than 2 tool diameters: a solid strip between two

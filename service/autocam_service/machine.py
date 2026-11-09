@@ -29,8 +29,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from autocam_core.airtest import SUFFIX as AIR_SUFFIX
 from autocam_core.hotfolder import Queue, write_atomic
 from autocam_core.offcuts import add_used, free_length
+from autocam_core.pauses import PauseError, rest_after, verify as verify_pauses
 from autocam_core.schema_job import Job, load_job
 from autocam_core.schema_result import Result, SheetResult, read_result
+from autocam_core.sheetcheck import guard_spec, outer_depth_problems, pause_spec
+from autocam_core.tapguard import check_program
 
 from .config import Config
 from .jobs import sheet_fixture
@@ -259,7 +262,7 @@ class MachineView:
         label = str(info.get("label") or "") if info is not None else "Check"
         return {"id": card_id, "title": title, "label": label, "steps": steps,
                 "at": {"step": min(int(p.get("step", 0)), len(steps) - 1), "rep": int(p.get("rep", 1)),
-                       "lap": int(p.get("lap", 0)), "lapRan": bool(p.get("lapRan"))}}
+                       "lap": int(p.get("lap", 0)), "lapRan": bool(p.get("lapRan")), "rest": str(p.get("rest") or "")}}
 
     def _open(self, card_id: str, fresh: bool = True) -> Tuple[Card, Optional[Dict]]:
         """A sheet card in Ready to cut that AutoCAM made (with its record), or a Check card that passed (None)."""
@@ -352,8 +355,10 @@ class MachineView:
             out.append({"t": "air", "file": air, "gap": f"{self.cfg.machine.air_test_gap_in:g} in",
                         "cutter": main_tool[0], "tool": main_tool[1]})
         times = max(1, int(sr.repeat or 1)) if sr.by_hand else 1
+        # the parts in cut order, for "It stopped part way" (which came out last): stops are where it picks up
+        parts = self._part_labels(job, list(sr.main_order)) if stops and job is not None else []
         out.append({"t": "run", "file": sr.tap, "min": _minutes(sr.machining_time_s), "main": True,
-                    "stops": stops, "repeat": times, "cutter": main_tool[0], "tool": main_tool[1],
+                    "stops": stops, "repeat": times, "cutter": main_tool[0], "tool": main_tool[1], "parts": parts,
                     **({"nostop": {"file": nostop, "on": nostop_on, "ready": nostop in names}} if stops else {})})
         series = sorted({p.series for p in sr.programs if p.kind == "fit"})
         for n, f in zip(series, info.get("fits") or []):
@@ -368,6 +373,68 @@ class MachineView:
             out.append({"t": "run", "file": p.tap, "min": _minutes(p.machining_time_s), "note": NOTES["outlines"],
                         "cutter": main_tool[0], "tool": main_tool[1]})
         return out
+
+    @staticmethod
+    def _part_labels(job: Job, order: List[str]) -> List[str]:
+        """Each outline in cut order as the sheet card's CUT ORDER says it: p0202 (2 of 4)."""
+        names = {p.part_key: " ".join(p.name.split()) for p in job.parts}
+        keys = [i.rsplit("-", 1)[0] for i in order]
+        seen: Dict[str, int] = {}
+        out = []
+        for k in keys:
+            seen[k] = seen.get(k, 0) + 1
+            out.append(names.get(k, k) + (f" ({seen[k]} of {keys.count(k)})" if keys.count(k) > 1 else ""))
+        return out
+
+    def _resume(self, card: Card, info: Dict, done: int) -> Dict[str, Any]:
+        """The rest of the sheet after part `done` came out (the machine screen's "It stopped part way", 2026-11-08;
+        r110's REST program was made by hand on 2026-11-05). Made from the program on the card (pauses.rest_after:
+        from the next part's outline, after the restart a stop does), checked like a sheet's (the guard, the stops,
+        the outlines' depth) and put on the card as <sheet>_FROM<n>.tap (_FROM<n>_NOSTOP.tap when the sheet runs
+        without stops), so the page downloads it like the others."""
+        sr = self._sheet_result(info)
+        job = self._job(str(info.get("job") or "")) if info.get("job") else None
+        if sr is None or not sr.tap or job is None or sr.by_hand or not sr.pauses or not sr.pauses.entries:
+            raise MachineError(409, "AutoCAM can't make the rest of this one: run the whole program again.")
+        order = list(sr.main_order)
+        if not 1 <= done < len(order):
+            raise MachineError(400, "Bad request")
+        t = self.cfg.trello
+        nostop = any(c.done for c in card.checks if (c.checklist, c.item) == (t.options_checklist, t.no_stop_item))
+        stem = sr.tap[:-4] if sr.tap.lower().endswith(".tap") else sr.tap
+        name = f"{stem}_FROM{done + 1}{NO_STOP_SUFFIX if nostop else ''}.tap"
+        if name in {a.name for a in card.attachments}:
+            return {"ok": True, "file": name, "from": done + 1}
+        spec, guard = pause_spec(job), guard_spec(job, sr.thickness_in, sr.tool, False)
+        rest = order[done:]
+        try:
+            text = rest_after(self.file(card.id, sr.tap)[1].decode("ascii"), order, done, spec, name[:-4],
+                              safe_z_in=guard.clamp_clear_z_in, keep_stops=not nostop,
+                              after_last_part=job.pauses.after_last_part)
+        except (PauseError, UnicodeDecodeError) as e:
+            log.warning("machine: the rest of %s after part %d: %s", card.id, done, e)
+            raise MachineError(409, "AutoCAM couldn't make the rest of this program: run the whole program again.")
+        data = text.encode("ascii")
+        report = check_program(data, guard)
+        problems = list(outer_depth_problems(text, job.guard.z_floor_in))
+        if nostop:
+            problems += [f"{report.stop_count} stops left in the no-stop version"] if report.stop_count else []
+        else:
+            check = verify_pauses(text, rest, spec, after_last_part=job.pauses.after_last_part,
+                                  safe_z_in=guard.clamp_clear_z_in)
+            problems += list(check.problems)
+        if not report.passed or problems:
+            log.warning("machine: the rest of %s after part %d failed its checks: %s %s", card.id, done,
+                        report.summary(), problems)
+            raise MachineError(409, "The rest didn't pass AutoCAM's checks: run the whole program again.")
+        self.t.attach_program(card.id, name, data, report)
+        label = self._part_labels(job, order)
+        self.t.comment(card.id, f"{name}: the rest of {stem} after part {done} ({label[done - 1]}) came out, made on "
+                                f"the machine screen. It starts with part {done + 1} ({label[done]}): same cutter "
+                                "and zeros, don't move the sheet. Passed AutoCAM's guard"
+                                + ("." if nostop else " and the stops check."))
+        self._stale(card.id)
+        return {"ok": True, "file": name, "from": done + 1}
 
     def _piece(self, card: Card, info: Dict) -> str:
         """How big a piece a placed-by-hand program needs (its cutter's reach, from the card)."""
@@ -443,8 +510,10 @@ class MachineView:
         t = self.cfg.trello
         if do == "progress":
             st = self._state()
+            rest = str(data.get("rest") or "")
             st["progress"][card_id] = {"step": max(0, int(data.get("step") or 0)), "rep": max(1, int(data.get("rep") or 1)),
                                        "lap": max(0, int(data.get("lap") or 0)), "lapRan": bool(data.get("lapRan")),
+                                       "rest": rest if re.fullmatch(r"[\w.\-]{1,120}\.tap", rest) else "",
                                        "when": self._iso()}
             self._save(st)
             return {"ok": True}
@@ -474,6 +543,8 @@ class MachineView:
             if item is None:
                 raise MachineError(400, "Bad request")
             self._tick(card_id, t.stock_checklist, item, True)
+        elif do == "resume":                           # it stopped part way: the rest, from the next part
+            return self._resume(card, info, int(data.get("after") or 0))
         elif do == "keep":
             self._tick(card_id, t.offcut_checklist, t.offcut_item, bool(data.get("on")))
         elif do == "rack":                             # the piece left goes back on the rack: not still clamped

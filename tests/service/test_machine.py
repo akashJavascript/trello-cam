@@ -72,7 +72,7 @@ def test_the_list_and_a_sheets_steps_in_the_order_theyre_done(tmp_path):
         f"6061_0p125_r001_S1_FIT1_{k}.tap" for k in range(1, 5)] and len(fit["items"]) == 6 and fit["answered"] is None
     assert outlines["file"] == "6061_0p125_r001_S1_OUTLINES.tap" and outlines["note"] == "Cuts the fitted parts out"
     assert finish["kind"] == "new"
-    assert d["at"] == {"step": 0, "rep": 1, "lap": 0, "lapRan": False}
+    assert d["at"] == {"step": 0, "rep": 1, "lap": 0, "lapRan": False, "rest": ""}
 
 
 def test_the_buttons_tick_the_cards_boxes(tmp_path):
@@ -102,7 +102,7 @@ def test_where_a_sheet_is_up_to_is_kept(tmp_path):
     h, s1 = fitted_sheet(tmp_path)
     m = machine(h)
     m.act({"id": s1.id, "do": "progress", "step": 2, "lap": 1})
-    assert m.sheet(s1.id)["at"] == {"step": 2, "rep": 1, "lap": 1, "lapRan": False}
+    assert m.sheet(s1.id)["at"] == {"step": 2, "rep": 1, "lap": 1, "lapRan": False, "rest": ""}
     assert m.view()["sheets"][0]["progress"] == {"step": 3, "of": 5}
     assert machine(h).sheet(s1.id)["at"]["step"] == 2              # a new page (or a restart) opens there too
 
@@ -258,3 +258,46 @@ def test_the_page_has_its_own_key_and_downloads_programs(tmp_path):
     assert nope.status == 404
     status, d = p.call("POST", "/api/machine/act", body={"id": s1.id, "do": "progress", "step": 1}, key=mk)
     assert status == 200 and json.loads((h.cfg.paths.state / "machine.json").read_text())["progress"][s1.id]["step"] == 1
+
+
+def test_it_stopped_part_way_makes_the_rest_from_the_next_part(tmp_path):
+    # 2026-11-08: r110 was stopped after its first part and the rest was made by hand; now the page makes it.
+    h = harness(tmp_path, step_card("c1", "plate", qty=3))           # three plates: two stops
+    run(h)
+    s1 = sheet(h)
+    h.runner.tick()
+    to_ready(h, s1.id)
+    m = machine(h)
+    main = next(s for s in m.sheet(s1.id)["steps"] if s.get("main"))
+    assert main["parts"] == ["plate (1 of 3)", "plate (2 of 3)", "plate (3 of 3)"] and main["stops"] == 2
+    got = m.act({"id": s1.id, "do": "resume", "after": 1})
+    assert got == {"ok": True, "file": "6061_0p125_r001_S1_FROM2.tap", "from": 2}
+    name, data = m.file(s1.id, got["file"])
+    text = data.decode("ascii")
+    assert text.splitlines()[0] == "[6061_0p125_r001_S1_FROM2]"
+    assert "[outer p01-1]" not in text and "[outer p01-2]" in text and "[outer p01-3]" in text
+    assert text.count("G4 [TAKE PART") == 1                       # the stop after part 2 is still there
+    assert "the rest of 6061_0p125_r001_S1 after part 1 (plate (1 of 3)) came out" in h.tracker.comments_on(s1.id)[-1]
+    # asked again: the same program, not a second copy
+    assert m.act({"id": s1.id, "do": "resume", "after": 1})["file"] == got["file"]
+    assert [a.name for a in h.tracker.get_card(s1.id).attachments].count(got["file"]) == 1
+    # the page remembers it was running the rest
+    m.act({"id": s1.id, "do": "progress", "step": 1, "rest": got["file"]})
+    assert m.sheet(s1.id)["at"]["rest"] == got["file"]
+    for after in (0, 3):                                           # not a stop: before the first part, after the last
+        with pytest.raises(MachineError) as e:
+            m.act({"id": s1.id, "do": "resume", "after": after})
+        assert e.value.status == 400
+
+
+def test_the_rest_runs_without_stops_when_the_sheet_does(tmp_path):
+    h = harness(tmp_path, step_card("c1", "plate", qty=3))
+    run(h)
+    s1 = sheet(h)
+    h.runner.tick()
+    to_ready(h, s1.id)
+    m = machine(h)
+    m.act({"id": s1.id, "do": "stops", "on": False})               # "Stop after each part" off
+    got = m.act({"id": s1.id, "do": "resume", "after": 1})
+    assert got["file"] == "6061_0p125_r001_S1_FROM2_NOSTOP.tap"
+    assert "G4 [TAKE PART" not in m.file(s1.id, got["file"])[1].decode("ascii")

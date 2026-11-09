@@ -160,6 +160,59 @@ def remove(text: str, outer_order: Sequence[str], spec: PauseSpec,
     return out
 
 
+def rest_after(text: str, outer_order: Sequence[str], done: int, spec: PauseSpec, name: str,
+               safe_z_in: Optional[float] = None, keep_stops: bool = True, after_last_part: bool = False) -> str:
+    """The program for the rest of a sheet stopped at its stop after part `done` (1: the first part in the cut order is
+    out; the machine screen's "It stopped part way", 2026-11-08). Its opening lines up to its first op (the units and
+    the cutter up, nothing that moves sideways), the restart a stop does (mist, spindle, spin-up), then everything from
+    the next part's outline to the end, its stops too: what r110's REST program was, made by hand (2026-11-05). A stop
+    is where a sheet can be picked up: the cutter is at the top, the part before it is cut out, and the next outline
+    comes down from the top. keep_stops False: the stops between the parts left come out too (the sheet runs without
+    them), each checked to be exactly what `insert` made for its part number. Raises PauseError unless the program has
+    that stop exactly as `insert` makes it, and (with safe_z_in) the first move comes down from at or above it."""
+    lines, newline = _split(text)
+    anchors = _find_outer_comments(lines, outer_order)
+    if not 1 <= done < len(anchors):
+        raise PauseError(f"there's no stop after part {done} of {len(anchors)}")
+    block = pause_block(done, spec)
+    start = anchors[done] - len(block)
+    if start < 0 or lines[start:anchors[done]] != block:
+        raise PauseError(f"no stop after part {done} ({outer_order[done - 1]}) in this program")
+    def cutting(line: str) -> bool:                  # the spindle starting, or a move
+        words = _words(line) or []
+        return _is_motion(line) or any(l == "S" or (l, v) in (("M", 3.0), ("M", 4.0)) for l, v in words)
+    starts = next((i for i in range(1, len(lines)) if cutting(lines[i])), None)
+    if starts is None or starts > anchors[0]:
+        raise PauseError("the program doesn't start its spindle before its outlines")
+    # its code before that (units, absolute, the cutter up), less the mist: the restart turns that on
+    head = [l for l in lines[1:starts] if _words(l) and not any((m, v) in (("M", 11.0), ("M", 12.0))
+                                                                for m, v in _words(l))]
+    body = lines[anchors[done]:]
+    if not keep_stops:
+        cuts: List[Tuple[int, int]] = []
+        rel = [a - anchors[done] for a in anchors[done:]]
+        for j in range(1, len(rel)):
+            block = pause_block(done + j, spec)       # numbered as in the whole program
+            begin = rel[j] - len(block)
+            if begin < 0 or body[begin:rel[j]] != block:
+                raise PauseError(f"no stop right before part {outer_order[done + j]}")
+            cuts.append((begin, rel[j]))
+        if after_last_part:
+            block = pause_block(len(anchors), spec, restart=False)
+            hits = [i for i in range(rel[-1], len(body)) if body[i:i + len(block)] == block]
+            if len(hits) != 1:
+                raise PauseError("no stop after the last part")
+            cuts.append((hits[0], hits[0] + len(block)))
+        for begin, end in sorted(cuts, reverse=True):
+            del body[begin:end]
+    out = [f"[{name}]"] + head + restart_lines(spec) + body
+    if safe_z_in is not None:
+        problem = _first_move_problem(out, 1 + len(head) + len(restart_lines(spec)), safe_z_in)
+        if problem:
+            raise PauseError(problem)
+    return newline.join(out)
+
+
 def verify(text: str, outer_order: Sequence[str], spec: PauseSpec, *,
            after_last_part: bool = False, safe_z_in: Optional[float] = None) -> PauseCheck:
     """Check every pause on the final program text, whichever way it got there.
