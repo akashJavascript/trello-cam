@@ -1130,6 +1130,13 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   p0209 (to about 39 in) would have been left off #4's record (fixed by hand to 39.5 in before Part 28 was nested).
   The sheet's `bands` (what another piece of stock must have clear to take the same program) include it too.
 
+## 2026-11-09: rooms beside cuts kept from 2 in (was 3; the user)
+
+- `[nest] offcut_beside_min_in` 2.0: an empty space beside earlier cuts (or a photographed hole) is kept and filled when
+  it's at least 2 in both ways, so small parts (gussets, spacers) can use more of an offcut. The cost: more rooms per
+  offcut, each one more Arrange in Fusion on the next nest (still at most 6 per band). The value goes to Fusion in the
+  job, so the add-in needs no update.
+
 ## 2026-11-09: offcuts from a phone photo (the mockup the user approved; `docs/offcut-photos.md`)
 
 - **Why:** the last thing before the team is told about AutoCAM (the user). Typing `Cut by hand` lines on a Trello card

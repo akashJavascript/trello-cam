@@ -171,7 +171,8 @@ def test_an_offcut_with_only_room_beside_cuts_still_takes_parts(tmp_path):
     [sheet] = result.sheets
     assert sheet.offcut_id == "off1" and not sheet.offcut_turned
     assert sheet.beside_used == (0,) and sheet.used_y_in is None and sheet.free_length_in is None
-    assert sheet.beside_left_in == ((15.0, 0.5, 22.75, 8.0),)        # right of the tab: 10.25 + 4 + 0.75
+    # right of the tab (10.25 + 4 + 0.75), and behind it: 5 x 2.5 in, kept since the minimum went to 2 in (2026-11-09)
+    assert sheet.beside_left_in == ((15.0, 0.5, 22.75, 8.0), (10.0, 5.5, 15.0, 8.0))
 
 
 def test_room_beside_cuts_too_small_for_anything_is_skipped(tmp_path):
