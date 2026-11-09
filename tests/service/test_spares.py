@@ -156,6 +156,10 @@ def test_the_phone_offers_every_plate_autocam_has_nested_and_sends_their_spares(
     assert shop(p, plates="1")["spares"] == [{"id": spare.id, "name": "P-2014 gusset", "qty": 3,
                                               "where": "Waiting to nest", "cut": False}]
     assert shop(p, choices="1")["choices"][0]["rows"][0]["sub"] == "3 spares waiting to nest"
+    # once cut they're in the spares box: not listed as on the way any more (the user, 2026-11-08)
+    p.t.move(spare.id, "cut")
+    p.clock.t += 601                                                    # past the board's and the list's caches
+    assert shop(p, plates="1")["spares"] == []
 
 
 def test_the_phone_checks_what_it_sends(tmp_path):

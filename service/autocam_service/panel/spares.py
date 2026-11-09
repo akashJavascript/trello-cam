@@ -14,16 +14,14 @@ reads (board.part_cards, cached) and AutoCAM's sheet cards (state/sheet_cards.js
 import re
 import threading
 import time
-from datetime import datetime
 from typing import Any, Callable, Dict, List, Tuple
 
 from ..cards import MAX_QTY, TITLE_QTY_RE
 from ..own_programs import OWN_PROGRAM_RE
 from ..run_state import RunStore
 from ..sheet_cards import thickness_label
-from .board import PanelBoard, PartCard, created, short_day
+from .board import PanelBoard, PartCard, created
 
-ON_THE_WAY_DAYS = 7          # spares cut this long ago still show in the Plates tab's Spares section
 CACHE_S = 30.0               # the Spares section is worked out at most this often (the phone asks every 10 s)
 MAX_SEND = 60                # plates in one Send spares
 
@@ -98,8 +96,8 @@ class SparesView:
                             for title, rows in sorted(groups.items(), key=lambda g: _natural(g[0]))]}
 
     def on_the_way(self) -> List[Dict[str, Any]]:
-        """The spares cards still going, and the ones cut in the last ON_THE_WAY_DAYS: newest first. Worked out at
-        most every CACHE_S (sending spares starts it again)."""
+        """The spares cards still going (not cut yet): newest first. Worked out at most every CACHE_S (sending spares
+        starts it again). Cut ones aren't listed: they're in the spares box (until 2026-11-08 they stayed a week)."""
         with self._lock:
             if self.clock() - self._shown[0] < CACHE_S:
                 return self._shown[1]
@@ -109,21 +107,11 @@ class SparesView:
         return shown
 
     def _on_the_way(self) -> List[Dict[str, Any]]:
-        cut_by = self.now() - ON_THE_WAY_DAYS * 86400
         out = []
         for pc in self.board.part_cards():
-            if not pc.spare:
+            if not pc.spare or pc.status == "cut":    # cut: in the spares box, not on the way (the user, 2026-11-08)
                 continue
-            if pc.status == "cut":
-                when = max((str(e.get("cut_utc") or "") for _, e in self.board.sheets_of(pc.card.id)), default="")
-                try:
-                    t = datetime.fromisoformat(when.replace("Z", "+00:00")).timestamp()
-                except ValueError:
-                    continue
-                if t < cut_by:
-                    continue
-                where = f"Cut {short_day(when)}"
-            elif pc.status == "sheet":
+            if pc.status == "sheet":
                 labels = [str(e.get("label") or "") for _, e in self.board.sheets_of(pc.card.id)]
                 where = f"On {labels[-1]}" if labels and labels[-1] else "On a sheet"
             else:

@@ -1130,6 +1130,12 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   p0209 (to about 39 in) would have been left off #4's record (fixed by hand to 39.5 in before Part 28 was nested).
   The sheet's `bands` (what another piece of stock must have clear to take the same program) include it too.
 
+## 2026-11-08: the Spares section lists only spares not cut yet
+
+- The user, seeing p0209 x1 and p0202 x4 "Cut Nov 5" in the Plates tab's Spares section: "why do cut spares show up
+  here". Cut spares are in the spares box; the section is what's on the way (waiting, in Drafts, sent back, on a
+  sheet). Until now cut ones stayed for a week (ON_THE_WAY_DAYS, gone).
+
 ## 2026-11-08: "It stopped part way" on the machine screen (the user: "do this too")
 
 - **Why:** r110 S1 was stopped at its first stop (pockets, holes and part 1's outline cut); the user wanted "a program
