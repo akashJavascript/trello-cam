@@ -143,12 +143,16 @@ def test_not_a_photo():
     assert pf.decode(b"not a jpeg") is None
 
 
+def whole(bs):
+    return (min(b[0] for b in bs), min(b[1] for b in bs), max(b[2] for b in bs), max(b[3] for b in bs))
+
+
 @pytest.mark.parametrize("piece,ground", [("film", "concrete"), ("aluminum", "wood")])
 def test_a_tap_on_a_hole_boxes_it_and_a_tap_on_the_piece_doesnt(piece, ground):
     flat = pf.straighten(pf.decode(photo(piece, ground, HOLES)), PHOTO_CORNERS, 24, 30)
     for hole in HOLES:
-        b = pf.grow_at(flat, 24, 30, ((hole[0] + hole[2]) / 2, (hole[1] + hole[3]) / 2))
-        assert b is not None and covers(b, hole), (hole, b)
+        bs = pf.grow_at(flat, 24, 30, ((hole[0] + hole[2]) / 2, (hole[1] + hole[3]) / 2))
+        assert bs and covers(whole(bs), hole), (hole, bs)
     for at in ((11, 13), (21, 26), (2, 28)):           # on the piece, between holes and near its edge
         assert pf.grow_at(flat, 24, 30, at) is None, at
     assert pf.grow_at(flat, 24, 30, (30, 10)) is None  # off the piece
@@ -156,8 +160,8 @@ def test_a_tap_on_a_hole_boxes_it_and_a_tap_on_the_piece_doesnt(piece, ground):
 
 def test_a_tap_on_bare_aluminum_on_concrete_is_answered():
     flat = pf.straighten(pf.decode(photo("dull aluminum", "concrete", HOLES)), PHOTO_CORNERS, 24, 30)
-    b = pf.grow_at(flat, 24, 30, (6, 8))               # the hardest case: it may or may not tell; it mustn't fail
-    assert b is None or (0 <= b[0] < b[2] <= 24 and 0 <= b[1] < b[3] <= 30)
+    bs = pf.grow_at(flat, 24, 30, (6, 8))              # the hardest case: it may or may not tell; it mustn't fail
+    assert bs is None or all(0 <= b[0] < b[2] <= 24 and 0 <= b[1] < b[3] <= 30 for b in bs)
 
 
 def test_a_hole_just_under_the_size_comes_back_as_a_maybe():

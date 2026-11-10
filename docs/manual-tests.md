@@ -638,7 +638,8 @@ A few long parts on one sheet (e.g. three of p0201), Rush so they don't join an 
 | 10 | Use the camera app instead; pick a blurry photo | "This photo looks blurry…", Next stays off until "use it anyway" |
 | 11 | Bare aluminum on the floor, with the page's camera | No corners found: they start on the frame the piece was lined up with |
 | 12 | Used areas: tap a hole that has no box; tap the metal between holes; tap a dotted "?" | A box over the hole (a spinner first); "Couldn't find a hole there…"; the maybe becomes a box |
-| 13 | On the laptop: `python -m autocam_service offcut-photo-report` | One row per way of finding, counting the photos saved in 4-6 (holes found, missed, extra boxes, corners right) |
+| 13 | A sheet with a big slanted hole | Its boxes step along it as one outline; tap it, drag it, × removes it all, the corner dot makes it one box |
+| 14 | On the laptop: `python -m autocam_service offcut-photo-report` | One row per way of finding, counting the photos saved in 4-6 (holes found, missed, extra boxes, corners right) |
 
 ## M5: status card, start at logon, reboot test on the shop PC
 

@@ -37,6 +37,14 @@ Boxes are in the piece's own inches: across from the left edge, along from the f
 3. **Used areas.** The piece straightened to scale, a box over each hole found (0.25 in added round each). Move, resize
    (the corner dot), delete (×), drag on the piece to add one. What's already on record is hatched. **Every hole needs a
    box**: a missed hole is how a part ends up over one; an extra box only wastes some metal.
+   - **A slanted or curved hole gets a few boxes stepped along it** (2026-11-09), drawn as one outline: tap it to
+     select it (its frame shows), drag to move it, × removes it, the corner dot makes it one box again to resize. Each
+     step is a `Cut by hand` line on the card; a step only where it frees 4 sq in or more. On the team's photos: the
+     blue-film poly 139 sq in back (16% of the piece), #4 35, the table photo 31.
+   - **Tidied** (tuned on the table photo): two finds of one hole are one (pixels overlapping; a fragment mostly
+     inside a hole's boxes; boxing them together costs no more than apart, give or take 1 sq in); a label or sticker
+     (brighter than the floor and another colour; on concrete far brighter and smooth) and small busy chips along the
+     cuts between holes get no box. Table photo: 37 boxes became 24 holes, the label's box gone, every hole still boxed.
    - **Dotted "?" boxes are maybes** (2026-11-09): what nearly made it (a hole just under 0.6 in, an outline nearly
      sure, film nearly busy enough). A tap keeps one; the rest are ignored. Not beside a box or at the piece's edge.
    - **Tap a hole it missed** and the laptop boxes it (`photo_find.grow_at`, about half a second): by look where the

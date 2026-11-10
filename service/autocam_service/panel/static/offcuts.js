@@ -106,7 +106,7 @@
     var m0 = mats()[0];
     F = { target: target, step: 1, data: "", img: null, photo: "", corners: null, found: false,
           material: target ? target.material : (m0 ? m0.key : ""), thickness: "", length: target ? String(target.length) : "",
-          flat: null, boxes: [], sel: -1, busy: false };
+          flat: null, items: [], sel: -1, busy: false };
     var m = mat(F.material);
     F.thickness = target ? target.thickness : (m && m.thicknesses.length ? m.thicknesses[0] : "");
     C.render();
@@ -433,7 +433,7 @@
   function usePhoto(data, q, guide) {
     if (!F) return;
     F.data = data; F.quality = q; F.warn = q.problem && !q.anyway ? q.problem : ""; F.guide = guide || null;
-    F.photo = ""; F.corners = null; F.flat = null; F.boxes = [];
+    F.photo = ""; F.corners = null; F.flat = null; F.items = [];
     var shown = new Image();
     shown.onload = function () { if (F && F.data === data) { F.img = shown; C.render(); } };
     shown.src = data;
@@ -569,8 +569,7 @@
       F.busy = true; C.render();
       C.api("POST", "/api/shop/offcut-flat", { device: C.DEVICE, photo: F.photo, corners: F.corners, material: F.material,
                                                length: F.length, target: F.target ? F.target.id : "" }).then(function (r) {
-        F.busy = false; F.flat = r; F.boxes = (r.boxes || []).map(function (b) { return b.slice(); }); F.sel = -1;
-        F.kinds = F.boxes.map(function () { return "found"; });
+        F.busy = false; F.flat = r; F.items = itemsFrom(r.boxes, r.groups, "found"); F.sel = -1;
         F.maybes = (r.maybes || []).map(function (b) { return b.slice(); });
         F.step = 3; C.render();
       }, function (e) {
@@ -581,12 +580,45 @@
     });
   }
 
-  // step 3: the straightened piece, a box over each hole (move, resize, delete; drag on the piece to add one); maybes
-  // dotted (a tap keeps one); a tap on a missed hole asks the laptop for its box (photo_find.grow_at)
-  function addBox(b, kind) { F.boxes.push(b); F.kinds.push(kind); F.sel = F.boxes.length - 1; }
-  function dropBox(i) { F.boxes.splice(i, 1); F.kinds.splice(i, 1); F.sel = -1; }
+  // step 3: the straightened piece and the used areas on it. Each item is one hole: one box, or a few boxes stepped
+  // along a curved or slanted hole (drawn as one outline; moved and deleted as one; resizing makes it one box again).
+  // Maybes dotted (a tap keeps one); a tap on a missed hole asks the laptop for its boxes (photo_find.grow_at); a drag
+  // on the piece draws a box.
+  function bbox(rects) {
+    return [Math.min.apply(null, rects.map(function (r) { return r[0]; })), Math.min.apply(null, rects.map(function (r) { return r[1]; })),
+            Math.max.apply(null, rects.map(function (r) { return r[2]; })), Math.max.apply(null, rects.map(function (r) { return r[3]; }))];
+  }
+  // a stepped hole's outline, inches: its boxes stacked along the piece, or across it (photo_find._steps)
+  function outline(rects) {
+    var eq = function (a, b) { return Math.abs(a - b) < 1e-6; };
+    var r = rects.slice().sort(function (a, b) { return a[1] - b[1]; });
+    if (r.every(function (b, i) { return i === 0 || eq(b[1], r[i - 1][3]); })) {
+      var p = [];
+      r.forEach(function (b) { p.push([b[2], b[1]], [b[2], b[3]]); });                          // up the right side
+      for (var i = r.length - 1; i >= 0; i--) p.push([r[i][0], r[i][3]], [r[i][0], r[i][1]]);  // down the left
+      return p;
+    }
+    var c = rects.slice().sort(function (a, b) { return a[0] - b[0]; });
+    if (c.every(function (b, i) { return i === 0 || eq(b[0], c[i - 1][2]); })) {
+      var q = [];
+      c.forEach(function (b) { q.push([b[0], b[1]], [b[2], b[1]]); });                          // along the front
+      for (var j = c.length - 1; j >= 0; j--) q.push([c[j][2], c[j][3]], [c[j][0], c[j][3]]);  // back along the back
+      return q;
+    }
+    return null;
+  }
+  function addItem(rects, kind) { F.items.push({ rects: rects.map(function (b) { return b.slice(); }), kind: kind }); F.sel = F.items.length - 1; }
+  function itemsFrom(boxes, groups, kind) {
+    var by = {}, order = [];
+    (boxes || []).forEach(function (b, i) {
+      var g = groups && groups[i] != null ? "g" + groups[i] : "b" + i;
+      if (!by[g]) { by[g] = []; order.push(g); }
+      by[g].push(b.slice());
+    });
+    return order.map(function (g) { return { rects: by[g], kind: kind }; });
+  }
   function stepUsed() {
-    F.kinds = F.kinds || F.boxes.map(function () { return "found"; });
+    F.items = F.items || [];
     F.maybes = F.maybes || [];
     var h = C.h, add = C.add, listEl = C.listEl;
     var w = F.flat.width, len = F.flat.length;
@@ -594,7 +626,7 @@
     var s = Math.min(avail / w, 560 / len);           // px per inch on screen
     var tools = h("div", { class: "tools" },
       h("button", { class: "tool", type: "button", onclick: function () {
-        addBox([w / 2 - 2, len / 2 - 2, w / 2 + 2, len / 2 + 2], "drawn"); draw();
+        addItem([[w / 2 - 2, len / 2 - 2, w / 2 + 2, len / 2 + 2]], "drawn"); draw();
       } }, C.icon("plus"), "Box"),
       h("span", { class: "muted small" }, "or tap a hole it missed, or drag round it"));
     add(listEl, tools);
@@ -602,6 +634,8 @@
     flat.style.width = (w * s) + "px"; flat.style.height = (len * s) + "px";
     if (F.flat.image) add(flat, h("img", { src: F.flat.image, alt: "The piece from above", class: "flat-img", draggable: "false" }));
     else add(flat, h("div", { class: "flat-blank" }));
+    var shapes = svg("svg", { class: "shapes", viewBox: "0 0 " + (w * s) + " " + (len * s), "aria-hidden": "true" });
+    flat.appendChild(shapes);
     var dims = h("div", { class: "dims", "aria-live": "polite" });
     add(listEl, h("div", { class: "flat-wrap" }, h("div", { class: "end-tag" }, "Back"), flat, h("div", { class: "end-tag" }, "Front"), dims));
     add(listEl, h("p", { class: "muted small" }, (F.flat.how === "outline" || !F.flat.how
@@ -613,24 +647,41 @@
       el.style.left = (b[0] * s) + "px"; el.style.top = ((len - b[3]) * s) + "px";
       el.style.width = ((b[2] - b[0]) * s) + "px"; el.style.height = ((b[3] - b[1]) * s) + "px";
     }
+    function handles(el) {
+      add(el, h("span", { class: "h", "data-h": "1" }));
+      add(el, h("button", { class: "x", type: "button", "data-x": "1", "aria-label": "Remove this box" }, C.icon("x")));
+    }
     function draw() {
       Array.prototype.slice.call(flat.querySelectorAll(".box,.known,.maybe")).forEach(function (e) { flat.removeChild(e); });
+      while (shapes.firstChild) shapes.removeChild(shapes.firstChild);
       known.forEach(function (k) { var e = h("div", { class: "known" }); place(e, k); flat.appendChild(e); });
       F.maybes.forEach(function (b, i) {
         var e = h("div", { class: "maybe", "data-m": String(i), role: "button", "aria-label": "Maybe a hole: tap to box it" }, "?");
         place(e, b); flat.appendChild(e);
       });
-      F.boxes.forEach(function (b, i) {
-        var e = h("div", { class: "box" + (i === F.sel ? " sel" : ""), "data-i": String(i) });
-        place(e, b);
-        if (i === F.sel) {
-          add(e, h("span", { class: "h", "data-h": "1" }));
-          add(e, h("button", { class: "x", type: "button", "data-x": "1", "aria-label": "Remove this box" }, C.icon("x")));
+      F.items.forEach(function (it, i) {
+        var sel = i === F.sel;
+        if (it.rects.length === 1) {
+          var e = h("div", { class: "box" + (sel ? " sel" : ""), "data-i": String(i) });
+          place(e, it.rects[0]);
+          if (sel) handles(e);
+          flat.appendChild(e);
+          return;
         }
-        flat.appendChild(e);
+        var pts = outline(it.rects), cls = "shape" + (sel ? " sel" : "");
+        var draws = pts ? [pts] : it.rects.map(function (b) { return [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]]; });
+        draws.forEach(function (pp) {
+          shapes.appendChild(svg("polygon", { class: cls, "data-i": String(i),
+            points: pp.map(function (p) { return (p[0] * s).toFixed(1) + "," + ((len - p[1]) * s).toFixed(1); }).join(" ") }));
+        });
+        if (sel) {                                     // its frame: drag to move it, the dot to make it one box
+          var f = h("div", { class: "box sel frame", "data-i": String(i) });
+          place(f, bbox(it.rects)); handles(f); flat.appendChild(f);
+        }
       });
-      var b = F.boxes[F.sel];
-      dims.textContent = b ? fmt(b[1]) + " to " + fmt(b[3]) + " along · " + fmt(b[0]) + " to " + fmt(b[2]) + " across" : "";
+      var it = F.items[F.sel], b = it && bbox(it.rects);
+      dims.textContent = b ? fmt(b[1]) + " to " + fmt(b[3]) + " along · " + fmt(b[0]) + " to " + fmt(b[2]) + " across"
+        + (it.rects.length > 1 ? " · stepped, " + it.rects.length + " boxes" : "") : "";
     }
     draw();
     var mode = null, start = null, orig = null;
@@ -645,45 +696,52 @@
                                                target: F.target ? F.target.id : "" }).then(function (r) {
         if (dot.parentNode) dot.parentNode.removeChild(dot);
         if (!F || F.step !== 3) return;
-        if (r.box) { addBox(r.box, "tap"); draw(); }
+        var got = r.boxes && r.boxes.length ? r.boxes : r.box ? [r.box] : null;
+        if (got) { addItem(got, "tap"); draw(); }
         else C.toast("Couldn't find a hole there. Drag a box round it.");
       }, function (e) { if (dot.parentNode) dot.parentNode.removeChild(dot); C.toast(e.message); });
     }
     flat.addEventListener("pointerdown", function (e) {
       var t = e.target;
-      if (t.closest("[data-x]")) { dropBox(F.sel); draw(); return; }
+      if (t.closest("[data-x]")) { F.items.splice(F.sel, 1); F.sel = -1; draw(); return; }
       var me = t.closest("[data-m]");
       if (me) {                                        // a maybe kept: a box like any other
         var mi = +me.getAttribute("data-m");
-        addBox(F.maybes[mi], "maybe"); F.maybes.splice(mi, 1); draw(); e.preventDefault(); return;
+        addItem([F.maybes[mi]], "maybe"); F.maybes.splice(mi, 1); draw(); e.preventDefault(); return;
       }
       var be = t.closest("[data-i]");
       start = pt(e);
-      if (!be) { addBox([start[0], start[1], start[0], start[1]], "drawn"); mode = "draw"; }
-      else { F.sel = +be.getAttribute("data-i"); mode = t.closest("[data-h]") ? "size" : "move"; }
-      orig = F.boxes[F.sel].slice();
+      if (!be) { addItem([[start[0], start[1], start[0], start[1]]], "drawn"); mode = "draw"; }
+      else {
+        F.sel = +be.getAttribute("data-i"); mode = t.closest("[data-h]") ? "size" : "move";
+        if (mode === "size") F.items[F.sel].rects = [bbox(F.items[F.sel].rects)];   // resizing makes it one box
+      }
+      orig = F.items[F.sel].rects.map(function (b) { return b.slice(); });
       flat.setPointerCapture(e.pointerId); e.preventDefault();
       draw();
     });
     flat.addEventListener("pointermove", function (e) {
       if (!mode) return;
-      var p = pt(e), dx = p[0] - start[0], dy = p[1] - start[1], b = orig.slice();
+      var p = pt(e), dx = p[0] - start[0], dy = p[1] - start[1], it = F.items[F.sel];
       if (mode === "draw") {
         var q = [Math.max(0, Math.min(w, p[0])), Math.max(0, Math.min(len, p[1]))];
-        b = [Math.min(start[0], q[0]), Math.min(start[1], q[1]), Math.max(start[0], q[0]), Math.max(start[1], q[1])];
+        it.rects = [[Math.min(start[0], q[0]), Math.min(start[1], q[1]), Math.max(start[0], q[0]), Math.max(start[1], q[1])]];
       } else if (mode === "move") {
-        dx = Math.max(-b[0], Math.min(w - b[2], dx)); dy = Math.max(-b[1], Math.min(len - b[3], dy));
-        b = [b[0] + dx, b[1] + dy, b[2] + dx, b[3] + dy];
+        var bb = bbox(orig);
+        dx = Math.max(-bb[0], Math.min(w - bb[2], dx)); dy = Math.max(-bb[1], Math.min(len - bb[3], dy));
+        it.rects = orig.map(function (b) { return [b[0] + dx, b[1] + dy, b[2] + dx, b[3] + dy]; });
       } else {
+        var b = orig[0].slice();
         b[2] = Math.max(b[0] + 0.5, Math.min(w, b[2] + dx)); b[1] = Math.min(b[3] - 0.5, Math.max(0, b[1] + dy));
+        it.rects = [b];
       }
-      F.boxes[F.sel] = b; draw();
+      draw();
     });
     function end() {
       if (mode === "draw") {
-        var b = F.boxes[F.sel];
+        var b = F.items[F.sel].rects[0];
         if (b[2] - b[0] < 0.5 || b[3] - b[1] < 0.5) {
-          dropBox(F.sel);
+          F.items.splice(F.sel, 1); F.sel = -1;
           var still = 10 / s;                          // under 10 px on screen: a tap, not a drag
           if (b[2] - b[0] < still && b[3] - b[1] < still && F.photo && F.flat.image) tapAt(start);
         }
@@ -698,7 +756,9 @@
 
   function save() {
     F.busy = true; C.render();
-    C.api("POST", "/api/shop/offcut-save", { device: C.DEVICE, photo: F.photo, boxes: F.boxes, kinds: F.kinds, material: F.material,
+    var boxes = [], kinds = [];
+    F.items.forEach(function (it) { it.rects.forEach(function (b) { boxes.push(b); kinds.push(it.kind); }); });
+    C.api("POST", "/api/shop/offcut-save", { device: C.DEVICE, photo: F.photo, boxes: boxes, kinds: kinds, material: F.material,
                                              thickness: F.thickness, length: F.length,
                                              target: F.target ? F.target.id : "" }).then(function (r) {
       var t = F.target;

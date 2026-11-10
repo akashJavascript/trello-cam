@@ -293,10 +293,13 @@ class OffcutPhotos:
             return {"box": None}
         t0 = time.perf_counter()
         flat, width, n, piece, c = self._straight(photo, corners, material, length, target)
-        box = photo_find.grow_at(flat, width, n, (ax, ay))
-        log.info("offcut photo %s: tap at %.1f, %.1f in: %s (%.2f s)", photo, ax, ay, "a box" if box else "no hole",
-                 time.perf_counter() - t0)
-        return {"box": list(box) if box else None}
+        boxes = photo_find.grow_at(flat, width, n, (ax, ay))
+        log.info("offcut photo %s: tap at %.1f, %.1f in: %s (%.2f s)", photo, ax, ay,
+                 f"{len(boxes)} box(es)" if boxes else "no hole", time.perf_counter() - t0)
+        if not boxes:
+            return {"box": None, "boxes": []}
+        whole = [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
+        return {"box": whole, "boxes": [list(b) for b in boxes]}
 
     def flat(self, photo: Any, corners: Any, material: Any = None, length: Any = None,
              target: Any = None) -> Dict[str, Any]:
@@ -313,18 +316,20 @@ class OffcutPhotos:
         img = cv2.imdecode(np.frombuffer(path.read_bytes(), np.uint8), cv2.IMREAD_COLOR)
         t0 = time.perf_counter()
         flat = photo_find.straighten(img, c, width, n)
-        boxes, maybes, how = photo_find.find_holes_and_maybes(flat, width, n)
+        found = photo_find.find(flat, width, n)
+        boxes, groups, maybes, how = found["boxes"], found["groups"], found["maybes"], found["how"]
         known: List[List[float]] = []
         if piece is not None:
             known = self.used_areas(piece) + [list(x) for x in piece.get("hand_cuts", [])]
-            boxes = [b for b in boxes if _inside_share(b, known) < 0.8]
+            kept = [(b, g) for b, g in zip(boxes, groups) if _inside_share(b, known) < 0.8]
+            boxes, groups = [b for b, _ in kept], [g for _, g in kept]
             maybes = [b for b in maybes if _inside_share(b, known) < 0.8]
         r2 = lambda bs: [[round(float(v), 2) for v in b] for b in bs]  # noqa: E731
-        self._note(photo, corners=c, suggested=r2(boxes), maybes=r2(maybes), how=how, known=r2(known))
+        self._note(photo, corners=c, suggested=r2(boxes), groups=groups, maybes=r2(maybes), how=how, known=r2(known))
         log.info("offcut photo %s: %d boxes, %d maybes by %s (%.2f s)", photo, len(boxes), len(maybes), how or "-",
                  time.perf_counter() - t0)
         image = base64.b64encode(photo_find.piece_jpeg(flat)).decode("ascii")
-        return {"image": "data:image/jpeg;base64," + image, "boxes": [list(b) for b in boxes],
+        return {"image": "data:image/jpeg;base64," + image, "boxes": [list(b) for b in boxes], "groups": groups,
                 "maybes": [list(b) for b in maybes], "how": how, "width": width, "length": n}
 
     @staticmethod

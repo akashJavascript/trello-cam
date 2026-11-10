@@ -17,8 +17,14 @@ Worked out on the team's own photos (2026-11-09):
   wrong box only wastes metal, a missed hole is what people must look for.
 - Maybes (2026-11-09): what nearly made it (a hole just under the size by look, an outline nearly sure, a patch nearly
   busy enough) comes back separately; the page shows them dotted, and one tap keeps one.
-- A tap on a hole (grow_at): the hole grown from that point, by look where the photo has it, else by its busy film,
-  else the region its cut edges bound, edges found more keenly each try until one isn't the metal round the holes.
+- Tidy (2026-11-09, tuned on the table photo): the finders hand back each hole's pixels, not just a box; two finds
+  of one hole (pixels overlapping, or a piece lying along it) are one; a white patch brighter than the floor is a
+  label or a sticker, and a small busy bit along the cuts between holes is chips; neither is a hole.
+- Stepped boxes: each hole, grown by BOX_MARGIN_IN, is covered by up to MAX_STEPS boxes stepped along it (down the
+  piece or across it, whichever hugs it closer), a step only where it frees STEP_SAVE_SQIN or more: the metal beside a
+  curved or slanted hole comes back, and the card and the nesting still only know boxes. A hole's boxes are a group.
+- A tap on a hole (grow_at): by look where the photo has it, else the hole grown from the tapped spot, less keenly
+  each step, kept from just before it floods the metal round it; stepped like the rest.
 Needs OpenCV and numpy (pip install -e ".[photos]"); without them nothing is suggested and people place it all.
 """
 
@@ -40,6 +46,9 @@ GROW_IN = 2.0              # how far a hole's box may reach past what surely loo
 TEXTURE_MIN = 0.12         # a patch this busy (share of it on short edges) and busier than the floor: film and chips
 MAYBE_MIN_IN = 0.3         # a maybe at least this square (smaller is a drilled hole or a speck)
 MAX_MAYBES = 15
+MAX_STEPS = 4              # boxes per hole at most
+STEP_SAVE_SQIN = 4.0       # a hole gets another step only where it frees this much (a 2 x 2 in room; a card line each)
+STEP_IN = 0.25             # steps start and end on a quarter inch
 SEPARATE = 1.5             # floor and piece this far apart (brightness, colour or grain, in their own spreads):
                            # holes by look. Film on concrete 2.2-4.4, aluminum on wood 5.4, aluminum on concrete
                            # 0.2-0.4 (the team's photos, 2026-11-09)
@@ -274,7 +283,42 @@ def _bands(flat):
     return inside, floor, rim, d_edge
 
 
-def _grow_and_box(seeds, reach, inside, d_edge, maybes: Optional[list] = None) -> List[Tuple[int, int, int, int]]:
+class _Region:
+    """A hole found: its box in the straightened image (px) and which pixels in that box are the hole."""
+    __slots__ = ("x0", "y0", "x1", "y1", "mask")
+
+    def __init__(self, x0: int, y0: int, mask):
+        self.x0, self.y0 = int(x0), int(y0)
+        self.y1, self.x1 = self.y0 + mask.shape[0], self.x0 + mask.shape[1]
+        self.mask = mask
+
+    @classmethod
+    def of(cls, sel) -> "_Region":
+        ys, xs = np.nonzero(sel)
+        x0, y0, x1, y1 = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+        return cls(x0, y0, sel[y0:y1, x0:x1].copy())
+
+    @property
+    def box(self) -> Tuple[int, int, int, int]:
+        return (self.x0, self.y0, self.x1, self.y1)
+
+    def union(self, o: "_Region") -> "_Region":
+        x0, y0, x1, y1 = min(self.x0, o.x0), min(self.y0, o.y0), max(self.x1, o.x1), max(self.y1, o.y1)
+        m = np.zeros((y1 - y0, x1 - x0), bool)
+        for r in (self, o):
+            m[r.y0 - y0:r.y1 - y0, r.x0 - x0:r.x1 - x0] |= r.mask
+        return _Region(x0, y0, m)
+
+
+def _overlap_share(a, b) -> float:
+    """How much of the smaller of two boxes the other covers."""
+    w, h = min(a[2], b[2]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[1], b[1])
+    if w <= 0 or h <= 0:
+        return 0.0
+    return w * h / max(min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1])), 1)
+
+
+def _grow_and_box(seeds, reach, inside, d_edge, maybes: Optional[list] = None) -> List[_Region]:
     """Grow every hole at once through `reach`, up to 2 in (a pixel joins whichever hole's floor reaches it first, so
     a thin bit like a slot's hook joins its own slot), and box each: px, in the straightened image. Pieces of one hole
     (split by a sun streak) stay two boxes side by side: joining what touches merged neighbouring holes on film,
@@ -295,12 +339,14 @@ def _grow_and_box(seeds, reach, inside, d_edge, maybes: Optional[list] = None) -
         if not new.any():
             break
         lab[new] = grown[new]
-    boxes = []
+    regions = []
     for j in range(1, len(keep) + 1):
-        ys, xs = np.nonzero(lab == j)
-        b = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
-        (boxes if j <= len(sure) else maybes).append(b)
-    return boxes
+        r = _Region.of(lab == j)
+        if j <= len(sure):
+            regions.append(r)
+        else:
+            maybes.append(r.box)
+    return regions
 
 
 def _holes_by_look(flat, F, inside, floor_sel, rim, d_edge, ink, floor_m, mat_m, maybes: Optional[list] = None):
@@ -412,7 +458,7 @@ def _holes_by_outline(flat, inside, floor_sel, d_edge, ink, maybes: Optional[lis
         enclosed = near_edge[pts[:, 1], pts[:, 0]].mean()
         solidity = cv2.contourArea(c) / max(cv2.contourArea(cv2.convexHull(c)), 1)
         if enclosed >= 0.7 and solidity >= 0.7:              # only sure ones
-            boxes.append((x0, y0, x1, y1))
+            boxes.append(_Region.of(sel))
         elif maybes is not None and enclosed >= 0.45 and solidity >= 0.5:
             maybes.append((x0, y0, x1, y1))
     return boxes
@@ -434,10 +480,10 @@ def _holes_by_texture(flat, inside, floor_sel, d_edge, ink, bright_max: float = 
     n, lab, st, _ = cv2.connectedComponentsWithStats(busy)
     out = []
     for i in range(1, n):
-        x, y, w, h, a = st[i]
+        x, y, w, h, a = (int(v) for v in st[i])
         if a < (MIN_HOLE_IN * PX) ** 2 or min(w, h) < 0.375 * PX:
             continue
-        out.append((int(x), int(y), int(x + w), int(y + h)))
+        out.append(_Region(x, y, lab[y:y + h, x:x + w] == i))
     return out
 
 
@@ -448,8 +494,10 @@ def _busy(flat):
 
 
 def _covered_px(t, boxes) -> float:
+    t = t.box if isinstance(t, _Region) else t
     ta = max((t[2] - t[0]) * (t[3] - t[1]), 1)
-    return sum(max(0, min(t[2], b[2]) - max(t[0], b[0])) * max(0, min(t[3], b[3]) - max(t[1], b[1])) for b in boxes) / ta
+    return sum(max(0, min(t[2], b[2]) - max(t[0], b[0])) * max(0, min(t[3], b[3]) - max(t[1], b[1]))
+               for b in (x.box if isinstance(x, _Region) else x for x in boxes)) / ta
 
 
 class _Look:
@@ -485,18 +533,193 @@ def _drop_inside(boxes: List[Box]) -> List[Box]:
                                         and b[3] <= o[3] + 0.05 for o in boxes)]
 
 
+def _px_to_in(r, flat, width_in: float, length_in: float) -> Box:
+    """A box in the straightened image's px as inches on the piece (across, along from the front), kept on it."""
+    m = MARGIN_IN * PX
+    H = flat.shape[0] - 2 * m
+    b = ((r[0] - m) / PX, (H - (r[3] - m)) / PX, (r[2] - m) / PX, (H - (r[1] - m)) / PX)
+    return tuple(round(v, 2) for v in (max(0.0, b[0]), max(0.0, b[1]), min(width_in, b[2]), min(length_in, b[3])))
+
+
+def _labels(regions: List[_Region], flat, floor_sel) -> List[_Region]:
+    """Drop labels and stickers (white paper). On a coloured floor (the plywood table: yellow) a patch brighter than
+    the floor and of another colour isn't the floor: the table's own light wood is nearly as bright as its label (177
+    against 188-200), but yellow where the label is a bluish white, so colour tells. On a colourless floor (concrete) only far brighter than any of it, and smooth like paper:
+    sunlit concrete in a hole is colourless and bright too (offcut #4)."""
+    lab = cv2.cvtColor(flat, cv2.COLOR_BGR2LAB).astype(np.float32)
+    grain = spread(flat, 9)
+    fl = lab[floor_sel]
+    floor_L, floor_L98 = float(np.median(fl[:, 0])), float(np.percentile(fl[:, 0], 98))
+    floor_a, floor_b = float(np.median(fl[:, 1])), float(np.median(fl[:, 2]))
+    floor_chroma = float(np.hypot(floor_a - 128, floor_b - 128))
+    floor_grain = float(np.percentile(grain[floor_sel], 25))
+    out = []
+    for r in regions:
+        sel = (slice(r.y0, r.y1), slice(r.x0, r.x1))
+        L, a, b = (float(v) for v in np.median(lab[sel][r.mask], axis=0))
+        if floor_chroma >= 8:                    # brighter than the floor and another colour (the label: bluish white)
+            label = L > floor_L + 5 and float(np.hypot(a - floor_a, b - floor_b)) > max(8.0, floor_chroma)
+        else:
+            label = L > floor_L98 + 25 and float(np.median(grain[sel][r.mask])) < floor_grain
+        if not label:
+            out.append(r)
+    return out
+
+
+def _scraps(busy: List[_Region], holes: List[_Region], shape) -> List[_Region]:
+    """Drop small busy bits (under 1.5 sq in) lying almost all within 1/2 in of holes: chips and creases along a cut,
+    between two holes (the table photo), whose holes' boxes cover them anyway."""
+    if not holes:
+        return busy
+    reach = int(0.5 * PX)
+    allm = np.zeros(shape[:2], np.uint8)
+    for r in holes:
+        allm[r.y0:r.y1, r.x0:r.x1] |= r.mask.astype(np.uint8)
+    near = cv2.dilate(allm, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1, 2 * reach + 1))) > 0
+    return [t for t in busy if t.mask.sum() >= 1.5 * PX * PX
+            or (near[t.y0:t.y1, t.x0:t.x1] & t.mask).sum() < 0.8 * t.mask.sum()]
+
+
+def _cover_area(rects, grid: int = 4) -> int:
+    """The area (px, to a 4 px grid) that a set of boxes covers, overlaps counted once."""
+    if not rects:
+        return 0
+    x0, y0 = min(r[0] for r in rects), min(r[1] for r in rects)
+    x1, y1 = max(r[2] for r in rects), max(r[3] for r in rects)
+    m = np.zeros(((y1 - y0) // grid + 2, (x1 - x0) // grid + 2), bool)
+    for r in rects:
+        m[(r[1] - y0) // grid:(r[3] - y0 + grid - 1) // grid, (r[0] - x0) // grid:(r[2] - x0 + grid - 1) // grid] = True
+    return int(m.sum()) * grid * grid
+
+
+def _same_hole(a: _Region, b: _Region, steps) -> bool:
+    """Two finds of one hole: their pixels overlap (found by look and by busyness), or boxing them together costs no
+    more metal than boxing them apart, give or take 1 sq in (a piece cut off a hole by a print line or a streak), or
+    the smaller lies mostly inside the bigger's boxes (a fragment inside a hole that's already boxed). Not boxes overlapping: a tall L hole's box holds half the sheet's holes (that snowballed into
+    one, the table photo); nor lying near: thin neighbours do (#4's slots), and boxing those together covers the metal
+    between them."""
+    reach = int(2 * BOX_MARGIN_IN * PX)
+    if a.x0 > b.x1 + reach or b.x0 > a.x1 + reach or a.y0 > b.y1 + reach or b.y0 > a.y1 + reach:
+        return False
+    big, small = (a, b) if a.mask.sum() >= b.mask.sum() else (b, a)
+    x0, y0, x1, y1 = min(a.x0, b.x0), min(a.y0, b.y0), max(a.x1, b.x1), max(a.y1, b.y1)
+
+    def place(r):
+        m = np.zeros((y1 - y0, x1 - x0), bool)
+        m[r.y0 - y0:r.y1 - y0, r.x0 - x0:r.x1 - x0] = r.mask
+        return m
+    ms = place(small)
+    n = max(int(ms.sum()), 1)
+    if (ms & place(big)).sum() >= 0.2 * n:
+        return True
+    boxed = np.zeros_like(ms)                    # a fragment inside a hole that's already boxed
+    for bx0, by0, bx1, by1 in steps(big):
+        boxed[max(0, by0 - y0):max(0, by1 - y0), max(0, bx0 - x0):max(0, bx1 - x0)] = True
+    if (ms & boxed).sum() >= 0.7 * n:
+        return True
+    apart = _cover_area(steps(a) + steps(b))
+    # 1 sq in to spare, not a share: a share snowballed (each merge a little bigger, the table photo one hole again)
+    return _cover_area(_steps(a.union(b))) <= apart + PX * PX
+
+
+def _merge(regions: List[_Region]) -> List[_Region]:
+    """Finds of one hole made one (_same_hole)."""
+    regions = list(regions)
+    cache: dict = {}
+
+    def steps(r):
+        if id(r) not in cache:
+            cache[id(r)] = (r, _steps(r))
+        return cache[id(r)][1]
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(regions)):
+            for j in range(i + 1, len(regions)):
+                if _same_hole(regions[i], regions[j], steps):
+                    regions[i] = regions[i].union(regions.pop(j))
+                    merged = True
+                    break
+            if merged:
+                break
+    return regions
+
+
+def _steps(r: _Region) -> List[Tuple[int, int, int, int]]:
+    """Up to MAX_STEPS boxes (px) covering the hole grown by BOX_MARGIN_IN, stepped down the piece or across it,
+    whichever covers less; a step only where it frees STEP_SAVE_SQIN or more."""
+    m = int(round(BOX_MARGIN_IN * PX))
+    grown = cv2.dilate(np.pad(r.mask, m).astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * m + 1, 2 * m + 1))) > 0
+    ox, oy = r.x0 - m, r.y0 - m
+    q, penalty = max(1, int(round(STEP_IN * PX))), STEP_SAVE_SQIN * PX * PX
+    best = None
+    for across in (False, True):                 # False: steps down the piece (rows); True: across it (columns)
+        M = grown.T if across else grown
+        has = M.any(axis=1)
+        lo = np.where(has, np.argmax(M, axis=1), M.shape[1])
+        hi = np.where(has, M.shape[1] - np.argmax(M[:, ::-1], axis=1), 0)
+        n = (M.shape[0] + q - 1) // q            # cells of a quarter inch
+        c_lo = np.array([lo[c * q:(c + 1) * q].min() for c in range(n)])
+        c_hi = np.array([hi[c * q:(c + 1) * q].max() for c in range(n)])
+        rows = np.array([min((c + 1) * q, M.shape[0]) - c * q for c in range(n)])
+
+        lo_l, hi_l, rows_l = c_lo.tolist(), c_hi.tolist(), rows.tolist()
+        INF = float("inf")
+        dp = [[INF] * (n + 1) for _ in range(MAX_STEPS + 1)]
+        back = [[0] * (n + 1) for _ in range(MAX_STEPS + 1)]
+        dp[0][0] = 0
+        for b in range(1, n + 1):
+            l, h, rs = 10 ** 9, -1, 0            # the step a..b, grown one cell at a time from b down
+            for a in range(b - 1, -1, -1):
+                l, h, rs = min(l, lo_l[a]), max(h, hi_l[a]), rs + rows_l[a]
+                c = 0 if h <= l else (h - l) * rs
+                for k in range(1, MAX_STEPS + 1):
+                    v = dp[k - 1][a] + c
+                    if v < dp[k][b]:
+                        dp[k][b], back[k][b] = v, a
+        k = min(range(1, MAX_STEPS + 1), key=lambda k: dp[k][n] + penalty * (k - 1))
+        total = dp[k][n] + penalty * (k - 1)
+        cuts, b = [], n
+        for kk in range(k, 0, -1):
+            a = back[kk][b]
+            cuts.append((a, b))
+            b = a
+        rects = []
+        for a, b in reversed(cuts):
+            l, h = int(c_lo[a:b].min()), int(c_hi[a:b].max())
+            if h <= l:
+                continue
+            r0, r1 = a * q, min(b * q, M.shape[0])
+            rects.append((r0, l, r1, h))
+        if best is None or total < best[0]:
+            best = (total, across, rects)
+    _, across, rects = best
+    out = []
+    for r0, l, r1, h in rects:                   # back to the image: rows are y unless the steps went across
+        x0, y0, x1, y1 = (r0, l, r1, h) if across else (l, r0, h, r1)
+        out.append((ox + x0, oy + y0, ox + x1, oy + y1))
+    return out
+
+
 def find_holes(flat, width_in: float, length_in: float) -> Tuple[List[Box], str]:
     """Boxes over the holes of a straightened piece (straighten()), in inches across from the left and along from the
-    front end, BOX_MARGIN_IN added round each and kept on the piece; and how they were found: "look", "outline" or
-    "" (nothing to go on)."""
-    boxes, _, how = find_holes_and_maybes(flat, width_in, length_in)
-    return boxes, how
+    front end, BOX_MARGIN_IN added round each and kept on the piece (a hole may get a few stepped boxes); and how they
+    were found: "look", "outline" or "" (nothing to go on)."""
+    found = find(flat, width_in, length_in)
+    return found["boxes"], found["how"]
 
 
 def find_holes_and_maybes(flat, width_in: float, length_in: float) -> Tuple[List[Box], List[Box], str]:
     """find_holes, and the maybes: what nearly made it (at most MAX_MAYBES, none over a box)."""
+    found = find(flat, width_in, length_in)
+    return found["boxes"], found["maybes"], found["how"]
+
+
+def find(flat, width_in: float, length_in: float) -> dict:
+    """Everything the page gets: "boxes" (inches), "groups" (which hole each box covers: a hole's stepped boxes share
+    one), "maybes" and "how"."""
     if flat is None or not AVAILABLE:
-        return [], [], ""
+        return {"boxes": [], "groups": [], "maybes": [], "how": ""}
     k = _Look(flat)
     maybes: list = []
     if k.sep >= SEPARATE:
@@ -506,15 +729,27 @@ def find_holes_and_maybes(flat, width_in: float, length_in: float) -> Tuple[List
         px_boxes, how = _holes_by_outline(flat, k.inside, k.floor_sel, k.d_edge, k.ink, maybes), "outline"
     # holes still full of film and chips: busy where the piece is smooth (added only where nothing was found). Not on
     # bare aluminum on concrete: there the metal's own scratches and grain read as busy too
+    busy: List[_Region] = []
     if how == "look":
+        px_boxes = _labels(px_boxes, flat, k.floor_sel)        # a label or a sticker isn't a hole
         dens = _busy(flat)
         for t in _holes_by_texture(flat, k.inside, k.floor_sel, k.d_edge, k.ink, k.paper, dens=dens):
             if _covered_px(t, px_boxes) < 0.5:
-                px_boxes.append(t)
+                busy.append(t)
+        busy = _scraps(_labels(busy, flat, k.floor_sel), px_boxes, flat.shape)
         for t in _holes_by_texture(flat, k.inside, k.floor_sel, k.d_edge, k.ink, k.paper, keen=0.75, dens=dens):
-            if _covered_px(t, px_boxes) < 0.5:
-                maybes.append(t)
-    out = _drop_inside(_to_inches(px_boxes, flat, width_in, length_in))
+            if _covered_px(t, px_boxes + busy) < 0.5:
+                maybes.append(t.box)
+    px_boxes = px_boxes + busy
+    regions = sorted(_merge(px_boxes), key=lambda r: (-r.y1, r.x0))      # from the front end
+    out: List[Box] = []
+    groups: List[int] = []
+    for g, r in enumerate(regions):
+        for p in _steps(r):
+            b = _px_to_in(p, flat, width_in, length_in)
+            if b[2] - b[0] > 0.05 and b[3] - b[1] > 0.05:
+                out.append(b)
+                groups.append(g)
     gap, rim = 0.3 + 2 * BOX_MARGIN_IN, 0.5 + BOX_MARGIN_IN
     maybe = [b for b in _drop_inside(_to_inches([t for t in maybes if _covered_px(t, px_boxes) < 0.5], flat,
                                                 width_in, length_in))
@@ -523,7 +758,7 @@ def find_holes_and_maybes(flat, width_in: float, length_in: float) -> Tuple[List
              and not any(b[0] < o[2] + gap and o[0] < b[2] + gap and b[1] < o[3] + gap and o[1] < b[3] + gap for o in out)
              and b[0] >= rim and b[1] >= rim and b[2] <= width_in - rim and b[3] <= length_in - rim]
     maybe = sorted(maybe, key=lambda b: -(b[2] - b[0]) * (b[3] - b[1]))[:MAX_MAYBES]
-    return sorted(out, key=lambda b: (b[1], b[0])), sorted(maybe, key=lambda b: (b[1], b[0])), how
+    return {"boxes": out, "groups": groups, "maybes": sorted(maybe, key=lambda b: (b[1], b[0])), "how": how}
 
 
 GROW_WINDOW_IN = 20.0      # how far round a tap a hole is looked for
@@ -550,8 +785,8 @@ def _tap_region(flat, x: int, y: int, k: "_Look", far: float, win: Tuple[int, in
     return None if lb == 0 else lab == lb
 
 
-def grow_at(flat, width_in: float, length_in: float, at: Sequence[float]) -> Optional[Box]:
-    """The box over the hole someone tapped (`at`: inches across, along from the front), or None when no hole can be
+def grow_at(flat, width_in: float, length_in: float, at: Sequence[float]) -> Optional[List[Box]]:
+    """The boxes (stepped, like find's) over the hole someone tapped (`at`: inches across, along from the front), or None when no hole can be
     told there (the tap is on the metal, or the hole runs into everything round it). By look first, where the photo
     has it (the floor-like patch the tap is in); else the hole grown from the tapped spot, less keenly each step, kept
     from just before it floods the metal round it: a hole fills to its cut edges and holds there over a few steps, the
@@ -602,7 +837,7 @@ def grow_at(flat, width_in: float, length_in: float, at: Sequence[float]) -> Opt
             return None
         region = np.zeros((H, W), bool)
         region[win[1]:win[3], win[0]:win[2]] = last
-    ys, xs = np.nonzero(region)
-    if len(xs) < (0.2 * PX) ** 2:
+    if int(region.sum()) < (0.2 * PX) ** 2:
         return None
-    return _to_inches([(int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)], flat, width_in, length_in)[0]
+    out = [_px_to_in(p, flat, width_in, length_in) for p in _steps(_Region.of(region))]
+    return [b for b in out if b[2] - b[0] > 0.05 and b[3] - b[1] > 0.05] or None

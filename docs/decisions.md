@@ -1130,6 +1130,23 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   p0209 (to about 39 in) would have been left off #4's record (fixed by hand to 39.5 in before Part 28 was nested).
   The sheet's `bands` (what another piece of stock must have clear to take the same program) include it too.
 
+## 2026-11-09: tidier boxes and stepped boxes for slanted holes (the user: "tidier boxes… also the real part outlines if it's easy enough")
+
+- **Real outlines weren't easy** (offcut records, card lines and nesting are all boxes: the 3-4 days from before), so
+  each hole gets up to 4 boxes stepped along it (down the piece or across, whichever covers less; a step only where it
+  frees 4 sq in, about a 2 x 2 in room), the card and nesting unchanged. The page draws a hole's steps as one outline
+  and moves or deletes them together; resizing makes it one box. Metal back on the team's photos: poly 139 sq in,
+  #4 35, the table 31.
+- **The finders hand back each hole's pixels**, so tidying and stepping work on shapes, not boxes.
+- **Merging boxes snowballed** twice: by boxes overlapping (a tall L hole's box holds half the sheet), then by "no more
+  than a tenth more metal" (each merge a little bigger): the table photo became one hole. Kept: pixels overlapping; a
+  fragment mostly inside a hole's boxes; boxed together no more than apart, give or take 1 sq in. Lying near was tried
+  too and merged #4's thin neighbouring slots.
+- **Labels**: brightness alone took sunlit concrete in a hole for a label on #4, and the table's wood is nearly as bright
+  as its label; so on a coloured floor, brighter and another colour; on a colourless one, far brighter and smooth.
+- **Checked against the version on the laptop** on all the team's photos: every hole it boxed is still boxed (the
+  label's box is gone).
+
 ## 2026-11-09: maybes, a tap on a missed hole, corners from the camera frame (the user: "do 1 and 2")
 
 - **Tap a hole** is what helps bare aluminum on concrete, where finding holes alone can't: the tap says where a hole
