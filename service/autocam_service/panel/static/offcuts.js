@@ -17,8 +17,8 @@
   var MAX_SIDE = 1600;          // the photo is shrunk to this before it's sent
   var CAM = null;               // the camera while it's open: outside the page's render, so the video keeps playing
   var LEVEL_OK = 5, LEVEL_NEAR = 12;     // degrees off flat: the level goes green, then orange
-  var STILL = 6;                // degrees a second: still enough for a sharp photo (the shutter waits for it)
-  var SHARP_MIN = 0.22;         // the photo check: below this the sharpest edges are smeared (photo_check below)
+  var STILL = 4;                // degrees a second: still enough for a sharp photo (the shutter waits for it)
+  var SHARP_MIN = 0.5;          // the photo check: below this the sharpest edges are smeared (photoCheck below)
   var DARK_MIN = 40;            // mean brightness, 0-255
 
   function svg(tag, attrs) {
@@ -356,7 +356,8 @@
   // pixel step that's the steepest of the 9 around it, the step against the whole change over those 9 px: a sharp edge
   // jumps in a pixel or two (near 1), a blurred one is spread out (about 0.4 / its blur in px). Each way (along rows,
   // down columns) takes its strongest 2% of edges and the 90th percentile; the lower way counts, so blur from the phone
-  // moving one way shows. Tuned on photos blurred on purpose: sharp 0.31-1.0, blur of 3+ px or a 9+ px shake below 0.22.
+  // moving one way shows. On the team's 5 real photos (2026-11-09): sharp 0.75-0.90, a 1080p video frame ~0.65-0.73;
+  // hole finding starts losing holes (film-filled and small ones first) at about 0.5 (1 px of blur, or a 5 px shake).
   function photoCheck(canvas) {
     var M = 1000, s = Math.min(1, M / Math.max(canvas.width, canvas.height));
     var w = Math.max(1, Math.round(canvas.width * s)), hh = Math.max(1, Math.round(canvas.height * s));

@@ -1134,14 +1134,16 @@ Only Trello reads got more frequent; Onshape calls don't go up.
 
 - **The page's own camera** (`getUserMedia`, the back camera), so it can guide: the piece's frame (its typed length, or
   the sheet's), a level from the phone's tilt (`deviceorientation`; an iPhone asks from the tap that opens the camera),
-  and a shutter that waits up to 2 s for the phone to be still (orientation changing under 6 deg/s): stopping motion
+  and a shutter that waits up to 2 s for the phone to be still (orientation changing under 4 deg/s): stopping motion
   blur before the photo beats rejecting it after.
 - **The check runs on the phone** before anything is sent: mean brightness, and how sharp the sharpest edges are (at
   each step that's the steepest of the 9 px around it, the step against the change over those 9 px; each way's
   strongest 2% of edges, the 90th percentile; the lower way, so a shake one way shows). Standard blur measures were
-  tried first and misread grainy floors and motion. Tuned only on made-up photos blurred on purpose (the team's photos
-  were lost with a cleared scratch folder), so it's set where only clear blur fails and always offers **Use it
-  anyway**; its numbers are kept with each photo to re-tune it on real ones.
+  tried first and misread grainy floors and motion. **The cutoff, 0.5, comes from the team's 5 real photos** blurred
+  on purpose: sharp ones score 0.75-0.90, a 1080p video frame about 0.7 (so the camera's frame is enough, no
+  full-size capture); hole finding loses film-filled and small holes from about 0.5 (aluminum on the table: 26 of 36
+  boxes at 0.45; the blue-film poly lost its bolt holes). An earlier 0.22, from made-up photos, let through photos
+  that already lost holes. Always **Use it anyway**; the numbers are kept with each photo to re-tune it.
 - **The camera app stays** ("Use the camera app"), and is all there is where the camera can't open. Its photos get the
   same check.
 - No server change beyond keeping the check's numbers (numbers and known words only). The page's CSP is unchanged: a
