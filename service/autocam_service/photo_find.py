@@ -17,6 +17,11 @@ Worked out on the team's own photos (2026-11-09):
   wrong box only wastes metal, a missed hole is what people must look for.
 - Maybes (2026-11-09): what nearly made it (a hole just under the size by look, an outline nearly sure, a patch nearly
   busy enough) comes back separately; the page shows them dotted, and one tap keeps one.
+- Small round holes (2026-11-09, by look only): 0.12-1 in, too small for the rest (in thick poly they show their
+  own shadow, not the floor). Standing out from the piece right round them the way the floor does (darker or
+  lighter), round and filled like a disc, nearer the floor's brightness than the piece's (not a speck on film),
+  ringed by the piece's own surface (not print on a label). On bare
+  aluminum on concrete the lettering, scratches and stains give hundreds: none there (a tap boxes one).
 - Tidy (2026-11-09, tuned on the table photo): the finders hand back each hole's pixels, not just a box; two finds
   of one hole (pixels overlapping, or a piece lying along it) are one; a white patch brighter than the floor is a
   label or a sticker, and a small busy bit along the cuts between holes is chips; neither is a hole.
@@ -43,6 +48,8 @@ MARGIN_IN = 1.0            # floor kept round the straightened piece (where "flo
 BOX_MARGIN_IN = 0.25       # added round each hole: what a photo is out by
 MIN_HOLE_IN = 0.6          # a hole smaller than this square isn't suggested (a drilled hole)
 GROW_IN = 2.0              # how far a hole's box may reach past what surely looks like floor (a slot's sunlit hook)
+SMALL_IN = (0.12, 1.0)     # small round holes (bolt and rivet holes), found apart: dark, round, ringed by the piece;
+                           # up to 1 in: a 0.8 in hole was too small for the rest and too big for 3/4 in (the poly photo)
 TEXTURE_MIN = 0.12         # a patch this busy (share of it on short edges) and busier than the floor: film and chips
 MAYBE_MIN_IN = 0.3         # a maybe at least this square (smaller is a drilled hole or a speck)
 MAX_MAYBES = 15
@@ -249,12 +256,18 @@ def piece_jpeg(flat, quality: int = 82) -> bytes:
     return buf.tobytes() if ok else b""
 
 
-def _ink(flat):
-    """Print and marker: the film's red print (and its pink edges), green or blue marker. Never a hole."""
+def _ink_raw(flat):
+    """Print and marker pixels, not widened: (pink, marker)."""
     hh, ss, v = cv2.split(cv2.cvtColor(flat, cv2.COLOR_BGR2HSV))
     a = cv2.cvtColor(flat, cv2.COLOR_BGR2LAB)[:, :, 1].astype(np.int16)
     pink = ((hh < 8) | (hh > 162)) & (ss > 25) & (v > 110)       # true reds only: warm concrete leans orange
     marker = ((a < 120) | ((hh > 100) & (hh < 135))) & (ss > 60)
+    return pink, marker
+
+
+def _ink(flat):
+    """Print and marker: the film's red print (and its pink edges), green or blue marker. Never a hole."""
+    pink, marker = _ink_raw(flat)
     # wide enough to cover how far the grain measure (17 px across) spreads from a printed line
     return cv2.dilate(pink.astype(np.uint8), np.ones((15, 15), np.uint8)).astype(bool) | \
         cv2.dilate(marker.astype(np.uint8), np.ones((15, 15), np.uint8)).astype(bool)
@@ -484,6 +497,45 @@ def _holes_by_texture(flat, inside, floor_sel, d_edge, ink, bright_max: float = 
         if a < (MIN_HOLE_IN * PX) ** 2 or min(w, h) < 0.375 * PX:
             continue
         out.append(_Region(x, y, lab[y:y + h, x:x + w] == i))
+    return out
+
+
+def _small_holes(flat, k: "_Look", near) -> List[_Region]:
+    """Small round holes (SMALL_IN): standing out from what's right round them the way the floor does from the piece
+    (darker on film over concrete: a black-hat over a 1.25 in disc; lighter on aluminum over the table: a top-hat),
+    round and filled like a disc, nearer the floor's brightness than the piece's (a hole shows the floor or its own
+    shadow; a speck on film is just darker film), ringed by the piece's own surface (print on a white label is ringed
+    by paper), not within `near` (holes already found)."""
+    L = cv2.cvtColor(flat, cv2.COLOR_BGR2LAB)[:, :, 0]
+    floor_L, piece_L = float(np.median(L[k.floor_sel])), float(k.mat_m[0][0])
+    disc = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (51, 51))
+    bh = cv2.morphologyEx(L, cv2.MORPH_TOPHAT if floor_L > piece_L else cv2.MORPH_BLACKHAT, disc)
+    pink, marker = _ink_raw(flat)
+    ink = pink | marker                          # not widened: the widened ink swallowed a hole showing speckled concrete
+    out: List[_Region] = []
+    taken = np.zeros(L.shape, bool)
+    ring_k = np.ones((13, 13), np.uint8)
+    # a few levels, in shares of how far apart the floor and the piece are: grime round a hole joins it to its
+    # neighbours at the lowest (one 5 in blob, the poly photo) and the hole stands alone at a higher one
+    contrast = abs(floor_L - piece_L)
+    for level in (max(20.0, f * contrast) for f in (0.5, 0.7, 0.9)):
+        m = (bh > level) & k.inside & (k.d_edge >= 0.3 * PX) & ~near & ~taken
+        m = cv2.morphologyEx(m.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+        n, lab, st, _ = cv2.connectedComponentsWithStats(m)
+        for i in range(1, n):
+            x, y, w, h, a = (int(v) for v in st[i])
+            if not SMALL_IN[0] <= max(w, h) / PX <= SMALL_IN[1] or min(w, h) < 0.7 * max(w, h) or a < 0.55 * w * h:
+                continue
+            x0, y0, x1, y1 = max(0, x - 8), max(0, y - 8), min(L.shape[1], x + w + 8), min(L.shape[0], y + h + 8)
+            spot = lab[y0:y1, x0:x1] == i
+            Ls = float(np.median(L[y0:y1, x0:x1][spot]))
+            if abs(Ls - floor_L) >= abs(Ls - piece_L) or ink[y0:y1, x0:x1][spot].mean() > 0.3:
+                continue
+            ring = (cv2.dilate(spot.astype(np.uint8), ring_k) > 0) & ~spot
+            if abs(float(np.median(L[y0:y1, x0:x1][ring])) - piece_L) > 30:
+                continue
+            out.append(_Region(x, y, lab[y:y + h, x:x + w] == i))
+            taken[y:y + h, x:x + w] |= lab[y:y + h, x:x + w] == i
     return out
 
 
@@ -741,6 +793,12 @@ def find(flat, width_in: float, length_in: float) -> dict:
             if _covered_px(t, px_boxes + busy) < 0.5:
                 maybes.append(t.box)
     px_boxes = px_boxes + busy
+    if how == "look":                            # small round holes, apart from the rest (by look only: see _small_holes)
+        near = np.zeros(flat.shape[:2], bool)
+        g = int(0.15 * PX)                       # a hole's own dark edge; 0.3 in hid a round hole beside a big one
+        for r in px_boxes:
+            near[max(0, r.y0 - g):r.y1 + g, max(0, r.x0 - g):r.x1 + g] = True
+        px_boxes = px_boxes + _small_holes(flat, k, near)
     regions = sorted(_merge(px_boxes), key=lambda r: (-r.y1, r.x0))      # from the front end
     out: List[Box] = []
     groups: List[int] = []

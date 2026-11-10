@@ -164,10 +164,11 @@ def test_a_tap_on_bare_aluminum_on_concrete_is_answered():
     assert bs is None or all(0 <= b[0] < b[2] <= 24 and 0 <= b[1] < b[3] <= 30 for b in bs)
 
 
-def test_a_hole_just_under_the_size_comes_back_as_a_maybe():
-    small = (21.4, 27.0, 21.85, 27.45)                 # 0.45 in: under MIN_HOLE_IN, not under MAYBE_MIN_IN
-    flat = pf.straighten(pf.decode(photo("film", "concrete", HOLES + [small])), PHOTO_CORNERS, 24, 30)
-    boxes, maybes, how = pf.find_holes_and_maybes(flat, 24, 30)
-    assert (boxes, how) == pf.find_holes(flat, 24, 30)
-    assert not any(covers(b, small, 0.3) for b in boxes)
-    assert any(covers(m, small, 0.3) for m in maybes), maybes
+@pytest.mark.parametrize("piece,ground", [("film", "concrete"), ("aluminum", "wood")])
+def test_a_small_round_hole_gets_a_box(piece, ground):
+    small = (21.4, 27.0, 21.85, 27.45)                 # 0.45 in: a bolt hole, under MIN_HOLE_IN
+    flat = pf.straighten(pf.decode(photo(piece, ground, HOLES + [small])), PHOTO_CORNERS, 24, 30)
+    found = pf.find(flat, 24, 30)
+    assert (found["boxes"], found["how"]) == pf.find_holes(flat, 24, 30)
+    assert any(covers(b, small, 0.3) for b in found["boxes"]), found["boxes"]
+    assert len(set(found["groups"])) == len(HOLES) + 1  # the small one on its own

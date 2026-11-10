@@ -1130,6 +1130,19 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   p0209 (to about 39 in) would have been left off #4's record (fixed by hand to 39.5 in before Part 28 was nested).
   The sheet's `bands` (what another piece of stock must have clear to take the same program) include it too.
 
+## 2026-11-09: small round holes (the user: "it seems to still miss a lot of holes", on the poly photo)
+
+- **What was missed** on the poly photo: its small holes (a 12-hole grid, pairs, 1/4-1 in round holes) and the ends of
+  the cross's long arm. In 1/4 in poly a small hole shows its own shadow, not the floor, so "by look" never saw it.
+- **A pass of its own** (`_small_holes`): a black-hat (or a top-hat where the floor is lighter than the piece: aluminum
+  on the table) over a 1.25 in disc, at three levels in shares of the floor-to-piece contrast (grime joins a hole to its
+  neighbours at the lowest), round and filled like a disc, nearer the floor's brightness than the piece's (specks on film
+  are just darker film), ringed by the piece's own surface (print on a label is ringed by paper), not mostly ink (the
+  widened ink mask swallowed a hole showing speckled concrete). 0.12-1 in: a 0.8 in hole fell between the passes.
+  The cross's arm ends come back this way too (round, dark) and join the cross.
+- **Not on bare aluminum on concrete**: 200+ spots there (lettering, scratches, stains). Taps.
+- **Tried**: letting holes grow 8 in instead of 2 (made no difference: growth already stops at the floor-like edge).
+
 ## 2026-11-09: tidier boxes and stepped boxes for slanted holes (the user: "tidier boxes… also the real part outlines if it's easy enough")
 
 - **Real outlines weren't easy** (offcut records, card lines and nesting are all boxes: the 3-4 days from before), so

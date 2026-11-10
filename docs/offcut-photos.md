@@ -41,6 +41,13 @@ Boxes are in the piece's own inches: across from the left edge, along from the f
      select it (its frame shows), drag to move it, × removes it, the corner dot makes it one box again to resize. Each
      step is a `Cut by hand` line on the card; a step only where it frees 4 sq in or more. On the team's photos: the
      blue-film poly 139 sq in back (16% of the piece), #4 35, the table photo 31.
+   - **Small round holes** (bolt and rivet holes, 0.12-1 in; 2026-11-09): found apart, on photos by look only. A spot
+     that stands out from the piece right round it the way the floor does (darker on film over concrete, lighter on
+     aluminum over the table), round, nearer the floor's brightness than the piece's, and ringed by the piece's own
+     surface (not print on a label). On the poly photo: the 12-hole grid, the pairs and the round holes, a few tiny
+     false ones on a peeled flap's dark edge; on the table: its small holes and the two small film-filled holes that
+     were always missed. Not on bare aluminum on concrete: its lettering, scratches and stains give hundreds there;
+     tap those.
    - **Tidied** (tuned on the table photo): two finds of one hole are one (pixels overlapping; a fragment mostly
      inside a hole's boxes; boxing them together costs no more than apart, give or take 1 sq in); a label or sticker
      (brighter than the floor and another colour; on concrete far brighter and smooth) and small busy chips along the
