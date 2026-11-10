@@ -633,6 +633,7 @@ A few long parts on one sheet (e.g. three of p0201), Rush so they don't join an 
 | 5 | The same with bare aluminum on the plywood table, then on the floor | Table: nearly every hole boxed. Floor: fewer; box the rest |
 | 6 | Re-photo an offcut after cutting something out of it by hand | Its record hatched; only the new cut gets a box; Save adds one Cut by hand line |
 | 7 | Gone, then Undo within 5 s; then Gone and wait | Undo: still there. Waiting: the card archived, off the tab |
+| 8 | On the laptop: `python -m autocam_service offcut-photo-report` | One row per way of finding, counting the photos saved in 4-6 (holes found, missed, extra boxes, corners right) |
 
 ## M5: status card, start at logon, reboot test on the shop PC
 

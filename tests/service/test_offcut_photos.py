@@ -1,6 +1,7 @@
 """Offcuts from a phone photo (offcut_photos.py; the shop page's Offcuts tab): the photo ends up as the card a person
 would write, and the service's own offcut pass adds it, numbers it and records its cuts."""
 import base64
+import json
 
 import pytest
 
@@ -9,6 +10,7 @@ pytest.importorskip("cv2")
 from autocam_service.offcut_photos import OffcutPhotos  # noqa: E402
 from autocam_service.offcuts import OffcutStore  # noqa: E402
 from autocam_service.panel.api import material_label, material_line  # noqa: E402
+from autocam_service.photo_report import corner_miss_in, report, score  # noqa: E402
 from autocam_service.shoplist import ListError  # noqa: E402
 from test_photo_find import HOLES, PHOTO_CORNERS, covers, photo  # noqa: E402
 from test_panel import Panel  # noqa: E402
@@ -16,10 +18,10 @@ from test_prints import PHONE, SHOP  # noqa: E402
 from test_runner_autostart import harness  # noqa: E402
 
 
-def offcut_photos(h, tmp_path):
+def offcut_photos(h, tmp_path, **kw):
     h.cfg.paths.state.mkdir(parents=True, exist_ok=True)     # a real install has it from the start
     return OffcutPhotos(h.tracker, h.cfg, OffcutStore(h.store.offcuts_file), tmp_path / "photos",
-                        material_label, material_line)
+                        material_label, material_line, **kw)
 
 
 def b64(raw):
@@ -131,3 +133,79 @@ def test_the_shop_page_walks_through_it(tmp_path):
     assert status == 400 and err["error"] == "Pick the thickness."
     status, _ = p.call("POST", "/api/shop/offcut-photo", key="wrong", body={"device": PHONE})
     assert status == 403
+
+
+def kept(tmp_path):
+    folder = tmp_path / "photos" / "kept"
+    return sorted(d for d in folder.iterdir() if d.is_dir()) if folder.is_dir() else []
+
+
+def test_a_saved_photo_is_kept_with_what_was_suggested_and_what_people_saved(tmp_path):
+    h = harness(tmp_path)
+    op = offcut_photos(h, tmp_path)
+    got = op.photo(b64(photo("film", "concrete", HOLES)), "al6061", 30)
+    flat = op.flat(got["photo"], got["corners"], "al6061", 30)
+    saved = flat["boxes"][1:] + [[1.0, 26.0, 3.0, 28.0]]      # people deleted one and drew one
+    op.save(got["photo"], saved, "Akash", "al6061", "1/8", 30)
+    [folder] = kept(tmp_path)
+    assert (folder / "photo.jpg").read_bytes() == (tmp_path / "photos" / f"{got['photo']}.jpg").read_bytes()
+    text = (folder / "record.json").read_text()
+    r = json.loads(text)
+    assert r["kind"] == "new" and r["material"] == "al6061" and r["thickness"] == "1/8" and r["length"] == 30
+    assert r["how"] == "look" and r["suggested"] == flat["boxes"] and r["saved"] == saved
+    assert r["suggested_corners"] == got["corners"] and r["corners"] == got["corners"]
+    assert "Akash" not in text                               # no names kept
+    s = score(r)
+    assert s["holes"] == len(saved) and s["missed"] == 1 and s["extra"] == 1 and s["corners"] == "right"
+    out = report(tmp_path / "photos" / "kept")
+    assert "Offcut photos kept: 1" in out and "by look" in out and "1 of 1" in out
+
+
+def test_a_re_photo_is_kept_too_and_only_the_newest_are(tmp_path):
+    h = harness(tmp_path)
+    now = [1_800_000_000.0]
+    op = offcut_photos(h, tmp_path, clock=lambda: now[0], keep=2)
+    got = op.photo(b64(photo("film", "concrete", HOLES[:2])), "al6061", 30)
+    flat = op.flat(got["photo"], got["corners"], "al6061", 30)
+    card_id = op.save(got["photo"], flat["boxes"], "Akash", "al6061", "1/8", 30)["card"]
+    h.runner.tick()
+    for _ in range(2):
+        now[0] += 60
+        again = op.photo(b64(photo("film", "concrete", HOLES)), target=card_id)
+        flat2 = op.flat(again["photo"], again["corners"], target=card_id)
+        op.save(again["photo"], flat2["boxes"], "Maya", target=card_id)
+    folders = kept(tmp_path)
+    assert len(folders) == 2                                  # keep = 2: the first one went
+    r = json.loads((folders[-1] / "record.json").read_text())
+    assert r["kind"] == "re-photo" and r["number"] == 1 and r["known"] and len(r["suggested"]) == 2
+
+
+def test_keep_0_keeps_nothing(tmp_path):
+    h = harness(tmp_path)
+    op = offcut_photos(h, tmp_path, keep=0)
+    got = op.photo(b64(photo("film", "concrete", HOLES)), "al6061", 30)
+    flat = op.flat(got["photo"], got["corners"], "al6061", 30)
+    op.save(got["photo"], flat["boxes"], "Akash", "al6061", "1/8", 30)
+    assert kept(tmp_path) == []
+
+
+def test_the_report_counts_holes_found_missed_and_extra(tmp_path):
+    folder = tmp_path / "kept"
+    corners = [[100, 900], [340, 900], [340, 420], [100, 420]]          # 24 x 48 in at 10 px/in
+    for name, how, sug_corners in (("20261110-180000-a", "look", corners[2:] + corners[:2]),   # same, turned round
+                                   ("20261110-181000-b", "outline", None)):
+        (folder / name).mkdir(parents=True)
+        (folder / name / "record.json").write_text(json.dumps({
+            "kind": "new", "material": "al6061", "thickness": "1/8", "width": 24, "length": 48, "how": how,
+            "corners": corners, "suggested_corners": sug_corners,
+            "suggested": [[0, 0, 2, 2], [5, 5, 6, 6.2], [20, 20, 21, 21]],
+            "saved": [[0, 0, 2, 2], [5, 5, 7, 7], [10, 10, 12, 12]]}))
+    r = json.loads((folder / "20261110-180000-a" / "record.json").read_text())
+    assert score(r) == {"holes": 3, "found": 1, "missed": 2, "extra": 1, "corners": "right", "corner_in": 0.0}
+    out = report(folder)
+    assert "by look (film, wood)" in out and "by outline (bare metal)" in out
+    assert "all" in out and "Most holes missed:" in out and "2 of 3 missed, 1 extra" in out
+    moved = [[x + 8, y] for x, y in corners]                             # 0.8 in off
+    assert abs(corner_miss_in(moved, corners, 24, 48) - 0.8) < 1e-6
+    assert corner_miss_in(None, corners, 24, 48) is None
+    assert report(tmp_path / "nothing").startswith("No offcut photos kept yet")

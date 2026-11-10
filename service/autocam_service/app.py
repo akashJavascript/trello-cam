@@ -171,7 +171,8 @@ def start_panel(cfg: Config, env_file: Optional[Path], services: Services) -> bo
         from .offcuts import OffcutStore
         from .panel.api import material_label, material_line
         app.offcut_photos = OffcutPhotos(tracker, cfg, OffcutStore(services.store.offcuts_file),
-                                         cfg.paths.state / "offcut_photos", material_label, material_line)
+                                         cfg.paths.state / "offcut_photos", material_label, material_line,
+                                         keep=cfg.offcut_photos_keep)
     start_server(app, p.port)
     pictures = PictureWatch(onshape, services.store, tracker) if p.pictures else None
     usage = None

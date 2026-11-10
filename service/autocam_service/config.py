@@ -465,6 +465,7 @@ class Config:
     parts: Parts = Parts()
     prints: Prints = Prints()
     offcut_photos_enabled: bool = True     # [offcut_photos] enabled: the shop's Offcuts tab (offcut_photos.py)
+    offcut_photos_keep: int = 500          # [offcut_photos] keep: saved photos kept to tune the finding (0 = none)
 
     def stock_types(self) -> List[Tuple[Material, float]]:
         return [(m, t) for m in self.materials.values() for t in m.thicknesses_in]
@@ -1014,10 +1015,11 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         if prints.enabled and not prints.materials:
             errors.append("prints.materials: list at least one material")
 
-    offcut_photos_enabled = True
+    offcut_photos_enabled, offcut_photos_keep = True, 500
     if "offcut_photos" in top.data:
         t = top.table("offcut_photos")
         offcut_photos_enabled = t.boolean("enabled")
+        offcut_photos_keep = t.integer("keep", minimum=0, default=500)
         t.finish()
 
     t = top.table("paths")
@@ -1036,7 +1038,7 @@ def parse_config(data: Dict[str, Any], root: Path, path: Optional[Path] = None) 
         trello=trello, fusion=fusion, tapguard=tapguard, fusion_team=fusion_team, status=status, paths=paths,
         placeholders=tuple(_placeholders(data)), warnings=(), tabs=tabs, face=face, scribe=scribe, hand_cuts=hand_cuts,
         fit=fit, panel=panel, costs=costs, shafts=shafts, parts=parts, prints=prints,
-        offcut_photos_enabled=offcut_photos_enabled,
+        offcut_photos_enabled=offcut_photos_enabled, offcut_photos_keep=offcut_photos_keep,
     )
     warnings: List[str] = []
     _cross_check(cfg, data, errors, warnings)

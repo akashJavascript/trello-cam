@@ -535,6 +535,8 @@ keep_days = 14                  # parts put in the bin drop off the list after t
 
 [offcut_photos]                 # the shop page's Offcuts tab: add or update an offcut from a phone photo
 enabled = true                  # (offcut_photos.py, docs/offcut-photos.md; finding needs pip install -e ".[photos]")
+keep = 500                      # saved photos kept on the laptop (state/offcut_photos/kept/) with what was found and
+                                # what people saved, to measure and tune the finding (offcut-photo-report). 0 = none
 
 [prints]                        # the shop's 3D print queue (prints.py, 2026-11-09): the /shop page's Prints tab
 enabled = true

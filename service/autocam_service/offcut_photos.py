@@ -11,13 +11,18 @@ The photo goes on the card too. Boxes are in the piece's own inches: across from
 front end (the end at the bottom of the photo), the same measure the card lines use.
 
 Photos are kept in state/offcut_photos/<id>.jpg for a day (the steps of one add); photo_find.py does the finding.
+A photo that's saved is also kept in state/offcut_photos/kept/ with what was suggested and what people saved
+([offcut_photos] keep, the newest 500), so the finding can be measured on the team's real photos
+(photo_report.py, `offcut-photo-report`) and tuned or trained on them later. No names go in it.
 """
 
 import base64
 import binascii
+import json
 import logging
 import re
 import secrets
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -37,6 +42,7 @@ MAX_PHOTO_MB = 12
 KEEP_S = 24 * 3600
 MAX_BOXES = 80
 BOARD_CACHE_S = 20
+KEPT = "kept"
 
 
 def _thickness_label(t: float) -> str:
@@ -49,9 +55,11 @@ def _thickness_label(t: float) -> str:
 
 class OffcutPhotos:
     def __init__(self, tracker: Any, cfg: Any, store: OffcutStore, folder: Path,
-                 label: Callable[[Any], str], line: Callable[[Any], str], clock: Callable[[], float] = time.time):
+                 label: Callable[[Any], str], line: Callable[[Any], str], clock: Callable[[], float] = time.time,
+                 keep: int = 500):
         self.t, self.cfg, self.store, self.folder = tracker, cfg, store, Path(folder)
         self.label, self.line, self.clock = label, line, clock
+        self.keep = max(0, int(keep))
         self._lock = threading.Lock()
         self._cards: Optional[tuple] = None          # (when, {card id: name}) of the Offcuts list
 
@@ -119,12 +127,49 @@ class OffcutPhotos:
         if not self.folder.is_dir():
             return
         now = self.clock()
-        for f in self.folder.glob("*.jpg"):
+        for f in [*self.folder.glob("*.jpg"), *self.folder.glob("*.json")]:   # not kept/
             try:
                 if now - f.stat().st_mtime > KEEP_S:
                     f.unlink()
             except OSError:
                 pass
+
+    def _note(self, pid: str, **fields: Any) -> None:
+        """What was suggested for a photo and what was done with it (<id>.json beside it), for keeping it once saved."""
+        p = self.folder / f"{pid}.json"
+        try:
+            notes = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+        except (OSError, ValueError):
+            notes = {}
+        notes.update(fields)
+        try:
+            p.write_text(json.dumps(notes), encoding="utf-8")
+        except OSError as e:
+            log.warning("offcut photos: noting %s: %s", pid, e)
+
+    def _keep(self, pid: str, photo: Path, fields: Dict[str, Any]) -> None:
+        """A saved photo kept in kept/<when>-<id>/ (photo.jpg, record.json: the suggested corners and boxes, the ones
+        saved, the stock), the newest `keep` of them. Never in the way of saving."""
+        if self.keep <= 0:
+            return
+        try:
+            notes = json.loads((self.folder / f"{pid}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return                                   # never straightened (no OpenCV): nothing to measure
+        if "corners" not in notes:
+            return
+        try:
+            when = time.strftime("%Y%m%d-%H%M%S", time.localtime(self.clock()))
+            folder = self.folder / KEPT / f"{when}-{pid}"
+            folder.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(photo, folder / "photo.jpg")
+            (folder / "record.json").write_text(json.dumps({"when": when, **notes, **fields}, indent=1),
+                                                encoding="utf-8")
+            kept = sorted(p for p in (self.folder / KEPT).iterdir() if p.is_dir())
+            for old in kept[:max(0, len(kept) - self.keep)]:
+                shutil.rmtree(old, ignore_errors=True)
+        except OSError as e:
+            log.warning("offcut photos: keeping %s: %s", pid, e)
 
     def _photo_path(self, photo: Any) -> Path:
         if not isinstance(photo, str) or not PHOTO_RE.match(photo):
@@ -188,6 +233,7 @@ class OffcutPhotos:
             corners = photo_find.suggest_corners(img, width, n)
             log.info("offcut photo %s: %dx%d, corners %s (%.2f s)", pid, w, h, "found" if corners else "not found",
                      time.perf_counter() - t0)
+            self._note(pid, w=w, h=h, suggested_corners=corners)
         else:
             if raw[:3] != b"\xff\xd8\xff":
                 raise ListError("Take the photo as a JPEG.")
@@ -224,9 +270,12 @@ class OffcutPhotos:
         t0 = time.perf_counter()
         flat = photo_find.straighten(img, c, width, n)
         boxes, how = photo_find.find_holes(flat, width, n)
+        known: List[List[float]] = []
         if piece is not None:
             known = self.used_areas(piece) + [list(x) for x in piece.get("hand_cuts", [])]
             boxes = [b for b in boxes if _inside_share(b, known) < 0.8]
+        self._note(photo, corners=c, suggested=[[round(float(v), 2) for v in b] for b in boxes], how=how,
+                   known=[[round(float(v), 2) for v in k] for k in known])
         log.info("offcut photo %s: %d boxes by %s (%.2f s)", photo, len(boxes), how or "-", time.perf_counter() - t0)
         image = base64.b64encode(photo_find.piece_jpeg(flat)).decode("ascii")
         return {"image": "data:image/jpeg;base64," + image, "boxes": [list(b) for b in boxes], "how": how,
@@ -269,6 +318,9 @@ class OffcutPhotos:
             self.t.attach_file(target, f"photo {time.strftime('%Y-%m-%d')}.jpg", image, "image/jpeg")
             self.t.comment(target, f"Photographed on the shop page by {who}: "
                            + (f"{len(cuts)} new hand cut{'s' if len(cuts) != 1 else ''}." if cuts else "nothing new cut."))
+            self._keep(photo, path, {"kind": "re-photo", "material": key,
+                                     "thickness": _thickness_label(float(piece["thickness_in"])), "width": width,
+                                     "length": n, "saved": cuts, "number": piece.get("number")})
             log.info("offcut photos: %s re-photographed offcut #%s (%d cuts)", who, piece.get("number"), len(cuts))
             self.forget_board()
             return {"card": target, "number": piece.get("number"), "cuts": len(cuts)}
@@ -280,6 +332,8 @@ class OffcutPhotos:
                           "", f"Added from a photo on the shop page by {who}."])
         card = self.t.create_card("offcuts", "Offcut from a photo", desc)
         self.t.attach_file(card.id, "photo.jpg", image, "image/jpeg")
+        self._keep(photo, path, {"kind": "new", "material": key, "thickness": thickness, "width": width, "length": n,
+                                 "saved": cuts})
         log.info("offcut photos: %s added a %s %s piece, %g in long, %d cuts (card %s)", who, key, thickness, n,
                  len(cuts), card.id)
         self.forget_board()

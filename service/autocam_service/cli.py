@@ -14,6 +14,7 @@
     shop-qr           a page to print for the saw and the lathe: the shop's shaft list as a QR code (needs segno)
     machine-link      a page with the machine screen's link, to open on the ShopSabre's PC and bookmark
     shop-sign-out     end the shop page's Slack sign-ins: one person's (by name) or everyone's (--all)
+    offcut-photo-report  how well the offcut photo finding did on the photos saved on the shop page (photo_report.py)
 """
 
 import argparse
@@ -70,6 +71,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     so = sub.add_parser("shop-sign-out", help="end the shop page's Slack sign-ins: one name's, or everyone's (--all)")
     so.add_argument("name", nargs="?", default="", help="the name the shop knows them by")
     so.add_argument("--all", action="store_true", help="everyone")
+    sub.add_parser("offcut-photo-report", help="how well the offcut photo finding did on the photos saved on the shop page")
     argv = list(sys.argv[1:] if argv is None else argv)
     args = parser.parse_args(argv)
 
@@ -115,6 +117,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             return machine_link(cfg, env_file, args.out)
         if args.command == "shop-sign-out":
             return shop_sign_out(cfg, args.name, args.all)
+        if args.command == "offcut-photo-report":
+            from .photo_report import report
+            print(report(cfg.paths.state / "offcut_photos" / "kept"))
+            return 0
     except CredentialsError as e:
         print(f"Credentials: {e}")
         return 1

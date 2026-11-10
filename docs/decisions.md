@@ -1130,6 +1130,18 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   p0209 (to about 39 in) would have been left off #4's record (fixed by hand to 39.5 in before Part 28 was nested).
   The sheet's `bands` (what another piece of stock must have clear to take the same program) include it too.
 
+## 2026-11-09: saved offcut photos kept to measure the finding (the user: "do number 2")
+
+- **What:** every photo saved on the Offcuts tab is kept with the suggested corners and boxes and the ones people
+  saved (`state/offcut_photos/kept/`, the newest `[offcut_photos] keep` = 500, about 0.5 MB each).
+  `offcut-photo-report` (`photo_report.py`) counts holes found, missed and extra boxes per way of finding.
+- **Why:** the finding was tuned on 5 photos. Measuring it on everyday use shows where it misses, and the saved boxes
+  are labelled examples for a trained finder later.
+- **The photo as taken, not the straightened one:** the straightened piece can be made again from the photo and the
+  saved corners, and the corner finder can be measured too.
+- **No names** in the record; it stays on the laptop (`state/` isn't in the repo, which is public). Never in the way of
+  saving: if keeping fails, it's logged and the card is made anyway.
+
 ## 2026-11-09: rooms beside cuts kept from 2 in (was 3; the user)
 
 - `[nest] offcut_beside_min_in` 2.0: an empty space beside earlier cuts (or a photographed hole) is kept and filled when

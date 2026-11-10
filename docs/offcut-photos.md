@@ -46,5 +46,20 @@ Boxes are in the piece's own inches: across from the left edge, along from the f
   first still works best.
 - Misses: smooth clear film over a hole, bare clear poly with no film (see-through); print and marker are ignored on purpose.
 
+## Kept to measure and tune the finding (2026-11-09)
+
+Each photo that's saved is kept on the laptop in `state/offcut_photos/kept/<when>-<id>/`: the photo, and
+`record.json` with the stock, the corners and boxes AutoCAM suggested and the ones people saved (no names). The
+newest 500 (`[offcut_photos] keep`; 0 keeps none, about 0.5 MB each). `python -m autocam_service offcut-photo-report`
+compares them, per way of finding:
+
+- **found / missed:** a box people saved is found when the suggested boxes cover at least half of it. Missed holes are
+  the number to bring down.
+- **extra:** a suggested box people deleted (or moved far).
+- **corners right:** all four suggested corners within 1/2 in of where people left them.
+
+The report shows which photos missed most, so tuning works on the team's photos instead of a handful, and the saved
+boxes are labelled examples if a trained finder is ever worth it (after about 100 photos).
+
 Needs OpenCV (`pip install -e ".[photos]"` on the laptop). Without it the tab still works with nothing suggested.
 Photos are kept in `state/offcut_photos/` for a day. `[offcut_photos] enabled` switches the tab off.
