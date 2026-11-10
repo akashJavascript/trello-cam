@@ -1,7 +1,8 @@
 // The shop page's Offcuts tab (offcut_photos.py, 2026-11-09; the mockup the user approved, and docs/offcut-photos.md).
 //   The rack: each offcut's number, stock, size and a picture of what's used of it; Re-photo, Gone (with Undo).
-//   Add an offcut / Re-photo, three steps: Photo (and what it is: material, thickness, length taped; the width is the
-//   sheet's), Corners (suggested when they can be found; drag them, the front is the end at the bottom of the photo),
+//   Add an offcut / Re-photo, three steps: Photo (the page's own camera, with a level and a frame to line the piece up
+//   with, and a check for blurry or dark photos; or the phone's camera app; and what it is: material, thickness, length
+//   taped; the width is the sheet's), Corners (suggested when they can be found; drag them, the front is the end at the bottom of the photo),
 //   Used areas (the piece straightened, a box over each hole found; move, resize, delete, drag to add). Save writes the
 //   offcut's card as a person would (AutoCAM's offcut pass numbers it); the number shows here a few seconds later.
 // shop.js calls ShopOffcuts.init(ctx) with its helpers, renderList(d) for the tab and renderFlow() while a flow is
@@ -14,6 +15,11 @@
   var gone = null;              // an offcut going (Undo for a few seconds): {id, number, timer}
   var NS = "http://www.w3.org/2000/svg";
   var MAX_SIDE = 1600;          // the photo is shrunk to this before it's sent
+  var CAM = null;               // the camera while it's open: outside the page's render, so the video keeps playing
+  var LEVEL_OK = 5, LEVEL_NEAR = 12;     // degrees off flat: the level goes green, then orange
+  var STILL = 6;                // degrees a second: still enough for a sharp photo (the shutter waits for it)
+  var SHARP_MIN = 0.22;         // the photo check: below this the sharpest edges are smeared (photo_check below)
+  var DARK_MIN = 40;            // mean brightness, 0-255
 
   function svg(tag, attrs) {
     var e = document.createElementNS(NS, tag);
@@ -105,7 +111,7 @@
     C.render();
     window.scrollTo(0, 0);
   }
-  function close() { F = null; C.render(); C.load(); }
+  function close() { closeCamera(); F = null; C.render(); C.load(); }
   function back() { if (F && F.step > 1 && !F.busy) { F.step -= 1; C.render(); } else close(); }
   function isOpen() { return !!F; }
   function title() { return !F ? "" : F.target ? "#" + (F.target.number || "") : "New offcut"; }
@@ -141,8 +147,264 @@
     else stepUsed();
   }
 
+  // ------------------------------------------------------------------ the camera (2026-11-09)
+  // The page's own camera: a frame shaped like the piece (the front at the bottom) to line it up with, a level that goes
+  // green when the phone is flat over it, and a shutter that waits until the phone is still. Each photo, from here or
+  // the camera app, is checked for blur and darkness before it's sent; what the check measured goes with it, so the
+  // laptop can tune these numbers on the team's real photos (offcut-photo-report).
+  var motion = { listening: false, on: false, tilt: null, rate: null, x: 0, y: 0, last: null };
+  function onOrient(e) {
+    if (e.beta == null || e.gamma == null) return;
+    var now = performance.now(), b = e.beta, g = e.gamma, a = e.alpha, R = Math.PI / 180;
+    var tilt = Math.acos(Math.max(-1, Math.min(1, Math.cos(b * R) * Math.cos(g * R)))) / R;
+    var L = motion.last;
+    if (L && now > L.t) {
+      var da = a != null && L.a != null ? Math.abs(((a - L.a + 540) % 360) - 180) : 0;
+      var r = Math.sqrt((b - L.b) * (b - L.b) + (g - L.g) * (g - L.g) + da * da) / ((now - L.t) / 1000);
+      motion.rate = motion.rate == null ? r : 0.7 * motion.rate + 0.3 * r;
+    }
+    motion.last = { t: now, a: a, b: b, g: g };
+    motion.tilt = motion.tilt == null ? tilt : 0.6 * motion.tilt + 0.4 * tilt;
+    // the bubble floats to the high side, turned to how the screen is
+    var ang = ((screen.orientation && screen.orientation.angle) || window.orientation || 0) * R;
+    var dx = -g, dy = -b;
+    motion.x = dx * Math.cos(ang) + dy * Math.sin(ang);
+    motion.y = -dx * Math.sin(ang) + dy * Math.cos(ang);
+    motion.on = true;
+  }
+  function listenMotion() {
+    if (motion.listening) return;
+    motion.listening = true;
+    window.addEventListener("deviceorientation", onOrient);
+  }
+  function stopMotion() {
+    window.removeEventListener("deviceorientation", onOrient);
+    motion = { listening: false, on: false, tilt: null, rate: null, x: 0, y: 0, last: null };
+  }
+  // iPhones ask first, and only from a tap: this runs in the tap that opens the camera
+  function askMotion() {
+    var D = window.DeviceOrientationEvent;
+    if (D && typeof D.requestPermission === "function") {
+      D.requestPermission().then(function (st) { if (st === "granted") listenMotion(); }, function () { /* no level */ });
+    } else if (D) listenMotion();
+  }
+
+  function cameraWorks() {
+    return !F.noCam && !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  }
+  function guideLength() {
+    var n = parseFloat(F.length), m = mat(F.material);
+    if (n > 0) return n;
+    return F.target ? F.target.length : (m ? m.length : 48);
+  }
+
+  function openCamera() {
+    if (CAM) return;
+    askMotion();
+    navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" },
+                                                                 width: { ideal: 3840 }, height: { ideal: 2160 } } })
+      .then(showCamera, function (e) {
+        stopMotion();
+        if (!F) return;
+        F.noCam = true;
+        C.toast(e && e.name === "NotAllowedError" ? "The camera isn't allowed here. Use the camera app."
+                                                   : "The camera didn't open. Use the camera app.");
+        C.render();
+      });
+  }
+
+  function showCamera(stream) {
+    if (!F) { stream.getTracks().forEach(function (t) { t.stop(); }); stopMotion(); return; }
+    var h = C.h;
+    var video = h("video", { class: "cam-video", autoplay: true, playsinline: true, muted: true });
+    video.muted = true; video.playsInline = true;
+    var guide = svg("svg", { class: "cam-guide", "aria-hidden": "true" });
+    var bubble = h("i", { class: "bubble" });
+    var level = h("div", { class: "cam-level", hidden: true }, h("i", { class: "mid" }), bubble);
+    var hint = h("div", { class: "cam-hint" }, "Line the piece up with the frame");
+    var flash = h("div", { class: "cam-flash" });
+    var view = h("div", { class: "cam-view" }, video, level, hint, flash);
+    view.insertBefore(guide, level);
+    var shut = h("button", { class: "cam-shutter", type: "button", "aria-label": "Take the photo", disabled: true,
+                             onclick: function () { shutter(); } });
+    var el = h("div", { class: "cam", role: "dialog", "aria-modal": "true", "aria-label": "Camera" }, view,
+      h("div", { class: "cam-bar" },
+        h("button", { class: "cam-x", type: "button", "aria-label": "Close the camera", onclick: function () { closeCamera(); } },
+          C.icon("x")),
+        shut, h("span", { class: "cam-state" })));
+    document.body.appendChild(el);
+    document.body.classList.add("cam-open");
+    CAM = { el: el, view: view, video: video, guide: guide, level: level, bubble: bubble, hint: hint, flash: flash,
+            shut: shut, state: el.querySelector(".cam-state"), stream: stream, raf: 0, waiting: 0, check: null };
+    video.srcObject = stream;
+    video.addEventListener("loadedmetadata", function () { placeGuide(); shut.disabled = false; });
+    var p = video.play();
+    if (p && p.catch) p.catch(function () { /* autoplay with sound off is allowed; the next tap plays it */ });
+    window.addEventListener("resize", placeGuide);
+    document.addEventListener("visibilitychange", hiddenClose);
+    document.addEventListener("keydown", camKey);
+    tick();
+  }
+  function hiddenClose() { if (document.hidden) closeCamera(); }
+  function camKey(e) { if (e.key === "Escape") closeCamera(); }
+
+  function closeCamera() {
+    if (!CAM) return;
+    cancelAnimationFrame(CAM.raf);
+    CAM.stream.getTracks().forEach(function (t) { t.stop(); });
+    CAM.el.parentNode && CAM.el.parentNode.removeChild(CAM.el);
+    document.body.classList.remove("cam-open");
+    window.removeEventListener("resize", placeGuide);
+    document.removeEventListener("visibilitychange", hiddenClose);
+    document.removeEventListener("keydown", camKey);
+    CAM = null;
+    stopMotion();
+  }
+
+  // the frame: the piece's shape (across x along, the front at the bottom) over the picture, a fifth of it floor
+  function placeGuide() {
+    if (!CAM || !CAM.video.videoWidth) return;
+    var vw = CAM.video.videoWidth, vh = CAM.video.videoHeight, b = CAM.view.getBoundingClientRect();
+    var k = Math.min(b.width / vw, b.height / vh), g = CAM.guide;
+    g.style.width = vw * k + "px"; g.style.height = vh * k + "px";
+    g.style.left = (b.width - vw * k) / 2 + "px"; g.style.top = (b.height - vh * k) / 2 + "px";
+    g.setAttribute("viewBox", "0 0 " + vw + " " + vh);
+    while (g.firstChild) g.removeChild(g.firstChild);
+    var W = width(), L = guideLength(), f = 0.8 * Math.min(vw / W, vh / L);
+    var rw = W * f, rh = L * f, x = (vw - rw) / 2, y = (vh - rh) / 2, sw = Math.max(vw, vh) / 260;
+    var c = Math.min(rw, rh) * 0.14;
+    g.appendChild(svg("rect", { x: x, y: y, width: rw, height: rh, class: "cam-frame", "stroke-width": sw / 2 }));
+    g.appendChild(svg("path", { class: "cam-corners", "stroke-width": sw * 1.6, d:
+      "M" + x + "," + (y + c) + "V" + y + "H" + (x + c) + "M" + (x + rw - c) + "," + y + "H" + (x + rw) + "V" + (y + c) +
+      "M" + (x + rw) + "," + (y + rh - c) + "V" + (y + rh) + "H" + (x + rw - c) + "M" + (x + c) + "," + (y + rh) + "H" + x + "V" + (y + rh - c) }));
+    g.appendChild(svg("line", { x1: x, y1: y + rh, x2: x + rw, y2: y + rh, class: "cam-front", "stroke-width": sw * 1.6 }));
+    var t = svg("text", { x: vw / 2, y: Math.min(vh - sw * 2, y + rh + sw * 9), "font-size": sw * 7, "text-anchor": "middle", class: "cam-front-tag" });
+    t.textContent = "FRONT";
+    g.appendChild(t);
+  }
+
+  // every frame: the level, the hint, and a shutter that's waiting for the phone to be still
+  function tick() {
+    if (!CAM) return;
+    CAM.raf = requestAnimationFrame(tick);
+    if (CAM.check) return;
+    var flat = null, still = motion.rate == null || motion.rate <= STILL;
+    if (motion.on && motion.tilt != null) {
+      flat = motion.tilt <= LEVEL_OK ? "ok" : motion.tilt <= LEVEL_NEAR ? "near" : "off";
+      CAM.level.hidden = false;
+      CAM.level.className = "cam-level " + flat;
+      var m = 31 / 20, bx = Math.max(-20, Math.min(20, motion.x)) * m, by = Math.max(-20, Math.min(20, motion.y)) * m;
+      CAM.bubble.style.transform = "translate(" + bx.toFixed(1) + "px," + by.toFixed(1) + "px)";
+    }
+    CAM.el.classList.toggle("flat", flat === "ok");
+    var text = CAM.waiting ? "Hold still…" : flat === "off" ? "Hold the phone flat over the piece"
+      : flat === "near" ? "Almost flat" : flat === "ok" && !still ? "Hold still" : flat === "ok" ? "Flat. Take it"
+      : "Line the piece up with the frame";
+    if (CAM.hint.textContent !== text) CAM.hint.textContent = text;
+    if (CAM.waiting && (still || performance.now() > CAM.waiting)) { CAM.waiting = 0; take(); }
+  }
+
+  function shutter() {
+    if (!CAM || CAM.check || CAM.waiting || !CAM.video.videoWidth) return;
+    if (motion.on && motion.rate != null && motion.rate > STILL) { CAM.waiting = performance.now() + 2000; return; }
+    take();
+  }
+
+  function take() {
+    var v = CAM.video, vw = v.videoWidth, vh = v.videoHeight;
+    var s = Math.min(1, MAX_SIDE / Math.max(vw, vh));
+    var c = document.createElement("canvas");
+    c.width = Math.round(vw * s); c.height = Math.round(vh * s);
+    var x = c.getContext("2d");
+    x.imageSmoothingQuality = "high";
+    x.drawImage(v, 0, 0, c.width, c.height);
+    CAM.flash.classList.add("on");
+    setTimeout(function () { if (CAM) CAM.flash.classList.remove("on"); }, 120);
+    var q = photoCheck(c);
+    q.via = "camera";
+    if (motion.on && motion.tilt != null) q.tilt = Math.round(motion.tilt * 10) / 10;
+    var data = c.toDataURL("image/jpeg", 0.9);
+    if (!q.problem) { closeCamera(); usePhoto(data, q); return; }
+    showCheck(data, q);
+  }
+
+  // a photo that's blurry or dark: take it again (the camera's still open), or use it anyway
+  function showCheck(data, q) {
+    var h = C.h, still = h("img", { class: "cam-still", src: data, alt: "The photo just taken" });
+    var card = h("div", { class: "cam-check", role: "alertdialog", "aria-label": checkTitle(q) },
+      h("div", { class: "cam-check-title" }, checkTitle(q)),
+      h("p", null, checkLine(q)),
+      h("div", { class: "foot-two" },
+        h("button", { class: "btn btn-ghost", type: "button", onclick: function () {
+          q.anyway = true; closeCamera(); usePhoto(data, q);
+        } }, "Use it anyway"),
+        h("button", { class: "btn btn-primary", type: "button", onclick: function () {
+          CAM.view.removeChild(still); CAM.view.removeChild(card); CAM.check = null; CAM.hint.hidden = false;
+        } }, C.icon("camera"), "Take it again")));
+    CAM.check = q;
+    CAM.hint.hidden = true; CAM.level.hidden = true;
+    CAM.view.appendChild(still);
+    CAM.view.appendChild(card);
+  }
+  function checkTitle(q) { return q.problem === "dark" ? "Too dark" : "Too blurry"; }
+  function checkLine(q) {
+    return q.problem === "dark" ? "Turn on more light or move out of the shadow, then take it again."
+                                : "Hold the phone still over the piece and take it again.";
+  }
+
+  // The check, on the photo shrunk to 1000 px: its mean brightness, and how sharp its sharpest edges are. At each
+  // pixel step that's the steepest of the 9 around it, the step against the whole change over those 9 px: a sharp edge
+  // jumps in a pixel or two (near 1), a blurred one is spread out (about 0.4 / its blur in px). Each way (along rows,
+  // down columns) takes its strongest 2% of edges and the 90th percentile; the lower way counts, so blur from the phone
+  // moving one way shows. Tuned on photos blurred on purpose: sharp 0.31-1.0, blur of 3+ px or a 9+ px shake below 0.22.
+  function photoCheck(canvas) {
+    var M = 1000, s = Math.min(1, M / Math.max(canvas.width, canvas.height));
+    var w = Math.max(1, Math.round(canvas.width * s)), hh = Math.max(1, Math.round(canvas.height * s));
+    var c = document.createElement("canvas");
+    c.width = w; c.height = hh;
+    var x = c.getContext("2d", { willReadFrequently: true });
+    x.imageSmoothingQuality = "high";
+    x.drawImage(canvas, 0, 0, w, hh);
+    var px = x.getImageData(0, 0, w, hh).data, g = new Float32Array(w * hh), sum = 0;
+    for (var i = 0, j = 0; i < g.length; i++, j += 4) { g[i] = 0.299 * px[j] + 0.587 * px[j + 1] + 0.114 * px[j + 2]; sum += g[i]; }
+    var bright = sum / g.length;
+    var a = edgeSharpness(g, w, hh, 1, w), b = edgeSharpness(g, hh, w, w, 1);
+    var sharp = a == null ? b : b == null ? a : Math.min(a, b);
+    var q = { bright: Math.round(bright * 10) / 10, sharp: sharp == null ? null : Math.round(sharp * 1000) / 1000, problem: null };
+    if (bright < DARK_MIN) q.problem = "dark";
+    else if (sharp != null && sharp < SHARP_MIN) q.problem = "blurry";
+    return q;
+  }
+  // along `lines` lines `ls` apart, each `n` px long with `st` between px
+  function edgeSharpness(g, n, lines, st, ls) {
+    var rs = [], ss = [];
+    for (var L = 0; L < lines; L++) {
+      var o = L * ls;
+      for (var k = 4; k < n - 5; k++) {
+        var p = o + k * st, S = g[p + 5 * st] - g[p - 4 * st], aS = S < 0 ? -S : S;
+        if (aS < 12) continue;
+        var d = g[p + st] - g[p];
+        if ((d > 0) !== (S > 0)) continue;
+        var ad = d < 0 ? -d : d, steep = true;
+        for (var m = -4; m <= 4 && steep; m++) {
+          if (m === 0) continue;
+          var e = g[p + (m + 1) * st] - g[p + m * st];
+          if ((e < 0 ? -e : e) > ad) steep = false;
+        }
+        if (steep) { rs.push(ad / aS); ss.push(aS); }
+      }
+    }
+    if (rs.length < 100) return null;
+    var cut = Float32Array.from(ss).sort()[Math.floor(0.98 * (ss.length - 1))];
+    var top = [];
+    for (var t = 0; t < rs.length; t++) if (ss[t] >= cut) top.push(rs[t]);
+    top.sort(function (u, v) { return u - v; });
+    return top[Math.floor(0.9 * (top.length - 1))];
+  }
+
   // step 1: the photo, and what the piece is
-  // read as a data: URL (the page's policy allows data: images, not blob: ones), shrunk, sent as a JPEG
+  // a photo from the camera app is read as a data: URL (the page's policy allows data: images, not blob: ones),
+  // shrunk, checked and sent as a JPEG
   function pickPhoto(file) {
     if (!file) return;
     var reader = new FileReader();
@@ -153,11 +415,9 @@
         var c = document.createElement("canvas");
         c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
         c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-        F.data = c.toDataURL("image/jpeg", 0.88);
-        F.photo = ""; F.corners = null; F.flat = null; F.boxes = [];
-        var shown = new Image();
-        shown.onload = function () { F.img = shown; C.render(); };
-        shown.src = F.data;
+        var q = photoCheck(c);
+        q.via = "app";
+        usePhoto(c.toDataURL("image/jpeg", 0.88), q);
       };
       img.onerror = function () { C.toast("That isn't a photo."); };
       img.src = reader.result;
@@ -165,19 +425,39 @@
     reader.onerror = function () { C.toast("Couldn't read that photo."); };
     reader.readAsDataURL(file);
   }
+  function usePhoto(data, q) {
+    if (!F) return;
+    F.data = data; F.quality = q; F.warn = q.problem && !q.anyway ? q.problem : "";
+    F.photo = ""; F.corners = null; F.flat = null; F.boxes = [];
+    var shown = new Image();
+    shown.onload = function () { if (F && F.data === data) { F.img = shown; C.render(); } };
+    shown.src = data;
+  }
 
   function stepPhoto() {
     var h = C.h, add = C.add, listEl = C.listEl;
     var input = h("input", { type: "file", accept: "image/*", capture: "environment", class: "hidden-file",
                              onchange: function () { pickPhoto(input.files && input.files[0]); } });
-    var shot = h("label", { class: "shot" + (F.data ? " has" : "") }, input);
+    var cam = cameraWorks();
+    var shot = cam ? h("button", { type: "button", class: "shot" + (F.data ? " has" : ""), onclick: function () { openCamera(); } })
+                   : h("label", { class: "shot" + (F.data ? " has" : "") }, input);
     if (F.data) {
       add(shot, h("img", { src: F.data, alt: "The photo" }));
       add(shot, h("span", { class: "again" }, C.icon("camera"), "Again"));
     } else {
-      add(shot, h("span", { class: "shot-in" }, C.icon("camera"), h("span", null, "Take a photo")));
+      add(shot, h("span", { class: "shot-in" }, C.icon("camera"), h("span", null, "Take a photo"),
+        cam ? h("span", { class: "shot-sub" }, "Phone flat over the piece, all of it in the frame") : null));
     }
     add(listEl, shot);
+    if (F.warn) {
+      add(listEl, h("div", { class: "notice photo-warn" },
+        h("span", null, (F.warn === "dark" ? "This photo looks too dark. " : "This photo looks blurry. ") +
+          "Holes can be missed. Tap Again to retake it, or "),
+        h("button", { class: "linkish", type: "button", onclick: function () {
+          F.warn = ""; if (F.quality) F.quality.anyway = true; C.render();
+        } }, "use it anyway")));
+    }
+    if (cam) add(listEl, h("div", { class: "tools" }, h("label", { class: "tool" }, input, C.icon("camera"), "Use the camera app")));
     if (F.target) {
       add(listEl, h("div", { class: "chips" }, h("span", { class: "chip" }, F.target.label),
         h("span", { class: "chip" }, F.target.thickness), h("span", { class: "chip" }, fmt(F.target.length) + " × " + fmt(F.target.width))));
@@ -191,7 +471,7 @@
       } }, mats().map(function (x) { return h("option", { value: x.key, selected: x.key === F.material || null }, x.label); }));
       var len = h("input", { class: "input mono", id: "offcut-length", type: "number", inputmode: "decimal", min: "1",
                              max: m ? String(m.length) : "48", step: "0.25", placeholder: "Tape it", value: F.length,
-                             oninput: function () { F.length = len.value; nextBtn.disabled = !(F.data && lenOk()) || null; } });
+                             oninput: function () { F.length = len.value; nextBtn.disabled = !(F.data && !F.warn && lenOk()) || null; } });
       add(listEl, h("div", { class: "fields" },
         h("label", { class: "field wide" }, "Material", sel),
         h("div", { class: "field wide" }, "Thickness", h("div", { class: "seg", role: "group", "aria-label": "Thickness" },
@@ -202,11 +482,11 @@
         h("label", { class: "field wide" }, "Length", h("div", { class: "lenrow" }, len,
           h("span", { class: "mono" }, "× " + fmt(m ? m.width : 24) + " in")))));
     }
-    foot("Cancel", "Next", F.data && lenOk(), function () {
+    foot("Cancel", "Next", F.data && !F.warn && lenOk(), function () {
       if (F.photo) { F.step = 2; C.render(); return; }
       F.busy = true; C.render();
       C.api("POST", "/api/shop/offcut-photo", { device: C.DEVICE, data: F.data, material: F.material, length: F.length,
-                                                target: F.target ? F.target.id : "" }).then(function (r) {
+                                                target: F.target ? F.target.id : "", quality: F.quality || null }).then(function (r) {
         F.busy = false; F.photo = r.photo; F.found = !!r.corners;
         var w = F.img.naturalWidth, hh = F.img.naturalHeight;
         F.corners = r.corners || [[0.15 * w, 0.85 * hh], [0.85 * w, 0.85 * hh], [0.85 * w, 0.15 * hh], [0.15 * w, 0.15 * hh]];

@@ -1130,6 +1130,23 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   p0209 (to about 39 in) would have been left off #4's record (fixed by hand to 39.5 in before Part 28 was nested).
   The sheet's `bands` (what another piece of stock must have clear to take the same program) include it too.
 
+## 2026-11-09: a guided camera for offcut photos (the user picked it from the list of ways to find holes better)
+
+- **The page's own camera** (`getUserMedia`, the back camera), so it can guide: the piece's frame (its typed length, or
+  the sheet's), a level from the phone's tilt (`deviceorientation`; an iPhone asks from the tap that opens the camera),
+  and a shutter that waits up to 2 s for the phone to be still (orientation changing under 6 deg/s): stopping motion
+  blur before the photo beats rejecting it after.
+- **The check runs on the phone** before anything is sent: mean brightness, and how sharp the sharpest edges are (at
+  each step that's the steepest of the 9 px around it, the step against the change over those 9 px; each way's
+  strongest 2% of edges, the 90th percentile; the lower way, so a shake one way shows). Standard blur measures were
+  tried first and misread grainy floors and motion. Tuned only on made-up photos blurred on purpose (the team's photos
+  were lost with a cleared scratch folder), so it's set where only clear blur fails and always offers **Use it
+  anyway**; its numbers are kept with each photo to re-tune it on real ones.
+- **The camera app stays** ("Use the camera app"), and is all there is where the camera can't open. Its photos get the
+  same check.
+- No server change beyond keeping the check's numbers (numbers and known words only). The page's CSP is unchanged: a
+  camera stream in a `<video>` isn't a fetched URL (checked in Chromium under the real CSP).
+
 ## 2026-11-09: saved offcut photos kept to measure the finding (the user: "do number 2")
 
 - **What:** every photo saved on the Offcuts tab is kept with the suggested corners and boxes and the ones people

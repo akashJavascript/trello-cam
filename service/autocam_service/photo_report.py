@@ -109,6 +109,16 @@ def report(folder: Path, worst: int = 5) -> str:
             what = f"{r.get('material', '?')} {r.get('thickness', '')} {float(r.get('length') or 0):g} in".strip()
             lines.append(f"  {r['_folder']}  {what}, {r.get('kind', '?')}, {r.get('how') or '-'}: "
                          f"{s['missed']} of {s['holes']} missed, {s['extra']} extra")
+    qs = [r.get("quality") or {} for r in records]
+    cam, app = sum(1 for q in qs if q.get("via") == "camera"), sum(1 for q in qs if q.get("via") == "app")
+    if cam or app:
+        flagged = [q for q in qs if q.get("problem")]
+        lines += ["", f"Photo check: {cam} from the page's camera, {app} from the camera app; "
+                  f"{sum(1 for q in flagged if q['problem'] == 'blurry')} blurry and "
+                  f"{sum(1 for q in flagged if q['problem'] == 'dark')} dark ones used anyway."]
+        tilts = [q["tilt"] for q in qs if "tilt" in q]
+        if tilts:
+            lines.append(f"  Held within {sorted(tilts)[len(tilts) // 2]:g} deg of flat on half of them.")
     lines += ["", "found = suggested boxes cover at least half of a saved box; extra = a suggested box people's boxes "
               "don't; corners right = all four within 1/2 in."]
     return "\n".join(lines)

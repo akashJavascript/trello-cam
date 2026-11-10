@@ -20,6 +20,7 @@ import base64
 import binascii
 import json
 import logging
+import math
 import re
 import secrets
 import shutil
@@ -206,8 +207,10 @@ class OffcutPhotos:
             raise ListError(f"Its length should be 1 to {full:g} in.")
         return material, width, n
 
-    def photo(self, data: Any, material: Any = None, length: Any = None, target: Any = None) -> Dict[str, Any]:
-        """A photo taken: kept, and its corners suggested if they can be found."""
+    def photo(self, data: Any, material: Any = None, length: Any = None, target: Any = None,
+              quality: Any = None) -> Dict[str, Any]:
+        """A photo taken: kept, and its corners suggested if they can be found. `quality`: what the page's photo
+        check measured (kept with it, to tune the check on real photos)."""
         piece = self._target(target)
         key, width, n = self._size_for(material, length, piece)
         if not isinstance(data, str) or len(data) > MAX_PHOTO_MB * 1024 * 1024 * 4 // 3 + 16:
@@ -233,7 +236,7 @@ class OffcutPhotos:
             corners = photo_find.suggest_corners(img, width, n)
             log.info("offcut photo %s: %dx%d, corners %s (%.2f s)", pid, w, h, "found" if corners else "not found",
                      time.perf_counter() - t0)
-            self._note(pid, w=w, h=h, suggested_corners=corners)
+            self._note(pid, w=w, h=h, suggested_corners=corners, quality=_quality(quality))
         else:
             if raw[:3] != b"\xff\xd8\xff":
                 raise ListError("Take the photo as a JPEG.")
@@ -350,6 +353,24 @@ class OffcutPhotos:
         self.t.archive(card_id)
         self.forget_board()
         log.info("offcut photos: offcut #%s gone (%s)", piece.get("number"), sender or "-")
+
+
+def _quality(q: Any) -> Optional[Dict[str, Any]]:
+    """The page's photo check (offcuts.js photoCheck): its numbers and a few known words, nothing else."""
+    if not isinstance(q, dict):
+        return None
+    out: Dict[str, Any] = {}
+    for key, lo, hi in (("sharp", 0.0, 5.0), ("bright", 0.0, 255.0), ("tilt", 0.0, 180.0)):
+        v = q.get(key)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and lo <= v <= hi:
+            out[key] = round(float(v), 3)
+    if q.get("problem") in ("blurry", "dark"):
+        out["problem"] = q["problem"]
+    if q.get("via") in ("camera", "app"):
+        out["via"] = q["via"]
+    if q.get("anyway") is True:
+        out["anyway"] = True
+    return out or None
 
 
 def _inside_share(box: Sequence[float], known: Sequence[Sequence[float]]) -> float:

@@ -209,3 +209,23 @@ def test_the_report_counts_holes_found_missed_and_extra(tmp_path):
     assert abs(corner_miss_in(moved, corners, 24, 48) - 0.8) < 1e-6
     assert corner_miss_in(None, corners, 24, 48) is None
     assert report(tmp_path / "nothing").startswith("No offcut photos kept yet")
+
+
+def test_what_the_pages_photo_check_measured_is_kept_with_the_photo(tmp_path):
+    h = harness(tmp_path)
+    op = offcut_photos(h, tmp_path)
+    q = {"sharp": 0.183, "bright": 121.4, "tilt": 3.2, "problem": "blurry", "via": "camera", "anyway": True,
+         "name": "Akash", "sharp2": 9, "extra": {"a": 1}}
+    got = op.photo(b64(photo("film", "concrete", HOLES)), "al6061", 30, quality=q)
+    flat = op.flat(got["photo"], got["corners"], "al6061", 30)
+    op.save(got["photo"], flat["boxes"], "Akash", "al6061", "1/8", 30)
+    [folder] = kept(tmp_path)
+    r = json.loads((folder / "record.json").read_text())
+    assert r["quality"] == {"sharp": 0.183, "bright": 121.4, "tilt": 3.2, "problem": "blurry", "via": "camera",
+                            "anyway": True}
+    got2 = op.photo(b64(photo("film", "concrete", HOLES)), "al6061", 30,
+                    quality={"sharp": "high", "bright": 900, "tilt": float("nan"), "via": "fax"})
+    notes = json.loads((tmp_path / "photos" / f"{got2['photo']}.json").read_text())
+    assert notes["quality"] is None                           # nothing usable in it
+    out = report(tmp_path / "photos" / "kept")
+    assert "Photo check: 1 from the page's camera, 0 from the camera app; 1 blurry and 0 dark ones used anyway." in out

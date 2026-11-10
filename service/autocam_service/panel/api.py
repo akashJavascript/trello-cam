@@ -555,7 +555,8 @@ class PanelApp:
         op = self.offcut_photos
         if action == "offcut-photo":
             self._rate_limit()
-            return _json(200, op.photo(data.get("data"), data.get("material"), data.get("length"), data.get("target")))
+            return _json(200, op.photo(data.get("data"), data.get("material"), data.get("length"), data.get("target"),
+                                       data.get("quality")))
         if action == "offcut-flat":
             return _json(200, op.flat(data.get("photo"), data.get("corners"), data.get("material"), data.get("length"),
                                       data.get("target")))

@@ -19,7 +19,14 @@ Boxes are in the piece's own inches: across from the left edge, along from the f
 
 ## The three steps
 
-1. **Photo.** The piece flat on the floor, all of it in the photo with floor round it. Pick the material and thickness
+1. **Photo.** The piece flat on the floor, all of it in the photo with floor round it. "Take a photo" opens the page's
+   own camera (2026-11-09): a frame shaped like the piece (front at the bottom) to line it up with, a level that goes
+   green when the phone is within 5 deg of flat, and a shutter that waits (up to 2 s) until the phone is still. Every
+   photo, from there or from "Use the camera app", is checked first: **Too dark** (mean brightness under 40 of 255) or
+   **Too blurry** (its sharpest edges spread out; below 0.22, where sharp test photos score 0.31-1.0 and 3 px of
+   blur or a 9 px shake scores under 0.22) asks for it again, with "Use it anyway". What the check measured goes to the
+   laptop with the photo and into the kept record, so the numbers can be tuned on real photos. No camera access
+   (blocked, or an old browser): the camera app, as before. Pick the material and thickness
    and type the **length from a tape**. The width is always the sheet's (full width only: the clamps hold the long
    edges). Re-photo already knows all of it.
 2. **Corners.** Suggested when they can be found; drag them onto the piece's corners (a magnifier shows under the
