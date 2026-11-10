@@ -636,7 +636,9 @@ A few long parts on one sheet (e.g. three of p0201), Rush so they don't join an 
 | 8 | Take a photo (Android, then an iPhone): allow the camera (and, on the iPhone, motion) | The page's camera opens with the piece's frame, FRONT at the bottom; tilt the phone: the level's bubble moves to the high side, green when flat |
 | 9 | Take one while moving the phone, then one with the lights off | The shutter waits for "Hold still"; a smeared or dark one says Too blurry / Too dark: Take it again, or Use it anyway |
 | 10 | Use the camera app instead; pick a blurry photo | "This photo looks blurry…", Next stays off until "use it anyway" |
-| 11 | On the laptop: `python -m autocam_service offcut-photo-report` | One row per way of finding, counting the photos saved in 4-6 (holes found, missed, extra boxes, corners right) |
+| 11 | Bare aluminum on the floor, with the page's camera | No corners found: they start on the frame the piece was lined up with |
+| 12 | Used areas: tap a hole that has no box; tap the metal between holes; tap a dotted "?" | A box over the hole (a spinner first); "Couldn't find a hole there…"; the maybe becomes a box |
+| 13 | On the laptop: `python -m autocam_service offcut-photo-report` | One row per way of finding, counting the photos saved in 4-6 (holes found, missed, extra boxes, corners right) |
 
 ## M5: status card, start at logon, reboot test on the shop PC
 

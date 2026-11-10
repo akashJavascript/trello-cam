@@ -26,6 +26,7 @@ import secrets
 import shutil
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
@@ -44,6 +45,8 @@ KEEP_S = 24 * 3600
 MAX_BOXES = 80
 BOARD_CACHE_S = 20
 KEPT = "kept"
+TAPS_PER_MINUTE = 40       # a tap on a hole is about half a second of the laptop's time
+KINDS = ("found", "maybe", "tap", "drawn")       # where a saved box came from (for the report)
 
 
 def _thickness_label(t: float) -> str:
@@ -61,6 +64,7 @@ class OffcutPhotos:
         self.t, self.cfg, self.store, self.folder = tracker, cfg, store, Path(folder)
         self.label, self.line, self.clock = label, line, clock
         self.keep = max(0, int(keep))
+        self._taps: deque = deque()
         self._lock = threading.Lock()
         self._cards: Optional[tuple] = None          # (when, {card id: name}) of the Offcuts list
 
@@ -257,10 +261,47 @@ class OffcutPhotos:
                 raise ListError("Bad request")
         return out
 
+    def _straight(self, photo: Any, corners: Any, material: Any, length: Any, target: Any):
+        """(the straightened piece, width, length, the offcut a re-photo is for, the corners), from the kept photo."""
+        path = self._photo_path(photo)
+        piece = self._target(target)
+        key, width, n = self._size_for(material, length, piece)
+        c = self._corners(corners)
+        import cv2
+        import numpy as np
+        img = cv2.imdecode(np.frombuffer(path.read_bytes(), np.uint8), cv2.IMREAD_COLOR)
+        return photo_find.straighten(img, c, width, n), width, n, piece, c
+
+    def grow(self, photo: Any, corners: Any, at: Any, material: Any = None, length: Any = None,
+             target: Any = None) -> Dict[str, Any]:
+        """A tap on a hole the finding missed: the box over it (photo_find.grow_at), or none when no hole can be told
+        there."""
+        try:
+            ax, ay = (float(v) for v in at)
+        except (TypeError, ValueError):
+            raise ListError("Bad request")
+        if not (math.isfinite(ax) and math.isfinite(ay)):
+            raise ListError("Bad request")
+        with self._lock:
+            now = self.clock()
+            while self._taps and now - self._taps[0] > 60:
+                self._taps.popleft()
+            if len(self._taps) >= TAPS_PER_MINUTE:
+                raise ListError("Lots of taps just now. Wait a moment, or drag a box.", status=429)
+            self._taps.append(now)
+        if not photo_find.AVAILABLE:
+            return {"box": None}
+        t0 = time.perf_counter()
+        flat, width, n, piece, c = self._straight(photo, corners, material, length, target)
+        box = photo_find.grow_at(flat, width, n, (ax, ay))
+        log.info("offcut photo %s: tap at %.1f, %.1f in: %s (%.2f s)", photo, ax, ay, "a box" if box else "no hole",
+                 time.perf_counter() - t0)
+        return {"box": list(box) if box else None}
+
     def flat(self, photo: Any, corners: Any, material: Any = None, length: Any = None,
              target: Any = None) -> Dict[str, Any]:
-        """The piece straightened by its corners, and the boxes found over its holes (for a re-photo, only those not
-        already on record)."""
+        """The piece straightened by its corners, the boxes found over its holes and the maybes (for a re-photo, only
+        those not already on record)."""
         path = self._photo_path(photo)
         piece = self._target(target)
         key, width, n = self._size_for(material, length, piece)
@@ -272,17 +313,19 @@ class OffcutPhotos:
         img = cv2.imdecode(np.frombuffer(path.read_bytes(), np.uint8), cv2.IMREAD_COLOR)
         t0 = time.perf_counter()
         flat = photo_find.straighten(img, c, width, n)
-        boxes, how = photo_find.find_holes(flat, width, n)
+        boxes, maybes, how = photo_find.find_holes_and_maybes(flat, width, n)
         known: List[List[float]] = []
         if piece is not None:
             known = self.used_areas(piece) + [list(x) for x in piece.get("hand_cuts", [])]
             boxes = [b for b in boxes if _inside_share(b, known) < 0.8]
-        self._note(photo, corners=c, suggested=[[round(float(v), 2) for v in b] for b in boxes], how=how,
-                   known=[[round(float(v), 2) for v in k] for k in known])
-        log.info("offcut photo %s: %d boxes by %s (%.2f s)", photo, len(boxes), how or "-", time.perf_counter() - t0)
+            maybes = [b for b in maybes if _inside_share(b, known) < 0.8]
+        r2 = lambda bs: [[round(float(v), 2) for v in b] for b in bs]  # noqa: E731
+        self._note(photo, corners=c, suggested=r2(boxes), maybes=r2(maybes), how=how, known=r2(known))
+        log.info("offcut photo %s: %d boxes, %d maybes by %s (%.2f s)", photo, len(boxes), len(maybes), how or "-",
+                 time.perf_counter() - t0)
         image = base64.b64encode(photo_find.piece_jpeg(flat)).decode("ascii")
-        return {"image": "data:image/jpeg;base64," + image, "boxes": [list(b) for b in boxes], "how": how,
-                "width": width, "length": n}
+        return {"image": "data:image/jpeg;base64," + image, "boxes": [list(b) for b in boxes],
+                "maybes": [list(b) for b in maybes], "how": how, "width": width, "length": n}
 
     @staticmethod
     def _boxes(boxes: Any, width: float, length: float) -> List[List[float]]:
@@ -304,12 +347,19 @@ class OffcutPhotos:
         return out
 
     def save(self, photo: Any, boxes: Any, sender: str, material: Any = None, thickness: Any = None,
-             length: Any = None, target: Any = None) -> Dict[str, Any]:
-        """A new piece's card in Offcuts, or a re-photographed offcut's new boxes on its card (and the photo on it)."""
+             length: Any = None, target: Any = None, kinds: Any = None) -> Dict[str, Any]:
+        """A new piece's card in Offcuts, or a re-photographed offcut's new boxes on its card (and the photo on it).
+        `kinds`: where each box came from (KINDS), kept with the photo for the report."""
         path = self._photo_path(photo)
         piece = self._target(target)
         key, width, n = self._size_for(material, length, piece)
         cuts = self._boxes(boxes, width, n)
+        tally = {k: 0 for k in KINDS}
+        if isinstance(kinds, list) and isinstance(boxes, list) and len(kinds) == len(boxes):
+            for kind in kinds:
+                if kind in tally:
+                    tally[kind] += 1
+        tally = tally if any(tally.values()) else None
         lines = [hand_cut_line(tuple(c), width) for c in cuts]
         who = sender or "someone at the shop"
         image = path.read_bytes()
@@ -323,7 +373,7 @@ class OffcutPhotos:
                            + (f"{len(cuts)} new hand cut{'s' if len(cuts) != 1 else ''}." if cuts else "nothing new cut."))
             self._keep(photo, path, {"kind": "re-photo", "material": key,
                                      "thickness": _thickness_label(float(piece["thickness_in"])), "width": width,
-                                     "length": n, "saved": cuts, "number": piece.get("number")})
+                                     "length": n, "saved": cuts, "number": piece.get("number"), "kinds": tally})
             log.info("offcut photos: %s re-photographed offcut #%s (%d cuts)", who, piece.get("number"), len(cuts))
             self.forget_board()
             return {"card": target, "number": piece.get("number"), "cuts": len(cuts)}
@@ -336,7 +386,7 @@ class OffcutPhotos:
         card = self.t.create_card("offcuts", "Offcut from a photo", desc)
         self.t.attach_file(card.id, "photo.jpg", image, "image/jpeg")
         self._keep(photo, path, {"kind": "new", "material": key, "thickness": thickness, "width": width, "length": n,
-                                 "saved": cuts})
+                                 "saved": cuts, "kinds": tally})
         log.info("offcut photos: %s added a %s %s piece, %g in long, %d cuts (card %s)", who, key, thickness, n,
                  len(cuts), card.id)
         self.forget_board()

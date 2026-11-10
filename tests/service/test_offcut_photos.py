@@ -229,3 +229,52 @@ def test_what_the_pages_photo_check_measured_is_kept_with_the_photo(tmp_path):
     assert notes["quality"] is None                           # nothing usable in it
     out = report(tmp_path / "photos" / "kept")
     assert "Photo check: 1 from the page's camera, 0 from the camera app; 1 blurry and 0 dark ones used anyway." in out
+
+
+def test_a_tap_on_a_missed_hole_gets_its_box_and_where_boxes_came_from_is_kept(tmp_path, monkeypatch):
+    h = harness(tmp_path)
+    op = offcut_photos(h, tmp_path)
+    got = op.photo(b64(photo("film", "concrete", HOLES)), "al6061", 30)
+    flat = op.flat(got["photo"], got["corners"], "al6061", 30)
+    assert isinstance(flat["maybes"], list)
+    hole = HOLES[2]
+    r = op.grow(got["photo"], got["corners"], [(hole[0] + hole[2]) / 2, (hole[1] + hole[3]) / 2], "al6061", 30)
+    assert r["box"] and covers(r["box"], hole)
+    assert op.grow(got["photo"], got["corners"], [11, 13], "al6061", 30) == {"box": None}     # the piece itself
+    for bad in (None, [1], ["a", 2], [float("nan"), 3]):
+        with pytest.raises(ListError, match="Bad request"):
+            op.grow(got["photo"], got["corners"], bad, "al6061", 30)
+    boxes = flat["boxes"][:2] + [r["box"], [1.0, 26.0, 3.0, 28.0]]
+    op.save(got["photo"], boxes, "Akash", "al6061", "1/8", 30, kinds=["found", "found", "tap", "drawn"])
+    [folder] = kept(tmp_path)
+    rec = json.loads((folder / "record.json").read_text())
+    assert rec["kinds"] == {"found": 2, "maybe": 0, "tap": 1, "drawn": 1} and rec["maybes"] == flat["maybes"]
+    assert "Saved boxes: 2 found, 0 maybes kept, 1 tapped, 1 drawn by hand." in report(tmp_path / "photos" / "kept")
+    # taps are capped (each is about half a second of the laptop)
+    monkeypatch.setattr("autocam_service.offcut_photos.TAPS_PER_MINUTE", 2)      # two taps so far this minute
+    with pytest.raises(ListError, match="Lots of taps") as e:
+        op.grow(got["photo"], got["corners"], [5, 5], "al6061", 30)
+    assert e.value.status == 429
+
+
+def test_kinds_that_dont_match_the_boxes_are_ignored(tmp_path):
+    h = harness(tmp_path)
+    op = offcut_photos(h, tmp_path)
+    got = op.photo(b64(photo("film", "concrete", HOLES)), "al6061", 30)
+    flat = op.flat(got["photo"], got["corners"], "al6061", 30)
+    op.save(got["photo"], flat["boxes"], "Akash", "al6061", "1/8", 30, kinds=["found"])         # one short
+    rec = json.loads((kept(tmp_path)[0] / "record.json").read_text())
+    assert rec["kinds"] is None
+
+
+def test_the_shop_page_asks_for_a_tapped_hole(tmp_path):
+    p = Panel(tmp_path)
+    p.app.offcut_photos = OffcutPhotos(p.t, p.h.cfg, OffcutStore(p.h.store.offcuts_file), tmp_path / "photos",
+                                       material_label, material_line)
+    status, got = p.call("POST", "/api/shop/offcut-photo", key=SHOP, body={
+        "device": PHONE, "data": b64(photo("film", "concrete", HOLES)), "material": "al6061", "length": 30})
+    hole = HOLES[0]
+    status, r = p.call("POST", "/api/shop/offcut-grow", key=SHOP, body={
+        "device": PHONE, "photo": got["photo"], "corners": PHOTO_CORNERS, "material": "al6061", "length": 30,
+        "at": [(hole[0] + hole[2]) / 2, (hole[1] + hole[3]) / 2]})
+    assert status == 200 and covers(r["box"], hole)

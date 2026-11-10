@@ -32,10 +32,19 @@ Boxes are in the piece's own inches: across from the left edge, along from the f
    edges). Re-photo already knows all of it.
 2. **Corners.** Suggested when they can be found; drag them onto the piece's corners (a magnifier shows under the
    finger). **The end at the bottom of the photo is the front** (the user, 2026-11-09); "Other end is the front" swaps.
-   For a re-photo, line the hatched areas up with what's on the record.
+   For a re-photo, line the hatched areas up with what's on the record. When none are found, they start on the camera
+   frame the piece was lined up with (photos from the page's camera; 2026-11-09).
 3. **Used areas.** The piece straightened to scale, a box over each hole found (0.25 in added round each). Move, resize
    (the corner dot), delete (×), drag on the piece to add one. What's already on record is hatched. **Every hole needs a
    box**: a missed hole is how a part ends up over one; an extra box only wastes some metal.
+   - **Dotted "?" boxes are maybes** (2026-11-09): what nearly made it (a hole just under 0.6 in, an outline nearly
+     sure, film nearly busy enough). A tap keeps one; the rest are ignored. Not beside a box or at the piece's edge.
+   - **Tap a hole it missed** and the laptop boxes it (`photo_find.grow_at`, about half a second): by look where the
+     photo has it; else the hole grown from the tapped spot, less keenly each step, kept from just before it floods the
+     metal (a hole fills to its edges and holds; the metal floods at once). A tap on the piece itself, or where no hole
+     can be told, says so: drag a box. On the team's photos it boxed the film-filled holes on the table, the poly's
+     small holes and most of the house holes on bare aluminum on concrete (some boxes short or covering two holes).
+   - Where each saved box came from (found, maybe, tapped, drawn) is kept with the photo; the report counts them.
 
 ## How the finding works (tuned on the team's photos)
 

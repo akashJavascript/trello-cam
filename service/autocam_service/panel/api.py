@@ -36,7 +36,7 @@ and finish shafts, nothing else):
     POST /api/shop/print-upload              {device, filename, data (base64), name, qty, material, color, ...}
     GET  /api/shop/print-file?id=...         a print's model file (a part's STEP is exported from Onshape the first time)
     GET  /api/shop?offcuts=1                 ... and the Offcuts tab: the rack (offcut_photos.py)
-    POST /api/shop/offcut-photo|offcut-flat|offcut-save|offcut-gone   an offcut from a phone photo, step by step
+    POST /api/shop/offcut-photo|offcut-flat|offcut-grow|offcut-save|offcut-gone   an offcut from a phone photo
 
 The machine page (machine.py, 2026-11-05): the operator's screen on the ShopSabre's PC, with its own key
 (machine_key(): no sign-in; it can tick a sheet card's boxes, move it to Cut or back to Sheet review, and download
@@ -560,10 +560,13 @@ class PanelApp:
         if action == "offcut-flat":
             return _json(200, op.flat(data.get("photo"), data.get("corners"), data.get("material"), data.get("length"),
                                       data.get("target")))
+        if action == "offcut-grow":
+            return _json(200, op.grow(data.get("photo"), data.get("corners"), data.get("at"), data.get("material"),
+                                      data.get("length"), data.get("target")))
         if action == "offcut-save":
             self._rate_limit()
             return _json(200, op.save(data.get("photo"), data.get("boxes"), sender, data.get("material"),
-                                      data.get("thickness"), data.get("length"), data.get("target")))
+                                      data.get("thickness"), data.get("length"), data.get("target"), data.get("kinds")))
         if action == "offcut-gone":
             op.gone(data.get("id"), sender)
             return _json(200, {"ok": True})

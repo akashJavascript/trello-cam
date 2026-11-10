@@ -1130,6 +1130,20 @@ Only Trello reads got more frequent; Onshape calls don't go up.
   p0209 (to about 39 in) would have been left off #4's record (fixed by hand to 39.5 in before Part 28 was nested).
   The sheet's `bands` (what another piece of stock must have clear to take the same program) include it too.
 
+## 2026-11-09: maybes, a tap on a missed hole, corners from the camera frame (the user: "do 1 and 2")
+
+- **Tap a hole** is what helps bare aluminum on concrete, where finding holes alone can't: the tap says where a hole
+  is, so only its edge has to be found. A watershed between the tapped spot and what's clearly unlike it, loosened step
+  by step, kept from just before it floods: on the houses photo 11 of 12 taps on holes boxed them (a notch open to the
+  edge didn't), in about half a second. GrabCut was tried first and gave nothing (the hole's own concrete was in its
+  background model). A tap on the piece gives nothing (on photos by look: the spot looks like the piece and isn't busy).
+- **Maybes are few on purpose**: what nearly made it, none beside a box (the rest of that hole) or at the edge (peeled
+  film), at most 15. Keener outlines on bare aluminum on concrete were tried for maybes: 36-180 regions, mostly concrete
+  cracks and scratches, so there are none there; the tap is the tool for it.
+- **Corners from the camera frame**: the piece was just lined up with it, so it's a better start than a fixed inset.
+- **Where saved boxes came from** goes in the kept record, so the report shows whether maybes and taps earn their place.
+- Taps have their own cap, 40 a minute (the laptop's time, not Trello's).
+
 ## 2026-11-09: a guided camera for offcut photos (the user picked it from the list of ways to find holes better)
 
 - **The page's own camera** (`getUserMedia`, the back camera), so it can guide: the piece's frame (its typed length, or

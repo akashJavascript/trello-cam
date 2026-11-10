@@ -3,7 +3,8 @@
 //   Add an offcut / Re-photo, three steps: Photo (the page's own camera, with a level and a frame to line the piece up
 //   with, and a check for blurry or dark photos; or the phone's camera app; and what it is: material, thickness, length
 //   taped; the width is the sheet's), Corners (suggested when they can be found; drag them, the front is the end at the bottom of the photo),
-//   Used areas (the piece straightened, a box over each hole found; move, resize, delete, drag to add). Save writes the
+//   Used areas (the piece straightened, a box over each hole found and dotted maybes, kept with a tap; tap a missed
+//   hole and the laptop boxes it; move, resize, delete, drag to add). Save writes the
 //   offcut's card as a person would (AutoCAM's offcut pass numbers it); the number shows here a few seconds later.
 // shop.js calls ShopOffcuts.init(ctx) with its helpers, renderList(d) for the tab and renderFlow() while a flow is
 // open. Plain JavaScript, no build step; nothing from the server goes in as HTML.
@@ -272,6 +273,7 @@
     while (g.firstChild) g.removeChild(g.firstChild);
     var W = width(), L = guideLength(), f = 0.8 * Math.min(vw / W, vh / L);
     var rw = W * f, rh = L * f, x = (vw - rw) / 2, y = (vh - rh) / 2, sw = Math.max(vw, vh) / 260;
+    CAM.frame = [[x, y + rh], [x + rw, y + rh], [x + rw, y], [x, y]];    // front-left, front-right, back-right, back-left
     var c = Math.min(rw, rh) * 0.14;
     g.appendChild(svg("rect", { x: x, y: y, width: rw, height: rh, class: "cam-frame", "stroke-width": sw / 2 }));
     g.appendChild(svg("path", { class: "cam-corners", "stroke-width": sw * 1.6, d:
@@ -324,19 +326,21 @@
     q.via = "camera";
     if (motion.on && motion.tilt != null) q.tilt = Math.round(motion.tilt * 10) / 10;
     var data = c.toDataURL("image/jpeg", 0.9);
-    if (!q.problem) { closeCamera(); usePhoto(data, q); return; }
-    showCheck(data, q);
+    // where the piece was lined up: where its corners start if they can't be found
+    var guide = CAM.frame ? CAM.frame.map(function (p) { return [Math.round(p[0] * s), Math.round(p[1] * s)]; }) : null;
+    if (!q.problem) { closeCamera(); usePhoto(data, q, guide); return; }
+    showCheck(data, q, guide);
   }
 
   // a photo that's blurry or dark: take it again (the camera's still open), or use it anyway
-  function showCheck(data, q) {
+  function showCheck(data, q, guide) {
     var h = C.h, still = h("img", { class: "cam-still", src: data, alt: "The photo just taken" });
     var card = h("div", { class: "cam-check", role: "alertdialog", "aria-label": checkTitle(q) },
       h("div", { class: "cam-check-title" }, checkTitle(q)),
       h("p", null, checkLine(q)),
       h("div", { class: "foot-two" },
         h("button", { class: "btn btn-ghost", type: "button", onclick: function () {
-          q.anyway = true; closeCamera(); usePhoto(data, q);
+          q.anyway = true; closeCamera(); usePhoto(data, q, guide);
         } }, "Use it anyway"),
         h("button", { class: "btn btn-primary", type: "button", onclick: function () {
           CAM.view.removeChild(still); CAM.view.removeChild(card); CAM.check = null; CAM.hint.hidden = false;
@@ -426,9 +430,9 @@
     reader.onerror = function () { C.toast("Couldn't read that photo."); };
     reader.readAsDataURL(file);
   }
-  function usePhoto(data, q) {
+  function usePhoto(data, q, guide) {
     if (!F) return;
-    F.data = data; F.quality = q; F.warn = q.problem && !q.anyway ? q.problem : "";
+    F.data = data; F.quality = q; F.warn = q.problem && !q.anyway ? q.problem : ""; F.guide = guide || null;
     F.photo = ""; F.corners = null; F.flat = null; F.boxes = [];
     var shown = new Image();
     shown.onload = function () { if (F && F.data === data) { F.img = shown; C.render(); } };
@@ -490,7 +494,8 @@
                                                 target: F.target ? F.target.id : "", quality: F.quality || null }).then(function (r) {
         F.busy = false; F.photo = r.photo; F.found = !!r.corners;
         var w = F.img.naturalWidth, hh = F.img.naturalHeight;
-        F.corners = r.corners || [[0.15 * w, 0.85 * hh], [0.85 * w, 0.85 * hh], [0.85 * w, 0.15 * hh], [0.15 * w, 0.15 * hh]];
+        F.corners = r.corners || (F.guide && F.guide.map(function (p) { return p.slice(); }))
+          || [[0.15 * w, 0.85 * hh], [0.85 * w, 0.85 * hh], [0.85 * w, 0.15 * hh], [0.15 * w, 0.15 * hh]];
         F.step = 2; C.render();
       }, function (e) { F.busy = false; C.toast(e.message); C.render(); });
     });
@@ -565,6 +570,8 @@
       C.api("POST", "/api/shop/offcut-flat", { device: C.DEVICE, photo: F.photo, corners: F.corners, material: F.material,
                                                length: F.length, target: F.target ? F.target.id : "" }).then(function (r) {
         F.busy = false; F.flat = r; F.boxes = (r.boxes || []).map(function (b) { return b.slice(); }); F.sel = -1;
+        F.kinds = F.boxes.map(function () { return "found"; });
+        F.maybes = (r.maybes || []).map(function (b) { return b.slice(); });
         F.step = 3; C.render();
       }, function (e) {
         F.busy = false; C.toast(e.message);
@@ -574,17 +581,22 @@
     });
   }
 
-  // step 3: the straightened piece, a box over each hole (move, resize, delete; drag on the piece to add one)
+  // step 3: the straightened piece, a box over each hole (move, resize, delete; drag on the piece to add one); maybes
+  // dotted (a tap keeps one); a tap on a missed hole asks the laptop for its box (photo_find.grow_at)
+  function addBox(b, kind) { F.boxes.push(b); F.kinds.push(kind); F.sel = F.boxes.length - 1; }
+  function dropBox(i) { F.boxes.splice(i, 1); F.kinds.splice(i, 1); F.sel = -1; }
   function stepUsed() {
+    F.kinds = F.kinds || F.boxes.map(function () { return "found"; });
+    F.maybes = F.maybes || [];
     var h = C.h, add = C.add, listEl = C.listEl;
     var w = F.flat.width, len = F.flat.length;
     var avail = Math.max(240, Math.min(528, (listEl.clientWidth || 392) - 32));   // the page's side padding
     var s = Math.min(avail / w, 560 / len);           // px per inch on screen
     var tools = h("div", { class: "tools" },
       h("button", { class: "tool", type: "button", onclick: function () {
-        F.boxes.push([w / 2 - 2, len / 2 - 2, w / 2 + 2, len / 2 + 2]); F.sel = F.boxes.length - 1; draw();
+        addBox([w / 2 - 2, len / 2 - 2, w / 2 + 2, len / 2 + 2], "drawn"); draw();
       } }, C.icon("plus"), "Box"),
-      h("span", { class: "muted small" }, "or drag around a hole"));
+      h("span", { class: "muted small" }, "or tap a hole it missed, or drag round it"));
     add(listEl, tools);
     var flat = h("div", { class: "flat" });
     flat.style.width = (w * s) + "px"; flat.style.height = (len * s) + "px";
@@ -592,8 +604,9 @@
     else add(flat, h("div", { class: "flat-blank" }));
     var dims = h("div", { class: "dims", "aria-live": "polite" });
     add(listEl, h("div", { class: "flat-wrap" }, h("div", { class: "end-tag" }, "Back"), flat, h("div", { class: "end-tag" }, "Front"), dims));
-    add(listEl, h("p", { class: "muted small" }, F.flat.how === "outline" || !F.flat.how
-      ? "Box every hole: on bare aluminum some aren't found." : "Box every hole it missed."));
+    add(listEl, h("p", { class: "muted small" }, (F.flat.how === "outline" || !F.flat.how
+      ? "Box every hole: on bare aluminum some aren't found." : "Box every hole it missed.")
+      + (F.maybes.length ? " Dotted: maybe a hole. Tap one to keep it." : "")));
     var known = F.target ? (F.target.used || []) : [];
 
     function place(el, b) {
@@ -601,8 +614,12 @@
       el.style.width = ((b[2] - b[0]) * s) + "px"; el.style.height = ((b[3] - b[1]) * s) + "px";
     }
     function draw() {
-      Array.prototype.slice.call(flat.querySelectorAll(".box,.known")).forEach(function (e) { flat.removeChild(e); });
+      Array.prototype.slice.call(flat.querySelectorAll(".box,.known,.maybe")).forEach(function (e) { flat.removeChild(e); });
       known.forEach(function (k) { var e = h("div", { class: "known" }); place(e, k); flat.appendChild(e); });
+      F.maybes.forEach(function (b, i) {
+        var e = h("div", { class: "maybe", "data-m": String(i), role: "button", "aria-label": "Maybe a hole: tap to box it" }, "?");
+        place(e, b); flat.appendChild(e);
+      });
       F.boxes.forEach(function (b, i) {
         var e = h("div", { class: "box" + (i === F.sel ? " sel" : ""), "data-i": String(i) });
         place(e, b);
@@ -618,12 +635,31 @@
     draw();
     var mode = null, start = null, orig = null;
     function pt(e) { var r = flat.getBoundingClientRect(); return [(e.clientX - r.left) / s, len - (e.clientY - r.top) / s]; }
+    // a tap (not a drag) on the piece: the laptop finds the hole there
+    function tapAt(p) {
+      var dot = h("div", { class: "tap-wait", "aria-hidden": "true" });
+      dot.style.left = (p[0] * s) + "px"; dot.style.top = ((len - p[1]) * s) + "px";
+      flat.appendChild(dot);
+      C.api("POST", "/api/shop/offcut-grow", { device: C.DEVICE, photo: F.photo, corners: F.corners, at: p,
+                                               material: F.material, length: F.length,
+                                               target: F.target ? F.target.id : "" }).then(function (r) {
+        if (dot.parentNode) dot.parentNode.removeChild(dot);
+        if (!F || F.step !== 3) return;
+        if (r.box) { addBox(r.box, "tap"); draw(); }
+        else C.toast("Couldn't find a hole there. Drag a box round it.");
+      }, function (e) { if (dot.parentNode) dot.parentNode.removeChild(dot); C.toast(e.message); });
+    }
     flat.addEventListener("pointerdown", function (e) {
       var t = e.target;
-      if (t.closest("[data-x]")) { F.boxes.splice(F.sel, 1); F.sel = -1; draw(); return; }
+      if (t.closest("[data-x]")) { dropBox(F.sel); draw(); return; }
+      var me = t.closest("[data-m]");
+      if (me) {                                        // a maybe kept: a box like any other
+        var mi = +me.getAttribute("data-m");
+        addBox(F.maybes[mi], "maybe"); F.maybes.splice(mi, 1); draw(); e.preventDefault(); return;
+      }
       var be = t.closest("[data-i]");
       start = pt(e);
-      if (!be) { F.boxes.push([start[0], start[1], start[0], start[1]]); F.sel = F.boxes.length - 1; mode = "draw"; }
+      if (!be) { addBox([start[0], start[1], start[0], start[1]], "drawn"); mode = "draw"; }
       else { F.sel = +be.getAttribute("data-i"); mode = t.closest("[data-h]") ? "size" : "move"; }
       orig = F.boxes[F.sel].slice();
       flat.setPointerCapture(e.pointerId); e.preventDefault();
@@ -646,7 +682,11 @@
     function end() {
       if (mode === "draw") {
         var b = F.boxes[F.sel];
-        if (b[2] - b[0] < 0.5 || b[3] - b[1] < 0.5) { F.boxes.splice(F.sel, 1); F.sel = -1; }
+        if (b[2] - b[0] < 0.5 || b[3] - b[1] < 0.5) {
+          dropBox(F.sel);
+          var still = 10 / s;                          // under 10 px on screen: a tap, not a drag
+          if (b[2] - b[0] < still && b[3] - b[1] < still && F.photo && F.flat.image) tapAt(start);
+        }
         draw();
       }
       mode = null;
@@ -658,7 +698,7 @@
 
   function save() {
     F.busy = true; C.render();
-    C.api("POST", "/api/shop/offcut-save", { device: C.DEVICE, photo: F.photo, boxes: F.boxes, material: F.material,
+    C.api("POST", "/api/shop/offcut-save", { device: C.DEVICE, photo: F.photo, boxes: F.boxes, kinds: F.kinds, material: F.material,
                                              thickness: F.thickness, length: F.length,
                                              target: F.target ? F.target.id : "" }).then(function (r) {
       var t = F.target;

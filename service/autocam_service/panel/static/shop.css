@@ -308,3 +308,12 @@ body.cam-open { overflow: hidden; }
   background: var(--surface-lowest); color: var(--on-surface); box-shadow: var(--shadow-warm-md); }
 .cam-check-title { font-size: 20px; font-weight: 700; color: var(--rush); }
 .cam-check p { margin: 6px 0 14px; color: var(--on-surface-variant); }
+
+/* Maybes and taps on the used areas (offcuts.js, 2026-11-09): a dotted maybe, kept with a tap; a dot while the laptop
+   looks for the hole tapped */
+.flat .maybe { position: absolute; box-sizing: border-box; border: 2px dashed var(--accent-coral); border-radius: 4px;
+  background: rgba(236, 147, 96, 0.12); color: var(--rush); font-weight: 700; font-size: 13px; display: grid; place-items: center; cursor: pointer; }
+.flat .tap-wait { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
+  border: 3px solid var(--primary-container); border-top-color: transparent; animation: tapspin 0.8s linear infinite; pointer-events: none; }
+@keyframes tapspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .flat .tap-wait { animation: none; border-top-color: var(--primary-container); } }

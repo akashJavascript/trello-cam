@@ -109,6 +109,12 @@ def report(folder: Path, worst: int = 5) -> str:
             what = f"{r.get('material', '?')} {r.get('thickness', '')} {float(r.get('length') or 0):g} in".strip()
             lines.append(f"  {r['_folder']}  {what}, {r.get('kind', '?')}, {r.get('how') or '-'}: "
                          f"{s['missed']} of {s['holes']} missed, {s['extra']} extra")
+    tallies = [r.get("kinds") or {} for r in records]
+    if any(tallies):
+        total = {k: sum(int(t.get(k) or 0) for t in tallies) for k in ("found", "maybe", "tap", "drawn")}
+        lines += ["", f"Saved boxes: {total['found']} found, {total['maybe']} maybes kept, {total['tap']} tapped, "
+                  f"{total['drawn']} drawn by hand. Maybes shown: "
+                  f"{sum(len(r.get('maybes') or []) for r in records)}."]
     qs = [r.get("quality") or {} for r in records]
     cam, app = sum(1 for q in qs if q.get("via") == "camera"), sum(1 for q in qs if q.get("via") == "app")
     if cam or app:
